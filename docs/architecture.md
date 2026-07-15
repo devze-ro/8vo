@@ -8,9 +8,11 @@ configuration, a Win32 window/backbuffer, UI0 frame contexts, zero_foundation
 draw/render state, and a versioned last-location record.
 
 Reader0 owns the EPUB document engine, source layout, typography, pagination,
-page transitions, search/selection state, and canonical frame. Lectern0 passes
-its viewport-derived layout values directly to reader0 API 2. No reader state is
-mirrored in application storage.
+page transitions, semantic navigation, search/selection state, and canonical
+frame. Lectern0 passes its viewport-derived layout values directly to reader0
+API 3. No reader state is mirrored in application storage. Its narrow semantic
+adapters capture the resulting canonical frame, set host status, and persist
+the resulting reader-owned location.
 
 UI0 owns generic toolbar layout, signal, control, token, and draw records. A
 narrow lectern0 adapter converts those records into zero_foundation draw
@@ -37,9 +39,10 @@ and writes BMP evidence. The wrapper repeats the render in a fresh process and
 requires equal pixel and file hashes. It does not introduce a second layout or
 presentation implementation.
 
-## Slice 1 exclusions
+## Current exclusions
 
 No PDF backend, generic document interface, library database, search/TOC UI,
 annotations, decoded-image cache, shared reader view/chrome, theme selector,
-or accessibility redesign is included. Image rows render bounded alt-text
-placeholders until a lectern-owned decoded-image cache is justified.
+or accessibility redesign is included. Slice 4B proves semantic TOC and Find
+transitions without pre-implementing their UI. Image rows render bounded
+alt-text placeholders until a lectern-owned decoded-image cache is justified.

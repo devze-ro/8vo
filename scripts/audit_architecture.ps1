@@ -25,8 +25,10 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
   }
-  if ($app.IndexOf('epub_reader_move_page') -lt 0) {
-    $failures.Add("lectern0 must consume the concrete reader0 API 2 page move")
+  if ($app.IndexOf('epub_reader_move_page') -lt 0 -or
+      $app.IndexOf('epub_reader_navigate_to_nav_point') -lt 0 -or
+      $app.IndexOf('epub_reader_navigate_to_search_match') -lt 0) {
+    $failures.Add("lectern0 must consume the concrete reader0 API 3 page and semantic navigation surface")
   }
   if ($app.IndexOf('font_cache_tag_from_provider') -lt 0 -or
       $app.IndexOf('lectern0_push_reader_text_chunks') -lt 0 -or

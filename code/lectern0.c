@@ -446,6 +446,90 @@ lectern0_move_page(Lectern0App *app, S32 direction)
   return EpubReaderResult_Ok;
 }
 
+FUNCTION EpubReaderResult
+lectern0_finish_semantic_navigation(Lectern0App *app,
+                                    EpubReaderResult result,
+                                    const char *operation)
+{
+  if (!app || !operation) { return EpubReaderResult_InvalidInput; }
+  if (result != EpubReaderResult_Ok)
+  {
+    lectern0_set_statusf(app,
+                         "%s failed: %s",
+                         operation,
+                         epub_reader_result_code(result));
+    return result;
+  }
+  if (!lectern0_capture_frame(app))
+  {
+    lectern0_set_statusf(app, "%s failed: frame", operation);
+    return EpubReaderResult_DocError;
+  }
+  lectern0_set_statusf(app,
+                       "%s | page %llu/%llu | section %u/%u",
+                       operation,
+                       (unsigned long long)app->frame.page_index,
+                       (unsigned long long)app->frame.page_count,
+                       (unsigned)(app->frame.spine_index + 1),
+                       (unsigned)app->frame.section_count);
+  (void)lectern0_save_state(app);
+  return EpubReaderResult_Ok;
+}
+
+FUNCTION EpubReaderResult
+lectern0_navigate_to_nav_point(Lectern0App *app,
+                               U32 nav_index,
+                               EpubReaderNavPointResult *out_navigation)
+{
+  if (out_navigation) { *out_navigation = (EpubReaderNavPointResult){0}; }
+  if (!app || !out_navigation) { return EpubReaderResult_InvalidInput; }
+  if (!epub_reader_is_open(&app->reader))
+  {
+    lectern0_set_statusf(app, "Open an EPUB first");
+    return EpubReaderResult_NotOpen;
+  }
+  if (!lectern0_update_layout_inputs(app))
+  {
+    lectern0_set_statusf(app, "Contents failed: layout");
+    return EpubReaderResult_DocError;
+  }
+  EpubReaderResult result =
+    epub_reader_navigate_to_nav_point(&app->reader,
+                                      nav_index,
+                                      app->layout_key,
+                                      app->layout_config,
+                                      (EpubReaderNavigationOptions){0},
+                                      out_navigation);
+  return lectern0_finish_semantic_navigation(app, result, "Contents");
+}
+
+FUNCTION EpubReaderResult
+lectern0_navigate_to_search_match(Lectern0App *app,
+                                  U32 match_index,
+                                  EpubReaderSearchNavigationResult *out_navigation)
+{
+  if (out_navigation) { *out_navigation = (EpubReaderSearchNavigationResult){0}; }
+  if (!app || !out_navigation) { return EpubReaderResult_InvalidInput; }
+  if (!epub_reader_is_open(&app->reader))
+  {
+    lectern0_set_statusf(app, "Open an EPUB first");
+    return EpubReaderResult_NotOpen;
+  }
+  if (!lectern0_update_layout_inputs(app))
+  {
+    lectern0_set_statusf(app, "Find failed: layout");
+    return EpubReaderResult_DocError;
+  }
+  EpubReaderResult result =
+    epub_reader_navigate_to_search_match(&app->reader,
+                                         match_index,
+                                         app->layout_key,
+                                         app->layout_config,
+                                         (EpubReaderNavigationOptions){0},
+                                         out_navigation);
+  return lectern0_finish_semantic_navigation(app, result, "Find");
+}
+
 FUNCTION B32
 lectern0_app_init(Lectern0App *app,
                   S32 width,
@@ -1229,6 +1313,46 @@ lectern0_run_headless(const char *path)
     return 1;
   }
 
+  U32 nav_count = 0;
+  EpubReaderNavPointResult nav_navigation = {0};
+  if (doc_engine_get_nav_point_count(epub_reader_engine(&app.reader),
+                                     epub_reader_document_id(&app.reader),
+                                     &nav_count) != DocError_Ok ||
+      nav_count < 2 ||
+      lectern0_navigate_to_nav_point(&app,
+                                     1,
+                                     &nav_navigation) != EpubReaderResult_Ok ||
+      !nav_navigation.had_fragment ||
+      !nav_navigation.fragment_resolved ||
+      nav_navigation.fragment_fallback ||
+      app.reader.active_spine_index != 1)
+  {
+    fprintf(stderr, "lectern0_host_smoke result=fail reason=contents_navigation\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  if (!epub_reader_rebuild_search(&app.reader,
+                                  str8_from_cstr("standalone host proof")) ||
+      app.reader.search_match_count == 0)
+  {
+    fprintf(stderr, "lectern0_host_smoke result=fail reason=find_query\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+  EpubReaderSearchNavigationResult search_navigation = {0};
+  if (lectern0_navigate_to_search_match(&app,
+                                        0,
+                                        &search_navigation) != EpubReaderResult_Ok ||
+      search_navigation.match.spine_index != 0 ||
+      app.reader.active_spine_index != 0 ||
+      app.reader.back_stack_count < 2)
+  {
+    fprintf(stderr, "lectern0_host_smoke result=fail reason=find_navigation\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+
   U32 start_spine = app.reader.active_spine_index;
   SourceReaderPageRange cross_page = {0};
   B32 crossed = 0;
@@ -1289,7 +1413,7 @@ lectern0_run_headless(const char *path)
 
   U64 hash = u64_hash_str8(app.frame.visible_text);
   fprintf(stdout,
-          "lectern0_host_smoke result=pass spine=%u page=%llu/%llu text=%llu hash=%016llx\n",
+          "lectern0_host_smoke result=pass spine=%u page=%llu/%llu text=%llu toc=1 find=1 hash=%016llx\n",
           app.frame.spine_index,
           (unsigned long long)app.frame.page_index,
           (unsigned long long)app.frame.page_count,

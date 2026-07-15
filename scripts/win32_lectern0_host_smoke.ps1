@@ -54,14 +54,26 @@ try {
   <manifest>
     <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
     <item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
   </manifest>
-  <spine><itemref idref="c1"/><itemref idref="c2"/></spine>
+  <spine toc="ncx"><itemref idref="c1"/><itemref idref="c2"/></spine>
 </package>
+"@
+  Write-ZipTextEntry $zip "OEBPS/toc.ncx" @"
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head><meta name="dtb:uid" content="lectern0-slice1"/></head>
+  <docTitle><text>Lectern0 Slice 4B</text></docTitle>
+  <navMap>
+    <navPoint id="nav-one" playOrder="1"><navLabel><text>Chapter One</text></navLabel><content src="chapter1.xhtml"/></navPoint>
+    <navPoint id="nav-two" playOrder="2"><navLabel><text>Chapter Two target</text></navLabel><content src="chapter2.xhtml#toc-target"/></navPoint>
+  </navMap>
+</ncx>
 "@
   $body1 = (1..32 | ForEach-Object { "<p>First chapter paragraph $_ carries enough text to paginate the standalone host proof.</p>" }) -join "`n"
   $body2 = (1..12 | ForEach-Object { "<p>Second chapter paragraph $_ proves the concrete cross-spine transition.</p>" }) -join "`n"
   Write-ZipTextEntry $zip "OEBPS/chapter1.xhtml" "<html xmlns=`"http://www.w3.org/1999/xhtml`"><head><title>One</title></head><body><h1>Chapter One</h1>$body1</body></html>"
-  Write-ZipTextEntry $zip "OEBPS/chapter2.xhtml" "<html xmlns=`"http://www.w3.org/1999/xhtml`"><head><title>Two</title></head><body><h1>Chapter Two</h1>$body2</body></html>"
+  Write-ZipTextEntry $zip "OEBPS/chapter2.xhtml" "<html xmlns=`"http://www.w3.org/1999/xhtml`"><head><title>Two</title></head><body><h1 id=`"toc-target`">Chapter Two</h1>$body2</body></html>"
 } finally {
   $zip.Dispose()
 }
