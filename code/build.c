@@ -1,0 +1,33 @@
+/* Unity build for the concrete lectern0 Windows host. */
+#include "base/base_core.h"
+#include "os/os_core.c"
+#include "os/os_file.c"
+#include "base/base_arena.c"
+#include "base/base_strings.c"
+#include "base/base_unicode.c"
+#include "base/base_text_edit.c"
+#include "base/base_text_history.c"
+#include "base/base_format.c"
+#include "base/base_hash.c"
+#include "base/base_text_index.c"
+#include "base/base_text_layout.c"
+#include "base/base_thread_context.c"
+#include "os/os_time.c"
+#include "os/os_gfx.c"
+#include "font_provider/font_provider.c"
+#include "font_cache/font_cache.c"
+#include "draw/draw.c"
+#include "reader0.c"
+#include "render/render.c"
+#include "ui0.c"
+#include "lectern0.c"
+
+#if OS_WINDOWS
+#  include "platform/win32/os_core_win32.c"
+#  include "platform/win32/font_provider_win32.c"
+#  include "platform/win32/os_file_win32.c"
+#  include "platform/win32/os_time_win32.c"
+#  include "platform/win32/os_gfx_win32.c"
+#else
+#  error "lectern0 Slice 1 currently supports Win32 only"
+#endif

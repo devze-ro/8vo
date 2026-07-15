@@ -1,0 +1,5 @@
+/build/win32/
+/local/
+*.pdb
+*.ilk
+*.obj
