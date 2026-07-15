@@ -19,6 +19,10 @@ if ($failures.Count -eq 0) {
   if ([regex]::Matches($build, '#include\s+"ui0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile ui0.c exactly once")
   }
+  if ([regex]::Matches($build, '#\s*include\s+"os/os_image\.c"').Count -ne 1 -or
+      [regex]::Matches($build, '#\s*include\s+"platform/win32/os_image_win32\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile the shared os_image API and Win32 backend exactly once")
+  }
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the reader0 umbrella")
   }
@@ -38,6 +42,14 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('lectern0_frame_text_rows_are_complete') -lt 0 -or
       $app.IndexOf('--render-smoke') -lt 0) {
     $failures.Add("lectern0 must retain deterministic canonical-frame visual evidence")
+  }
+  if ($app.IndexOf('os_image_decode') -lt 0 -or
+      $app.IndexOf('Lectern0ImageCache') -lt 0 -or
+      $app.IndexOf('draw_push_sprite_clipped') -lt 0) {
+    $failures.Add("lectern0 must own cache policy while using shared decode and sprite presentation")
+  }
+  if ($app -match 'IWIC|CLSID_WIC|wincodec\.h') {
+    $failures.Add("lectern0 must not duplicate the zero_foundation WIC backend")
   }
   if ($build -match '(?i)re10' -or $app -match '(?i)re10') {
     $failures.Add("lectern0 source closure must not depend on re10")

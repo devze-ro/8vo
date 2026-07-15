@@ -9,8 +9,11 @@ command-line open, UI0-composed Open/Previous/Next chrome, canonical-frame
 rendering, concrete reader0 API 3 page and semantic navigation, resize
 repagination, and a small atomic last-location record. Slice 4B proves TOC
 fragment and Find-result navigation headlessly; their shared UI0 chrome remains
-reserved for readerview0. Images use explicit alt-text placeholders; decoded
-image caching remains a later host slice.
+reserved for readerview0. Slice 5A adds a lectern0-owned document/resource image
+cache over zero_foundation's caller-owned decoder, so EPUB cover and inline PNG,
+JPEG, BMP, and first-frame GIF resources render as decoded pixels. Unsupported,
+missing, oversized, corrupt, or cache-full resources retain visible alt-text
+fallbacks.
 
 ## Build and validate
 
@@ -26,6 +29,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.p
 cmd /c build\win32_build.bat no_run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_host_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_visual_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_image_smoke.ps1
 ```
 
 No remote is configured for this repository.

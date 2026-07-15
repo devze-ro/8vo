@@ -11,6 +11,7 @@
 #include "draw/draw.h"
 #include "os/os_file.h"
 #include "os/os_gfx.h"
+#include "os/os_image.h"
 #include "os/os_time.h"
 #include "render/render.h"
 
@@ -33,7 +34,32 @@ enum
   Lectern0UIDrawCap = 48,
   Lectern0ToolbarHeight = 48,
   Lectern0FooterHeight = 36,
+  Lectern0ImageCacheCap = 64,
 };
+
+typedef struct Lectern0ImageCacheEntry
+{
+  DocDocumentId document_id;
+  U32 resource_index;
+  EpubReaderFrameImageStatus status;
+  U32 *pixels;
+  S32 width;
+  S32 height;
+  S32 stride_pixels;
+} Lectern0ImageCacheEntry;
+
+typedef struct Lectern0ImageCache
+{
+  OS_ImageDecoder decoder;
+  Arena *pixel_arena;
+  Lectern0ImageCacheEntry entries[Lectern0ImageCacheCap];
+  U32 entry_count;
+  U64 lookup_count;
+  U64 hit_count;
+  U64 miss_count;
+  U64 cache_full_count;
+  B32 decoder_ready;
+} Lectern0ImageCache;
 
 typedef struct Lectern0SavedState
 {
@@ -71,6 +97,7 @@ typedef struct Lectern0App
   EpubReaderFrame frame;
   EpubReaderLayoutKey layout_key;
   SourceReaderLayoutConfig layout_config;
+  Lectern0ImageCache image_cache;
 
   RenderState render_state;
   DrawCommandBuffer draw_commands;
@@ -209,6 +236,202 @@ lectern0_save_state(Lectern0App *app)
 }
 
 FUNCTION B32
+lectern0_image_cache_init(Lectern0ImageCache *cache)
+{
+  if (!cache) { return 0; }
+  MemoryZeroStruct(cache);
+  cache->pixel_arena = arena_alloc(0);
+  OS_ImageDecoderInitParams params = {
+    .backend = OS_ImageDecoderBackendKind_Win32WIC,
+  };
+  cache->decoder_ready = os_image_decoder_init(&cache->decoder, &params);
+  if (!cache->pixel_arena || !cache->decoder_ready)
+  {
+    if (cache->decoder_ready) { os_image_decoder_release(&cache->decoder); }
+    if (cache->pixel_arena) { arena_release(cache->pixel_arena); }
+    MemoryZeroStruct(cache);
+    return 0;
+  }
+  return 1;
+}
+
+FUNCTION void
+lectern0_image_cache_release(Lectern0ImageCache *cache)
+{
+  if (!cache) { return; }
+  if (cache->decoder_ready) { os_image_decoder_release(&cache->decoder); }
+  if (cache->pixel_arena) { arena_release(cache->pixel_arena); }
+  MemoryZeroStruct(cache);
+}
+
+FUNCTION void
+lectern0_image_cache_reset(Lectern0ImageCache *cache)
+{
+  if (!cache || !cache->pixel_arena) { return; }
+  arena_clear(cache->pixel_arena);
+  MemoryZeroArray(cache->entries);
+  cache->entry_count = 0;
+  cache->lookup_count = 0;
+  cache->hit_count = 0;
+  cache->miss_count = 0;
+  cache->cache_full_count = 0;
+}
+
+FUNCTION B32
+lectern0_image_media_type_is(const char *media_type, const char *expected)
+{
+  return media_type && expected && _stricmp(media_type, expected) == 0;
+}
+
+FUNCTION Lectern0ImageCacheEntry *
+lectern0_image_cache_find(Lectern0ImageCache *cache,
+                          DocDocumentId document_id,
+                          U32 resource_index)
+{
+  if (!cache) { return 0; }
+  for (U32 index = 0; index < cache->entry_count; index += 1)
+  {
+    Lectern0ImageCacheEntry *entry = cache->entries + index;
+    if (entry->document_id == document_id && entry->resource_index == resource_index)
+    {
+      return entry;
+    }
+  }
+  return 0;
+}
+
+FUNCTION EpubReaderFrameImageStatus
+lectern0_image_status_from_decode(OS_ImageDecodeStatus status)
+{
+  switch (status)
+  {
+    case OS_ImageDecodeStatus_Ok: return EpubReaderFrameImageStatus_Loaded;
+    case OS_ImageDecodeStatus_DimensionLimit: return EpubReaderFrameImageStatus_DimensionCap;
+    case OS_ImageDecodeStatus_DecodeFailed: return EpubReaderFrameImageStatus_DecodeFailed;
+    case OS_ImageDecodeStatus_InvalidInput:
+    case OS_ImageDecodeStatus_BackendUnavailable:
+    case OS_ImageDecodeStatus_AllocationFailed:
+    default: return EpubReaderFrameImageStatus_Unavailable;
+  }
+}
+
+FUNCTION Lectern0ImageCacheEntry *
+lectern0_image_cache_get(Lectern0ImageCache *cache,
+                         DocEngine *engine,
+                         DocDocumentId document_id,
+                         U32 resource_index,
+                         const char *media_type)
+{
+  if (!cache) { return 0; }
+  cache->lookup_count += 1;
+  Lectern0ImageCacheEntry *entry =
+    lectern0_image_cache_find(cache, document_id, resource_index);
+  if (entry)
+  {
+    cache->hit_count += 1;
+    return entry;
+  }
+  if (!cache->decoder_ready || !cache->pixel_arena || !engine || document_id == 0)
+  {
+    return 0;
+  }
+  cache->miss_count += 1;
+  if (cache->entry_count >= ARRAY_COUNT(cache->entries))
+  {
+    cache->cache_full_count += 1;
+    return 0;
+  }
+
+  entry = cache->entries + cache->entry_count;
+  *entry = (Lectern0ImageCacheEntry){
+    .document_id = document_id,
+    .resource_index = resource_index,
+    .status = EpubReaderFrameImageStatus_Unavailable,
+  };
+  cache->entry_count += 1;
+
+  if (lectern0_image_media_type_is(media_type, "image/svg+xml") ||
+      lectern0_image_media_type_is(media_type, "image/webp"))
+  {
+    entry->status = EpubReaderFrameImageStatus_UnsupportedFormat;
+    return entry;
+  }
+
+  ArenaParams arena_params = {
+    .reserve_size = MEGABYTES(32),
+    .commit_size = KILOBYTES(64),
+  };
+  Arena *encoded_arena = arena_alloc(&arena_params);
+  if (!encoded_arena) { return entry; }
+
+  String8 encoded_bytes = {0};
+  DocError resource_result =
+    doc_engine_get_resource_data(encoded_arena,
+                                 engine,
+                                 document_id,
+                                 resource_index,
+                                 &encoded_bytes);
+  if (resource_result == DocError_Ok)
+  {
+    OS_DecodedImage decoded = {0};
+    OS_ImageDecodeStatus decode_status =
+      os_image_decode(&cache->decoder,
+                      cache->pixel_arena,
+                      encoded_bytes,
+                      os_image_decode_limits_default(),
+                      &decoded);
+    entry->status = lectern0_image_status_from_decode(decode_status);
+    if (decode_status == OS_ImageDecodeStatus_Ok)
+    {
+      entry->pixels = decoded.pixels;
+      entry->width = (S32)decoded.width;
+      entry->height = (S32)decoded.height;
+      entry->stride_pixels = (S32)decoded.stride_pixels;
+    }
+  }
+  arena_release(encoded_arena);
+  return entry;
+}
+
+FUNCTION void
+lectern0_attach_frame_images(Lectern0App *app)
+{
+  if (!app || !app->frame.ready || !app->frame.document_open) { return; }
+  DocEngine *engine = epub_reader_engine(&app->reader);
+  DocDocumentId document_id = epub_reader_document_id(&app->reader);
+  for (U32 index = 0; index < app->frame.image_count; index += 1)
+  {
+    EpubReaderFrameImage *image = app->frame.images + index;
+    image->status = image->has_resource ?
+      EpubReaderFrameImageStatus_Unavailable :
+      EpubReaderFrameImageStatus_MissingResource;
+    if (!image->has_resource) { continue; }
+
+    Lectern0ImageCacheEntry *entry =
+      lectern0_image_cache_get(&app->image_cache,
+                               engine,
+                               document_id,
+                               image->resource_index,
+                               image->media_type);
+    if (!entry)
+    {
+      image->status = app->image_cache.entry_count >= Lectern0ImageCacheCap ?
+        EpubReaderFrameImageStatus_CacheFull :
+        EpubReaderFrameImageStatus_Unavailable;
+      continue;
+    }
+    image->status = entry->status;
+    if (entry->status == EpubReaderFrameImageStatus_Loaded && entry->pixels)
+    {
+      image->pixels = entry->pixels;
+      image->src_w = entry->width;
+      image->src_h = entry->height;
+      image->src_stride_pixels = entry->stride_pixels;
+    }
+  }
+}
+
+FUNCTION B32
 lectern0_update_layout_inputs(Lectern0App *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) { return 0; }
@@ -269,9 +492,14 @@ lectern0_update_layout_inputs(Lectern0App *app)
 FUNCTION B32
 lectern0_capture_frame(Lectern0App *app)
 {
-  return app && epub_reader_build_frame(&app->reader,
-                                        &app->frame_storage,
-                                        &app->frame);
+  if (!app || !epub_reader_build_frame(&app->reader,
+                                       &app->frame_storage,
+                                       &app->frame))
+  {
+    return 0;
+  }
+  lectern0_attach_frame_images(app);
+  return 1;
 }
 
 FUNCTION B32
@@ -384,6 +612,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
       return 0;
     }
   }
+  lectern0_image_cache_reset(&app->image_cache);
   if (!lectern0_capture_frame(app))
   {
     lectern0_set_statusf(app, "Open failed: frame");
@@ -563,6 +792,13 @@ lectern0_app_init(Lectern0App *app,
     app->arena = 0;
     return 0;
   }
+  if (!lectern0_image_cache_init(&app->image_cache))
+  {
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
 
   if (graphical)
   {
@@ -588,6 +824,7 @@ lectern0_app_release(Lectern0App *app)
   (void)lectern0_save_state(app);
   if (app->gfx_ready) { os_gfx_release(&app->gfx); }
   if (app->render_ready) { render_state_release(&app->render_state); }
+  lectern0_image_cache_release(&app->image_cache);
   epub_reader_release(&app->reader);
   if (app->arena) { arena_release(app->arena); }
   MemoryZeroStruct(app);
@@ -935,6 +1172,38 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
   return 1;
 }
 
+FUNCTION B32
+lectern0_fit_image_rect(S32 src_w,
+                        S32 src_h,
+                        S32 rect_x,
+                        S32 rect_y,
+                        S32 rect_w,
+                        S32 rect_h,
+                        S32 *out_x,
+                        S32 *out_y,
+                        S32 *out_w,
+                        S32 *out_h)
+{
+  if (src_w <= 0 || src_h <= 0 || rect_w <= 0 || rect_h <= 0 ||
+      !out_x || !out_y || !out_w || !out_h)
+  {
+    return 0;
+  }
+  S64 fit_w = rect_w;
+  S64 fit_h = ((S64)src_h * fit_w) / src_w;
+  if (fit_h > rect_h)
+  {
+    fit_h = rect_h;
+    fit_w = ((S64)src_w * fit_h) / src_h;
+  }
+  if (fit_w <= 0 || fit_h <= 0) { return 0; }
+  *out_w = (S32)fit_w;
+  *out_h = (S32)fit_h;
+  *out_x = rect_x + MAX((rect_w - *out_w) / 2, 0);
+  *out_y = rect_y + MAX((rect_h - *out_h) / 2, 0);
+  return 1;
+}
+
 FUNCTION void
 lectern0_draw_reader_page(Lectern0App *app)
 {
@@ -1002,41 +1271,96 @@ lectern0_draw_reader_page(Lectern0App *app)
     EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row.row);
     if (image)
     {
-      char placeholder[224] = {0};
-      if (image->alt_text_size > 0)
+      S32 image_w = MAX(body_w - (x - body_x), 80);
+      if (image->display_w_px > 0) { image_w = MIN(image_w, image->display_w_px); }
+      S32 desired_h = image->display_h_px;
+      if (desired_h <= 0 && image->src_w > 0 && image->src_h > 0)
       {
-        (void)cstr_format(placeholder,
-                          ARRAY_COUNT(placeholder),
-                          "Image: %s",
-                          image->alt_text);
+        desired_h = (S32)(((S64)image->src_h * image_w) / image->src_w);
       }
-      else
+      S32 available_h = MAX(body_y + body_h - y, 0);
+      S32 image_h = MIN(MAX(desired_h, 72), MIN(available_h, 320));
+      if (image_h <= 0)
       {
-        lectern0_copy_cstr(placeholder, ARRAY_COUNT(placeholder), "Image placeholder");
+        app->presentation_complete = 0;
+        break;
       }
-      S32 image_h = MIN(MAX(image->display_h_px, 72), 160);
+      S32 image_x = x;
+      if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
+      {
+        image_x = body_x + MAX((body_w - image_w) / 2, 0);
+      }
       (void)draw_push_rounded_rect(&app->draw_commands,
                                    DrawLayer_World,
-                                   x,
+                                   image_x,
                                    y,
-                                   MAX(body_w - (x - body_x), 80),
+                                   image_w,
                                    image_h,
                                    6,
                                    0x00F1EEE8U,
                                    0x00B8B1A6U);
-      (void)draw_push_text_in_rect(&app->draw_commands,
-                                   DrawLayer_World,
-                                   app->render_state.text_provider,
-                                   placeholder,
-                                   x,
-                                   y,
-                                   MAX(body_w - (x - body_x), 80),
-                                   image_h,
-                                   12,
-                                   16,
-                                   DrawTextHAlign_Center,
-                                   DrawTextVAlign_Center,
-                                   0x00666058U);
+      if (image->status == EpubReaderFrameImageStatus_Loaded && image->pixels)
+      {
+        S32 fit_x = 0;
+        S32 fit_y = 0;
+        S32 fit_w = 0;
+        S32 fit_h = 0;
+        if (!lectern0_fit_image_rect(image->src_w,
+                                     image->src_h,
+                                     image_x,
+                                     y,
+                                     image_w,
+                                     image_h,
+                                     &fit_x,
+                                     &fit_y,
+                                     &fit_w,
+                                     &fit_h) ||
+            !draw_push_sprite_clipped(&app->draw_commands,
+                                      DrawLayer_World,
+                                      image->pixels,
+                                      image->src_w,
+                                      image->src_h,
+                                      image->src_stride_pixels,
+                                      fit_x,
+                                      fit_y,
+                                      fit_w,
+                                      fit_h,
+                                      body_x,
+                                      body_y,
+                                      body_w,
+                                      body_h))
+        {
+          app->presentation_complete = 0;
+        }
+      }
+      else
+      {
+        char placeholder[224] = {0};
+        if (image->alt_text_size > 0)
+        {
+          (void)cstr_format(placeholder,
+                            ARRAY_COUNT(placeholder),
+                            "Image: %s",
+                            image->alt_text);
+        }
+        else
+        {
+          lectern0_copy_cstr(placeholder, ARRAY_COUNT(placeholder), "Image unavailable");
+        }
+        (void)draw_push_text_in_rect(&app->draw_commands,
+                                     DrawLayer_World,
+                                     app->render_state.text_provider,
+                                     placeholder,
+                                     image_x,
+                                     y,
+                                     image_w,
+                                     image_h,
+                                     12,
+                                     16,
+                                     DrawTextHAlign_Center,
+                                     DrawTextVAlign_Center,
+                                     0x00666058U);
+      }
       y += image_h + 8;
       continue;
     }
@@ -1505,6 +1829,118 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
   return 0;
 }
 
+FUNCTION U32
+lectern0_loaded_image_count(const EpubReaderFrame *frame)
+{
+  if (!frame) { return 0; }
+  U32 result = 0;
+  for (U32 index = 0; index < frame->image_count; index += 1)
+  {
+    const EpubReaderFrameImage *image = frame->images + index;
+    if (image->status == EpubReaderFrameImageStatus_Loaded &&
+        image->pixels && image->src_w > 0 && image->src_h > 0)
+    {
+      result += 1;
+    }
+  }
+  return result;
+}
+
+FUNCTION B32
+lectern0_write_frame_evidence(Lectern0App *app,
+                              const char *bmp_path,
+                              U64 *out_hash)
+{
+  enum { RenderWidth = 1100, RenderHeight = 760 };
+  if (out_hash) { *out_hash = 0; }
+  if (!app || !bmp_path) { return 0; }
+  U64 pixel_count = (U64)RenderWidth * (U64)RenderHeight;
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  if (!pixels) { return 0; }
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, RenderWidth, RenderHeight, RenderWidth);
+  lectern0_render_to_buffer(app, &buffer);
+  B32 result = app->presentation_complete &&
+    lectern0_write_bmp(bmp_path, pixels, RenderWidth, RenderHeight);
+  if (result && out_hash)
+  {
+    *out_hash = u64_hash_bytes(pixels, pixel_count * sizeof(U32));
+  }
+  free(pixels);
+  return result;
+}
+
+FUNCTION int
+lectern0_run_image_smoke(const char *path,
+                         const char *cover_bmp_path,
+                         const char *inline_bmp_path)
+{
+  enum { RenderWidth = 1100, RenderHeight = 760 };
+  Lectern0App app = {0};
+  if (!lectern0_app_init(&app, RenderWidth, RenderHeight, 1, 0) ||
+      !lectern0_open_path(&app, path))
+  {
+    fprintf(stderr, "lectern0_image_smoke result=fail reason=open\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  U32 cover_loaded = lectern0_loaded_image_count(&app.frame);
+  U64 cover_hash = 0;
+  if (app.frame.image_count == 0 || cover_loaded == 0 ||
+      !lectern0_capture_frame(&app) ||
+      lectern0_loaded_image_count(&app.frame) == 0 ||
+      !lectern0_write_frame_evidence(&app, cover_bmp_path, &cover_hash))
+  {
+    fprintf(stderr,
+            "lectern0_image_smoke result=fail reason=cover images=%u loaded=%u\n",
+            app.frame.image_count,
+            cover_loaded);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  U32 cover_spine = app.reader.active_spine_index;
+  B32 crossed = 0;
+  for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
+  {
+    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+    {
+      break;
+    }
+    crossed = app.reader.active_spine_index != cover_spine;
+  }
+
+  U32 inline_loaded = lectern0_loaded_image_count(&app.frame);
+  U64 inline_hash = 0;
+  if (!crossed || app.frame.image_count == 0 || inline_loaded == 0 ||
+      !lectern0_capture_frame(&app) ||
+      lectern0_loaded_image_count(&app.frame) == 0 ||
+      !lectern0_write_frame_evidence(&app, inline_bmp_path, &inline_hash))
+  {
+    fprintf(stderr,
+            "lectern0_image_smoke result=fail reason=inline crossed=%d images=%u loaded=%u\n",
+            crossed,
+            app.frame.image_count,
+            inline_loaded);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  fprintf(stdout,
+          "lectern0_image_smoke result=pass cover_loaded=%u inline_loaded=%u entries=%u lookups=%llu hits=%llu misses=%llu cover_hash=%016llx inline_hash=%016llx\n",
+          cover_loaded,
+          inline_loaded,
+          app.image_cache.entry_count,
+          (unsigned long long)app.image_cache.lookup_count,
+          (unsigned long long)app.image_cache.hit_count,
+          (unsigned long long)app.image_cache.miss_count,
+          (unsigned long long)cover_hash,
+          (unsigned long long)inline_hash);
+  lectern0_app_release(&app);
+  return 0;
+}
+
 FUNCTION int
 lectern0_run_window(const char *initial_path)
 {
@@ -1589,6 +2025,10 @@ main(int argc, char **argv)
   {
     result = lectern0_run_render_smoke(argv[2], argv[3]);
   }
+  else if (argc == 5 && strcmp(argv[1], "--image-smoke") == 0)
+  {
+    result = lectern0_run_image_smoke(argv[2], argv[3], argv[4]);
+  }
   else if (argc == 2 && strcmp(argv[1], "--version") == 0)
   {
     fprintf(stdout,
@@ -1604,7 +2044,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --version]\n");
     result = 2;
   }
 

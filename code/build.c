@@ -14,6 +14,7 @@
 #include "base/base_thread_context.c"
 #include "os/os_time.c"
 #include "os/os_gfx.c"
+#include "os/os_image.c"
 #include "font_provider/font_provider.c"
 #include "font_cache/font_cache.c"
 #include "draw/draw.c"
@@ -28,6 +29,7 @@
 #  include "platform/win32/os_file_win32.c"
 #  include "platform/win32/os_time_win32.c"
 #  include "platform/win32/os_gfx_win32.c"
+#  include "platform/win32/os_image_win32.c"
 #else
 #  error "lectern0 Slice 1 currently supports Win32 only"
 #endif
