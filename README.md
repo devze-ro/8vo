@@ -23,6 +23,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
 cmd /c build\win32_build.bat no_run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_host_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_visual_smoke.ps1
 ```
 
 No remote is configured for this repository.

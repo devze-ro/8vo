@@ -28,6 +28,15 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('epub_reader_move_page') -lt 0) {
     $failures.Add("lectern0 must consume the concrete reader0 API 2 page move")
   }
+  if ($app.IndexOf('font_cache_tag_from_provider') -lt 0 -or
+      $app.IndexOf('lectern0_push_reader_text_chunks') -lt 0 -or
+      $app.IndexOf('DrawTextFlag_Shaped') -lt 0) {
+    $failures.Add("lectern0 must chunk text through the reader-resolved provider and shaped text mode")
+  }
+  if ($app.IndexOf('lectern0_frame_text_rows_are_complete') -lt 0 -or
+      $app.IndexOf('--render-smoke') -lt 0) {
+    $failures.Add("lectern0 must retain deterministic canonical-frame visual evidence")
+  }
   if ($build -match '(?i)re10' -or $app -match '(?i)re10') {
     $failures.Add("lectern0 source closure must not depend on re10")
   }

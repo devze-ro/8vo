@@ -42,9 +42,23 @@ redesign, and optional reader extraction work.
 - native MSVC C11 `/W4 /WX` build: pass;
 - cross-spine forward/back/forward and resize-repagination host smoke: pass;
 - missing-EPUB visible failure path: pass; and
-- canonical-frame text evidence: `d7f4448c51b3fbd1`.
+- canonical-frame text evidence: `d7f4448c51b3fbd1`;
+- repeatable generated-fixture visual evidence: `df9d9534bb1c2f06`;
+  and
+- repeatable real 77-section EPUB visual evidence: `279fa27e7878d091`.
 
-A native-window visual capture is not claimed in this slice because the Windows
-control helper's local-application approval expired before launch. The native
-window path is compiled, while automated acceptance remains the headless host
-proof above.
+The native interaction pass verified the blank state, EPUB picker, real-book
+open, keyboard cross-spine navigation, mouse Next action, maximize
+repagination, and restart/location restoration. It exposed three host defects:
+an empty title caused by a non-ASCII source literal, stale resize status, and a
+render-cache fallback font whose metrics differed from reader0 measurement.
+The title is now ASCII, repagination refreshes status from the rebuilt frame,
+and the host registers reader-resolved providers and shaped commands in its
+render cache. Rows longer than the bounded draw-command text capacity are
+submitted as measured grapheme-safe chunks. Two-process, byte-identical
+post-fix bitmaps show complete book-serif rows and matching toolbar/footer
+location.
+
+A post-fix foreground title-bar capture is not claimed because the Windows
+control helper twice returned the fresh lectern0 window but failed to activate
+it. No alternative foreground automation mechanism was used.

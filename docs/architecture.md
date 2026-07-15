@@ -19,6 +19,23 @@ commands. UI0 does not render EPUB content and is not a reader0 dependency.
 Zero_foundation owns arenas, file/atomic-write facilities, font providers,
 draw commands, software rendering, and the Win32 DIB graphics seam. Lectern0
 owns HWND/WndProc, DPI/input mapping, the native EPUB picker, and presentation.
+The presentation adapter registers each reader-resolved font provider with the
+host render cache, splits canonical rows at grapheme/word boundaries to respect
+the bounded draw-command text capacity, advances chunks with reader0's exact
+measurement path, and marks shaped text commands explicitly. This keeps
+pagination measurement and rasterization on the same provider without moving a
+renderer or font cache into reader0.
+
+Vertical placement follows the canonical row metadata: block top margins apply
+only to `line_row == 0`, while line height and bottom margins advance each row.
+The evidence path fails if every canonical row cannot be submitted inside the
+reader body.
+
+The `--render-smoke` path drives that same UI0/draw/render composition into a
+caller-owned offscreen buffer, verifies complete canonical style-row coverage,
+and writes BMP evidence. The wrapper repeats the render in a fresh process and
+requires equal pixel and file hashes. It does not introduce a second layout or
+presentation implementation.
 
 ## Slice 1 exclusions
 
