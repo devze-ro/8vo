@@ -101,6 +101,8 @@ function Add-ZipTextEntry {
     [System.IO.Compression.CompressionLevel]$Compression = [System.IO.Compression.CompressionLevel]::Optimal
   )
   $entry = $Zip.CreateEntry($Path, $Compression)
+  $entry.LastWriteTime = [DateTimeOffset]::new(
+    2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
   $stream = $entry.Open()
   try {
     $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Text)

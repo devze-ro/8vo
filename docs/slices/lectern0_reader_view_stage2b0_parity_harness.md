@@ -31,9 +31,10 @@ failure, or capture failure does.
 ## Initial baseline evidence
 
 The six-case matrix passed twice per host with synthetic fixture SHA-256
-`6B9883F16DFF55256803CAD3ABAB8726A49B9B74B0F459DB4251E346631D0527`.
+`F7D9F95A174E0CA776E2BA808A6798D2DAF8B178CFF5D77270D225EC5DDA14D8`.
 Every re10 evidence file/crop and every lectern0 evidence file/crop repeated
-bit-for-bit within its host.
+bit-for-bit within its host. Fixed ZIP entry timestamps also make the EPUB
+itself repeat with that same SHA-256 across complete matrix invocations.
 
 All six cases agree on reader-client bounds, responsive layout mode, toolbar
 density, normalized viewport, empty returned-action hash, and action count.
