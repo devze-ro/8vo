@@ -3527,6 +3527,166 @@ lectern0_write_bmp(const char *path, const U32 *pixels, S32 width, S32 height)
   return result;
 }
 
+FUNCTION B32
+lectern0_write_reader_view_parity(const char *path,
+                                  const Lectern0App *app)
+{
+  ReaderViewDebugSnapshot snapshot = {0};
+  if (!path || !path[0] || !app || !app->reader_view_ready ||
+      !reader_view_debug_snapshot(&app->reader_view_projection,
+                                  &app->reader_view_storage,
+                                  &app->reader_view_frame,
+                                  &snapshot))
+    return 0;
+  FILE *file = fopen(path, "wb");
+  if (!file) return 0;
+  const ReaderViewLayout *layout = &app->reader_view_frame.layout;
+  int wrote = fprintf(
+    file,
+    "schema=reader_view_stage2b0_v1\n"
+    "host=lectern0\n"
+    "bounds=%d,%d\n"
+    "layout_mode=%d\n"
+    "toolbar_density=%d\n"
+    "viewport=%d,%d,%d,%d\n"
+    "projection_hash=%016llx\n"
+    "layout_hash=%016llx\n"
+    "control_hash=%016llx\n"
+    "draw_hash=%016llx\n"
+    "semantic_hash=%016llx\n"
+    "action_hash=%016llx\n"
+    "control_count=%d\n"
+    "draw_count=%d\n"
+    "semantic_count=%d\n"
+    "action_count=%d\n",
+    layout->bounds.w, layout->bounds.h,
+    (int)layout->mode,
+    (int)layout->toolbar_density,
+    layout->viewport_rect.x - layout->bounds.x,
+    layout->viewport_rect.y - layout->bounds.y,
+    layout->viewport_rect.w,
+    layout->viewport_rect.h,
+    (unsigned long long)snapshot.projection_hash,
+    (unsigned long long)snapshot.layout_hash,
+    (unsigned long long)snapshot.control_hash,
+    (unsigned long long)snapshot.draw_hash,
+    (unsigned long long)snapshot.semantic_hash,
+    (unsigned long long)snapshot.action_hash,
+    snapshot.control_record_count,
+    snapshot.draw_command_count,
+    snapshot.semantic_node_count,
+    snapshot.action_count);
+  B32 result = wrote > 0 && fclose(file) == 0;
+  return result;
+}
+
+FUNCTION B32
+lectern0_configure_reader_view_parity(Lectern0App *app,
+                                      const char *theme,
+                                      const char *left,
+                                      const char *right,
+                                      const char *popup,
+                                      const char *query)
+{
+  if (!app || !theme || !left || !right || !popup || !query) return 0;
+  if (strcmp(theme, "light") == 0) app->theme = Lectern0Theme_Light;
+  else if (strcmp(theme, "dark") == 0) app->theme = Lectern0Theme_Dark;
+  else return 0;
+
+  if (strcmp(left, "none") == 0)
+    app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  else if (strcmp(left, "contents") == 0)
+    app->reader_view_state.left_panel = ReaderViewLeftPanel_Contents;
+  else if (strcmp(left, "find") == 0)
+    app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
+  else return 0;
+
+  app->reader_view_state.right_panel_open = 0;
+  if (strcmp(right, "open") == 0)
+    app->reader_view_state.right_panel_open = 1;
+  else if (strcmp(right, "bookmark") == 0)
+  {
+    if (!lectern0_toggle_current_bookmark(app)) return 0;
+    app->reader_view_state.right_panel_open = 1;
+  }
+  else if (strcmp(right, "closed") != 0) return 0;
+
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  if (strcmp(popup, "font") == 0)
+  {
+    app->reader_view_state.popup = ReaderViewPopup_SettingMenu;
+    app->reader_view_state.active_setting_kind = ReaderViewSetting_FontFamily;
+  }
+  else if (strcmp(popup, "none") != 0) return 0;
+
+  if (strcmp(query, "-") != 0)
+  {
+    size_t query_size = strlen(query);
+    if (query_size >= READER_VIEW_FIND_QUERY_CAP) return 0;
+    MemoryCopy(app->reader_view_state.find_query, query, (U64)query_size);
+    app->reader_view_state.find_query[query_size] = 0;
+    app->reader_view_state.find_query_length = (UI0S32)query_size;
+    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+      .kind = ReaderViewAction_FindChanged,
+      .text = {(char *)query, (UI0S32)query_size},
+    });
+  }
+  return 1;
+}
+
+FUNCTION int
+lectern0_run_reader_view_parity_capture(const char *epub_path,
+                                        const char *width_text,
+                                        const char *height_text,
+                                        const char *theme,
+                                        const char *left,
+                                        const char *right,
+                                        const char *popup,
+                                        const char *query,
+                                        const char *evidence_path,
+                                        const char *bmp_path)
+{
+  S32 width = (S32)atoi(width_text);
+  S32 height = (S32)atoi(height_text);
+  U64 pixel_count = (U64)(U32)width * (U64)(U32)height;
+  if (width < 320 || height < 240 || width > 4096 || height > 4096 ||
+      pixel_count > (U64)4096 * 4096)
+    return 2;
+  Lectern0App app = {0};
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  if (!pixels || !lectern0_app_init(&app, width, height, 1, 0) ||
+      !lectern0_open_path(&app, epub_path) ||
+      !lectern0_configure_reader_view_parity(&app, theme, left, right,
+                                             popup, query))
+  {
+    fprintf(stderr, "lectern0_reader_view_parity result=fail reason=setup\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, width, height, width);
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_render_to_buffer(&app, &buffer);
+  B32 wrote_evidence = lectern0_write_reader_view_parity(evidence_path, &app);
+  B32 wrote_bmp = lectern0_write_bmp(bmp_path, pixels, width, height);
+  if (!wrote_evidence || !wrote_bmp)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_parity result=fail reason=write evidence=%d bmp=%d\n",
+            wrote_evidence, wrote_bmp);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  fprintf(stdout,
+          "lectern0_reader_view_parity result=pass size=%dx%d theme=%s left=%s right=%s popup=%s query=%s\n",
+          width, height, theme, left, right, popup, query);
+  free(pixels);
+  lectern0_app_release(&app);
+  return 0;
+}
+
 FUNCTION LRESULT CALLBACK
 lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 {
@@ -4768,6 +4928,13 @@ main(int argc, char **argv)
   {
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
   }
+  else if (argc == 12 &&
+           strcmp(argv[1], "--reader-view-parity-capture") == 0)
+  {
+    result = lectern0_run_reader_view_parity_capture(
+      argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8],
+      argv[9], argv[10], argv[11]);
+  }
   else if (argc == 3 && strcmp(argv[1], "--accessibility-smoke") == 0)
   {
     result = lectern0_run_accessibility_smoke(argv[2]);
@@ -4788,7 +4955,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-parity-capture epub width height theme left right popup query evidence bmp | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 
