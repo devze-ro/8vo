@@ -2,8 +2,10 @@ param(
   [Parameter(Mandatory = $true)][string]$Re10Root,
   [Parameter(Mandatory = $true)][string]$Reader0Root,
   [Parameter(Mandatory = $true)][string]$UI0Root,
+  [string]$LecternUI0Root = "",
   [Parameter(Mandatory = $true)][string]$ZeroFoundationRoot,
   [Parameter(Mandatory = $true)][string]$Readerview0Root,
+  [string]$LecternReaderview0Root = "",
   [string]$Re10VcpkgRoot = "",
   [string]$OutDir = "local\stage2b0_reader_view_parity",
   [int]$AutoExitMs = 24000,
@@ -14,9 +16,19 @@ $ErrorActionPreference = "Stop"
 $LecternRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $Re10Root = (Resolve-Path -LiteralPath $Re10Root).Path
 $Reader0Root = (Resolve-Path -LiteralPath $Reader0Root).Path
-$UI0Root = (Resolve-Path -LiteralPath $UI0Root).Path
+$Re10UI0Root = (Resolve-Path -LiteralPath $UI0Root).Path
+$LecternUI0Root = if ([string]::IsNullOrWhiteSpace($LecternUI0Root)) {
+  $Re10UI0Root
+} else {
+  (Resolve-Path -LiteralPath $LecternUI0Root).Path
+}
 $ZeroFoundationRoot = (Resolve-Path -LiteralPath $ZeroFoundationRoot).Path
-$Readerview0Root = (Resolve-Path -LiteralPath $Readerview0Root).Path
+$Re10Readerview0Root = (Resolve-Path -LiteralPath $Readerview0Root).Path
+$LecternReaderview0Root = if ([string]::IsNullOrWhiteSpace($LecternReaderview0Root)) {
+  $Re10Readerview0Root
+} else {
+  (Resolve-Path -LiteralPath $LecternReaderview0Root).Path
+}
 $OutputRoot = if ([System.IO.Path]::IsPathRooted($OutDir)) {
   [System.IO.Path]::GetFullPath($OutDir)
 } else {
@@ -39,23 +51,27 @@ function Require-ExactCommit([string]$Name, [string]$Root, [string]$Expected) {
   }
 }
 
-$ReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\readerview0_dependency\COMMIT")
+$LecternReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\readerview0_dependency\COMMIT")
 $ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\zero_foundation_dependency\COMMIT")
 $Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\reader0_dependency\COMMIT")
-$UI0Commit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\ui0_dependency\COMMIT")
-Require-ExactCommit "readerview0" $Readerview0Root $ReaderviewCommit
+$LecternUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\ui0_dependency\COMMIT")
+$Re10ReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\readerview0_dependency\COMMIT")
+$Re10UI0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\ui0_dependency\COMMIT")
+$CrossRevisionConformance =
+  $Re10ReaderviewCommit.Trim() -ne $LecternReaderviewCommit.Trim() -or
+  $Re10UI0Commit.Trim() -ne $LecternUI0Commit.Trim()
+$StageLabel = if ($CrossRevisionConformance) { "Stage 2B-2" } else { "Stage 2B-0" }
+Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
+Require-ExactCommit "lectern0 readerview0" $LecternReaderview0Root $LecternReaderviewCommit
 Require-ExactCommit "zero_foundation" $ZeroFoundationRoot $ZeroCommit
 Require-ExactCommit "reader0" $Reader0Root $Reader0Commit
-Require-ExactCommit "ui0" $UI0Root $UI0Commit
-$Re10ReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\readerview0_dependency\COMMIT")
-if ($Re10ReaderviewCommit.Trim() -ne $ReaderviewCommit.Trim()) {
-  throw "host readerview0 pins differ: re10=$($Re10ReaderviewCommit.Trim()) lectern0=$($ReaderviewCommit.Trim())"
-}
+Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
+Require-ExactCommit "lectern0 ui0" $LecternUI0Root $LecternUI0Commit
 
 if (!$SkipBuild) {
   $env:RE10_READER0_DIR = $Reader0Root
-  $env:RE10_UI0_DIR = $UI0Root
-  $env:RE10_READERVIEW0_DIR = $Readerview0Root
+  $env:RE10_UI0_DIR = $Re10UI0Root
+  $env:RE10_READERVIEW0_DIR = $Re10Readerview0Root
   $env:ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
   if (![string]::IsNullOrWhiteSpace($Re10VcpkgRoot)) {
     $Re10VcpkgRoot = (Resolve-Path -LiteralPath $Re10VcpkgRoot).Path
@@ -74,8 +90,8 @@ if (!$SkipBuild) {
   }
 
   $env:LECTERN0_READER0_DIR = $Reader0Root
-  $env:LECTERN0_UI0_DIR = $UI0Root
-  $env:LECTERN0_READERVIEW0_DIR = $Readerview0Root
+  $env:LECTERN0_UI0_DIR = $LecternUI0Root
+  $env:LECTERN0_READERVIEW0_DIR = $LecternReaderview0Root
   $env:LECTERN0_ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
   Push-Location $LecternRoot
   try {
@@ -92,6 +108,13 @@ $LecternExe = (Resolve-Path -LiteralPath (Join-Path $LecternRoot "build\win32\le
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System.Runtime.InteropServices;
+public static class ReaderViewParityCursor {
+  [DllImport("user32.dll")]
+  public static extern bool SetCursorPos(int x, int y);
+}
+'@
 
 function Add-ZipTextEntry {
   param(
@@ -105,7 +128,9 @@ function Add-ZipTextEntry {
     2000, 1, 1, 0, 0, 0, [TimeSpan]::Zero)
   $stream = $entry.Open()
   try {
-    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($Text)
+    # Keep fixture bytes independent of the script checkout's line endings.
+    $stableText = $Text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($stableText)
     $stream.Write($bytes, 0, $bytes.Length)
   } finally {
     $stream.Dispose()
@@ -236,6 +261,7 @@ function Invoke-Re10Capture([object]$Case, [int]$Run) {
     "exit"
   )
   Set-Content -LiteralPath $scriptPath -Encoding ASCII -Value $lines
+  [void][ReaderViewParityCursor]::SetCursorPos(0, 0)
   & $Re10Exe --window "--auto_exit_ms=$AutoExitMs" "--window_client_w=$outerWidth" "--window_client_h=$outerHeight" --reader_db=:memory: "--vault=$vault" "--debug_automation=$scriptPath" *> $log
   if ($LASTEXITCODE -ne 0 -or !(Test-Path $evidence) -or !(Test-Path $fullBmp)) {
     throw "re10 capture failed: case=$($Case.name) run=$Run exit=$LASTEXITCODE log=$log"
@@ -256,6 +282,7 @@ function Invoke-LecternCapture([object]$Case, [int]$Run) {
   $evidence = Join-Path $caseDir "lectern0.$Run.evidence.txt"
   $bmp = Join-Path $caseDir "lectern0.$Run.reader.bmp"
   $log = Join-Path $Logs "$($Case.name).lectern0.$Run.log"
+  [void][ReaderViewParityCursor]::SetCursorPos(0, 0)
   & $LecternExe --reader-view-parity-capture $Fixture ([string]$Case.width) ([string]$Case.height) $Case.theme $Case.left $Case.right $Case.popup $Case.query $evidence $bmp *> $log
   if ($LASTEXITCODE -ne 0 -or !(Test-Path $evidence) -or !(Test-Path $bmp)) {
     throw "lectern0 capture failed: case=$($Case.name) run=$Run exit=$LASTEXITCODE log=$log"
@@ -316,8 +343,10 @@ foreach ($case in $Cases) {
 }
 
 $Manifest = [pscustomobject]@{
-  schema = "reader_view_stage2b0_v1"
-  status = if ($Deterministic) { "baseline_recorded" } else { "failed_nondeterministic" }
+  schema = if ($CrossRevisionConformance) { "reader_view_stage2b2_v1" } else { "reader_view_stage2b0_v1" }
+  status = if ($Deterministic) {
+    if ($CrossRevisionConformance) { "conformance_recorded" } else { "baseline_recorded" }
+  } else { "failed_nondeterministic" }
   exact_parity = $AllExact
   deterministic = $Deterministic
   fixture = $Fixture
@@ -326,17 +355,28 @@ $Manifest = [pscustomobject]@{
   re10_outer_shell_inset = 10
   re10_head = Get-Head $Re10Root
   lectern0_head = Get-Head $LecternRoot
-  readerview0_head = Get-Head $Readerview0Root
+  re10_readerview0_head = Get-Head $Re10Readerview0Root
+  lectern0_readerview0_head = Get-Head $LecternReaderview0Root
   reader0_head = Get-Head $Reader0Root
-  ui0_head = Get-Head $UI0Root
+  re10_ui0_head = Get-Head $Re10UI0Root
+  lectern0_ui0_head = Get-Head $LecternUI0Root
   zero_foundation_head = Get-Head $ZeroFoundationRoot
   results = $Results
 }
 $ManifestPath = Join-Path $OutputRoot "manifest.json"
 $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ManifestPath -Encoding ASCII
+$DifferenceSummary = if ($CrossRevisionConformance) {
+  "Remaining cross-host differences are recorded inputs to the Stage 2B-3 pixel-closure gate. Stage 2B-2 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
+} else {
+  "Cross-host differences are expected at this baseline and are inputs to Stage 2B-1/2B-2. Stage 2B-0 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
+}
 
 $Report = @(
-  "# Reader View Stage 2B-0 deterministic parity baseline",
+  if ($CrossRevisionConformance) {
+    "# Reader View Stage 2B-2 lectern0 reference conformance"
+  } else {
+    "# Reader View Stage 2B-0 deterministic parity baseline"
+  },
   "",
   "Status: $($Manifest.status)",
   "",
@@ -353,12 +393,12 @@ foreach ($result in $Results) {
 }
 $Report += @(
   "",
-  "Cross-host differences are expected at this baseline and are inputs to Stage 2B-1/2B-2. Stage 2B-0 fails only for capture/build failure, missing evidence, or per-host nondeterminism.",
+  $DifferenceSummary,
   "",
   "Machine-readable details: manifest.json"
 )
 $Report | Set-Content -LiteralPath (Join-Path $OutputRoot "report.md") -Encoding ASCII
 
-if (!$Deterministic) { throw "Stage 2B-0 parity capture was not deterministic; see $ManifestPath" }
-Write-Host "Reader View Stage 2B-0 baseline recorded: $ManifestPath"
+if (!$Deterministic) { throw "$StageLabel parity capture was not deterministic; see $ManifestPath" }
+Write-Host "Reader View $StageLabel evidence recorded: $ManifestPath"
 exit 0

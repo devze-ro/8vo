@@ -46,13 +46,35 @@ if ($failures.Count -eq 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
   }
   if ($app.IndexOf('#include "readerview0.h"') -lt 0 -or
-      $app.IndexOf('READERVIEW0_API_VERSION != 1') -lt 0) {
-    $failures.Add("lectern0 must consume Reader View API 1 through its umbrella")
+      $app.IndexOf('READERVIEW0_API_VERSION != 2') -lt 0) {
+    $failures.Add("lectern0 must consume Reader View API 2 through its umbrella")
   }
   if ($app.IndexOf('reader_view_build') -lt 0 -or
       $app.IndexOf('lectern0_prepare_reader_view_projection') -lt 0 -or
       $app.IndexOf('lectern0_apply_reader_view_actions') -lt 0) {
-    $failures.Add("lectern0 must project host data into Reader View API 1 and execute returned actions")
+    $failures.Add("lectern0 must project host data into Reader View API 2 and execute returned actions")
+  }
+  if ($app.IndexOf('reader_view_resolve_content_geometry') -lt 0 -or
+      $app.IndexOf('ReaderViewContentGeometry reader_content_geometry') -lt 0 -or
+      $app.IndexOf('host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth') -lt 0) {
+    $failures.Add("lectern0 must adopt Reader View API 2 content geometry and retain the host toolbar slot")
+  }
+  if ($app.IndexOf('ui0_theme_profile_for_kind') -lt 0 -or
+      $app.IndexOf('Lectern0Theme_Count == 6') -lt 0 -or
+      $app.IndexOf('file.version == 1') -lt 0 -or
+      $app.IndexOf('.version = 2') -lt 0) {
+    $failures.Add("lectern0 must expose all six shared themes with explicit legacy settings migration")
+  }
+  if ($app.IndexOf('lectern0_draw_adapter_covers_all_ops') -lt 0 -or
+      $app.IndexOf('unsupported_count') -lt 0 -or
+      $app.IndexOf('lectern0_draw_ui0_icon') -lt 0 -or
+      $app.IndexOf('lectern0_draw_ui0_text') -lt 0) {
+    $failures.Add("lectern0 must render and test the complete UI0 draw-operation surface")
+  }
+  if ($app -match 'Lectern0Theme_Sepia' -or
+      $app -match 'reader_view_text_is\(text,\s*"Previous page"\)' -or
+      $app -match 'reader_view_text_is\(text,\s*"Next page"\)') {
+    $failures.Add("lectern0 must not retain the old three-theme enum or ASCII reader-control substitutions")
   }
   if ($app.IndexOf('lectern0_save_settings') -lt 0 -or
       $app.IndexOf('lectern0_save_annotations') -lt 0 -or
@@ -60,7 +82,7 @@ if ($failures.Count -eq 0) {
     $failures.Add("lectern0 must retain settings and annotation persistence ownership")
   }
   if ($app.IndexOf('--reader-view-smoke') -lt 0) {
-    $failures.Add("lectern0 must retain deterministic Reader View API 1 action evidence")
+    $failures.Add("lectern0 must retain deterministic Reader View API 2 action evidence")
   }
   if ($app.IndexOf('--accessibility-smoke') -lt 0 -or
       $app.IndexOf('WM_GETOBJECT') -lt 0 -or

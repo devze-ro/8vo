@@ -23,8 +23,8 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "lectern0 requires Presentation Engine API 1"
 #endif
-#if READERVIEW0_API_VERSION != 1
-#  error "lectern0 requires Reader View API 1"
+#if READERVIEW0_API_VERSION != 2
+#  error "lectern0 requires Reader View API 2"
 #endif
 
 #include <commdlg.h>
@@ -58,6 +58,7 @@ enum
   Lectern0UrlCap = 4096,
   Lectern0PresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
   Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
+  Lectern0HostToolbarTrailingWidth = 38,
 };
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
@@ -97,11 +98,47 @@ typedef struct Lectern0SavedState
 
 typedef enum Lectern0Theme
 {
-  Lectern0Theme_Light,
-  Lectern0Theme_Sepia,
   Lectern0Theme_Dark,
+  Lectern0Theme_Light,
+  Lectern0Theme_CoralDark,
+  Lectern0Theme_CoralLight,
+  Lectern0Theme_BlueDark,
+  Lectern0Theme_BlueLight,
   Lectern0Theme_Count,
 } Lectern0Theme;
+
+_Static_assert(Lectern0Theme_Count == 6,
+               "lectern0 theme persistence catalog changed");
+_Static_assert(UI0ThemeProfile_Count == 6,
+               "lectern0 must cover every shared UI0 profile");
+
+typedef struct Lectern0ReaderContentTheme
+{
+  U32 page_background;
+  U32 ink;
+  U32 ink_secondary;
+  U32 ink_muted;
+  U32 link;
+  U32 selection;
+  U32 search_match;
+  U32 user_highlight;
+  U32 note_marker;
+} Lectern0ReaderContentTheme;
+
+typedef struct Lectern0DrawAdapterStats
+{
+  U32 op_count[UI0DrawOp_Count];
+  U32 unsupported_count;
+} Lectern0DrawAdapterStats;
+
+typedef struct Lectern0BookmarkV1
+{
+  U64 id;
+  U32 spine_index;
+  U64 byte_offset;
+  B32 starred;
+  char label[Lectern0RecordLabelCap];
+} Lectern0BookmarkV1;
 
 typedef struct Lectern0Bookmark
 {
@@ -110,6 +147,7 @@ typedef struct Lectern0Bookmark
   U64 byte_offset;
   B32 starred;
   char label[Lectern0RecordLabelCap];
+  char excerpt[Lectern0RecordLabelCap];
 } Lectern0Bookmark;
 
 typedef struct Lectern0Highlight
@@ -148,6 +186,19 @@ typedef struct Lectern0AnnotationFile
   Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
   Lectern0Highlight highlights[Lectern0HighlightCap];
 } Lectern0AnnotationFile;
+
+typedef struct Lectern0AnnotationFileV1
+{
+  U64 magic;
+  U32 version;
+  U32 bookmark_count;
+  U32 highlight_count;
+  U32 reserved;
+  U64 path_hash;
+  U64 next_record_id;
+  Lectern0BookmarkV1 bookmarks[Lectern0BookmarkCap];
+  Lectern0Highlight highlights[Lectern0HighlightCap];
+} Lectern0AnnotationFileV1;
 
 typedef struct Lectern0Fullscreen
 {
@@ -216,6 +267,7 @@ typedef struct Lectern0App
   ReaderViewState reader_view_state;
   ReaderViewFrameStorage reader_view_storage;
   ReaderViewLayout reader_view_layout;
+  ReaderViewContentGeometry reader_content_geometry;
   ReaderViewFrame reader_view_frame;
   ReaderViewProjection reader_view_projection;
   ReaderViewSettingControl reader_view_settings[READER_VIEW_SETTING_CAP];
@@ -232,6 +284,8 @@ typedef struct Lectern0App
   char selected_text[Lectern0SelectionTextCap];
   ReaderViewLoadState document_state;
   UI0ResolvedTheme reader_view_theme;
+  Lectern0ReaderContentTheme reader_content_theme;
+  Lectern0DrawAdapterStats draw_adapter_stats;
   U64 reader_view_frame_index;
   B32 reader_view_ready;
   S32 pagination_viewport_width;
@@ -368,7 +422,7 @@ lectern0_load_settings(Lectern0App *app)
   U64 size = 0;
   if (!os_read_entire_file(app->settings_path, &file, sizeof(file), &size) ||
       size != sizeof(file) || file.magic != LECTERN0_SETTINGS_MAGIC ||
-      file.version != 1)
+      (file.version != 1 && file.version != 2))
   {
     return;
   }
@@ -376,7 +430,21 @@ lectern0_load_settings(Lectern0App *app)
     app->font_family = file.font_family;
   if (file.text_size_index < 4) app->text_size_index = file.text_size_index;
   if (file.line_spacing_index < 3) app->line_spacing_index = file.line_spacing_index;
-  if (file.theme < Lectern0Theme_Count) app->theme = (Lectern0Theme)file.theme;
+  if (file.version == 1)
+  {
+    /* Version 1 persisted Light, Sepia, Dark as 0, 1, 2. */
+    static const Lectern0Theme legacy_theme_map[] = {
+      Lectern0Theme_Light,
+      Lectern0Theme_CoralLight,
+      Lectern0Theme_Dark,
+    };
+    if (file.theme < ARRAY_COUNT(legacy_theme_map))
+      app->theme = legacy_theme_map[file.theme];
+  }
+  else if (file.theme < Lectern0Theme_Count)
+  {
+    app->theme = (Lectern0Theme)file.theme;
+  }
 }
 
 FUNCTION B32
@@ -385,7 +453,7 @@ lectern0_save_settings(Lectern0App *app)
   if (!app || !app->persistence_enabled || !app->settings_path[0]) { return 0; }
   Lectern0SettingsFile file = {
     .magic = LECTERN0_SETTINGS_MAGIC,
-    .version = 1,
+    .version = 2,
     .font_family = app->font_family,
     .text_size_index = app->text_size_index,
     .line_spacing_index = app->line_spacing_index,
@@ -430,24 +498,60 @@ lectern0_load_annotations(Lectern0App *app)
   {
     return;
   }
-  Lectern0AnnotationFile file = {0};
+  union
+  {
+    Lectern0AnnotationFile current;
+    Lectern0AnnotationFileV1 legacy;
+  } file = {0};
   U64 size = 0;
   U64 expected_hash = u64_hash_str8(str8_from_cstr(app->current_path));
-  if (!os_read_entire_file(app->annotations_path, &file, sizeof(file), &size) ||
-      size != sizeof(file) || file.magic != LECTERN0_ANNOTATION_MAGIC ||
-      file.version != 1 || file.path_hash != expected_hash ||
-      file.bookmark_count > Lectern0BookmarkCap ||
-      file.highlight_count > Lectern0HighlightCap)
+  if (!os_read_entire_file(app->annotations_path, &file, sizeof(file), &size))
   {
     return;
   }
-  app->bookmark_count = file.bookmark_count;
-  app->highlight_count = file.highlight_count;
-  app->next_record_id = MAX(file.next_record_id, 1ull);
-  MemoryCopy(app->bookmarks, file.bookmarks,
-             sizeof(file.bookmarks[0]) * file.bookmark_count);
-  MemoryCopy(app->highlights, file.highlights,
-             sizeof(file.highlights[0]) * file.highlight_count);
+  if (size == sizeof(file.current) &&
+      file.current.magic == LECTERN0_ANNOTATION_MAGIC &&
+      file.current.version == 2 && file.current.path_hash == expected_hash &&
+      file.current.bookmark_count <= Lectern0BookmarkCap &&
+      file.current.highlight_count <= Lectern0HighlightCap)
+  {
+    app->bookmark_count = file.current.bookmark_count;
+    app->highlight_count = file.current.highlight_count;
+    app->next_record_id = MAX(file.current.next_record_id, 1ull);
+    MemoryCopy(app->bookmarks, file.current.bookmarks,
+               sizeof(file.current.bookmarks[0]) * file.current.bookmark_count);
+    MemoryCopy(app->highlights, file.current.highlights,
+               sizeof(file.current.highlights[0]) * file.current.highlight_count);
+  }
+  else if (size == sizeof(file.legacy) &&
+           file.legacy.magic == LECTERN0_ANNOTATION_MAGIC &&
+           file.legacy.version == 1 && file.legacy.path_hash == expected_hash &&
+           file.legacy.bookmark_count <= Lectern0BookmarkCap &&
+           file.legacy.highlight_count <= Lectern0HighlightCap)
+  {
+    app->bookmark_count = file.legacy.bookmark_count;
+    app->highlight_count = file.legacy.highlight_count;
+    app->next_record_id = MAX(file.legacy.next_record_id, 1ull);
+    for (U32 index = 0; index < app->bookmark_count; index += 1)
+    {
+      const Lectern0BookmarkV1 *source = file.legacy.bookmarks + index;
+      Lectern0Bookmark *target = app->bookmarks + index;
+      target->id = source->id;
+      target->spine_index = source->spine_index;
+      target->byte_offset = source->byte_offset;
+      target->starred = source->starred;
+      lectern0_copy_cstr(target->label, ARRAY_COUNT(target->label),
+                         source->label);
+      lectern0_copy_cstr(target->excerpt, ARRAY_COUNT(target->excerpt),
+                         "Bookmark");
+    }
+    MemoryCopy(app->highlights, file.legacy.highlights,
+               sizeof(file.legacy.highlights[0]) * file.legacy.highlight_count);
+  }
+  else
+  {
+    return;
+  }
   app->annotation_revision += 1;
 }
 
@@ -461,7 +565,7 @@ lectern0_save_annotations(Lectern0App *app)
   }
   Lectern0AnnotationFile file = {0};
   file.magic = LECTERN0_ANNOTATION_MAGIC;
-  file.version = 1;
+  file.version = 2;
   file.bookmark_count = app->bookmark_count;
   file.highlight_count = app->highlight_count;
   file.path_hash = u64_hash_str8(str8_from_cstr(app->current_path));
@@ -705,13 +809,16 @@ lectern0_update_layout_inputs(Lectern0App *app)
   static const S32 char_advances[] = {10, 10, 11, 11};
   static const S32 line_heights[] = {24, 26, 28, 30};
   static const S32 line_spacing_extra[] = {0, 5, 10};
-  UI0Rect viewport = app->reader_view_ready ? app->reader_view_layout.viewport_rect :
-    ui0_rect(0, Lectern0ToolbarHeight, app->width,
-             MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
+  UI0Rect content = app->reader_content_geometry.content_rect.w > 0 &&
+                    app->reader_content_geometry.content_rect.h > 0 ?
+    app->reader_content_geometry.content_rect :
+    ui0_rect(52, Lectern0ToolbarHeight + 68,
+             MAX(app->width - 104, 1),
+             MAX(app->height - Lectern0ToolbarHeight - 136, 1));
   U32 size_index = app->text_size_index % ARRAY_COUNT(text_scales);
   U32 spacing_index = app->line_spacing_index % ARRAY_COUNT(line_spacing_extra);
-  S32 content_width = MAX(viewport.w - 112, 240);
-  S32 content_height = MAX(viewport.h - Lectern0FooterHeight - 20, 120);
+  S32 content_width = MAX(content.w, 80);
+  S32 content_height = MAX(content.h, 48);
   S32 text_scale = text_scales[size_index];
   S32 char_advance = char_advances[size_index];
   S32 line_height = line_heights[size_index] + line_spacing_extra[spacing_index];
@@ -752,8 +859,8 @@ lectern0_update_layout_inputs(Lectern0App *app)
     .measure_text = epub_reader_typography_measure_text,
     .measure_user = &app->reader.typography,
   };
-  app->pagination_viewport_width = viewport.w;
-  app->pagination_viewport_height = viewport.h;
+  app->pagination_viewport_width = content.w;
+  app->pagination_viewport_height = content.h;
   return 1;
 }
 
@@ -1155,6 +1262,49 @@ lectern0_remove_highlight_at(Lectern0App *app, U32 index)
   (void)lectern0_save_annotations(app);
 }
 
+FUNCTION void
+lectern0_prepare_bookmark_excerpt(const Lectern0App *app,
+                                  char *out_excerpt,
+                                  U64 excerpt_cap)
+{
+  if (!out_excerpt || excerpt_cap == 0) return;
+  out_excerpt[0] = 0;
+  if (!app || !app->frame.visible_text.str || app->frame.visible_text.size == 0)
+  {
+    lectern0_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
+    return;
+  }
+  const U8 *text = app->frame.visible_text.str;
+  U64 size = app->frame.visible_text.size;
+  U64 at = 0;
+  const char *section = lectern0_current_section_label(app);
+  U64 section_size = section ? strlen(section) : 0;
+  if (section_size > 0 && size >= section_size &&
+      memcmp(text, section, section_size) == 0)
+  {
+    at = section_size;
+  }
+  while (at < size && text[at] <= ' ') at += 1;
+  U64 out_size = 0;
+  B32 pending_space = 0;
+  for (; at < size && out_size + 1 < excerpt_cap; at += 1)
+  {
+    U8 byte = text[at];
+    if (byte <= ' ')
+    {
+      pending_space = out_size > 0;
+      continue;
+    }
+    if (pending_space && out_size + 1 < excerpt_cap)
+      out_excerpt[out_size++] = ' ';
+    pending_space = 0;
+    out_excerpt[out_size++] = (char)byte;
+  }
+  out_excerpt[out_size] = 0;
+  if (out_size == 0)
+    lectern0_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
+}
+
 FUNCTION B32
 lectern0_toggle_current_bookmark(Lectern0App *app)
 {
@@ -1178,6 +1328,8 @@ lectern0_toggle_current_bookmark(Lectern0App *app)
   else
     (void)cstr_format(bookmark->label, ARRAY_COUNT(bookmark->label),
                       "Page %llu", (unsigned long long)app->frame.page_index);
+  lectern0_prepare_bookmark_excerpt(app, bookmark->excerpt,
+                                    ARRAY_COUNT(bookmark->excerpt));
   app->annotation_revision += 1;
   (void)lectern0_save_annotations(app);
   lectern0_set_statusf(app, "Bookmark added");
@@ -1298,6 +1450,67 @@ lectern0_reader_view_status(ReaderViewLoadState state, const char *message)
   return result;
 }
 
+FUNCTION UI0ThemeProfile
+lectern0_theme_profile(Lectern0Theme theme)
+{
+  if (theme < 0 || theme >= Lectern0Theme_Count)
+    theme = Lectern0Theme_Dark;
+  return ui0_theme_profile_for_kind((UI0ThemeProfileKind)theme);
+}
+
+FUNCTION Lectern0ReaderContentTheme
+lectern0_reader_content_theme(Lectern0Theme theme)
+{
+  Lectern0ReaderContentTheme result = {0};
+  switch (theme)
+  {
+    case Lectern0Theme_Light:
+      result = (Lectern0ReaderContentTheme){
+        0x00FFFDF9U, 0x001B1A18U, 0x0047423BU, 0x007A7368U,
+        0x00D95618U, 0x00FFE7D4U, 0x00FFF0E4U, 0x00FFF2A6U,
+        0x00D95618U,
+      };
+      break;
+    case Lectern0Theme_CoralDark:
+      result = (Lectern0ReaderContentTheme){
+        0x00464644U, 0x00F5EBDDU, 0x00DED4C8U, 0x00C2B6ACU,
+        0x00E85D56U, 0x0063423EU, 0x00534A46U, 0x00524A25U,
+        0x00E85D56U,
+      };
+      break;
+    case Lectern0Theme_CoralLight:
+      result = (Lectern0ReaderContentTheme){
+        0x00F3E8DBU, 0x00333230U, 0x0053514FU, 0x006F6D68U,
+        0x00E85D56U, 0x00F3C2B9U, 0x00F1D5CDU, 0x00F4DFA3U,
+        0x00E85D56U,
+      };
+      break;
+    case Lectern0Theme_BlueDark:
+      result = (Lectern0ReaderContentTheme){
+        0x000D1824U, 0x00EAF0F7U, 0x00B8C7D8U, 0x007E8FA3U,
+        0x007C93FFU, 0x00345F91U, 0x00131F2EU, 0x004D4A16U,
+        0x007C93FFU,
+      };
+      break;
+    case Lectern0Theme_BlueLight:
+      result = (Lectern0ReaderContentTheme){
+        0x00FFFDF9U, 0x00121A22U, 0x00334252U, 0x006E7680U,
+        0x00365CE7U, 0x00E6EEFFU, 0x00EEF4FFU, 0x00FFF2A6U,
+        0x00365CE7U,
+      };
+      break;
+    case Lectern0Theme_Dark:
+    default:
+      result = (Lectern0ReaderContentTheme){
+        0x00181716U, 0x00F2F0EAU, 0x00C9C4BAU, 0x008D877BU,
+        0x00F26A1BU, 0x004D3424U, 0x00271F18U, 0x004D4A16U,
+        0x00F26A1BU,
+      };
+      break;
+  }
+  return result;
+}
+
 FUNCTION void
 lectern0_prepare_selected_text(Lectern0App *app)
 {
@@ -1324,12 +1537,9 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
     FontProviderBookContentFamily_PalatinoLinotype,
     FontProviderBookContentFamily_BookAntiqua,
     FontProviderBookContentFamily_TimesNewRoman,
-    FontProviderBookContentFamily_PublisherSansSerif,
-    FontProviderBookContentFamily_PublisherMonospace,
   };
   static const char *size_labels[] = {"Default", "Large", "Larger", "Largest"};
   static const char *spacing_labels[] = {"Compact", "Comfortable", "Spacious"};
-  static const char *theme_labels[] = {"Light", "Sepia", "Dark"};
   U32 font_count = 0;
   for (U32 index = 0; index < ARRAY_COUNT(families); index += 1)
   {
@@ -1373,11 +1583,13 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
         (index == app->line_spacing_index ? ReaderViewChoice_Selected : 0),
     };
   }
-  for (U32 index = 0; index < ARRAY_COUNT(theme_labels); index += 1)
+  for (U32 index = 0; index < Lectern0Theme_Count; index += 1)
   {
+    UI0ThemeProfile profile =
+      ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
     app->reader_view_theme_choices[index] = (ReaderViewChoice){
       .key = 4000ull + index,
-      .label = lectern0_reader_view_text(theme_labels[index]),
+      .label = lectern0_reader_view_text(profile.label),
       .flags = ReaderViewChoice_Enabled |
         (index == (U32)app->theme ? ReaderViewChoice_Selected : 0),
     };
@@ -1502,11 +1714,11 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
       .key = bookmark->id,
       .kind = ReaderViewRightRow_Bookmark,
       .section = lectern0_reader_view_text(bookmark->label),
-      .primary = lectern0_reader_view_text(bookmark->label),
+      .primary = lectern0_reader_view_text(bookmark->excerpt),
       .flags = ReaderViewRow_Enabled |
-        (bookmark->starred ? ReaderViewRow_Starred : 0),
+        (lectern0_current_bookmark_index(app) == (S32)index ?
+          ReaderViewRow_Current : 0),
       .actions = ReaderViewRightAction_Activate |
-                 ReaderViewRightAction_ToggleStar |
                  ReaderViewRightAction_Delete,
     };
   }
@@ -1540,6 +1752,8 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
     .rows = app->reader_view_right_rows,
     .row_count = (UI0S32)count,
     .total_count = count,
+    .has_more = (UI0U64)app->bookmark_count + (UI0U64)app->highlight_count >
+                (UI0U64)count,
     .available_filters = ReaderViewRightFilterFlag_All |
                          ReaderViewRightFilterFlag_Bookmarks |
                          ReaderViewRightFilterFlag_Highlights |
@@ -1550,7 +1764,7 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
 FUNCTION void
 lectern0_prepare_reader_view_selection(Lectern0App *app)
 {
-  static const char *color_labels[] = {"Yellow", "Green", "Blue", "Pink"};
+  static const char *color_labels[] = {"Yellow", "Pink", "Blue", "Orange"};
   ReaderViewSelectionProjection selection = {
     .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
   };
@@ -1620,18 +1834,17 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
                         ReaderViewFeature_Annotations |
                         ReaderViewFeature_SelectionTools |
                         ReaderViewFeature_Fullscreen |
-                        ReaderViewFeature_DistractionFree |
                         ReaderViewFeature_Lookup |
                         ReaderViewFeature_Export;
   projection.document_flags = ReaderViewDocument_CanOpen |
-                              ReaderViewDocument_CanToggleFullscreen |
-                              ReaderViewDocument_CanToggleDistraction;
+                              ReaderViewDocument_CanToggleFullscreen;
   if (open)
   {
     projection.document_flags |= ReaderViewDocument_Open;
-    if (app->frame.page_index > 1)
+    if (app->reader.active_spine_index > 0 || app->frame.page_index > 1)
       projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
-    if (app->frame.page_count > 0 &&
+    if (app->reader.active_spine_index + 1 < app->layout_key.spine_count ||
+        app->frame.page_count == 0 ||
         app->frame.page_index < app->frame.page_count)
       projection.document_flags |= ReaderViewDocument_CanGoNextPage;
     if (app->frame.history_back_count > 0)
@@ -1647,9 +1860,6 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
   }
   if (app->fullscreen.active)
     projection.document_flags |= ReaderViewDocument_Fullscreen;
-  if (app->distraction_free)
-    projection.document_flags |= ReaderViewDocument_DistractionFree;
-
   if (open)
     projection.content = lectern0_reader_view_status(ReaderViewLoad_Ready, 0);
   else if (app->document_state == ReaderViewLoad_Loading)
@@ -1662,19 +1872,13 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
     projection.content = lectern0_reader_view_status(
       ReaderViewLoad_Empty, "Open an EPUB to begin reading.");
   projection.labels = reader_view_default_english_labels();
-  projection.labels.annotations = lectern0_reader_view_text("Notes");
-  projection.labels.distraction_free = lectern0_reader_view_text("Focus");
-  projection.labels.fullscreen = lectern0_reader_view_text("Full");
-  projection.labels.exit_fullscreen = lectern0_reader_view_text("Window");
+  projection.labels.annotations = lectern0_reader_view_text("Annotations");
   app->document_title[0] = 0;
   if (open)
   {
-    String8 title = {0};
-    if (doc_engine_get_title(epub_reader_engine(&app->reader),
-                             epub_reader_document_id(&app->reader),
-                             &title) == DocError_Ok)
-      lectern0_copy_bytes(app->document_title, ARRAY_COUNT(app->document_title),
-                          title.str, title.size);
+    lectern0_copy_cstr(app->document_title,
+                      ARRAY_COUNT(app->document_title),
+                      lectern0_current_section_label(app));
   }
   projection.document_title = lectern0_reader_view_text(app->document_title);
   app->reader_view_projection = projection;
@@ -1689,10 +1893,15 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
   if (open)
   {
     EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
-    (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
-                      "%llu of %llu",
-                      (unsigned long long)app->frame.page_index,
-                      (unsigned long long)app->frame.page_count);
+    if (app->frame.page_count > 0)
+      (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                        "%llu of %llu",
+                        (unsigned long long)app->frame.page_index,
+                        (unsigned long long)app->frame.page_count);
+    else
+      (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                        "Page %llu",
+                        (unsigned long long)app->frame.page_index);
     app->reader_view_projection.progress = (ReaderViewProgressProjection){
       .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
       .location_index = location.available ? location.location_index :
@@ -1728,9 +1937,9 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
     app->reader_view_projection.selection.status = unavailable;
   }
 
-  UI0TokenSet tokens = ui0_default_tokens(
-    app->theme == Lectern0Theme_Dark ? UI0ThemeKind_Dark : UI0ThemeKind_Light);
-  app->reader_view_theme = ui0_resolve_tokens(&tokens);
+  UI0ThemeProfile profile = lectern0_theme_profile(app->theme);
+  app->reader_view_theme = profile.resolved;
+  app->reader_content_theme = lectern0_reader_content_theme(app->theme);
 }
 
 FUNCTION B32
@@ -1820,6 +2029,7 @@ lectern0_build_reader_view(Lectern0App *app)
     .bounds = ui0_rect(0, 0, app->width, app->height),
     .features = app->reader_view_projection.features,
     .document_flags = app->reader_view_projection.document_flags,
+    .host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth,
   };
   if (!reader_view_resolve_layout(&app->reader_view_state,
                                   &layout_input,
@@ -1828,9 +2038,17 @@ lectern0_build_reader_view(Lectern0App *app)
     app->reader_view_ready = 0;
     return 0;
   }
+  if (!reader_view_resolve_content_geometry(
+        app->reader_view_layout.viewport_rect,
+        0,
+        &app->reader_content_geometry))
+  {
+    app->reader_view_ready = 0;
+    return 0;
+  }
   if (epub_reader_is_open(&app->reader) &&
-      (app->pagination_viewport_width != app->reader_view_layout.viewport_rect.w ||
-       app->pagination_viewport_height != app->reader_view_layout.viewport_rect.h))
+      (app->pagination_viewport_width != app->reader_content_geometry.content_rect.w ||
+       app->pagination_viewport_height != app->reader_content_geometry.content_rect.h))
   {
     if (!lectern0_repaginate(app))
     {
@@ -1964,41 +2182,313 @@ lectern0_draw_color(UI0Color color)
   return color & 0x00FFFFFFU;
 }
 
-FUNCTION DrawTextHAlign
-lectern0_draw_align_x(UI0TextAlignX align)
+FUNCTION B32
+lectern0_ui0_rect_visible(UI0Rect rect, UI0Rect clip)
 {
-  switch (align)
+  return rect.w > 0 && rect.h > 0 && clip.w > 0 && clip.h > 0 &&
+         MAX(rect.x, clip.x) < MIN(rect.x + rect.w, clip.x + clip.w) &&
+         MAX(rect.y, clip.y) < MIN(rect.y + rect.h, clip.y + clip.h);
+}
+
+FUNCTION UI0Rect
+lectern0_ui0_rect_intersect(UI0Rect a, UI0Rect b)
+{
+  UI0Rect result = {0};
+  S32 x0 = MAX(a.x, b.x);
+  S32 y0 = MAX(a.y, b.y);
+  S32 x1 = MIN(a.x + a.w, b.x + b.w);
+  S32 y1 = MIN(a.y + a.h, b.y + b.h);
+  if (a.w > 0 && a.h > 0 && b.w > 0 && b.h > 0 && x0 < x1 && y0 < y1)
+    result = ui0_rect(x0, y0, x1 - x0, y1 - y0);
+  return result;
+}
+
+FUNCTION B32
+lectern0_ui0_border_matches_fill(const UI0DrawCommand *border,
+                                  const UI0DrawCommand *fill)
+{
+  return border && fill && border->op == UI0DrawOp_ControlBorder &&
+         border->source_id == fill->source_id &&
+         border->source_kind == fill->source_kind &&
+         border->source_index == fill->source_index &&
+         border->rect.x == fill->rect.x && border->rect.y == fill->rect.y &&
+         border->rect.w == fill->rect.w && border->rect.h == fill->rect.h;
+}
+
+FUNCTION U32
+lectern0_ui0_border_color_for_fill(const ReaderViewFrame *frame,
+                                   const UI0DrawCommand *fill)
+{
+  if (!frame || !frame->draw_commands || !fill) return 0;
+  if (fill->stroke_color) return lectern0_draw_color(fill->stroke_color);
+  for (UI0S32 index = 0; index < frame->draw_command_count; index += 1)
   {
-    case UI0TextAlignX_Center: return DrawTextHAlign_Center;
-    case UI0TextAlignX_End: return DrawTextHAlign_Right;
-    default: return DrawTextHAlign_Left;
+    const UI0DrawCommand *candidate = frame->draw_commands + index;
+    if (lectern0_ui0_border_matches_fill(candidate, fill))
+      return lectern0_draw_color(candidate->color);
+  }
+  return lectern0_draw_color(fill->color);
+}
+
+FUNCTION void
+lectern0_draw_ui0_control_fill(Lectern0App *app,
+                               const UI0DrawCommand *command)
+{
+  if (!app || !command ||
+      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
+  UI0Rect rect = command->rect;
+  UI0Rect clip = command->clip_rect;
+  S32 radius = MAX(command->corner_radius, 0);
+  if (command->flags & UI0DrawFlag_CornerMask)
+  {
+    clip = lectern0_ui0_rect_intersect(command->rect, command->clip_rect);
+    B32 round_top = (command->flags & UI0DrawFlag_RoundTop) != 0;
+    B32 round_bottom = (command->flags & UI0DrawFlag_RoundBottom) != 0;
+    if (!round_top && !round_bottom)
+    {
+      (void)draw_push_rect_clipped(&app->draw_commands, DrawLayer_UI,
+                                   rect.x, rect.y, rect.w, rect.h,
+                                   lectern0_draw_color(command->color),
+                                   clip.x, clip.y, clip.w, clip.h);
+      U32 border = lectern0_ui0_border_color_for_fill(&app->reader_view_frame,
+                                                       command);
+      if (border && border != lectern0_draw_color(command->color))
+        (void)draw_push_rounded_rect_stroke_clipped(
+          &app->draw_commands, DrawLayer_UI,
+          rect.x, rect.y, rect.w, rect.h, 0, 1, border,
+          clip.x, clip.y, clip.w, clip.h);
+      return;
+    }
+    if (round_top && !round_bottom) rect.h += radius;
+    else if (round_bottom && !round_top)
+    {
+      rect.y -= radius;
+      rect.h += radius;
+    }
+  }
+  U32 fill = lectern0_draw_color(command->color);
+  U32 border = lectern0_ui0_border_color_for_fill(&app->reader_view_frame,
+                                                   command);
+  (void)draw_push_rounded_rect_clipped(&app->draw_commands, DrawLayer_UI,
+                                       rect.x, rect.y, rect.w, rect.h, radius,
+                                       fill, border,
+                                       clip.x, clip.y, clip.w, clip.h);
+}
+
+FUNCTION void
+lectern0_set_last_text_style(DrawCommandBuffer *buffer,
+                             FontFaceStyleFlags style_flags)
+{
+  if (!buffer || buffer->command_count[DrawLayer_UI] == 0) return;
+  U16 index = (U16)(buffer->command_count[DrawLayer_UI] - 1);
+  DrawCommand *command = buffer->commands[DrawLayer_UI] + index;
+  if (command->type == DrawCommandType_Text)
+    command->v.text.font_style_flags = style_flags;
+}
+
+FUNCTION void
+lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
+{
+  if (!app || !command || command->rect.w <= 0 || command->rect.h <= 0 ||
+      command->clip_rect.w <= 0 || command->clip_rect.h <= 0) return;
+  ReaderViewText binding = lectern0_reader_view_binding(app, command->source_id);
+  if (!binding.data || binding.size <= 0) return;
+  char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
+  lectern0_copy_bytes(label, ARRAY_COUNT(label),
+                      (const U8 *)binding.data, (U64)binding.size);
+  String8 text = str8_from_cstr(label);
+  const FontProvider *provider = font_provider_system_ui();
+  S32 scale = MAX(command->typography_line_height, 1);
+  FontTextMetrics metrics = font_metrics_for_size(provider, scale);
+  S32 text_h = MAX(metrics.ascent_px + metrics.descent_px,
+                   MAX(metrics.glyph_height_px, 1));
+  S32 line_h = MIN(text_h, MAX(command->rect.h, 1));
+  S32 line_y = command->rect.y;
+  UI0TextAlignY align_y = command->has_text_alignment ?
+    command->text_align_y : UI0TextAlignY_Center;
+  if (align_y == UI0TextAlignY_Center) line_h = command->rect.h;
+  else if (align_y == UI0TextAlignY_Bottom)
+    line_y += MAX(command->rect.h - line_h, 0);
+  S32 baseline = line_y + MAX((line_h - text_h) / 2, 0) + metrics.ascent_px;
+  if (line_h > 0 && metrics.descent_px > 0)
+    baseline = MIN(baseline, line_y + line_h - metrics.descent_px);
+  S32 x = command->rect.x;
+  UI0TextAlignX align_x = command->has_text_alignment ?
+    command->text_align_x : UI0TextAlignX_Start;
+  if (align_x != UI0TextAlignX_Start)
+  {
+    S32 text_w = font_measure_text_width_s8(provider, text, scale);
+    if (text_w > 0 && text_w < command->rect.w)
+      x = align_x == UI0TextAlignX_End ?
+        command->rect.x + command->rect.w - text_w :
+        command->rect.x + (command->rect.w - text_w) / 2;
+  }
+  UI0Rect horizontal = ui0_rect(command->rect.x, command->clip_rect.y,
+                                command->rect.w, command->clip_rect.h);
+  UI0Rect clip = lectern0_ui0_rect_intersect(horizontal, command->clip_rect);
+  if (clip.w <= 0 || clip.h <= 0) return;
+  B32 pushed = draw_push_text_clipped_baseline_tag_s8(
+    &app->draw_commands, DrawLayer_UI, text, x, baseline, scale,
+    lectern0_draw_color(command->color),
+    clip.x, clip.y, clip.w, clip.h,
+    font_tag_zero(), FontRasterFlag_Smooth | FontRasterFlag_Hinted);
+  if (pushed && command->has_typography_role &&
+      (command->typography_role == UI0TypographyRole_PageTitle ||
+       command->typography_role == UI0TypographyRole_SectionTitle))
+    lectern0_set_last_text_style(&app->draw_commands, FontFaceStyleFlag_Bold);
+}
+
+FUNCTION void
+lectern0_draw_ui0_line(Lectern0App *app, UI0Rect clip,
+                       S32 x0, S32 y0, S32 x1, S32 y1,
+                       S32 width, U32 color)
+{
+  (void)draw_push_line_width_clipped(&app->draw_commands, DrawLayer_UI,
+                                     x0, y0, x1, y1, MAX(width, 1), color,
+                                     clip.x, clip.y, clip.w, clip.h);
+}
+
+FUNCTION void
+lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
+{
+  if (!app || !command ||
+      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
+  UI0Rect r = command->rect;
+  UI0Rect clip = command->clip_rect;
+  U32 color = lectern0_draw_color(command->color);
+  S32 stroke = MAX(command->stroke_width, 2);
+  S32 left = r.x + MAX(r.w / 5, 2);
+  S32 right = r.x + r.w - MAX(r.w / 5, 2) - 1;
+  S32 top = r.y + MAX(r.h / 5, 2);
+  S32 bottom = r.y + r.h - MAX(r.h / 5, 2) - 1;
+  S32 cx = r.x + r.w / 2;
+  S32 cy = r.y + r.h / 2;
+  switch (command->icon_kind)
+  {
+    case UI0IconKind_List:
+      for (S32 row = -1; row <= 1; row += 1)
+      {
+        S32 y = cy + row * MAX(r.h / 4, 3);
+        lectern0_draw_ui0_line(app, clip, left, y, left + 1, y, stroke, color);
+        lectern0_draw_ui0_line(app, clip, left + 4, y, right, y, stroke, color);
+      }
+      break;
+    case UI0IconKind_Search:
+    {
+      S32 size = MAX(MIN(r.w, r.h) * 3 / 5, 5);
+      UI0Rect circle = ui0_rect(left, top, size, size);
+      (void)draw_push_rounded_rect_stroke_clipped(
+        &app->draw_commands, DrawLayer_UI,
+        circle.x, circle.y, circle.w, circle.h, size / 2, stroke, color,
+        clip.x, clip.y, clip.w, clip.h);
+      lectern0_draw_ui0_line(app, clip, circle.x + circle.w - 1,
+                             circle.y + circle.h - 1, right, bottom,
+                             stroke, color);
+    } break;
+    case UI0IconKind_ChevronLeft:
+      lectern0_draw_ui0_line(app, clip, right, top, left, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left, cy, right, bottom, stroke, color);
+      break;
+    case UI0IconKind_ChevronRight:
+      lectern0_draw_ui0_line(app, clip, left, top, right, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right, cy, left, bottom, stroke, color);
+      break;
+    case UI0IconKind_ChevronDown:
+      lectern0_draw_ui0_line(app, clip, left, top, cx, bottom, stroke, color);
+      lectern0_draw_ui0_line(app, clip, cx, bottom, right, top, stroke, color);
+      break;
+    case UI0IconKind_ArrowLeft:
+      lectern0_draw_ui0_line(app, clip, right, cy, left, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left, cy, cx, top, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left, cy, cx, bottom, stroke, color);
+      break;
+    case UI0IconKind_ArrowRight:
+      lectern0_draw_ui0_line(app, clip, left, cy, right, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right, cy, cx, top, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right, cy, cx, bottom, stroke, color);
+      break;
+    case UI0IconKind_Bookmark:
+      lectern0_draw_ui0_line(app, clip, left, top, right, top, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left, top, left, bottom, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right, top, right, bottom, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left, bottom, cx, bottom - 3, stroke, color);
+      lectern0_draw_ui0_line(app, clip, cx, bottom - 3, right, bottom, stroke, color);
+      break;
+    case UI0IconKind_Plus:
+      lectern0_draw_ui0_line(app, clip, left, cy, right, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, cx, top, cx, bottom, stroke, color);
+      break;
+    case UI0IconKind_Close:
+      lectern0_draw_ui0_line(app, clip, left, top, right, bottom, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right, top, left, bottom, stroke, color);
+      break;
+    case UI0IconKind_TextSize:
+      lectern0_draw_ui0_line(app, clip, left, bottom, cx - 2, top, stroke, color);
+      lectern0_draw_ui0_line(app, clip, cx - 2, top, cx + 1, bottom, stroke, color);
+      lectern0_draw_ui0_line(app, clip, left + 2, cy, cx - 1, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, cx + 3, bottom, right - 1, cy, stroke, color);
+      lectern0_draw_ui0_line(app, clip, right - 1, cy, right, bottom, stroke, color);
+      break;
+    case UI0IconKind_Filter:
+      for (S32 column = -1; column <= 1; column += 1)
+      {
+        S32 x = cx + column * MAX(r.w / 4, 3);
+        S32 knob_y = column == 0 ? top + 2 : (column < 0 ? cy + 2 : cy - 2);
+        lectern0_draw_ui0_line(app, clip, x, top, x, bottom, stroke, color);
+        lectern0_draw_ui0_line(app, clip, x - 2, knob_y, x + 2, knob_y,
+                               stroke + 1, color);
+      }
+      break;
+    case UI0IconKind_None:
+    case UI0IconKind_Count:
+      break;
   }
 }
 
-FUNCTION DrawTextVAlign
-lectern0_draw_align_y(UI0TextAlignY align)
+FUNCTION void
+lectern0_draw_ui0_check_mark(Lectern0App *app,
+                             const UI0DrawCommand *command)
 {
-  switch (align)
-  {
-    case UI0TextAlignY_Top: return DrawTextVAlign_Top;
-    case UI0TextAlignY_Bottom: return DrawTextVAlign_Bottom;
-    default: return DrawTextVAlign_Center;
-  }
+  if (!app || !command ||
+      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
+  UI0Rect r = command->rect;
+  S32 x0 = r.x + MAX(1, r.w / 10);
+  S32 y0 = r.y + (r.h * 5) / 10;
+  S32 x1 = r.x + (r.w * 4) / 10;
+  S32 y1 = r.y + r.h - MAX(1, r.h / 5);
+  S32 x2 = r.x + r.w - MAX(1, r.w / 10);
+  S32 y2 = r.y + MAX(1, r.h / 5);
+  S32 width = MAX(2, (r.h + 2) / 4);
+  U32 color = lectern0_draw_color(command->color);
+  lectern0_draw_ui0_line(app, command->clip_rect, x0, y0, x1, y1,
+                         width, color);
+  lectern0_draw_ui0_line(app, command->clip_rect, x1, y1, x2, y2,
+                         width, color);
 }
 
 FUNCTION void
 lectern0_adapt_ui0_draw(Lectern0App *app)
 {
   if (!app) { return; }
+  MemoryZeroStruct(&app->draw_adapter_stats);
   for (UI0S32 index = 0;
        index < app->reader_view_frame.draw_command_count;
        index += 1)
   {
     UI0DrawCommand command = app->reader_view_frame.draw_commands[index];
     U32 color = lectern0_draw_color(command.color);
+    if (command.op >= 0 && command.op < UI0DrawOp_Count)
+      app->draw_adapter_stats.op_count[command.op] += 1;
     switch (command.op)
     {
       case UI0DrawOp_ControlFill:
+        lectern0_draw_ui0_control_fill(app, &command);
+        break;
+
+      case UI0DrawOp_ControlBorder:
+        /* Its paired fill owns the rounded fill and border as one shell. */
+        break;
+
       case UI0DrawOp_IndicatorFill:
       case UI0DrawOp_ToggleTrack:
       case UI0DrawOp_ToggleKnob:
@@ -2007,7 +2497,6 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
       case UI0DrawOp_SliderTrack:
       case UI0DrawOp_SliderFill:
       case UI0DrawOp_SliderThumb:
-      case UI0DrawOp_TextSelection:
       {
         (void)draw_push_rounded_rect_clipped(&app->draw_commands,
                                              DrawLayer_UI,
@@ -2024,7 +2513,6 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
                                              command.clip_rect.h);
       } break;
 
-      case UI0DrawOp_ControlBorder:
       case UI0DrawOp_IndicatorBorder:
       case UI0DrawOp_FocusRing:
       {
@@ -2044,45 +2532,71 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
       } break;
 
       case UI0DrawOp_Text:
-      {
-        ReaderViewText text = lectern0_reader_view_binding(app, command.source_id);
-        char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
-        lectern0_copy_bytes(label, ARRAY_COUNT(label),
-                            (const U8 *)text.data, (U64)MAX(text.size, 0));
-        if (command.source_kind == UI0ControlKind_IconButton && command.rect.w <= 40)
-        {
-          if (lectern0_reader_view_text_is(text, "Previous page") ||
-              lectern0_reader_view_text_is(text, "Previous match"))
-            lectern0_copy_cstr(label, ARRAY_COUNT(label), "<");
-          else if (lectern0_reader_view_text_is(text, "Next page") ||
-                   lectern0_reader_view_text_is(text, "Next match"))
-            lectern0_copy_cstr(label, ARRAY_COUNT(label), ">");
-          else if (lectern0_reader_view_text_is(text, "Close"))
-            lectern0_copy_cstr(label, ARRAY_COUNT(label), "X");
-          else if (lectern0_reader_view_text_is(text, "More"))
-            lectern0_copy_cstr(label, ARRAY_COUNT(label), "...");
-          else if (lectern0_reader_view_text_is(text, "Star") ||
-                   lectern0_reader_view_text_is(text, "Unstar"))
-            lectern0_copy_cstr(label, ARRAY_COUNT(label), "*");
-        }
-        (void)draw_push_text_in_rect(&app->draw_commands,
-                                     DrawLayer_UI,
-                                     app->render_state.text_provider,
-                                     label,
-                                     command.rect.x,
-                                     command.rect.y,
-                                     command.rect.w,
-                                     command.rect.h,
-                                     8,
-                                     MAX(command.typography_line_height, 14),
-                                     lectern0_draw_align_x(command.text_align_x),
-                                     lectern0_draw_align_y(command.text_align_y),
-                                     color);
-      } break;
+        lectern0_draw_ui0_text(app, &command);
+        break;
 
-      default: break;
+      case UI0DrawOp_Icon:
+        lectern0_draw_ui0_icon(app, &command);
+        break;
+
+      case UI0DrawOp_CheckMark:
+        lectern0_draw_ui0_check_mark(app, &command);
+        break;
+
+      case UI0DrawOp_SegmentJoin:
+      case UI0DrawOp_TextSelection:
+      case UI0DrawOp_TextCaret:
+        if (lectern0_ui0_rect_visible(command.rect, command.clip_rect))
+          (void)draw_push_rect_clipped(&app->draw_commands, DrawLayer_UI,
+                                       command.rect.x, command.rect.y,
+                                       command.rect.w, command.rect.h, color,
+                                       command.clip_rect.x, command.clip_rect.y,
+                                       command.clip_rect.w, command.clip_rect.h);
+        break;
+
+      case UI0DrawOp_Count:
+      default:
+        app->draw_adapter_stats.unsupported_count += 1;
+        break;
     }
   }
+}
+
+FUNCTION UI0Rect
+lectern0_host_exit_rect(const Lectern0App *app)
+{
+  if (!app || !app->reader_view_ready) return (UI0Rect){0};
+  UI0Rect host = app->reader_view_layout.host_toolbar_trailing_rect;
+  S32 size = MIN(30, MIN(host.w, host.h));
+  return ui0_rect(host.x + MAX((host.w - size) / 2, 0),
+                  host.y + MAX((host.h - size) / 2, 0), size, size);
+}
+
+FUNCTION void
+lectern0_draw_host_exit_slot(Lectern0App *app)
+{
+  UI0Rect rect = lectern0_host_exit_rect(app);
+  if (!app || rect.w <= 0 || rect.h <= 0) return;
+  B32 hovered = ui0_rect_contains_point(rect,
+                                        app->input.pointer_x,
+                                        app->input.pointer_y);
+  U32 fill = lectern0_draw_color(app->reader_view_theme.colors[
+    hovered ? UI0ColorRole_SurfaceElevated : UI0ColorRole_AppBackground]);
+  U32 border = lectern0_draw_color(
+    app->reader_view_theme.colors[UI0ColorRole_BorderMuted]);
+  (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_UI,
+                               rect.x, rect.y, rect.w, rect.h, 6,
+                               fill, border);
+  UI0DrawCommand icon = {
+    .op = UI0DrawOp_Icon,
+    .rect = ui0_rect(rect.x + 7, rect.y + 7,
+                     MAX(rect.w - 14, 1), MAX(rect.h - 14, 1)),
+    .clip_rect = rect,
+    .color = app->reader_view_theme.colors[UI0ColorRole_TextSecondary],
+    .icon_kind = UI0IconKind_Close,
+    .stroke_width = 2,
+  };
+  lectern0_draw_ui0_icon(app, &icon);
 }
 
 FUNCTION B32
@@ -3127,27 +3641,27 @@ lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
 FUNCTION U32
 lectern0_reader_page_color(const Lectern0App *app)
 {
-  if (!app) return 0x00FFFDF8U;
-  if (app->theme == Lectern0Theme_Dark) return 0x00201E1BU;
-  if (app->theme == Lectern0Theme_Sepia) return 0x00F5ECD8U;
-  return 0x00FFFDF8U;
+  return app ? app->reader_content_theme.page_background : 0x00FFFDF9U;
 }
 
 FUNCTION U32
 lectern0_reader_ink_color(const Lectern0App *app)
 {
-  if (app && app->theme == Lectern0Theme_Dark) return 0x00E8E1D5U;
-  if (app && app->theme == Lectern0Theme_Sepia) return 0x004A3828U;
-  return 0x002A2927U;
+  return app ? app->reader_content_theme.ink : 0x001B1A18U;
 }
 
 FUNCTION U32
 lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
 {
-  static const U32 light[] = {0x00FFE58AU, 0x00BFE7B7U, 0x00ADD8F4U, 0x00F3B6D2U};
-  static const U32 dark[] = {0x00786521U, 0x003A693EU, 0x00375F7AU, 0x00724662U};
-  color_index %= ARRAY_COUNT(light);
-  return app && app->theme == Lectern0Theme_Dark ? dark[color_index] : light[color_index];
+  B32 dark = app && lectern0_theme_profile(app->theme).appearance ==
+                      UI0AppearanceMode_Dark;
+  switch (color_index)
+  {
+    case 1: return dark ? 0x0047355CU : 0x00FFD4ECU;
+    case 2: return dark ? 0x002A4662U : 0x00CDE7FFU;
+    case 3: return dark ? 0x00523F1CU : 0x00FFDCA8U;
+    default: return app ? app->reader_content_theme.user_highlight : 0x00FFF2A6U;
+  }
 }
 
 FUNCTION void
@@ -3192,7 +3706,7 @@ lectern0_draw_row_highlights(Lectern0App *app,
       (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
     S32 x1 = presentation_row->content_rect.x +
       (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
-    U32 color = app->theme == Lectern0Theme_Dark ? 0x00604786U : 0x00BFD7FFU;
+    U32 color = app->reader_content_theme.selection;
     (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
                                  x0, presentation_row->row_rect.y,
                                  MAX(x1 - x0, 3), presentation_row->row_rect.h,
@@ -3203,24 +3717,31 @@ lectern0_draw_row_highlights(Lectern0App *app,
 FUNCTION void
 lectern0_draw_reader_page(Lectern0App *app)
 {
-  UI0Rect viewport = app->reader_view_ready ? app->reader_view_layout.viewport_rect :
-    ui0_rect(0, Lectern0ToolbarHeight, app->width,
-             MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
-  S32 body_x = viewport.x + 48;
-  S32 body_y = viewport.y + 22;
-  S32 body_w = MAX(viewport.w - 96, 1);
-  S32 body_h = MAX(viewport.h - 34, 1);
+  UI0Rect page = app->reader_content_geometry.page_surface_rect;
+  UI0Rect content = app->reader_content_geometry.content_rect;
+  if (page.w <= 0 || page.h <= 0 || content.w <= 0 || content.h <= 0)
+  {
+    UI0Rect viewport = ui0_rect(0, Lectern0ToolbarHeight, app->width,
+      MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
+    (void)reader_view_resolve_content_geometry(viewport, 0,
+                                               &app->reader_content_geometry);
+    page = app->reader_content_geometry.page_surface_rect;
+    content = app->reader_content_geometry.content_rect;
+  }
+  S32 body_x = content.x;
+  S32 body_y = content.y;
+  S32 body_w = MAX(content.w, 1);
+  S32 body_h = MAX(content.h, 1);
   U32 page_color = lectern0_reader_page_color(app);
   (void)draw_push_rounded_rect(&app->draw_commands,
                                DrawLayer_World,
-                               body_x - 16,
-                               body_y - 12,
-                               body_w + 32,
-                               body_h + 20,
-                               8,
+                               page.x,
+                               page.y,
+                               page.w,
+                               page.h,
+                               6,
                                page_color,
-                               app->theme == Lectern0Theme_Dark ?
-                                 0x004B4740U : 0x00D8D2C8U);
+                               page_color);
 
   if (!app->frame.ready || !app->frame.document_open)
   {
@@ -3381,7 +3902,7 @@ lectern0_draw_reader_page(Lectern0App *app)
                                      16,
                                      DrawTextHAlign_Center,
                                      DrawTextVAlign_Center,
-                                     0x00666058U);
+                                     app->reader_content_theme.ink_muted);
       }
       continue;
     }
@@ -3390,7 +3911,8 @@ lectern0_draw_reader_page(Lectern0App *app)
     {
       lectern0_draw_row_highlights(app, row, presentation_row);
       String8 text = str8(app->frame.visible_text.str + start, end - start);
-      U32 color = app->theme == Lectern0Theme_Dark ?
+      U32 color = lectern0_theme_profile(app->theme).appearance ==
+                    UI0AppearanceMode_Dark ?
         lectern0_reader_ink_color(app) :
         (row->has_text_color ? row->text_color_rgb : lectern0_reader_ink_color(app));
       TextEngineResolvedStyle style =
@@ -3459,14 +3981,17 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
 {
   if (!app || !buffer || !buffer->pixels || !app->render_ready) { return; }
   app->presentation_complete = 1;
-  U32 canvas_color = app->theme == Lectern0Theme_Dark ? 0x00171412U :
-                     app->theme == Lectern0Theme_Sepia ? 0x00DED2BAU :
-                     0x00E9E5DEU;
+  U32 canvas_color = lectern0_draw_color(
+    lectern0_theme_profile(app->theme).resolved.colors[UI0ColorRole_AppBackground]);
   render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
   (void)lectern0_build_reader_view(app);
   lectern0_draw_reader_page(app);
-  if (app->reader_view_ready) lectern0_adapt_ui0_draw(app);
+  if (app->reader_view_ready)
+  {
+    lectern0_adapt_ui0_draw(app);
+    lectern0_draw_host_exit_slot(app);
+  }
   render_execute_draw_commands(&app->render_state, buffer, &app->draw_commands);
   lectern0_reset_input(app);
 }
@@ -3589,9 +4114,19 @@ lectern0_configure_reader_view_parity(Lectern0App *app,
                                       const char *query)
 {
   if (!app || !theme || !left || !right || !popup || !query) return 0;
-  if (strcmp(theme, "light") == 0) app->theme = Lectern0Theme_Light;
-  else if (strcmp(theme, "dark") == 0) app->theme = Lectern0Theme_Dark;
-  else return 0;
+  B32 theme_found = 0;
+  for (U32 index = 0; index < Lectern0Theme_Count; index += 1)
+  {
+    UI0ThemeProfile profile =
+      ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
+    if (profile.code && strcmp(theme, profile.code) == 0)
+    {
+      app->theme = (Lectern0Theme)index;
+      theme_found = 1;
+      break;
+    }
+  }
+  if (!theme_found) return 0;
 
   if (strcmp(left, "none") == 0)
     app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
@@ -3759,6 +4294,16 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         app->input.pointer_y = GET_Y_LPARAM(l_param);
         app->input.pointer_down = 0;
         app->input.pointer_released = 1;
+        UI0Rect exit_rect = lectern0_host_exit_rect(app);
+        if (exit_rect.w > 0 &&
+            ui0_rect_contains_point(exit_rect,
+                                    app->input.pointer_x,
+                                    app->input.pointer_y))
+        {
+          app->input.pointer_released = 0;
+          PostMessageW(window, WM_CLOSE, 0, 0);
+          return 0;
+        }
         if (app->selection_dragging)
         {
           lectern0_update_pointer_selection(app,
@@ -4322,6 +4867,45 @@ lectern0_reader_view_has_action(const ReaderViewFrame *frame,
   return 0;
 }
 
+FUNCTION B32
+lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
+{
+  if (!app) return 0;
+  UI0DrawCommand commands[UI0DrawOp_Count] = {0};
+  for (UI0S32 index = 0; index < UI0DrawOp_Count; index += 1)
+  {
+    commands[index] = (UI0DrawCommand){
+      .op = (UI0DrawOpKind)index,
+      .source_id = index <= UI0DrawOp_ControlBorder ? 1 : (UI0ID)(index + 1),
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = ui0_rect(8 + index * 2, 8 + index * 2, 18, 18),
+      .clip_rect = ui0_rect(0, 0, 128, 128),
+      .color = UI0_COLOR_RGB(0x44, 0x66, 0x88),
+      .stroke_color = UI0_COLOR_RGB(0x22, 0x33, 0x44),
+      .icon_kind = UI0IconKind_Search,
+      .stroke_width = 2,
+      .corner_radius = 4,
+      .has_text_alignment = 1,
+      .text_align_x = UI0TextAlignX_Center,
+      .text_align_y = UI0TextAlignY_Center,
+      .has_typography_role = 1,
+      .typography_role = UI0TypographyRole_Body,
+      .typography_line_height = 15,
+    };
+  }
+  ReaderViewFrame saved = app->reader_view_frame;
+  app->reader_view_frame.draw_commands = commands;
+  app->reader_view_frame.draw_command_count = UI0DrawOp_Count;
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+  B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
+               app->draw_commands.overflow_count == 0;
+  for (UI0S32 index = 0; index < UI0DrawOp_Count; index += 1)
+    result = result && app->draw_adapter_stats.op_count[index] == 1;
+  app->reader_view_frame = saved;
+  return result;
+}
+
 FUNCTION int
 lectern0_run_reader_view_smoke(const char *path, const char *export_path)
 {
@@ -4346,9 +4930,37 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Contents") ||
       !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Find") ||
       !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark") ||
-      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Notes"))
+      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Annotations") ||
+      app.reader_view_layout.host_toolbar_trailing_rect.w !=
+        Lectern0HostToolbarTrailingWidth ||
+      app.reader_content_geometry.page_surface_rect.w >
+        READER_VIEW_DEFAULT_PAGE_MAX_WIDTH ||
+      app.reader_content_geometry.content_rect.x -
+        app.reader_content_geometry.page_surface_rect.x !=
+        READER_VIEW_DEFAULT_CONTENT_INSET_X ||
+      app.reader_content_geometry.content_rect.y -
+        app.reader_content_geometry.page_surface_rect.y !=
+        READER_VIEW_DEFAULT_CONTENT_INSET_Y ||
+      app.draw_adapter_stats.unsupported_count != 0 ||
+      !lectern0_draw_adapter_covers_all_ops(&app))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=chrome\n");
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u icons=%u\n",
+            app.reader_view_ready,
+            app.reader_view_projection.settings.count,
+            app.reader_view_projection.toc.row_count,
+            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Contents"),
+            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Find"),
+            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark"),
+            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Annotations"),
+            app.reader_view_layout.host_toolbar_trailing_rect.w,
+            app.reader_content_geometry.page_surface_rect.w,
+            app.reader_content_geometry.content_rect.x -
+              app.reader_content_geometry.page_surface_rect.x,
+            app.reader_content_geometry.content_rect.y -
+              app.reader_content_geometry.page_surface_rect.y,
+            app.draw_adapter_stats.unsupported_count,
+            app.draw_adapter_stats.op_count[UI0DrawOp_Icon]);
     free(pixels);
     lectern0_app_release(&app);
     return 1;
@@ -4413,7 +5025,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_Theme,
-    .key = 4002,
+    .key = 4000,
   });
   if (app.line_spacing_index != 1 || app.theme != Lectern0Theme_Dark)
   {
@@ -4467,19 +5079,6 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     lectern0_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
-    .kind = ReaderViewAction_ToggleRightRowStar,
-    .key = app.bookmarks[0].id,
-    .right_row_kind = ReaderViewRightRow_Bookmark,
-  });
-  if (!app.bookmarks[0].starred)
-  {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=bookmark_star\n");
-    free(pixels);
-    lectern0_app_release(&app);
-    return 1;
-  }
-
   U64 relative_start = 0;
   while (relative_start < app.frame.visible_text.size &&
          app.frame.visible_text.str[relative_start] <= ' ')
@@ -4566,6 +5165,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   app.highlight_count = 0;
   lectern0_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
+      !app.bookmarks[0].excerpt[0] ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=reload\n");
@@ -4779,14 +5379,8 @@ lectern0_run_accessibility_smoke(const char *path)
 
   if (valid)
   {
-    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
-      .kind = ReaderViewAction_ToggleDistractionFree,
-    });
-    valid = win32.app.distraction_free;
-    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
-      .kind = ReaderViewAction_ToggleDistractionFree,
-    });
-    valid = valid && !win32.app.distraction_free;
+    valid = !lectern0_reader_view_has_semantic(&win32.app.reader_view_frame,
+                                                "Focus");
   }
   if (valid)
   {
@@ -4826,7 +5420,7 @@ lectern0_run_accessibility_smoke(const char *path)
   }
 
   fprintf(stdout,
-          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%d progress_child=%d role=%ld focus=shared action=shared progress=keyboard fullscreen=native distraction=shared\n",
+          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%d progress_child=%d role=%ld focus=shared action=shared progress=keyboard fullscreen=native distraction=dormant\n",
           child_count,
           contents_index + 1,
           slider_index + 1,

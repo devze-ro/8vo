@@ -14,12 +14,13 @@ API 3. No reader state is mirrored in application storage. Its narrow semantic
 adapters capture the resulting canonical frame, set host status, and persist
 the resulting reader-owned location.
 
-Readerview0 API 1 owns only the proven-common UI0 composition: the responsive
+Readerview0 API 2 owns only the proven-common UI0 composition: the responsive
 top toolbar and overflow, page gutters and progress geometry, TOC/Find and
 annotations/bookmarks panel shells, settings and row-action popups, selection
 tools, note-editor interaction state, focus order, portable semantic records,
-and bounded returned actions. Its projection/action API does not name reader0
-types and has no reader0 or direct zero_foundation dependency.
+bounded returned actions, and product-neutral page/content rectangles. Its
+projection/action/geometry API does not name reader0 types and has no reader0
+or direct zero_foundation dependency.
 
 Lectern0 owns the projected TOC/search/selection meaning, settings choices,
 stable bookmark/highlight/note IDs, 128-record bookmark and highlight
@@ -29,9 +30,11 @@ host records. Projection strings and rows are borrowed for one build;
 `ReaderViewState` and `ReaderViewFrameStorage` are caller-owned. The application
 never treats an emitted action as a completed persistent mutation.
 
-UI0 owns generic signal, control, token, layout, draw, and text-edit records. A
-narrow lectern0 adapter converts those records into zero_foundation draw
-commands. UI0 does not render EPUB content and is not a reader0 dependency.
+UI0 owns generic signal, control, token, layout, draw, text-edit records, and
+the six shared reader-chrome profiles. A narrow lectern0 adapter converts every
+UI0 draw operation into clipped zero_foundation draw commands and binds semantic
+typography roles to host font metrics. UI0 does not render EPUB content and is
+not a reader0 dependency.
 
 Zero_foundation owns arenas, file/atomic-write facilities, font providers,
 Presentation Engine API 1 block-flow geometry, draw commands, software
@@ -73,18 +76,22 @@ presentation implementation.
 
 ## Viewport, responsive layout, focus, and accessibility
 
-`ReaderViewLayout.viewport_rect` is the only rectangle used to configure
-reader0 pagination and draw the canonical EPUB frame. Shared gutters and
-docked panels reduce that rectangle; overlays never move EPUB rendering behind
-an unrelated application layout. A layout-affecting shared state change causes
-lectern0 to recompute the contract and repaginate at the current reader-owned
-location.
+`ReaderViewLayout.viewport_rect` is the host viewport boundary. Lectern0 passes
+it to `reader_view_resolve_content_geometry()` and uses the returned
+`content_rect` as the only reader0 pagination and canonical-frame rectangle;
+the returned `page_surface_rect` owns the surrounding page paint. Shared
+gutters and docked panels reduce the viewport; overlays never move EPUB
+rendering behind an unrelated application layout. A layout-affecting shared
+state change recomputes both contracts and repaginates at the current
+reader-owned location.
 
 Full toolbar composition starts at 1024 pixels, compact composition and
 overflow run from 720 through 1023, and narrower windows use the minimal
 toolbar. Both panels can dock from 1180 pixels; one docks between 840 and 1179;
-narrower panels overlay. Distraction-free mode hides shared chrome, while the
-host independently performs native fullscreen window transitions.
+narrower panels overlay. A 38-pixel trailing toolbar reservation belongs to
+lectern0 and contains its exit control. Distraction-free behavior remains
+dormant rather than becoming mandatory shared chrome, while the host
+independently performs native fullscreen window transitions.
 
 Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
 states, and pointer/keyboard/accessibility convergence. Lectern0 translates
