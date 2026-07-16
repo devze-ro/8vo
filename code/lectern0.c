@@ -13,7 +13,15 @@
 #include "os/os_gfx.h"
 #include "os/os_image.h"
 #include "os/os_time.h"
+#include "presentation_engine/presentation_engine.h"
 #include "render/render.h"
+
+#if !defined(PRESENTATION_ENGINE_API_VERSION)
+#  error "zero_foundation presentation_engine.h must define PRESENTATION_ENGINE_API_VERSION"
+#endif
+#if PRESENTATION_ENGINE_API_VERSION != 1
+#  error "lectern0 requires Presentation Engine API 1"
+#endif
 
 #include <commdlg.h>
 #include <objbase.h>
@@ -35,6 +43,8 @@ enum
   Lectern0ToolbarHeight = 48,
   Lectern0FooterHeight = 36,
   Lectern0ImageCacheCap = 64,
+  Lectern0PresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
+  Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
 };
 
 typedef struct Lectern0ImageCacheEntry
@@ -98,6 +108,12 @@ typedef struct Lectern0App
   EpubReaderLayoutKey layout_key;
   SourceReaderLayoutConfig layout_config;
   Lectern0ImageCache image_cache;
+  PresentationEngineBlockFlowRowSpec presentation_row_specs[Lectern0PresentationRowCap];
+  PresentationEngineBlockFlowMediaSpec presentation_media_specs[Lectern0PresentationMediaCap];
+  PresentationEngineBlockFlowRow presentation_rows[Lectern0PresentationRowCap];
+  PresentationEngineBlockFlowMedia presentation_media[Lectern0PresentationMediaCap];
+  PresentationEngineBlockFlowFrame presentation_frame;
+  U64 presentation_hash;
 
   RenderState render_state;
   DrawCommandBuffer draw_commands;
@@ -1204,6 +1220,372 @@ lectern0_fit_image_rect(S32 src_w,
   return 1;
 }
 
+typedef struct Lectern0PresentationRowMetrics
+{
+  S32 scale_px;
+  S32 line_height_px;
+  S32 margin_before_px;
+  S32 margin_after_px;
+  S32 content_left_px;
+  S32 content_right_px;
+} Lectern0PresentationRowMetrics;
+
+typedef struct Lectern0PresentationImageBox
+{
+  S32 x_offset_px;
+  S32 width_px;
+  S32 height_px;
+} Lectern0PresentationImageBox;
+
+FUNCTION B32
+lectern0_resolve_scaled_px(S32 base_px,
+                           U32 permille,
+                           S32 minimum_px,
+                           S32 *out_px)
+{
+  if (!out_px || base_px <= 0 || minimum_px < 0) { return 0; }
+  S64 resolved = ((S64)base_px * (S64)MAX(permille, 1U)) / 1000;
+  resolved = MAX(resolved, (S64)minimum_px);
+  if (resolved > (S64)INT32_MAX) { return 0; }
+  *out_px = (S32)resolved;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_resolve_nonnegative_product(S32 value,
+                                     S32 unit_px,
+                                     S32 *out_px)
+{
+  if (!out_px || unit_px <= 0) { return 0; }
+  S64 resolved = (S64)MAX(value, 0) * (S64)unit_px;
+  if (resolved > (S64)INT32_MAX) { return 0; }
+  *out_px = (S32)resolved;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
+                                          const EpubReaderFrameStyleRow *row,
+                                          Lectern0PresentationRowMetrics *out_metrics)
+{
+  if (out_metrics) { MemoryZeroStruct(out_metrics); }
+  if (!app || !row || !out_metrics || app->layout_key.char_advance <= 0)
+  {
+    return 0;
+  }
+
+  Lectern0PresentationRowMetrics metrics = {0};
+  if (!lectern0_resolve_scaled_px(app->layout_key.text_scale,
+                                  row->font_scale_permille,
+                                  12,
+                                  &metrics.scale_px))
+  {
+    return 0;
+  }
+  if (metrics.scale_px > INT32_MAX - 4 ||
+      !lectern0_resolve_scaled_px(app->layout_key.line_height,
+                                  row->line_height_permille,
+                                  metrics.scale_px + 4,
+                                  &metrics.line_height_px) ||
+      !lectern0_resolve_nonnegative_product(row->margin_top_rows,
+                                            app->layout_key.line_height,
+                                            &metrics.margin_before_px) ||
+      !lectern0_resolve_nonnegative_product(row->margin_bottom_rows,
+                                            app->layout_key.line_height,
+                                            &metrics.margin_after_px) ||
+      !lectern0_resolve_nonnegative_product(row->margin_left_cols,
+                                            app->layout_key.char_advance,
+                                            &metrics.content_left_px) ||
+      !lectern0_resolve_nonnegative_product(row->margin_right_cols,
+                                            app->layout_key.char_advance,
+                                            &metrics.content_right_px))
+  {
+    return 0;
+  }
+
+  if (row->line_row != 0)
+  {
+    metrics.margin_before_px = 0;
+  }
+  else
+  {
+    S32 indent_px = 0;
+    if (!lectern0_resolve_nonnegative_product(row->text_indent_cols,
+                                              app->layout_key.char_advance,
+                                              &indent_px))
+    {
+      return 0;
+    }
+    S64 content_left = (S64)metrics.content_left_px + (S64)indent_px;
+    if (content_left > (S64)INT32_MAX) { return 0; }
+    metrics.content_left_px = (S32)content_left;
+  }
+
+  *out_metrics = metrics;
+  return 1;
+}
+
+FUNCTION PresentationEngineBlockRole
+lectern0_presentation_block_role(DocTextBlockKind kind)
+{
+  switch (kind)
+  {
+    case DocTextBlockKind_Heading: return PresentationEngineBlockRole_Heading;
+    case DocTextBlockKind_Paragraph: return PresentationEngineBlockRole_Paragraph;
+    case DocTextBlockKind_Blockquote: return PresentationEngineBlockRole_Blockquote;
+    case DocTextBlockKind_ListItem: return PresentationEngineBlockRole_ListItem;
+    case DocTextBlockKind_Preformatted: return PresentationEngineBlockRole_Preformatted;
+    case DocTextBlockKind_FigureCaption: return PresentationEngineBlockRole_FigureCaption;
+    case DocTextBlockKind_TableRow: return PresentationEngineBlockRole_TableRow;
+    case DocTextBlockKind_DefinitionTerm: return PresentationEngineBlockRole_DefinitionTerm;
+    case DocTextBlockKind_DefinitionDescription: return PresentationEngineBlockRole_DefinitionDescription;
+    case DocTextBlockKind_Separator: return PresentationEngineBlockRole_Separator;
+    case DocTextBlockKind_Metadata: return PresentationEngineBlockRole_Metadata;
+    default: return PresentationEngineBlockRole_None;
+  }
+}
+
+FUNCTION PresentationEngineTextAlign
+lectern0_presentation_text_align(DocTextAlign align)
+{
+  switch (align)
+  {
+    case DocTextAlign_Center: return PresentationEngineTextAlign_Center;
+    case DocTextAlign_Right: return PresentationEngineTextAlign_Right;
+    case DocTextAlign_Justify: return PresentationEngineTextAlign_Justify;
+    default: return PresentationEngineTextAlign_Left;
+  }
+}
+
+FUNCTION PresentationEngineMediaStatus
+lectern0_presentation_media_status(EpubReaderFrameImageStatus status)
+{
+  if (status == EpubReaderFrameImageStatus_Loaded)
+  {
+    return PresentationEngineMediaStatus_Available;
+  }
+  if (status == EpubReaderFrameImageStatus_UnsupportedFormat)
+  {
+    return PresentationEngineMediaStatus_Unsupported;
+  }
+  return PresentationEngineMediaStatus_Missing;
+}
+
+FUNCTION B32
+lectern0_resolve_presentation_image_box(const EpubReaderFrameImage *image,
+                                        S32 body_width_px,
+                                        S32 content_left_px,
+                                        Lectern0PresentationImageBox *out_box)
+{
+  if (out_box) { MemoryZeroStruct(out_box); }
+  if (!image || !out_box || body_width_px <= 0 || content_left_px < 0)
+  {
+    return 0;
+  }
+
+  S64 available_width = (S64)body_width_px -
+                        (S64)content_left_px;
+  S32 image_width = (S32)MAX(available_width, 1);
+  image_width = MAX(image_width, 80);
+  if (image->display_w_px > 0)
+  {
+    image_width = MIN(image_width, image->display_w_px);
+  }
+  if (image_width <= 0) { return 0; }
+
+  S64 desired_height = image->display_h_px;
+  if (desired_height <= 0 && image->src_w > 0 && image->src_h > 0)
+  {
+    desired_height = ((S64)image->src_h * (S64)image_width) / (S64)image->src_w;
+  }
+  desired_height = MIN(MAX(desired_height, 72), 320);
+
+  S32 x_offset = content_left_px;
+  if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
+  {
+    x_offset = MAX((body_width_px - image_width) / 2, 0);
+  }
+  *out_box = (Lectern0PresentationImageBox){
+    .x_offset_px = x_offset,
+    .width_px = image_width,
+    .height_px = (S32)desired_height,
+  };
+  return 1;
+}
+
+FUNCTION U64
+lectern0_presentation_hash_mix(U64 state, U64 value)
+{
+  return (state ^ value) * 1099511628211ULL;
+}
+
+FUNCTION U64
+lectern0_presentation_frame_hash(const PresentationEngineBlockFlowFrame *frame)
+{
+  if (!frame || !frame->valid) { return 0; }
+  U64 hash = 1469598103934665603ULL;
+  hash = lectern0_presentation_hash_mix(hash, frame->row_count);
+  hash = lectern0_presentation_hash_mix(hash, frame->media_count);
+  hash = lectern0_presentation_hash_mix(hash, (U64)(S64)frame->content_height_px);
+  for (U32 index = 0; index < frame->row_count; index += 1)
+  {
+    const PresentationEngineBlockFlowRow *row = frame->rows + index;
+    hash = lectern0_presentation_hash_mix(hash, row->role);
+    hash = lectern0_presentation_hash_mix(hash, row->source_row);
+    hash = lectern0_presentation_hash_mix(hash, row->source_start);
+    hash = lectern0_presentation_hash_mix(hash, row->source_end);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.x);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.y);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.h);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->content_rect.x);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->content_rect.w);
+    hash = lectern0_presentation_hash_mix(hash, row->first_media_index);
+  }
+  for (U32 index = 0; index < frame->media_count; index += 1)
+  {
+    const PresentationEngineBlockFlowMedia *media = frame->media + index;
+    hash = lectern0_presentation_hash_mix(hash, media->row_index);
+    hash = lectern0_presentation_hash_mix(hash, media->status);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.x);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.y);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.w);
+    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.h);
+  }
+  return hash;
+}
+
+FUNCTION B32
+lectern0_build_reader_presentation(Lectern0App *app,
+                                   S32 body_x,
+                                   S32 body_y,
+                                   S32 body_w,
+                                   S32 body_h)
+{
+  if (!app || body_w <= 0 || body_h <= 0 ||
+      app->frame.style_row_count > Lectern0PresentationRowCap ||
+      app->frame.image_count > Lectern0PresentationMediaCap)
+  {
+    return 0;
+  }
+
+  app->presentation_hash = 0;
+  MemoryZero(&app->presentation_frame, sizeof(app->presentation_frame));
+  MemoryZero(app->presentation_row_specs, sizeof(app->presentation_row_specs));
+  MemoryZero(app->presentation_media_specs, sizeof(app->presentation_media_specs));
+  MemoryZero(app->presentation_rows, sizeof(app->presentation_rows));
+  MemoryZero(app->presentation_media, sizeof(app->presentation_media));
+
+  U32 media_count = 0;
+  for (U32 row_index = 0; row_index < app->frame.style_row_count; row_index += 1)
+  {
+    const EpubReaderFrameStyleRow *row = app->frame.style_rows + row_index;
+    Lectern0PresentationRowMetrics metrics = {0};
+    if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics) ||
+        row->byte_end < row->byte_start)
+    {
+      return 0;
+    }
+
+    EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
+    S32 row_height_px = metrics.line_height_px;
+    PresentationEngineBlockRole role = lectern0_presentation_block_role(row->block_kind);
+    if (image)
+    {
+      Lectern0PresentationImageBox box = {0};
+      if (media_count >= Lectern0PresentationMediaCap ||
+          image->text_byte_end < image->text_byte_start ||
+          !lectern0_resolve_presentation_image_box(image,
+                                                   body_w,
+                                                   metrics.content_left_px,
+                                                   &box))
+      {
+        return 0;
+      }
+      row_height_px = box.height_px + 8;
+      role = PresentationEngineBlockRole_Media;
+      app->presentation_media_specs[media_count] =
+        (PresentationEngineBlockFlowMediaSpec){
+          .row_index = row_index,
+          .status = lectern0_presentation_media_status(image->status),
+          .source_start = image->text_byte_start,
+          .source_end = image->text_byte_end,
+          .x_offset_px = box.x_offset_px,
+          .width_px = box.width_px,
+          .height_px = box.height_px,
+          .resource_index = image->has_resource ?
+            image->resource_index : PRESENTATION_ENGINE_INDEX_NONE,
+          .alt_text_hash = (U32)u64_hash_str8(
+            str8((U8 *)image->alt_text, image->alt_text_size)),
+        };
+      media_count += 1;
+    }
+
+    PresentationEngineBlockRowFlags flags =
+      PresentationEngineBlockRowFlag_SourceOwned;
+    if (row->block_flags & DocTextBlockFlag_PageBreakBefore)
+    {
+      flags |= PresentationEngineBlockRowFlag_PageBreakBefore;
+    }
+    if (row->block_flags & DocTextBlockFlag_PageBreakAfter)
+    {
+      flags |= PresentationEngineBlockRowFlag_PageBreakAfter;
+    }
+    app->presentation_row_specs[row_index] =
+      (PresentationEngineBlockFlowRowSpec){
+        .role = role,
+        .flags = flags,
+        .source_row = row->row,
+        .source_start = row->byte_start,
+        .source_end = row->byte_end,
+        .visible_start = row->byte_start,
+        .visible_end = row->byte_end,
+        .source_anchor = row->byte_start,
+        .block_key = row->row,
+        .line_row = row->line_row,
+        .heading_level = row->heading_level,
+        .text_align = lectern0_presentation_text_align(row->text_align),
+        .style_index = row_index,
+        .text_index = row_index,
+        .table_index = row->table_index,
+        .table_row_index = row->table_row_index,
+        .height_px = row_height_px,
+        .margin_before_px = metrics.margin_before_px,
+        .margin_after_px = image ? 0 : metrics.margin_after_px,
+        .content_left_px = metrics.content_left_px,
+        .content_right_px = metrics.content_right_px,
+      };
+  }
+
+  PresentationEngineBuildResult build_result =
+    presentation_engine_block_flow_build(
+      &(PresentationEngineBlockFlowBuildParams){
+        .rows = app->presentation_row_specs,
+        .row_count = app->frame.style_row_count,
+        .media = app->presentation_media_specs,
+        .media_count = media_count,
+        .viewport_rect = {body_x, body_y, body_w, body_h},
+      },
+      &(PresentationEngineBlockFlowStorage){
+        .rows = app->presentation_rows,
+        .row_capacity = Lectern0PresentationRowCap,
+        .media = app->presentation_media,
+        .media_capacity = Lectern0PresentationMediaCap,
+      },
+      &app->presentation_frame);
+  if (build_result != PresentationEngineBuildResult_Complete ||
+      !app->presentation_frame.valid ||
+      app->presentation_frame.row_count != app->frame.style_row_count ||
+      app->presentation_frame.media_count != media_count ||
+      app->presentation_frame.content_height_px > body_h)
+  {
+    return 0;
+  }
+
+  app->presentation_hash =
+    lectern0_presentation_frame_hash(&app->presentation_frame);
+  return 1;
+}
+
 FUNCTION void
 lectern0_draw_reader_page(Lectern0App *app)
 {
@@ -1223,6 +1605,8 @@ lectern0_draw_reader_page(Lectern0App *app)
 
   if (!app->frame.ready || !app->frame.document_open)
   {
+    MemoryZeroStruct(&app->presentation_frame);
+    app->presentation_hash = 0;
     (void)draw_push_text_in_rect(&app->draw_commands,
                                  DrawLayer_World,
                                  app->render_state.text_provider,
@@ -1239,61 +1623,80 @@ lectern0_draw_reader_page(Lectern0App *app)
     return;
   }
 
-  S32 y = body_y;
+  if (!lectern0_build_reader_presentation(app,
+                                          body_x,
+                                          body_y,
+                                          body_w,
+                                          body_h))
+  {
+    app->presentation_complete = 0;
+  }
+
   U32 row_index = 0;
   for (;
-       row_index < app->frame.style_row_count && y < body_y + body_h;
+       app->presentation_frame.valid &&
+       row_index < app->presentation_frame.row_count;
        row_index += 1)
   {
-    EpubReaderFrameStyleRow row = app->frame.style_rows[row_index];
-    U32 start = MIN(row.byte_start, (U32)app->frame.visible_text.size);
-    U32 end = MIN(row.byte_end, (U32)app->frame.visible_text.size);
+    const PresentationEngineBlockFlowRow *presentation_row =
+      app->presentation_frame.rows + row_index;
+    if (presentation_row->style_index >= app->frame.style_row_count)
+    {
+      app->presentation_complete = 0;
+      break;
+    }
+    const EpubReaderFrameStyleRow *row =
+      app->frame.style_rows + presentation_row->style_index;
+    U32 start = MIN(row->byte_start, (U32)app->frame.visible_text.size);
+    U32 end = MIN(row->byte_end, (U32)app->frame.visible_text.size);
     while (end > start &&
            (app->frame.visible_text.str[end - 1] == '\n' ||
             app->frame.visible_text.str[end - 1] == '\r'))
     {
       end -= 1;
     }
-    S32 scale = MAX((app->layout_key.text_scale * (S32)MAX(row.font_scale_permille, 1U)) / 1000, 12);
-    S32 line_height = MAX((app->layout_key.line_height * (S32)MAX(row.line_height_permille, 1U)) / 1000, scale + 4);
-    if (row.line_row == 0)
-    {
-      y += MAX(row.margin_top_rows, 0) * app->layout_key.line_height;
-    }
-    if (y + line_height > body_y + body_h)
+    Lectern0PresentationRowMetrics metrics = {0};
+    S64 row_bottom = (S64)presentation_row->row_rect.y +
+                     (S64)presentation_row->row_rect.h;
+    if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics) ||
+        presentation_row->row_rect.y < body_y ||
+        row_bottom > (S64)body_y + (S64)body_h)
     {
       app->presentation_complete = 0;
       break;
     }
-    S32 x = body_x + MAX(row.margin_left_cols, 0) * app->layout_key.char_advance;
-    if (row.line_row == 0) { x += MAX(row.text_indent_cols, 0) * app->layout_key.char_advance; }
+    S32 x = presentation_row->content_rect.x;
+    S32 y = presentation_row->row_rect.y;
 
-    EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row.row);
+    EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
     if (image)
     {
-      S32 image_w = MAX(body_w - (x - body_x), 80);
-      if (image->display_w_px > 0) { image_w = MIN(image_w, image->display_w_px); }
-      S32 desired_h = image->display_h_px;
-      if (desired_h <= 0 && image->src_w > 0 && image->src_h > 0)
-      {
-        desired_h = (S32)(((S64)image->src_h * image_w) / image->src_w);
-      }
-      S32 available_h = MAX(body_y + body_h - y, 0);
-      S32 image_h = MIN(MAX(desired_h, 72), MIN(available_h, 320));
-      if (image_h <= 0)
+      if (presentation_row->first_media_index == PRESENTATION_ENGINE_INDEX_NONE ||
+          presentation_row->media_count != 1 ||
+          presentation_row->first_media_index >= app->presentation_frame.media_count)
       {
         app->presentation_complete = 0;
         break;
       }
-      S32 image_x = x;
-      if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
+      const PresentationEngineBlockFlowMedia *media =
+        app->presentation_frame.media + presentation_row->first_media_index;
+      S32 image_x = media->rect.x;
+      S32 image_y = media->rect.y;
+      S32 image_w = media->rect.w;
+      S32 image_h = media->rect.h;
+      S64 image_right = (S64)image_x + (S64)image_w;
+      S64 image_bottom = (S64)image_y + (S64)image_h;
+      if (media->row_index != row_index || image_x < body_x || image_y < body_y ||
+          image_right > (S64)body_x + (S64)body_w ||
+          image_bottom > (S64)body_y + (S64)body_h)
       {
-        image_x = body_x + MAX((body_w - image_w) / 2, 0);
+        app->presentation_complete = 0;
+        break;
       }
       (void)draw_push_rounded_rect(&app->draw_commands,
                                    DrawLayer_World,
                                    image_x,
-                                   y,
+                                   image_y,
                                    image_w,
                                    image_h,
                                    6,
@@ -1308,7 +1711,7 @@ lectern0_draw_reader_page(Lectern0App *app)
         if (!lectern0_fit_image_rect(image->src_w,
                                      image->src_h,
                                      image_x,
-                                     y,
+                                     image_y,
                                      image_w,
                                      image_h,
                                      &fit_x,
@@ -1352,7 +1755,7 @@ lectern0_draw_reader_page(Lectern0App *app)
                                      app->render_state.text_provider,
                                      placeholder,
                                      image_x,
-                                     y,
+                                     image_y,
                                      image_w,
                                      image_h,
                                      12,
@@ -1361,30 +1764,29 @@ lectern0_draw_reader_page(Lectern0App *app)
                                      DrawTextVAlign_Center,
                                      0x00666058U);
       }
-      y += image_h + 8;
       continue;
     }
 
     if (end > start)
     {
       String8 text = str8(app->frame.visible_text.str + start, end - start);
-      U32 color = row.has_text_color ? row.text_color_rgb : 0x002A2927U;
+      U32 color = row->has_text_color ? row->text_color_rgb : 0x002A2927U;
       TextEngineResolvedStyle style =
         epub_reader_typography_style_for_doc_style(&app->reader.typography,
-                                                    scale,
+                                                    metrics.scale_px,
                                                     color,
-                                                    row.font_family_hint,
-                                                    row.font_face_index,
-                                                    row.block_style_flags,
+                                                    row->font_family_hint,
+                                                    row->font_face_index,
+                                                    row->block_style_flags,
                                                     FontRasterFlag_Smooth);
-      S32 baseline = y + MAX(style.baseline_offset_px, scale);
+      S32 baseline = y + MAX(style.baseline_offset_px, metrics.scale_px);
       if (!lectern0_push_reader_text_chunks(app,
                                             text,
-                                            &row,
+                                            row,
                                             &style,
                                             x,
                                             baseline,
-                                            scale,
+                                            metrics.scale_px,
                                             color,
                                             body_x,
                                             body_y,
@@ -1394,10 +1796,8 @@ lectern0_draw_reader_page(Lectern0App *app)
         app->presentation_complete = 0;
       }
     }
-    y += line_height;
-    y += MAX(row.margin_bottom_rows, 0) * app->layout_key.line_height;
   }
-  if (row_index < app->frame.style_row_count)
+  if (row_index < app->presentation_frame.row_count)
   {
     app->presentation_complete = 0;
   }
@@ -1816,7 +2216,7 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
   }
 
   fprintf(stdout,
-          "lectern0_visual_smoke result=pass spine=%u page=%llu/%llu rows=%u pixels=%dx%d hash=%016llx bmp=%s\n",
+          "lectern0_visual_smoke result=pass spine=%u page=%llu/%llu rows=%u pixels=%dx%d hash=%016llx presentation=%016llx bmp=%s\n",
           app.frame.spine_index,
           (unsigned long long)app.frame.page_index,
           (unsigned long long)app.frame.page_count,
@@ -1824,6 +2224,7 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
           RenderWidth,
           RenderHeight,
           (unsigned long long)pixel_hash,
+          (unsigned long long)app.presentation_hash,
           bmp_path);
   lectern0_app_release(&app);
   return 0;

@@ -15,6 +15,11 @@ JPEG, BMP, and first-frame GIF resources render as decoded pixels. Unsupported,
 missing, oversized, corrupt, or cache-full resources retain visible alt-text
 fallbacks.
 
+The Presentation Engine API 1 adoption routes canonical EPUB row and image-box
+vertical geometry through zero_foundation's callback-free block-flow builder.
+Lectern0 still resolves reader/host metrics, owns caller storage, draws the
+returned records, and retains every cache, persistence, and product decision.
+
 ## Build and validate
 
 From a linked worktree, point the dependency variables at exact clean

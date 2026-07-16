@@ -18,6 +18,7 @@
 #include "font_provider/font_provider.c"
 #include "font_cache/font_cache.c"
 #include "draw/draw.c"
+#include "presentation_engine/presentation_engine.c"
 #include "reader0.c"
 #include "render/render.c"
 #include "ui0.c"

@@ -68,4 +68,27 @@ Require-Dependency "ui0" $ui0 (Join-Path $RepoRoot "vendor\ui0_dependency") `
 Require-Dependency "zero_foundation" $zero (Join-Path $RepoRoot "vendor\zero_foundation_dependency") `
   "code\foundation\version.h" "ZERO_FOUNDATION_VERSION_STRING"
 
+$presentationMetadata = Join-Path $RepoRoot "vendor\zero_foundation_dependency\PRESENTATION_ENGINE_API_VERSION"
+$presentationHeader = Join-Path $zero "code\presentation_engine\presentation_engine.h"
+if (!(Test-Path -LiteralPath $presentationMetadata -PathType Leaf)) {
+  throw "zero_foundation Presentation Engine API metadata is missing"
+}
+if (!(Test-Path -LiteralPath $presentationHeader -PathType Leaf)) {
+  throw "zero_foundation Presentation Engine header is missing"
+}
+$requiredPresentationApi = [int](Get-Content -Raw -LiteralPath $presentationMetadata).Trim()
+$presentationHeaderText = [System.IO.File]::ReadAllText($presentationHeader)
+$presentationApiMatch = [regex]::Match(
+  $presentationHeaderText,
+  "#define\s+PRESENTATION_ENGINE_API_VERSION\s+(\d+)")
+if (!$presentationApiMatch.Success) {
+  throw "zero_foundation Presentation Engine API macro is missing"
+}
+$currentPresentationApi = [int]$presentationApiMatch.Groups[1].Value
+Write-Host "zero_foundation Presentation Engine required API: $requiredPresentationApi"
+Write-Host "zero_foundation Presentation Engine current API:  $currentPresentationApi"
+if ($currentPresentationApi -ne $requiredPresentationApi) {
+  throw "zero_foundation Presentation Engine API mismatch"
+}
+
 Write-Host "lectern0 dependency status: current"

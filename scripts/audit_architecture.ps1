@@ -23,6 +23,9 @@ if ($failures.Count -eq 0) {
       [regex]::Matches($build, '#\s*include\s+"platform/win32/os_image_win32\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile the shared os_image API and Win32 backend exactly once")
   }
+  if ([regex]::Matches($build, '#\s*include\s+"presentation_engine/presentation_engine\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile Presentation Engine API 1 exactly once")
+  }
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the reader0 umbrella")
   }
@@ -48,6 +51,12 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('draw_push_sprite_clipped') -lt 0) {
     $failures.Add("lectern0 must own cache policy while using shared decode and sprite presentation")
   }
+  if ($app.IndexOf('#include "presentation_engine/presentation_engine.h"') -lt 0 -or
+      $app.IndexOf('PRESENTATION_ENGINE_API_VERSION != 1') -lt 0 -or
+      $app.IndexOf('lectern0_build_reader_presentation') -lt 0 -or
+      $app.IndexOf('presentation_engine_block_flow_build') -lt 0) {
+    $failures.Add("lectern0 must route canonical-row vertical geometry through Presentation Engine API 1")
+  }
   if ($app -match 'IWIC|CLSID_WIC|wincodec\.h') {
     $failures.Add("lectern0 must not duplicate the zero_foundation WIC backend")
   }
@@ -62,4 +71,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "lectern0 architecture audit: pass"
-Write-Host "boundary: zero_foundation + ui0 host chrome + reader0 concrete EPUB core"
+Write-Host "boundary: zero_foundation presentation/image/render + ui0 host chrome + reader0 concrete EPUB core"

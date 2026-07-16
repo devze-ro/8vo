@@ -38,6 +38,12 @@ function Invoke-Lectern0Render {
     throw "lectern0 visual smoke did not report a pixel hash"
   }
   $pixelHash = $Matches[1].ToLowerInvariant()
+  if ($line -notmatch ' presentation=([0-9a-fA-F]{16}) ' -or
+      $Matches[1] -eq '0000000000000000') {
+    $line | Write-Host
+    throw "lectern0 visual smoke did not report Presentation Engine geometry"
+  }
+  $presentationHash = $Matches[1].ToLowerInvariant()
 
   $image = [System.Drawing.Image]::FromFile($Bmp)
   try {
@@ -51,13 +57,16 @@ function Invoke-Lectern0Render {
   [pscustomobject]@{
     Line = [string]$line
     PixelHash = $pixelHash
+    PresentationHash = $presentationHash
     FileHash = (Get-FileHash -LiteralPath $Bmp -Algorithm SHA256).Hash
   }
 }
 
 $first = Invoke-Lectern0Render
 $second = Invoke-Lectern0Render
-if ($first.PixelHash -ne $second.PixelHash -or $first.FileHash -ne $second.FileHash) {
+if ($first.PixelHash -ne $second.PixelHash -or
+    $first.PresentationHash -ne $second.PresentationHash -or
+    $first.FileHash -ne $second.FileHash) {
   throw "lectern0 visual smoke is not repeatable: $($first.PixelHash)/$($second.PixelHash)"
 }
 
