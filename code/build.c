@@ -22,7 +22,9 @@
 #include "reader0.c"
 #include "render/render.c"
 #include "ui0.c"
+#include "readerview0.c"
 #include "lectern0.c"
+#include "platform/win32/lectern0_accessibility_win32.c"
 
 #if OS_WINDOWS
 #  include "platform/win32/os_core_win32.c"

@@ -1,6 +1,7 @@
 #include "lectern0_version.h"
 #include "reader0.h"
 #include "ui0.h"
+#include "readerview0.h"
 
 #include "base/base_arena.h"
 #include "base/base_format.h"
@@ -22,6 +23,9 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "lectern0 requires Presentation Engine API 1"
 #endif
+#if READERVIEW0_API_VERSION != 1
+#  error "lectern0 requires Reader View API 1"
+#endif
 
 #include <commdlg.h>
 #include <objbase.h>
@@ -31,21 +35,33 @@
 #include <string.h>
 #include <windows.h>
 #include <windowsx.h>
+#include <shellapi.h>
+#include <oleacc.h>
+
+#include "platform/win32/lectern0_accessibility_win32.h"
 
 enum
 {
   Lectern0PathCap = 1024,
   Lectern0StatusCap = 256,
   Lectern0StateFileCap = 2304,
-  Lectern0UIBoxCap = 8,
-  Lectern0UIRecordCap = 8,
-  Lectern0UIDrawCap = 48,
   Lectern0ToolbarHeight = 48,
   Lectern0FooterHeight = 36,
   Lectern0ImageCacheCap = 64,
+  Lectern0BookmarkCap = 128,
+  Lectern0HighlightCap = 128,
+  Lectern0RecordLabelCap = 160,
+  Lectern0NoteCap = READER_VIEW_NOTE_DRAFT_CAP,
+  Lectern0SelectionTextCap = 1024,
+  Lectern0InputTextCap = 128,
+  Lectern0ClipboardCap = 2048,
+  Lectern0UrlCap = 4096,
   Lectern0PresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
   Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
 };
+
+#define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
+#define LECTERN0_ANNOTATION_MAGIC 0x4C30414E4E4F5431ull
 
 typedef struct Lectern0ImageCacheEntry
 {
@@ -79,6 +95,68 @@ typedef struct Lectern0SavedState
   char path[Lectern0PathCap];
 } Lectern0SavedState;
 
+typedef enum Lectern0Theme
+{
+  Lectern0Theme_Light,
+  Lectern0Theme_Sepia,
+  Lectern0Theme_Dark,
+  Lectern0Theme_Count,
+} Lectern0Theme;
+
+typedef struct Lectern0Bookmark
+{
+  U64 id;
+  U32 spine_index;
+  U64 byte_offset;
+  B32 starred;
+  char label[Lectern0RecordLabelCap];
+} Lectern0Bookmark;
+
+typedef struct Lectern0Highlight
+{
+  U64 id;
+  U32 spine_index;
+  U64 start_byte;
+  U64 end_byte;
+  U32 color_index;
+  B32 starred;
+  B32 note_starred;
+  char section[Lectern0RecordLabelCap];
+  char text[Lectern0RecordLabelCap];
+  char note[Lectern0NoteCap];
+} Lectern0Highlight;
+
+typedef struct Lectern0SettingsFile
+{
+  U64 magic;
+  U32 version;
+  U32 font_family;
+  U32 text_size_index;
+  U32 line_spacing_index;
+  U32 theme;
+} Lectern0SettingsFile;
+
+typedef struct Lectern0AnnotationFile
+{
+  U64 magic;
+  U32 version;
+  U32 bookmark_count;
+  U32 highlight_count;
+  U32 reserved;
+  U64 path_hash;
+  U64 next_record_id;
+  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
+  Lectern0Highlight highlights[Lectern0HighlightCap];
+} Lectern0AnnotationFile;
+
+typedef struct Lectern0Fullscreen
+{
+  B32 active;
+  DWORD style;
+  DWORD ex_style;
+  WINDOWPLACEMENT placement;
+} Lectern0Fullscreen;
+
 typedef struct Lectern0Input
 {
   S32 pointer_x;
@@ -89,15 +167,24 @@ typedef struct Lectern0Input
   B32 activate_pressed;
   B32 focus_next_pressed;
   B32 focus_prev_pressed;
+  S32 wheel_delta_y;
+  B32 escape_pressed;
+  B32 backspace_pressed;
+  B32 delete_pressed;
+  B32 commit_pressed;
+  B32 select_all_pressed;
+  B32 copy_pressed;
+  B32 cut_pressed;
+  B32 paste_pressed;
+  B32 undo_pressed;
+  B32 redo_pressed;
+  S32 move_delta;
+  S32 move_vertical_delta;
+  ReaderViewRangeMove range_move;
+  B32 extend_selection;
+  char text[Lectern0InputTextCap];
+  S32 text_length;
 } Lectern0Input;
-
-typedef enum Lectern0Action
-{
-  Lectern0Action_None,
-  Lectern0Action_Open,
-  Lectern0Action_Previous,
-  Lectern0Action_Next,
-} Lectern0Action;
 
 typedef struct Lectern0App
 {
@@ -122,29 +209,62 @@ typedef struct Lectern0App
   B32 presentation_complete;
   B32 gfx_ready;
   HWND window;
+  Lectern0Accessibility *accessibility;
   S32 width;
   S32 height;
 
-  UI0LayoutContext ui_layout;
-  UI0LayoutBox ui_boxes[Lectern0UIBoxCap];
-  UI0SignalContext ui_signals;
-  UI0SignalRecord ui_signal_records[Lectern0UIRecordCap];
-  UI0ControlContext ui_controls;
-  UI0ControlRecord ui_control_records[Lectern0UIRecordCap];
-  UI0DrawContext ui_draw;
-  UI0DrawCommand ui_draw_commands[Lectern0UIDrawCap];
-  UI0ID open_id;
-  UI0ID previous_id;
-  UI0ID next_id;
-  UI0ID status_id;
-  UI0ID toolbar_id;
+  ReaderViewState reader_view_state;
+  ReaderViewFrameStorage reader_view_storage;
+  ReaderViewLayout reader_view_layout;
+  ReaderViewFrame reader_view_frame;
+  ReaderViewProjection reader_view_projection;
+  ReaderViewSettingControl reader_view_settings[READER_VIEW_SETTING_CAP];
+  ReaderViewChoice reader_view_font_choices[8];
+  ReaderViewChoice reader_view_size_choices[4];
+  ReaderViewChoice reader_view_spacing_choices[3];
+  ReaderViewChoice reader_view_theme_choices[Lectern0Theme_Count];
+  ReaderViewChoice reader_view_color_choices[READER_VIEW_HIGHLIGHT_COLOR_CAP];
+  ReaderViewTocRow reader_view_toc_rows[READER_VIEW_TOC_ROW_CAP];
+  ReaderViewFindRow reader_view_find_rows[READER_VIEW_FIND_ROW_CAP];
+  ReaderViewRightRow reader_view_right_rows[READER_VIEW_RIGHT_ROW_CAP];
+  char document_title[Lectern0RecordLabelCap];
+  char progress_label[64];
+  char selected_text[Lectern0SelectionTextCap];
+  ReaderViewLoadState document_state;
+  UI0ResolvedTheme reader_view_theme;
+  U64 reader_view_frame_index;
+  B32 reader_view_ready;
+  S32 pagination_viewport_width;
+  S32 pagination_viewport_height;
+
+  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
+  U32 bookmark_count;
+  Lectern0Highlight highlights[Lectern0HighlightCap];
+  U32 highlight_count;
+  U64 next_record_id;
+  U64 annotation_revision;
+  U32 font_family;
+  U32 text_size_index;
+  U32 line_spacing_index;
+  Lectern0Theme theme;
+  B32 distraction_free;
+  Lectern0Fullscreen fullscreen;
+  B32 selection_dragging;
+  U64 selection_anchor_byte;
+  UI0Rect selection_anchor_rect;
+  char clipboard_text[Lectern0ClipboardCap];
+  S32 clipboard_length;
+  UI0TextInputTransferBuffer clipboard_transfer;
+  wchar_t pending_high_surrogate;
   Lectern0Input input;
-  Lectern0Action pending_action;
 
   B32 persistence_enabled;
   Lectern0SavedState saved;
   char app_directory[Lectern0PathCap];
   char state_path[Lectern0PathCap];
+  char settings_path[Lectern0PathCap];
+  char annotations_path[Lectern0PathCap];
+  char export_path[Lectern0PathCap];
   char current_path[Lectern0PathCap];
   char status[Lectern0StatusCap];
 } Lectern0App;
@@ -198,6 +318,14 @@ lectern0_state_paths(Lectern0App *app)
                     ARRAY_COUNT(app->state_path),
                     "%s\\state.v1",
                     app->app_directory);
+  (void)cstr_format(app->settings_path,
+                    ARRAY_COUNT(app->settings_path),
+                    "%s\\settings.v1",
+                    app->app_directory);
+  (void)cstr_format(app->export_path,
+                    ARRAY_COUNT(app->export_path),
+                    "%s\\reader_annotations.txt",
+                    app->app_directory);
   return os_make_directory_chain(app->app_directory);
 }
 
@@ -230,6 +358,119 @@ lectern0_load_state(Lectern0App *app)
   app->saved.spine_index = (U32)parsed_spine;
   app->saved.byte_offset = (U64)parsed_byte;
   lectern0_copy_cstr(app->saved.path, ARRAY_COUNT(app->saved.path), path);
+}
+
+FUNCTION void
+lectern0_load_settings(Lectern0App *app)
+{
+  if (!app || !app->persistence_enabled || !app->settings_path[0]) { return; }
+  Lectern0SettingsFile file = {0};
+  U64 size = 0;
+  if (!os_read_entire_file(app->settings_path, &file, sizeof(file), &size) ||
+      size != sizeof(file) || file.magic != LECTERN0_SETTINGS_MAGIC ||
+      file.version != 1)
+  {
+    return;
+  }
+  if (file.font_family < FontProviderBookContentFamily_InternalCount)
+    app->font_family = file.font_family;
+  if (file.text_size_index < 4) app->text_size_index = file.text_size_index;
+  if (file.line_spacing_index < 3) app->line_spacing_index = file.line_spacing_index;
+  if (file.theme < Lectern0Theme_Count) app->theme = (Lectern0Theme)file.theme;
+}
+
+FUNCTION B32
+lectern0_save_settings(Lectern0App *app)
+{
+  if (!app || !app->persistence_enabled || !app->settings_path[0]) { return 0; }
+  Lectern0SettingsFile file = {
+    .magic = LECTERN0_SETTINGS_MAGIC,
+    .version = 1,
+    .font_family = app->font_family,
+    .text_size_index = app->text_size_index,
+    .line_spacing_index = app->line_spacing_index,
+    .theme = (U32)app->theme,
+  };
+  return os_write_entire_file_atomic(app->settings_path, &file, sizeof(file));
+}
+
+FUNCTION void
+lectern0_set_annotations_path(Lectern0App *app, const char *path)
+{
+  if (!app) { return; }
+  app->annotations_path[0] = 0;
+  if (!path || !path[0] || !app->app_directory[0]) { return; }
+  U64 path_hash = u64_hash_str8(str8_from_cstr(path));
+  (void)cstr_format(app->annotations_path,
+                    ARRAY_COUNT(app->annotations_path),
+                    "%s\\annotations_%016llx.v1",
+                    app->app_directory,
+                    (unsigned long long)path_hash);
+}
+
+FUNCTION void
+lectern0_clear_annotations(Lectern0App *app)
+{
+  if (!app) { return; }
+  MemoryZeroArray(app->bookmarks);
+  MemoryZeroArray(app->highlights);
+  app->bookmark_count = 0;
+  app->highlight_count = 0;
+  app->next_record_id = 1;
+  app->annotation_revision += 1;
+}
+
+FUNCTION void
+lectern0_load_annotations(Lectern0App *app)
+{
+  if (!app) { return; }
+  lectern0_clear_annotations(app);
+  if (!app->persistence_enabled || !app->annotations_path[0] ||
+      !app->current_path[0])
+  {
+    return;
+  }
+  Lectern0AnnotationFile file = {0};
+  U64 size = 0;
+  U64 expected_hash = u64_hash_str8(str8_from_cstr(app->current_path));
+  if (!os_read_entire_file(app->annotations_path, &file, sizeof(file), &size) ||
+      size != sizeof(file) || file.magic != LECTERN0_ANNOTATION_MAGIC ||
+      file.version != 1 || file.path_hash != expected_hash ||
+      file.bookmark_count > Lectern0BookmarkCap ||
+      file.highlight_count > Lectern0HighlightCap)
+  {
+    return;
+  }
+  app->bookmark_count = file.bookmark_count;
+  app->highlight_count = file.highlight_count;
+  app->next_record_id = MAX(file.next_record_id, 1ull);
+  MemoryCopy(app->bookmarks, file.bookmarks,
+             sizeof(file.bookmarks[0]) * file.bookmark_count);
+  MemoryCopy(app->highlights, file.highlights,
+             sizeof(file.highlights[0]) * file.highlight_count);
+  app->annotation_revision += 1;
+}
+
+FUNCTION B32
+lectern0_save_annotations(Lectern0App *app)
+{
+  if (!app || !app->persistence_enabled || !app->annotations_path[0] ||
+      !app->current_path[0])
+  {
+    return 0;
+  }
+  Lectern0AnnotationFile file = {0};
+  file.magic = LECTERN0_ANNOTATION_MAGIC;
+  file.version = 1;
+  file.bookmark_count = app->bookmark_count;
+  file.highlight_count = app->highlight_count;
+  file.path_hash = u64_hash_str8(str8_from_cstr(app->current_path));
+  file.next_record_id = app->next_record_id;
+  MemoryCopy(file.bookmarks, app->bookmarks,
+             sizeof(file.bookmarks[0]) * app->bookmark_count);
+  MemoryCopy(file.highlights, app->highlights,
+             sizeof(file.highlights[0]) * app->highlight_count);
+  return os_write_entire_file_atomic(app->annotations_path, &file, sizeof(file));
 }
 
 FUNCTION B32
@@ -460,16 +701,25 @@ lectern0_update_layout_inputs(Lectern0App *app)
     return 0;
   }
 
-  S32 content_width = MAX(app->width - 112, 240);
-  S32 content_height = MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight - 48, 120);
-  S32 text_scale = 18;
-  S32 char_advance = 10;
-  S32 line_height = 24;
+  static const S32 text_scales[] = {18, 20, 21, 22};
+  static const S32 char_advances[] = {10, 10, 11, 11};
+  static const S32 line_heights[] = {24, 26, 28, 30};
+  static const S32 line_spacing_extra[] = {0, 5, 10};
+  UI0Rect viewport = app->reader_view_ready ? app->reader_view_layout.viewport_rect :
+    ui0_rect(0, Lectern0ToolbarHeight, app->width,
+             MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
+  U32 size_index = app->text_size_index % ARRAY_COUNT(text_scales);
+  U32 spacing_index = app->line_spacing_index % ARRAY_COUNT(line_spacing_extra);
+  S32 content_width = MAX(viewport.w - 112, 240);
+  S32 content_height = MAX(viewport.h - Lectern0FooterHeight - 20, 120);
+  S32 text_scale = text_scales[size_index];
+  S32 char_advance = char_advances[size_index];
+  S32 line_height = line_heights[size_index] + line_spacing_extra[spacing_index];
   String8 uri = epub_reader_canonical_uri(&app->reader);
 
   (void)epub_reader_typography_set_view(&app->reader.typography,
                                         text_scale,
-                                        FontProviderBookContentFamily_Georgia,
+                                        app->font_family,
                                         1);
   epub_reader_typography_set_text_mode(&app->reader.typography,
                                        EpubReaderTextMode_ShapedV1);
@@ -486,7 +736,7 @@ lectern0_update_layout_inputs(Lectern0App *app)
     .line_height = line_height,
     .text_scale = text_scale,
     .margin_unit_permille = 1000,
-    .font_family_index = FontProviderBookContentFamily_Georgia,
+    .font_family_index = app->font_family,
     .embedded_fonts_enabled = 1,
     .text_mode = EpubReaderTextMode_ShapedV1,
   };
@@ -502,6 +752,8 @@ lectern0_update_layout_inputs(Lectern0App *app)
     .measure_text = epub_reader_typography_measure_text,
     .measure_user = &app->reader.typography,
   };
+  app->pagination_viewport_width = viewport.w;
+  app->pagination_viewport_height = viewport.h;
   return 1;
 }
 
@@ -592,6 +844,9 @@ FUNCTION B32
 lectern0_open_path(Lectern0App *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
+  app->document_state = ReaderViewLoad_Loading;
+  lectern0_set_statusf(app, "Opening EPUB...");
+  if (app->current_path[0]) { (void)lectern0_save_annotations(app); }
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result =
     epub_reader_open(&app->reader,
@@ -603,10 +858,15 @@ lectern0_open_path(Lectern0App *app, const char *path)
       !lectern0_update_layout_inputs(app))
   {
     lectern0_set_statusf(app, "Open failed: %s", epub_reader_result_code(open_result));
+    app->document_state = ReaderViewLoad_Error;
     return 0;
   }
 
   lectern0_copy_cstr(app->current_path, ARRAY_COUNT(app->current_path), path);
+  lectern0_set_annotations_path(app, path);
+  lectern0_load_annotations(app);
+  reader_view_state_reset_document(&app->reader_view_state,
+                                   (UI0U64)epub_reader_document_id(&app->reader));
   B32 restored = 0;
   if (app->saved.valid && strcmp(app->saved.path, path) == 0)
   {
@@ -625,6 +885,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
                                         &reused))
     {
       lectern0_set_statusf(app, "Open failed: pagination");
+      app->document_state = ReaderViewLoad_Error;
       return 0;
     }
   }
@@ -632,6 +893,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   if (!lectern0_capture_frame(app))
   {
     lectern0_set_statusf(app, "Open failed: frame");
+    app->document_state = ReaderViewLoad_Error;
     return 0;
   }
   lectern0_set_statusf(app,
@@ -642,6 +904,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
                        (unsigned)(app->frame.spine_index + 1),
                        (unsigned)app->frame.section_count);
   (void)transition;
+  app->document_state = ReaderViewLoad_Ready;
   (void)lectern0_save_state(app);
   return 1;
 }
@@ -775,6 +1038,825 @@ lectern0_navigate_to_search_match(Lectern0App *app,
   return lectern0_finish_semantic_navigation(app, result, "Find");
 }
 
+FUNCTION ReaderViewText
+lectern0_reader_view_text(const char *text)
+{
+  ReaderViewText result = {0};
+  if (text)
+  {
+    result.data = text;
+    result.size = (UI0S32)strlen(text);
+  }
+  return result;
+}
+
+FUNCTION ReaderViewText
+lectern0_reader_view_bytes(const char *text, U64 size)
+{
+  ReaderViewText result = {0};
+  if (text && size <= (U64)INT32_MAX)
+  {
+    result.data = text;
+    result.size = (UI0S32)size;
+  }
+  return result;
+}
+
+FUNCTION void
+lectern0_copy_bytes(char *dst, U64 cap, const U8 *src, U64 size)
+{
+  if (!dst || cap == 0) { return; }
+  U64 copy_size = MIN(size, cap - 1);
+  if (src && copy_size) { MemoryCopy(dst, src, copy_size); }
+  dst[copy_size] = 0;
+}
+
+FUNCTION const char *
+lectern0_current_section_label(const Lectern0App *app)
+{
+  if (!app) { return ""; }
+  for (U32 index = 0; index < app->frame.section_item_count; index += 1)
+  {
+    if (app->frame.section_items[index].active)
+      return app->frame.section_items[index].label;
+  }
+  return "";
+}
+
+FUNCTION S32
+lectern0_bookmark_index(const Lectern0App *app, U64 id)
+{
+  if (!app || id == 0) { return -1; }
+  for (U32 index = 0; index < app->bookmark_count; index += 1)
+    if (app->bookmarks[index].id == id) return (S32)index;
+  return -1;
+}
+
+FUNCTION S32
+lectern0_current_bookmark_index(const Lectern0App *app)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) { return -1; }
+  for (U32 index = 0; index < app->bookmark_count; index += 1)
+  {
+    const Lectern0Bookmark *bookmark = app->bookmarks + index;
+    if (bookmark->spine_index == app->reader.active_spine_index &&
+        bookmark->byte_offset == app->reader.view_byte_offset)
+      return (S32)index;
+  }
+  return -1;
+}
+
+FUNCTION S32
+lectern0_highlight_index(const Lectern0App *app, U64 id)
+{
+  if (!app || id == 0) { return -1; }
+  for (U32 index = 0; index < app->highlight_count; index += 1)
+    if (app->highlights[index].id == id) return (S32)index;
+  return -1;
+}
+
+FUNCTION S32
+lectern0_selection_highlight_index(const Lectern0App *app)
+{
+  if (!app || !app->reader.has_active_selection) { return -1; }
+  DocSelection selection = app->reader.active_selection;
+  for (U32 index = 0; index < app->highlight_count; index += 1)
+  {
+    const Lectern0Highlight *highlight = app->highlights + index;
+    if (highlight->spine_index == selection.spine_index &&
+        highlight->start_byte == selection.text_byte_start &&
+        highlight->end_byte == selection.text_byte_end)
+      return (S32)index;
+  }
+  return -1;
+}
+
+FUNCTION void
+lectern0_remove_bookmark_at(Lectern0App *app, U32 index)
+{
+  if (!app || index >= app->bookmark_count) { return; }
+  for (U32 at = index + 1; at < app->bookmark_count; at += 1)
+    app->bookmarks[at - 1] = app->bookmarks[at];
+  app->bookmark_count -= 1;
+  MemoryZeroStruct(app->bookmarks + app->bookmark_count);
+  app->annotation_revision += 1;
+  (void)lectern0_save_annotations(app);
+}
+
+FUNCTION void
+lectern0_remove_highlight_at(Lectern0App *app, U32 index)
+{
+  if (!app || index >= app->highlight_count) { return; }
+  for (U32 at = index + 1; at < app->highlight_count; at += 1)
+    app->highlights[at - 1] = app->highlights[at];
+  app->highlight_count -= 1;
+  MemoryZeroStruct(app->highlights + app->highlight_count);
+  app->annotation_revision += 1;
+  (void)lectern0_save_annotations(app);
+}
+
+FUNCTION B32
+lectern0_toggle_current_bookmark(Lectern0App *app)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) { return 0; }
+  S32 existing = lectern0_current_bookmark_index(app);
+  if (existing >= 0)
+  {
+    lectern0_remove_bookmark_at(app, (U32)existing);
+    lectern0_set_statusf(app, "Bookmark removed");
+    return 1;
+  }
+  if (app->bookmark_count >= Lectern0BookmarkCap) return 0;
+  Lectern0Bookmark *bookmark = app->bookmarks + app->bookmark_count++;
+  MemoryZeroStruct(bookmark);
+  bookmark->id = app->next_record_id++;
+  bookmark->spine_index = app->reader.active_spine_index;
+  bookmark->byte_offset = app->reader.view_byte_offset;
+  const char *section = lectern0_current_section_label(app);
+  if (section && section[0])
+    lectern0_copy_cstr(bookmark->label, ARRAY_COUNT(bookmark->label), section);
+  else
+    (void)cstr_format(bookmark->label, ARRAY_COUNT(bookmark->label),
+                      "Page %llu", (unsigned long long)app->frame.page_index);
+  app->annotation_revision += 1;
+  (void)lectern0_save_annotations(app);
+  lectern0_set_statusf(app, "Bookmark added");
+  return 1;
+}
+
+FUNCTION EpubReaderResult
+lectern0_navigate_to_location(Lectern0App *app,
+                              U32 spine_index,
+                              U64 byte_offset,
+                              EpubReaderNavigationReason reason)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
+  if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
+  EpubReaderNavigationResult navigation = {0};
+  EpubReaderResult result = epub_reader_navigate_to_location(
+    &app->reader, spine_index, byte_offset, reason,
+    app->layout_key, app->layout_config,
+    (EpubReaderNavigationOptions){0}, &navigation);
+  return lectern0_finish_semantic_navigation(app, result, "Navigate");
+}
+
+FUNCTION EpubReaderResult
+lectern0_move_history(Lectern0App *app, B32 forward)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
+  if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
+  EpubReaderNavigationEntry current = {0};
+  EpubReaderNavigationEntry target = {0};
+  if (!epub_reader_history_begin(&app->reader, forward, &current, &target))
+    return EpubReaderResult_Boundary;
+  EpubReaderNavigationReason reason = target.reason;
+  if (reason == EpubReaderNavigationReason_None ||
+      reason == EpubReaderNavigationReason_Page)
+    reason = EpubReaderNavigationReason_Location;
+  EpubReaderNavigationResult navigation = {0};
+  EpubReaderResult result = epub_reader_navigate_to_location(
+    &app->reader, target.spine_index, target.byte_offset, reason,
+    app->layout_key, app->layout_config,
+    (EpubReaderNavigationOptions){.suppress_history = 1}, &navigation);
+  epub_reader_history_finish(&app->reader, forward, current, target,
+                             result == EpubReaderResult_Ok);
+  return lectern0_finish_semantic_navigation(app, result,
+                                             forward ? "Forward" : "Back");
+}
+
+FUNCTION EpubReaderResult
+lectern0_seek_location(Lectern0App *app, U64 location_index)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
+  U32 spine_index = 0;
+  U64 byte_offset = 0;
+  U64 location_count = 0;
+  if (!epub_reader_location_target(&app->reader, location_index,
+                                   &spine_index, &byte_offset,
+                                   &location_count))
+    return EpubReaderResult_Boundary;
+  (void)location_count;
+  return lectern0_navigate_to_location(app, spine_index, byte_offset,
+                                       EpubReaderNavigationReason_Location);
+}
+
+FUNCTION B32
+lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
+{
+  if (!app || !app->reader.has_active_selection) { return 0; }
+  S32 existing = lectern0_selection_highlight_index(app);
+  Lectern0Highlight *highlight = 0;
+  if (existing >= 0)
+    highlight = app->highlights + existing;
+  else
+  {
+    if (app->highlight_count >= Lectern0HighlightCap) return 0;
+    highlight = app->highlights + app->highlight_count++;
+    MemoryZeroStruct(highlight);
+    highlight->id = app->next_record_id++;
+    highlight->spine_index = app->reader.active_selection.spine_index;
+    highlight->start_byte = app->reader.active_selection.text_byte_start;
+    highlight->end_byte = app->reader.active_selection.text_byte_end;
+    lectern0_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
+                       lectern0_current_section_label(app));
+    lectern0_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
+                       app->selected_text);
+  }
+  highlight->color_index = color_index % READER_VIEW_HIGHLIGHT_COLOR_CAP;
+  app->annotation_revision += 1;
+  (void)lectern0_save_annotations(app);
+  lectern0_set_statusf(app, "Highlight saved");
+  return 1;
+}
+
+FUNCTION B32
+lectern0_save_selection_note(Lectern0App *app, ReaderViewText note)
+{
+  if (!app || !app->reader.has_active_selection || note.size < 0) { return 0; }
+  S32 index = lectern0_selection_highlight_index(app);
+  if (index < 0)
+  {
+    if (!lectern0_set_highlight_color(app, 0)) return 0;
+    index = lectern0_selection_highlight_index(app);
+  }
+  if (index < 0) return 0;
+  Lectern0Highlight *highlight = app->highlights + index;
+  lectern0_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
+                      (const U8 *)note.data, (U64)note.size);
+  app->annotation_revision += 1;
+  (void)lectern0_save_annotations(app);
+  lectern0_set_statusf(app, "Note saved");
+  return 1;
+}
+
+FUNCTION ReaderViewSurfaceStatus
+lectern0_reader_view_status(ReaderViewLoadState state, const char *message)
+{
+  ReaderViewSurfaceStatus result = {0};
+  result.state = state;
+  result.message = lectern0_reader_view_text(message);
+  return result;
+}
+
+FUNCTION void
+lectern0_prepare_selected_text(Lectern0App *app)
+{
+  if (!app) { return; }
+  app->selected_text[0] = 0;
+  if (!app->reader.has_active_selection ||
+      app->reader.active_selection.spine_index != app->reader.active_spine_index)
+    return;
+  U64 start = MIN(app->reader.active_selection.text_byte_start,
+                  app->reader.spine_text.size);
+  U64 end = MIN(app->reader.active_selection.text_byte_end,
+                app->reader.spine_text.size);
+  if (end <= start) return;
+  lectern0_copy_bytes(app->selected_text, ARRAY_COUNT(app->selected_text),
+                      app->reader.spine_text.str + start, end - start);
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_settings(Lectern0App *app)
+{
+  static const U32 families[] = {
+    FontProviderBookContentFamily_Georgia,
+    FontProviderBookContentFamily_NotoSerif,
+    FontProviderBookContentFamily_PalatinoLinotype,
+    FontProviderBookContentFamily_BookAntiqua,
+    FontProviderBookContentFamily_TimesNewRoman,
+    FontProviderBookContentFamily_PublisherSansSerif,
+    FontProviderBookContentFamily_PublisherMonospace,
+  };
+  static const char *size_labels[] = {"Default", "Large", "Larger", "Largest"};
+  static const char *spacing_labels[] = {"Compact", "Comfortable", "Spacious"};
+  static const char *theme_labels[] = {"Light", "Sepia", "Dark"};
+  U32 font_count = 0;
+  for (U32 index = 0; index < ARRAY_COUNT(families); index += 1)
+  {
+    U32 family = families[index];
+    if (!epub_reader_typography_family_available(&app->reader.typography, family))
+      continue;
+    ReaderViewChoice *choice = app->reader_view_font_choices + font_count++;
+    *choice = (ReaderViewChoice){
+      .key = 1000ull + family,
+      .label = lectern0_reader_view_text(
+        epub_reader_typography_family_label(&app->reader.typography, family)),
+      .flags = ReaderViewChoice_Enabled |
+        (family == app->font_family ? ReaderViewChoice_Selected : 0),
+    };
+  }
+  if (font_count == 0)
+  {
+    app->font_family = FontProviderBookContentFamily_Georgia;
+    app->reader_view_font_choices[0] = (ReaderViewChoice){
+      .key = 1000ull + FontProviderBookContentFamily_Georgia,
+      .label = lectern0_reader_view_text("Georgia"),
+      .flags = ReaderViewChoice_Enabled | ReaderViewChoice_Selected,
+    };
+    font_count = 1;
+  }
+  for (U32 index = 0; index < ARRAY_COUNT(size_labels); index += 1)
+  {
+    app->reader_view_size_choices[index] = (ReaderViewChoice){
+      .key = 2000ull + index,
+      .label = lectern0_reader_view_text(size_labels[index]),
+      .flags = ReaderViewChoice_Enabled |
+        (index == app->text_size_index ? ReaderViewChoice_Selected : 0),
+    };
+  }
+  for (U32 index = 0; index < ARRAY_COUNT(spacing_labels); index += 1)
+  {
+    app->reader_view_spacing_choices[index] = (ReaderViewChoice){
+      .key = 3000ull + index,
+      .label = lectern0_reader_view_text(spacing_labels[index]),
+      .flags = ReaderViewChoice_Enabled |
+        (index == app->line_spacing_index ? ReaderViewChoice_Selected : 0),
+    };
+  }
+  for (U32 index = 0; index < ARRAY_COUNT(theme_labels); index += 1)
+  {
+    app->reader_view_theme_choices[index] = (ReaderViewChoice){
+      .key = 4000ull + index,
+      .label = lectern0_reader_view_text(theme_labels[index]),
+      .flags = ReaderViewChoice_Enabled |
+        (index == (U32)app->theme ? ReaderViewChoice_Selected : 0),
+    };
+  }
+  app->reader_view_settings[0] = (ReaderViewSettingControl){
+    .kind = ReaderViewSetting_FontFamily,
+    .label = lectern0_reader_view_text("Font"),
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .choices = {
+      .items = app->reader_view_font_choices,
+      .count = (UI0S32)font_count,
+      .presentation = ReaderViewChoicePresentation_Menu,
+    },
+  };
+  app->reader_view_settings[1] = (ReaderViewSettingControl){
+    .kind = ReaderViewSetting_FontSize,
+    .label = lectern0_reader_view_text("Size"),
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .choices = {
+      .items = app->reader_view_size_choices,
+      .count = (UI0S32)ARRAY_COUNT(app->reader_view_size_choices),
+      .presentation = ReaderViewChoicePresentation_Stepper,
+    },
+  };
+  app->reader_view_settings[2] = (ReaderViewSettingControl){
+    .kind = ReaderViewSetting_LineSpacing,
+    .label = lectern0_reader_view_text("Spacing"),
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .choices = {
+      .items = app->reader_view_spacing_choices,
+      .count = (UI0S32)ARRAY_COUNT(app->reader_view_spacing_choices),
+      .presentation = ReaderViewChoicePresentation_Stepper,
+    },
+  };
+  app->reader_view_settings[3] = (ReaderViewSettingControl){
+    .kind = ReaderViewSetting_Theme,
+    .label = lectern0_reader_view_text("Theme"),
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .choices = {
+      .items = app->reader_view_theme_choices,
+      .count = (UI0S32)ARRAY_COUNT(app->reader_view_theme_choices),
+      .presentation = ReaderViewChoicePresentation_Segments,
+    },
+  };
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_toc(Lectern0App *app)
+{
+  U32 count = MIN(app->frame.section_item_count,
+                  (U32)READER_VIEW_TOC_ROW_CAP);
+  for (U32 index = 0; index < count; index += 1)
+  {
+    const EpubReaderFrameSectionItem *source = app->frame.section_items + index;
+    app->reader_view_toc_rows[index] = (ReaderViewTocRow){
+      .key = (ReaderViewKey)source->nav_index + 1,
+      .depth = source->depth,
+      .label = lectern0_reader_view_bytes(source->label, source->label_length),
+      .detail = lectern0_reader_view_bytes(source->detail, source->detail_length),
+      .flags = ReaderViewRow_Enabled |
+        (source->active ? ReaderViewRow_Current | ReaderViewRow_Selected : 0),
+    };
+  }
+  app->reader_view_projection.toc = (ReaderViewTocProjection){
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .rows = app->reader_view_toc_rows,
+    .row_count = (UI0S32)count,
+    .total_count = app->frame.section_item_total_count,
+  };
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_find(Lectern0App *app)
+{
+  U32 count = MIN(app->frame.search_item_count,
+                  (U32)READER_VIEW_FIND_ROW_CAP);
+  for (U32 index = 0; index < count; index += 1)
+  {
+    const EpubReaderFrameSearchItem *source = app->frame.search_items + index;
+    app->reader_view_find_rows[index] = (ReaderViewFindRow){
+      .key = 0x100000ull + index,
+      .section = lectern0_reader_view_bytes(source->section_label,
+                                             source->section_label_length),
+      .excerpt = lectern0_reader_view_bytes(source->snippet,
+                                             source->snippet_length),
+      .match_start = source->match_start_in_snippet,
+      .match_size = source->match_size_in_snippet,
+      .flags = ReaderViewRow_Enabled |
+        (app->frame.search_has_active &&
+         app->frame.search_active_index == index ? ReaderViewRow_Selected : 0),
+    };
+  }
+  app->reader_view_projection.find = (ReaderViewFindProjection){
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .committed_query = lectern0_reader_view_bytes(
+      (const char *)app->frame.search_query.str, app->frame.search_query.size),
+    .rows = app->reader_view_find_rows,
+    .row_count = (UI0S32)count,
+    .total_count = app->frame.search_total_count,
+    .active_index = app->frame.search_has_active &&
+                    app->frame.search_active_index < count ?
+      (UI0S32)app->frame.search_active_index : -1,
+    .has_more = app->frame.search_has_more,
+    .can_step_previous = app->frame.search_total_count > 0,
+    .can_step_next = app->frame.search_total_count > 0,
+  };
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_right_rows(Lectern0App *app)
+{
+  U32 count = 0;
+  for (U32 index = 0;
+       index < app->bookmark_count && count < READER_VIEW_RIGHT_ROW_CAP;
+       index += 1)
+  {
+    if (app->reader_view_state.right_filter != ReaderViewRightFilter_All &&
+        app->reader_view_state.right_filter != ReaderViewRightFilter_Bookmarks)
+      continue;
+    const Lectern0Bookmark *bookmark = app->bookmarks + index;
+    app->reader_view_right_rows[count++] = (ReaderViewRightRow){
+      .key = bookmark->id,
+      .kind = ReaderViewRightRow_Bookmark,
+      .section = lectern0_reader_view_text(bookmark->label),
+      .primary = lectern0_reader_view_text(bookmark->label),
+      .flags = ReaderViewRow_Enabled |
+        (bookmark->starred ? ReaderViewRow_Starred : 0),
+      .actions = ReaderViewRightAction_Activate |
+                 ReaderViewRightAction_ToggleStar |
+                 ReaderViewRightAction_Delete,
+    };
+  }
+  for (U32 index = 0;
+       index < app->highlight_count && count < READER_VIEW_RIGHT_ROW_CAP;
+       index += 1)
+  {
+    const Lectern0Highlight *highlight = app->highlights + index;
+    B32 has_note = highlight->note[0] != 0;
+    if (app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks ||
+        (app->reader_view_state.right_filter == ReaderViewRightFilter_Notes && !has_note))
+      continue;
+    app->reader_view_right_rows[count++] = (ReaderViewRightRow){
+      .key = highlight->id,
+      .kind = has_note ? ReaderViewRightRow_Note : ReaderViewRightRow_Highlight,
+      .section = lectern0_reader_view_text(highlight->section),
+      .primary = lectern0_reader_view_text(highlight->text),
+      .secondary = lectern0_reader_view_text(highlight->note),
+      .color_key = 5000ull + highlight->color_index,
+      .flags = ReaderViewRow_Enabled |
+        ((highlight->starred || highlight->note_starred) ?
+          ReaderViewRow_Starred : 0),
+      .actions = ReaderViewRightAction_Activate |
+                 ReaderViewRightAction_ToggleStar |
+                 ReaderViewRightAction_EditNote |
+                 ReaderViewRightAction_Delete,
+    };
+  }
+  app->reader_view_projection.right = (ReaderViewRightProjection){
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .rows = app->reader_view_right_rows,
+    .row_count = (UI0S32)count,
+    .total_count = count,
+    .available_filters = ReaderViewRightFilterFlag_All |
+                         ReaderViewRightFilterFlag_Bookmarks |
+                         ReaderViewRightFilterFlag_Highlights |
+                         ReaderViewRightFilterFlag_Notes,
+  };
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_selection(Lectern0App *app)
+{
+  static const char *color_labels[] = {"Yellow", "Green", "Blue", "Pink"};
+  ReaderViewSelectionProjection selection = {
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+  };
+  lectern0_prepare_selected_text(app);
+  if (app->reader.has_active_selection && app->selected_text[0])
+  {
+    DocSelection range = app->reader.active_selection;
+    U64 key_parts[3] = {range.spine_index, range.text_byte_start, range.text_byte_end};
+    selection.selection_key = u64_hash_bytes(key_parts, sizeof(key_parts));
+    if (selection.selection_key == 0) selection.selection_key = 1;
+    selection.revision = app->annotation_revision;
+    selection.selected_text = lectern0_reader_view_text(app->selected_text);
+    selection.flags = ReaderViewSelection_Active |
+                      ReaderViewSelection_CanCopy |
+                      ReaderViewSelection_CanHighlight |
+                      ReaderViewSelection_CanAddNote |
+                      ReaderViewSelection_CanDictionary |
+                      ReaderViewSelection_CanWebLookup |
+                      ReaderViewSelection_CanTranslate;
+    selection.anchor_rect = app->selection_anchor_rect;
+    S32 highlight_index = lectern0_selection_highlight_index(app);
+    if (highlight_index >= 0)
+    {
+      const Lectern0Highlight *highlight = app->highlights + highlight_index;
+      selection.current_color_key = 5000ull + highlight->color_index;
+      selection.note_text = lectern0_reader_view_text(highlight->note);
+      selection.flags |= ReaderViewSelection_CanRemoveHighlight |
+                         ReaderViewSelection_CanEditNote;
+      if (highlight->note[0]) selection.flags |= ReaderViewSelection_CanDeleteNote;
+    }
+    for (U32 index = 0; index < ARRAY_COUNT(color_labels); index += 1)
+    {
+      app->reader_view_color_choices[index] = (ReaderViewChoice){
+        .key = 5000ull + index,
+        .label = lectern0_reader_view_text(color_labels[index]),
+        .flags = ReaderViewChoice_Enabled |
+          (selection.current_color_key == 5000ull + index ?
+            ReaderViewChoice_Selected : 0),
+      };
+    }
+    selection.highlight_colors = (ReaderViewChoiceControl){
+      .items = app->reader_view_color_choices,
+      .count = (UI0S32)ARRAY_COUNT(color_labels),
+      .presentation = ReaderViewChoicePresentation_Segments,
+    };
+  }
+  app->reader_view_projection.selection = selection;
+}
+
+FUNCTION void
+lectern0_prepare_reader_view_projection(Lectern0App *app)
+{
+  if (!app) { return; }
+  ReaderViewProjection projection = {0};
+  B32 open = app->document_state == ReaderViewLoad_Ready &&
+             epub_reader_is_open(&app->reader) && app->frame.ready &&
+             app->frame.document_open;
+  projection.document_key = open ? (UI0U64)app->frame.document_id : 0;
+  projection.features = ReaderViewFeature_Open |
+                        ReaderViewFeature_Paging |
+                        ReaderViewFeature_History |
+                        ReaderViewFeature_Contents |
+                        ReaderViewFeature_Find |
+                        ReaderViewFeature_Progress |
+                        ReaderViewFeature_ReadingSettings |
+                        ReaderViewFeature_Bookmark |
+                        ReaderViewFeature_Annotations |
+                        ReaderViewFeature_SelectionTools |
+                        ReaderViewFeature_Fullscreen |
+                        ReaderViewFeature_DistractionFree |
+                        ReaderViewFeature_Lookup |
+                        ReaderViewFeature_Export;
+  projection.document_flags = ReaderViewDocument_CanOpen |
+                              ReaderViewDocument_CanToggleFullscreen |
+                              ReaderViewDocument_CanToggleDistraction;
+  if (open)
+  {
+    projection.document_flags |= ReaderViewDocument_Open;
+    if (app->frame.page_index > 1)
+      projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
+    if (app->frame.page_count > 0 &&
+        app->frame.page_index < app->frame.page_count)
+      projection.document_flags |= ReaderViewDocument_CanGoNextPage;
+    if (app->frame.history_back_count > 0)
+      projection.document_flags |= ReaderViewDocument_CanGoBack;
+    if (app->frame.history_forward_count > 0)
+      projection.document_flags |= ReaderViewDocument_CanGoForward;
+    S32 bookmark_index = lectern0_current_bookmark_index(app);
+    if (bookmark_index >= 0)
+    {
+      projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
+      projection.current_bookmark_key = app->bookmarks[bookmark_index].id;
+    }
+  }
+  if (app->fullscreen.active)
+    projection.document_flags |= ReaderViewDocument_Fullscreen;
+  if (app->distraction_free)
+    projection.document_flags |= ReaderViewDocument_DistractionFree;
+
+  if (open)
+    projection.content = lectern0_reader_view_status(ReaderViewLoad_Ready, 0);
+  else if (app->document_state == ReaderViewLoad_Loading)
+    projection.content = lectern0_reader_view_status(ReaderViewLoad_Loading,
+                                                      app->status);
+  else if (app->document_state == ReaderViewLoad_Error)
+    projection.content = lectern0_reader_view_status(ReaderViewLoad_Error,
+                                                      app->status);
+  else
+    projection.content = lectern0_reader_view_status(
+      ReaderViewLoad_Empty, "Open an EPUB to begin reading.");
+  projection.labels = reader_view_default_english_labels();
+  projection.labels.annotations = lectern0_reader_view_text("Notes");
+  projection.labels.distraction_free = lectern0_reader_view_text("Focus");
+  projection.labels.fullscreen = lectern0_reader_view_text("Full");
+  projection.labels.exit_fullscreen = lectern0_reader_view_text("Window");
+  app->document_title[0] = 0;
+  if (open)
+  {
+    String8 title = {0};
+    if (doc_engine_get_title(epub_reader_engine(&app->reader),
+                             epub_reader_document_id(&app->reader),
+                             &title) == DocError_Ok)
+      lectern0_copy_bytes(app->document_title, ARRAY_COUNT(app->document_title),
+                          title.str, title.size);
+  }
+  projection.document_title = lectern0_reader_view_text(app->document_title);
+  app->reader_view_projection = projection;
+
+  lectern0_prepare_reader_view_settings(app);
+  app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .items = app->reader_view_settings,
+    .count = READER_VIEW_SETTING_CAP,
+  };
+
+  if (open)
+  {
+    EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
+    (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                      "%llu of %llu",
+                      (unsigned long long)app->frame.page_index,
+                      (unsigned long long)app->frame.page_count);
+    app->reader_view_projection.progress = (ReaderViewProgressProjection){
+      .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+      .location_index = location.available ? location.location_index :
+                        (app->frame.page_index > 0 ? app->frame.page_index - 1 : 0),
+      .location_count = location.available ? location.location_count :
+                        app->frame.page_count,
+      .page_index = app->frame.page_index > 0 ? app->frame.page_index - 1 : 0,
+      .page_count = app->frame.page_count,
+      .chapter = lectern0_reader_view_text(lectern0_current_section_label(app)),
+      .label = lectern0_reader_view_text(app->progress_label),
+      .can_seek = location.available,
+    };
+    lectern0_prepare_reader_view_toc(app);
+    lectern0_prepare_reader_view_find(app);
+    lectern0_prepare_reader_view_right_rows(app);
+    lectern0_prepare_reader_view_selection(app);
+  }
+  else
+  {
+    ReaderViewSurfaceStatus unavailable =
+      lectern0_reader_view_status(ReaderViewLoad_Unavailable,
+                                  "Open an EPUB first");
+    app->reader_view_projection.progress.status = unavailable;
+    app->reader_view_projection.toc.status = unavailable;
+    app->reader_view_projection.find.status = unavailable;
+    app->reader_view_projection.find.active_index = -1;
+    app->reader_view_projection.right.status = unavailable;
+    app->reader_view_projection.right.available_filters =
+      ReaderViewRightFilterFlag_All |
+      ReaderViewRightFilterFlag_Bookmarks |
+      ReaderViewRightFilterFlag_Highlights |
+      ReaderViewRightFilterFlag_Notes;
+    app->reader_view_projection.selection.status = unavailable;
+  }
+
+  UI0TokenSet tokens = ui0_default_tokens(
+    app->theme == Lectern0Theme_Dark ? UI0ThemeKind_Dark : UI0ThemeKind_Light);
+  app->reader_view_theme = ui0_resolve_tokens(&tokens);
+}
+
+FUNCTION B32
+lectern0_reader_view_focus_is(const Lectern0App *app,
+                              ReaderViewSemanticRole role)
+{
+  if (!app || !app->reader_view_frame.semantic_nodes ||
+      app->reader_view_state.focus_id == 0)
+    return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->id == app->reader_view_state.focus_id && node->role == role)
+      return 1;
+  }
+  return 0;
+}
+
+FUNCTION ReaderViewInput
+lectern0_reader_view_input(Lectern0App *app)
+{
+  ReaderViewInput result = {0};
+  result.ui = ui0_input_pointer_wheel(app->input.pointer_x,
+                                      app->input.pointer_y,
+                                      app->input.pointer_down,
+                                      app->input.pointer_pressed,
+                                      app->input.pointer_released,
+                                      0,
+                                      app->input.wheel_delta_y);
+  if (app->input.activate_pressed) result.ui.flags |= UI0Input_ActivatePressed;
+  if (app->input.focus_next_pressed) result.ui.flags |= UI0Input_FocusNextPressed;
+  if (app->input.focus_prev_pressed) result.ui.flags |= UI0Input_FocusPrevPressed;
+  result.escape_pressed = app->input.escape_pressed;
+  B32 editing = app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
+                app->reader_view_state.popup == ReaderViewPopup_NoteEditor;
+  if (!editing)
+  {
+    result.move_horizontal_delta = app->input.move_delta;
+    result.move_vertical_delta = app->input.move_vertical_delta;
+    result.range_move = app->input.range_move;
+  }
+
+  UI0TextInputFrameInput text = {0};
+  text.text = app->input.text;
+  text.text_len = app->input.text_length;
+  text.move_delta = app->input.move_delta;
+  text.extend_selection = app->input.extend_selection;
+  text.select_all = app->input.select_all_pressed;
+  text.copy_pressed = app->input.copy_pressed;
+  text.cut_pressed = app->input.cut_pressed;
+  text.paste_pressed = app->input.paste_pressed;
+  text.undo_pressed = app->input.undo_pressed;
+  text.redo_pressed = app->input.redo_pressed;
+  text.backspace_pressed = app->input.backspace_pressed;
+  text.delete_pressed = app->input.delete_pressed;
+  text.commit_pressed = app->input.commit_pressed;
+  text.transfer_buffer = &app->clipboard_transfer;
+  result.find_text = text;
+  result.note_text = (UI0TextAreaFrameInput){
+    .text = text.text,
+    .text_len = text.text_len,
+    .move_delta = text.move_delta,
+    .move_vertical_delta = app->input.move_vertical_delta,
+    .extend_selection = text.extend_selection,
+    .select_all = text.select_all,
+    .transfer_buffer = text.transfer_buffer,
+    .copy_pressed = text.copy_pressed,
+    .cut_pressed = text.cut_pressed,
+    .paste_pressed = text.paste_pressed,
+    .undo_pressed = text.undo_pressed,
+    .redo_pressed = text.redo_pressed,
+    .backspace_pressed = text.backspace_pressed,
+    .delete_pressed = text.delete_pressed,
+  };
+  return result;
+}
+
+FUNCTION B32
+lectern0_build_reader_view(Lectern0App *app)
+{
+  if (!app) { return 0; }
+  lectern0_prepare_reader_view_projection(app);
+  ReaderViewLayoutInput layout_input = {
+    .bounds = ui0_rect(0, 0, app->width, app->height),
+    .features = app->reader_view_projection.features,
+    .document_flags = app->reader_view_projection.document_flags,
+  };
+  if (!reader_view_resolve_layout(&app->reader_view_state,
+                                  &layout_input,
+                                  &app->reader_view_layout))
+  {
+    app->reader_view_ready = 0;
+    return 0;
+  }
+  if (epub_reader_is_open(&app->reader) &&
+      (app->pagination_viewport_width != app->reader_view_layout.viewport_rect.w ||
+       app->pagination_viewport_height != app->reader_view_layout.viewport_rect.h))
+  {
+    if (!lectern0_repaginate(app))
+    {
+      app->reader_view_ready = 0;
+      return 0;
+    }
+    lectern0_prepare_reader_view_projection(app);
+  }
+  ReaderViewInput input = lectern0_reader_view_input(app);
+  ReaderViewBuildInput build = {
+    .frame_index = ++app->reader_view_frame_index,
+    .state = &app->reader_view_state,
+    .layout = &app->reader_view_layout,
+    .projection = &app->reader_view_projection,
+    .input = &input,
+    .theme = &app->reader_view_theme,
+  };
+  app->reader_view_ready = reader_view_build(&build,
+                                             &app->reader_view_storage,
+                                             &app->reader_view_frame);
+  return app->reader_view_ready;
+}
+
+
+
+
 FUNCTION B32
 lectern0_app_init(Lectern0App *app,
                   S32 width,
@@ -787,12 +1869,23 @@ lectern0_app_init(Lectern0App *app,
   app->width = width;
   app->height = height;
   app->persistence_enabled = persistence_enabled;
+  app->font_family = FontProviderBookContentFamily_Georgia;
+  app->text_size_index = 0;
+  app->line_spacing_index = 0;
+  app->theme = Lectern0Theme_Light;
+  app->document_state = ReaderViewLoad_Empty;
+  app->next_record_id = 1;
+  app->clipboard_transfer.data = app->clipboard_text;
+  app->clipboard_transfer.length = &app->clipboard_length;
+  app->clipboard_transfer.cap = Lectern0ClipboardCap;
+  reader_view_state_init(&app->reader_view_state);
   app->arena = arena_alloc(0);
   if (!app->arena) { return 0; }
 
   if (persistence_enabled && lectern0_state_paths(app))
   {
     lectern0_load_state(app);
+    lectern0_load_settings(app);
   }
   String8 private_font_directory = app->app_directory[0] ?
     str8_from_cstr(app->app_directory) : str8_from_cstr(".");
@@ -820,14 +1913,6 @@ lectern0_app_init(Lectern0App *app,
   {
     render_state_init(&app->render_state, 0);
     app->render_ready = 1;
-    ui0_signal_context_init(&app->ui_signals);
-    ui0_control_context_init(&app->ui_controls);
-    ui0_draw_context_init(&app->ui_draw);
-    app->toolbar_id = ui0_id_from_string("lectern0.toolbar");
-    app->open_id = ui0_id_from_string("lectern0.open");
-    app->previous_id = ui0_id_from_string("lectern0.previous");
-    app->next_id = ui0_id_from_string("lectern0.next");
-    app->status_id = ui0_id_from_string("lectern0.status");
   }
   lectern0_set_statusf(app, "Open an EPUB | Ctrl+O");
   return 1;
@@ -837,7 +1922,10 @@ FUNCTION void
 lectern0_app_release(Lectern0App *app)
 {
   if (!app) { return; }
+  if (app->accessibility) lectern0_accessibility_destroy(app->accessibility);
   (void)lectern0_save_state(app);
+  (void)lectern0_save_settings(app);
+  (void)lectern0_save_annotations(app);
   if (app->gfx_ready) { os_gfx_release(&app->gfx); }
   if (app->render_ready) { render_state_release(&app->render_state); }
   lectern0_image_cache_release(&app->image_cache);
@@ -846,15 +1934,28 @@ lectern0_app_release(Lectern0App *app)
   MemoryZeroStruct(app);
 }
 
-FUNCTION const char *
-lectern0_ui_label(const Lectern0App *app, UI0ID id)
+FUNCTION ReaderViewText
+lectern0_reader_view_binding(const Lectern0App *app, UI0ID id)
 {
-  if (!app) { return ""; }
-  if (id == app->open_id) { return "Open"; }
-  if (id == app->previous_id) { return "Previous"; }
-  if (id == app->next_id) { return "Next"; }
-  if (id == app->status_id) { return app->status; }
-  return "";
+  if (!app || !app->reader_view_frame.text_bindings) return (ReaderViewText){0};
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.text_binding_count;
+       index += 1)
+  {
+    const ReaderViewTextBinding *binding =
+      app->reader_view_frame.text_bindings + index;
+    if (binding->source_id == id) return binding->text;
+  }
+  return (ReaderViewText){0};
+}
+
+FUNCTION B32
+lectern0_reader_view_text_is(ReaderViewText text, const char *expected)
+{
+  if (!expected || text.size < 0) return 0;
+  U64 size = strlen(expected);
+  return size == (U64)text.size &&
+         (size == 0 || (text.data && memcmp(text.data, expected, size) == 0));
 }
 
 FUNCTION U32
@@ -889,9 +1990,11 @@ FUNCTION void
 lectern0_adapt_ui0_draw(Lectern0App *app)
 {
   if (!app) { return; }
-  for (UI0S32 index = 0; index < app->ui_draw.command_count; index += 1)
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.draw_command_count;
+       index += 1)
   {
-    UI0DrawCommand command = app->ui_draw.commands[index];
+    UI0DrawCommand command = app->reader_view_frame.draw_commands[index];
     U32 color = lectern0_draw_color(command.color);
     switch (command.op)
     {
@@ -942,7 +2045,26 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
 
       case UI0DrawOp_Text:
       {
-        const char *label = lectern0_ui_label(app, command.source_id);
+        ReaderViewText text = lectern0_reader_view_binding(app, command.source_id);
+        char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
+        lectern0_copy_bytes(label, ARRAY_COUNT(label),
+                            (const U8 *)text.data, (U64)MAX(text.size, 0));
+        if (command.source_kind == UI0ControlKind_IconButton && command.rect.w <= 40)
+        {
+          if (lectern0_reader_view_text_is(text, "Previous page") ||
+              lectern0_reader_view_text_is(text, "Previous match"))
+            lectern0_copy_cstr(label, ARRAY_COUNT(label), "<");
+          else if (lectern0_reader_view_text_is(text, "Next page") ||
+                   lectern0_reader_view_text_is(text, "Next match"))
+            lectern0_copy_cstr(label, ARRAY_COUNT(label), ">");
+          else if (lectern0_reader_view_text_is(text, "Close"))
+            lectern0_copy_cstr(label, ARRAY_COUNT(label), "X");
+          else if (lectern0_reader_view_text_is(text, "More"))
+            lectern0_copy_cstr(label, ARRAY_COUNT(label), "...");
+          else if (lectern0_reader_view_text_is(text, "Star") ||
+                   lectern0_reader_view_text_is(text, "Unstar"))
+            lectern0_copy_cstr(label, ARRAY_COUNT(label), "*");
+        }
         (void)draw_push_text_in_rect(&app->draw_commands,
                                      DrawLayer_UI,
                                      app->render_state.text_provider,
@@ -992,105 +2114,427 @@ lectern0_pick_epub(Lectern0App *app)
   return lectern0_open_path(app, utf8_path);
 }
 
-FUNCTION void
-lectern0_build_toolbar(Lectern0App *app)
+FUNCTION B32
+lectern0_set_clipboard_text(Lectern0App *app, ReaderViewText text)
 {
-  ui0_layout_begin(&app->ui_layout, app->ui_boxes, Lectern0UIBoxCap);
-  UI0BoxDesc root_desc = ui0_box_desc("toolbar",
-                                      UI0LayoutInvalidIndex,
-                                      UI0Axis_X,
-                                      ui0_size_fill(1, 0, UI0LayoutNoMax),
-                                      ui0_size_fixed(Lectern0ToolbarHeight));
-  root_desc.padding = ui0_insets_xy(8, 6);
-  root_desc.gap = 6;
-  root_desc.flags = UI0BoxFlag_Clip;
-  UI0S32 root = ui0_layout_add_box(&app->ui_layout, &root_desc);
+  if (!app || text.size < 0 || (text.size > 0 && !text.data) ||
+      !OpenClipboard(app->window))
+    return 0;
+  B32 result = 0;
+  if (EmptyClipboard())
+  {
+    int wide_count = MultiByteToWideChar(CP_UTF8, 0, text.data, text.size, 0, 0);
+    if (wide_count >= 0)
+    {
+      HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE,
+                                   ((SIZE_T)wide_count + 1) * sizeof(wchar_t));
+      wchar_t *wide = memory ? (wchar_t *)GlobalLock(memory) : 0;
+      if (wide)
+      {
+        if (wide_count > 0)
+          (void)MultiByteToWideChar(CP_UTF8, 0, text.data, text.size,
+                                    wide, wide_count);
+        wide[wide_count] = 0;
+        GlobalUnlock(memory);
+        if (SetClipboardData(CF_UNICODETEXT, memory)) result = 1;
+      }
+      if (memory && !result) GlobalFree(memory);
+    }
+  }
+  CloseClipboard();
+  return result;
+}
 
-  UI0BoxDesc open_desc = ui0_box_desc("open", root, UI0Axis_X,
-                                      ui0_size_fixed(84), ui0_size_fill(1, 0, UI0LayoutNoMax));
-  UI0BoxDesc previous_desc = ui0_box_desc("previous", root, UI0Axis_X,
-                                          ui0_size_fixed(96), ui0_size_fill(1, 0, UI0LayoutNoMax));
-  UI0BoxDesc next_desc = ui0_box_desc("next", root, UI0Axis_X,
-                                      ui0_size_fixed(84), ui0_size_fill(1, 0, UI0LayoutNoMax));
-  UI0BoxDesc status_desc = ui0_box_desc("status", root, UI0Axis_X,
-                                        ui0_size_fill(1, 160, UI0LayoutNoMax),
-                                        ui0_size_fill(1, 0, UI0LayoutNoMax));
-  UI0S32 open_box = ui0_layout_add_box(&app->ui_layout, &open_desc);
-  UI0S32 previous_box = ui0_layout_add_box(&app->ui_layout, &previous_desc);
-  UI0S32 next_box = ui0_layout_add_box(&app->ui_layout, &next_desc);
-  UI0S32 status_box = ui0_layout_add_box(&app->ui_layout, &status_desc);
-  (void)ui0_layout_solve(&app->ui_layout,
-                         root,
-                         ui0_rect(0, 0, app->width, Lectern0ToolbarHeight));
-
-  UI0InputState input = ui0_input_pointer(app->input.pointer_x,
-                                           app->input.pointer_y,
-                                           app->input.pointer_down,
-                                           app->input.pointer_pressed,
-                                           app->input.pointer_released);
-  if (app->input.activate_pressed) { input.flags |= UI0Input_ActivatePressed; }
-  if (app->input.focus_next_pressed) { input.flags |= UI0Input_FocusNextPressed; }
-  if (app->input.focus_prev_pressed) { input.flags |= UI0Input_FocusPrevPressed; }
-  ui0_signal_begin_frame(&app->ui_signals,
-                         input,
-                         app->ui_signal_records,
-                         Lectern0UIRecordCap);
-  ui0_signal_set_root(&app->ui_signals,
-                      UI0RootKind_Normal,
-                      ui0_rect(0, 0, app->width, Lectern0ToolbarHeight),
-                      1);
-  ui0_signal_resolve_roots(&app->ui_signals);
-  ui0_control_begin_frame(&app->ui_controls,
-                          app->ui_control_records,
-                          Lectern0UIRecordCap);
-  (void)ui0_toolbar_row(&app->ui_controls,
-                        &app->ui_layout,
-                        (UI0ControlSpec){app->toolbar_id, root, UI0RootKind_Normal, "", 0});
-  UI0ControlResult open = ui0_text_button(&app->ui_controls,
-                                           &app->ui_signals,
-                                           &app->ui_layout,
-                                           (UI0ControlSpec){app->open_id, open_box, UI0RootKind_Normal, "Open", UI0Control_Primary});
-  UI0ControlFlags navigation_flags = epub_reader_is_open(&app->reader) ? 0 : UI0Control_Disabled;
-  UI0ControlResult previous = ui0_text_button(&app->ui_controls,
-                                               &app->ui_signals,
-                                               &app->ui_layout,
-                                               (UI0ControlSpec){app->previous_id, previous_box, UI0RootKind_Normal, "Previous", navigation_flags});
-  UI0ControlResult next = ui0_text_button(&app->ui_controls,
-                                           &app->ui_signals,
-                                           &app->ui_layout,
-                                           (UI0ControlSpec){app->next_id, next_box, UI0RootKind_Normal, "Next", navigation_flags});
-  (void)ui0_label(&app->ui_controls,
-                  &app->ui_layout,
-                  (UI0ControlSpec){app->status_id, status_box, UI0RootKind_Normal, app->status, 0});
-  ui0_signal_end_frame(&app->ui_signals);
-
-  if (open.clicked) { app->pending_action = Lectern0Action_Open; }
-  else if (previous.clicked) { app->pending_action = Lectern0Action_Previous; }
-  else if (next.clicked) { app->pending_action = Lectern0Action_Next; }
-
-  ui0_draw_begin_frame(&app->ui_draw,
-                       app->ui_draw_commands,
-                       Lectern0UIDrawCap,
-                       ui0_draw_light_theme());
-  (void)ui0_draw_controls(&app->ui_draw,
-                          app->ui_controls.records,
-                          app->ui_controls.record_count);
-  lectern0_adapt_ui0_draw(app);
+FUNCTION B32
+lectern0_get_clipboard_text(Lectern0App *app)
+{
+  if (!app || !OpenClipboard(app->window)) return 0;
+  app->clipboard_length = 0;
+  app->clipboard_text[0] = 0;
+  HANDLE memory = GetClipboardData(CF_UNICODETEXT);
+  const wchar_t *wide = memory ? (const wchar_t *)GlobalLock(memory) : 0;
+  B32 result = 0;
+  if (wide)
+  {
+    int length = WideCharToMultiByte(CP_UTF8, 0, wide, -1,
+                                     app->clipboard_text,
+                                     ARRAY_COUNT(app->clipboard_text),
+                                     0, 0);
+    if (length > 0)
+    {
+      app->clipboard_length = length - 1;
+      result = 1;
+    }
+    GlobalUnlock(memory);
+  }
+  CloseClipboard();
+  return result;
 }
 
 FUNCTION void
-lectern0_apply_pending_action(Lectern0App *app)
+lectern0_append_input_wchar(Lectern0App *app, wchar_t value)
 {
-  if (!app || app->pending_action == Lectern0Action_None) { return; }
-  Lectern0Action action = app->pending_action;
-  app->pending_action = Lectern0Action_None;
-  switch (action)
+  if (!app) return;
+  wchar_t units[2] = {0};
+  int unit_count = 1;
+  if (value >= 0xD800 && value <= 0xDBFF)
   {
-    case Lectern0Action_Open: (void)lectern0_pick_epub(app); break;
-    case Lectern0Action_Previous: (void)lectern0_move_page(app, -1); break;
-    case Lectern0Action_Next: (void)lectern0_move_page(app, 1); break;
+    app->pending_high_surrogate = value;
+    return;
+  }
+  if (value >= 0xDC00 && value <= 0xDFFF && app->pending_high_surrogate)
+  {
+    units[0] = app->pending_high_surrogate;
+    units[1] = value;
+    unit_count = 2;
+  }
+  else
+  {
+    units[0] = value;
+  }
+  app->pending_high_surrogate = 0;
+  char encoded[8] = {0};
+  int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                 units, unit_count, encoded,
+                                 ARRAY_COUNT(encoded), 0, 0);
+  if (size > 0 && app->input.text_length + size < Lectern0InputTextCap)
+  {
+    MemoryCopy(app->input.text + app->input.text_length, encoded, (U64)size);
+    app->input.text_length += size;
+    app->input.text[app->input.text_length] = 0;
+  }
+}
+
+FUNCTION B32
+lectern0_launch_lookup(Lectern0App *app,
+                       const char *prefix,
+                       ReaderViewText text)
+{
+  if (!app || !prefix || text.size <= 0 || !text.data) return 0;
+  char url[Lectern0UrlCap] = {0};
+  U64 at = cstr_format(url, ARRAY_COUNT(url), "%s", prefix);
+  static const char hex[] = "0123456789ABCDEF";
+  for (UI0S32 index = 0; index < text.size && at + 4 < ARRAY_COUNT(url); index += 1)
+  {
+    U8 byte = (U8)text.data[index];
+    B32 plain = (byte >= 'a' && byte <= 'z') ||
+                (byte >= 'A' && byte <= 'Z') ||
+                (byte >= '0' && byte <= '9') ||
+                byte == '-' || byte == '_' || byte == '.' || byte == '~';
+    if (plain)
+      url[at++] = (char)byte;
+    else
+    {
+      url[at++] = '%';
+      url[at++] = hex[(byte >> 4) & 15];
+      url[at++] = hex[byte & 15];
+    }
+  }
+  url[at] = 0;
+  HINSTANCE opened = ShellExecuteA(app->window, "open", url, 0, 0, SW_SHOWNORMAL);
+  return (INT_PTR)opened > 32;
+}
+
+FUNCTION B32
+lectern0_export_annotations(Lectern0App *app)
+{
+  if (!app || !app->export_path[0]) return 0;
+  char data[65536] = {0};
+  U64 size = cstr_format(data, ARRAY_COUNT(data),
+                         "lectern0 reader annotations\nBook: %s\n\n",
+                         app->document_title[0] ? app->document_title : app->current_path);
+  for (U32 index = 0; index < app->bookmark_count && size < ARRAY_COUNT(data); index += 1)
+  {
+    const Lectern0Bookmark *item = app->bookmarks + index;
+    size += cstr_format(data + size, ARRAY_COUNT(data) - size,
+                        "Bookmark %llu | %s | spine %u byte %llu%s\n",
+                        (unsigned long long)item->id, item->label,
+                        item->spine_index, (unsigned long long)item->byte_offset,
+                        item->starred ? " | starred" : "");
+  }
+  for (U32 index = 0; index < app->highlight_count && size < ARRAY_COUNT(data); index += 1)
+  {
+    const Lectern0Highlight *item = app->highlights + index;
+    size += cstr_format(data + size, ARRAY_COUNT(data) - size,
+                        "Highlight %llu | %s | %s%s%s\n",
+                        (unsigned long long)item->id,
+                        item->section, item->text,
+                        item->note[0] ? " | Note: " : "",
+                        item->note);
+  }
+  B32 result = size < ARRAY_COUNT(data) &&
+    os_write_entire_file_atomic(app->export_path, data, size);
+  lectern0_set_statusf(app, result ? "Annotations exported: %s" :
+                                     "Annotation export failed",
+                       result ? app->export_path : "");
+  return result;
+}
+
+FUNCTION B32
+lectern0_set_fullscreen(Lectern0App *app, B32 active)
+{
+  if (!app || !app->window || app->fullscreen.active == active) return app != 0;
+  if (active)
+  {
+    app->fullscreen.style = (DWORD)GetWindowLongPtrW(app->window, GWL_STYLE);
+    app->fullscreen.ex_style = (DWORD)GetWindowLongPtrW(app->window, GWL_EXSTYLE);
+    app->fullscreen.placement.length = sizeof(app->fullscreen.placement);
+    if (!GetWindowPlacement(app->window, &app->fullscreen.placement)) return 0;
+    MONITORINFO monitor = {.cbSize = sizeof(monitor)};
+    if (!GetMonitorInfoW(MonitorFromWindow(app->window, MONITOR_DEFAULTTONEAREST),
+                         &monitor)) return 0;
+    SetWindowLongPtrW(app->window, GWL_STYLE,
+                      (LONG_PTR)(app->fullscreen.style & ~WS_OVERLAPPEDWINDOW));
+    SetWindowPos(app->window, HWND_TOP,
+                 monitor.rcMonitor.left, monitor.rcMonitor.top,
+                 monitor.rcMonitor.right - monitor.rcMonitor.left,
+                 monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+                 SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+  }
+  else
+  {
+    SetWindowLongPtrW(app->window, GWL_STYLE, (LONG_PTR)app->fullscreen.style);
+    SetWindowLongPtrW(app->window, GWL_EXSTYLE, (LONG_PTR)app->fullscreen.ex_style);
+    SetWindowPlacement(app->window, &app->fullscreen.placement);
+    SetWindowPos(app->window, 0, 0, 0, 0, 0,
+                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+                 SWP_NOZORDER | SWP_NOOWNERZORDER);
+  }
+  app->fullscreen.active = active;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_apply_setting(Lectern0App *app,
+                       ReaderViewSettingKind kind,
+                       ReaderViewKey key)
+{
+  if (!app) return 0;
+  B32 repaginate = 0;
+  switch (kind)
+  {
+    case ReaderViewSetting_FontFamily:
+    {
+      if (key < 1000) return 0;
+      U32 family = (U32)(key - 1000);
+      if (!epub_reader_typography_family_available(&app->reader.typography, family))
+        return 0;
+      app->font_family = family;
+      repaginate = 1;
+    } break;
+    case ReaderViewSetting_FontSize:
+      if (key < 2000 || key >= 2004) return 0;
+      app->text_size_index = (U32)(key - 2000);
+      repaginate = 1;
+      break;
+    case ReaderViewSetting_LineSpacing:
+      if (key < 3000 || key >= 3003) return 0;
+      app->line_spacing_index = (U32)(key - 3000);
+      repaginate = 1;
+      break;
+    case ReaderViewSetting_Theme:
+      if (key < 4000 || key >= 4000 + Lectern0Theme_Count) return 0;
+      app->theme = (Lectern0Theme)(key - 4000);
+      break;
+    default: return 0;
+  }
+  (void)lectern0_save_settings(app);
+  if (repaginate && epub_reader_is_open(&app->reader))
+    return lectern0_repaginate(app);
+  return 1;
+}
+
+FUNCTION void
+lectern0_select_highlight(Lectern0App *app, const Lectern0Highlight *highlight)
+{
+  if (!app || !highlight) return;
+  DocSelection selection = {
+    .spine_index = highlight->spine_index,
+    .text_byte_start = highlight->start_byte,
+    .text_byte_end = highlight->end_byte,
+  };
+  (void)epub_reader_set_selection(&app->reader, selection);
+}
+
+FUNCTION void
+lectern0_apply_reader_view_action(Lectern0App *app,
+                                  const ReaderViewAction *action)
+{
+  if (!app || !action) return;
+  switch (action->kind)
+  {
+    case ReaderViewAction_Open: (void)lectern0_pick_epub(app); break;
+    case ReaderViewAction_PreviousPage: (void)lectern0_move_page(app, -1); break;
+    case ReaderViewAction_NextPage: (void)lectern0_move_page(app, 1); break;
+    case ReaderViewAction_HistoryBack: (void)lectern0_move_history(app, 0); break;
+    case ReaderViewAction_HistoryForward: (void)lectern0_move_history(app, 1); break;
+    case ReaderViewAction_SeekLocation: (void)lectern0_seek_location(app, action->value); break;
+    case ReaderViewAction_SelectSetting:
+      (void)lectern0_apply_setting(app, action->setting_kind, action->key);
+      break;
+    case ReaderViewAction_ToggleBookmark:
+      (void)lectern0_toggle_current_bookmark(app);
+      break;
+    case ReaderViewAction_FindChanged:
+      if (action->text.size > 0)
+        (void)epub_reader_rebuild_search(&app->reader,
+          str8((U8 *)action->text.data, (U64)action->text.size));
+      else
+        epub_reader_clear_search(&app->reader);
+      (void)lectern0_capture_frame(app);
+      break;
+    case ReaderViewAction_FindCommitted:
+      if (app->reader.search_match_count > 0)
+        (void)lectern0_navigate_to_search_match(
+          app, app->reader.search_has_active ? app->reader.search_active_index : 0,
+          &(EpubReaderSearchNavigationResult){0});
+      break;
+    case ReaderViewAction_FindPrevious:
+    case ReaderViewAction_FindNext:
+      if (epub_reader_search_step(&app->reader,
+            action->kind == ReaderViewAction_FindPrevious ? -1 : 1))
+        (void)lectern0_navigate_to_search_match(
+          app, app->reader.search_active_index,
+          &(EpubReaderSearchNavigationResult){0});
+      break;
+    case ReaderViewAction_ActivateTocRow:
+      if (action->key > 0)
+        (void)lectern0_navigate_to_nav_point(
+          app, (U32)(action->key - 1), &(EpubReaderNavPointResult){0});
+      break;
+    case ReaderViewAction_ActivateFindRow:
+      if (action->key >= 0x100000ull)
+        (void)lectern0_navigate_to_search_match(
+          app, (U32)(action->key - 0x100000ull),
+          &(EpubReaderSearchNavigationResult){0});
+      break;
+    case ReaderViewAction_ActivateRightRow:
+    {
+      S32 bookmark = lectern0_bookmark_index(app, action->key);
+      S32 highlight = lectern0_highlight_index(app, action->key);
+      if (bookmark >= 0)
+        (void)lectern0_navigate_to_location(app,
+          app->bookmarks[bookmark].spine_index,
+          app->bookmarks[bookmark].byte_offset,
+          EpubReaderNavigationReason_Bookmark);
+      else if (highlight >= 0)
+        (void)lectern0_navigate_to_location(app,
+          app->highlights[highlight].spine_index,
+          app->highlights[highlight].start_byte,
+          EpubReaderNavigationReason_Annotation);
+    } break;
+    case ReaderViewAction_ToggleRightRowStar:
+    {
+      S32 bookmark = lectern0_bookmark_index(app, action->key);
+      S32 highlight = lectern0_highlight_index(app, action->key);
+      if (bookmark >= 0) app->bookmarks[bookmark].starred = !app->bookmarks[bookmark].starred;
+      else if (highlight >= 0 && action->right_row_kind == ReaderViewRightRow_Note)
+        app->highlights[highlight].note_starred = !app->highlights[highlight].note_starred;
+      else if (highlight >= 0)
+        app->highlights[highlight].starred = !app->highlights[highlight].starred;
+      app->annotation_revision += 1;
+      (void)lectern0_save_annotations(app);
+    } break;
+    case ReaderViewAction_EditRightRowNote:
+    {
+      S32 highlight = lectern0_highlight_index(app, action->key);
+      if (highlight >= 0)
+      {
+        Lectern0Highlight value = app->highlights[highlight];
+        if (lectern0_navigate_to_location(app, value.spine_index,
+                                          value.start_byte,
+                                          EpubReaderNavigationReason_Annotation) ==
+            EpubReaderResult_Ok)
+        {
+          lectern0_select_highlight(app, &value);
+          lectern0_prepare_reader_view_projection(app);
+          if (!reader_view_open_note_editor(
+                &app->reader_view_state,
+                &app->reader_view_projection.selection))
+            app->reader_view_state.popup = ReaderViewPopup_SelectionTools;
+        }
+      }
+    } break;
+    case ReaderViewAction_DeleteRightRow:
+    {
+      S32 bookmark = lectern0_bookmark_index(app, action->key);
+      S32 highlight = lectern0_highlight_index(app, action->key);
+      if (bookmark >= 0) lectern0_remove_bookmark_at(app, (U32)bookmark);
+      else if (highlight >= 0) lectern0_remove_highlight_at(app, (U32)highlight);
+    } break;
+    case ReaderViewAction_ExportRightRows: (void)lectern0_export_annotations(app); break;
+    case ReaderViewAction_SetHighlightColor:
+      if (action->auxiliary_key >= 5000)
+        (void)lectern0_set_highlight_color(app,
+                                           (U32)(action->auxiliary_key - 5000));
+      break;
+    case ReaderViewAction_RemoveHighlight:
+    {
+      S32 index = lectern0_selection_highlight_index(app);
+      if (index >= 0) lectern0_remove_highlight_at(app, (U32)index);
+    } break;
+    case ReaderViewAction_CopySelection:
+      (void)lectern0_set_clipboard_text(app, action->text);
+      break;
+    case ReaderViewAction_DictionarySelection:
+      (void)lectern0_launch_lookup(app,
+        "https://www.google.com/search?q=define%3A", action->text);
+      break;
+    case ReaderViewAction_WebLookupSelection:
+      (void)lectern0_launch_lookup(app,
+        "https://www.google.com/search?q=", action->text);
+      break;
+    case ReaderViewAction_TranslateSelection:
+      (void)lectern0_launch_lookup(app,
+        "https://translate.google.com/?sl=auto&tl=en&text=", action->text);
+      break;
+    case ReaderViewAction_SaveNote:
+      if (action->value == app->annotation_revision)
+      {
+        if (lectern0_save_selection_note(app, action->text))
+        {
+          app->reader_view_state.popup = ReaderViewPopup_None;
+          app->reader_view_state.note_dirty = 0;
+        }
+      }
+      break;
+    case ReaderViewAction_DeleteNote:
+    {
+      S32 index = lectern0_selection_highlight_index(app);
+      if (index >= 0)
+      {
+        app->highlights[index].note[0] = 0;
+        app->annotation_revision += 1;
+        (void)lectern0_save_annotations(app);
+        app->reader_view_state.popup = ReaderViewPopup_None;
+        app->reader_view_state.note_dirty = 0;
+      }
+    } break;
+    case ReaderViewAction_ToggleFullscreen:
+      (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
+      break;
+    case ReaderViewAction_ToggleDistractionFree:
+      app->distraction_free = !app->distraction_free;
+      break;
+    case ReaderViewAction_RightFilterChanged:
+    case ReaderViewAction_None:
     default: break;
   }
+}
+
+FUNCTION void
+lectern0_apply_reader_view_actions(Lectern0App *app)
+{
+  if (!app || !app->reader_view_frame.actions) return;
+  ReaderViewAction actions[READER_VIEW_ACTION_CAP];
+  UI0S32 count = MIN(app->reader_view_frame.action_count,
+                     (UI0S32)ARRAY_COUNT(actions));
+  if (count > 0)
+    MemoryCopy(actions, app->reader_view_frame.actions,
+               (U64)count * sizeof(actions[0]));
+  app->reader_view_frame.action_count = 0;
+  for (UI0S32 index = 0; index < count; index += 1)
+    lectern0_apply_reader_view_action(app, actions + index);
 }
 
 FUNCTION EpubReaderFrameImage *
@@ -1586,13 +3030,187 @@ lectern0_build_reader_presentation(Lectern0App *app,
   return 1;
 }
 
+FUNCTION B32
+lectern0_reader_point_to_byte(Lectern0App *app,
+                              S32 x,
+                              S32 y,
+                              U64 *out_byte,
+                              UI0Rect *out_anchor_rect)
+{
+  if (out_byte) *out_byte = 0;
+  if (out_anchor_rect) *out_anchor_rect = ui0_rect(0, 0, 0, 0);
+  if (!app || !out_byte || !out_anchor_rect || !app->reader_view_ready ||
+      !app->presentation_frame.valid || !epub_reader_is_open(&app->reader) ||
+      app->reader_view_state.popup != ReaderViewPopup_None)
+    return 0;
+  UI0Rect viewport = app->reader_view_layout.viewport_rect;
+  if (!ui0_rect_contains_point(viewport, x, y) ||
+      (app->reader_view_layout.left_panel_visible &&
+       ui0_rect_contains_point(app->reader_view_layout.left_panel_rect, x, y)) ||
+      (app->reader_view_layout.right_panel_visible &&
+       ui0_rect_contains_point(app->reader_view_layout.right_panel_rect, x, y)) ||
+      ui0_rect_contains_point(app->reader_view_layout.previous_gutter_rect, x, y) ||
+      ui0_rect_contains_point(app->reader_view_layout.next_gutter_rect, x, y))
+    return 0;
+  for (U32 index = 0; index < app->presentation_frame.row_count; index += 1)
+  {
+    const PresentationEngineBlockFlowRow *row =
+      app->presentation_frame.rows + index;
+    UI0Rect rect = ui0_rect(row->content_rect.x, row->row_rect.y,
+                            row->content_rect.w, row->row_rect.h);
+    if (!ui0_rect_contains_point(rect, x, y) || row->source_end <= row->source_start)
+      continue;
+    U64 source_size = row->source_end - row->source_start;
+    S32 local_x = MIN(MAX(x - rect.x, 0), MAX(rect.w, 1));
+    U64 relative = row->source_start +
+      ((U64)local_x * source_size) / (U64)MAX(rect.w, 1);
+    relative = MIN(relative, app->frame.visible_text.size);
+    relative = base_unicode_utf8_previous_grapheme_boundary(
+      app->frame.visible_text, relative);
+    *out_byte = app->frame.view_byte_offset + relative;
+    *out_anchor_rect = ui0_rect(x - 2, rect.y, 4, rect.h);
+    return 1;
+  }
+  return 0;
+}
+
+FUNCTION void
+lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
+{
+  if (!app) return;
+  U64 byte = 0;
+  UI0Rect anchor_rect = {0};
+  if (!lectern0_reader_point_to_byte(app, x, y, &byte, &anchor_rect))
+  {
+    if (begin) app->selection_dragging = 0;
+    return;
+  }
+  if (begin)
+  {
+    app->selection_dragging = 1;
+    app->selection_anchor_byte = byte;
+  }
+  if (!app->selection_dragging) return;
+  U64 start = MIN(app->selection_anchor_byte, byte);
+  U64 end = MAX(app->selection_anchor_byte, byte);
+  if (end == start)
+  {
+    U64 relative = start >= app->frame.view_byte_offset ?
+      start - app->frame.view_byte_offset : 0;
+    if (relative >= app->frame.visible_text.size && relative > 0)
+    {
+      U64 previous = base_unicode_utf8_previous_grapheme_boundary(
+        app->frame.visible_text, relative);
+      start = app->frame.view_byte_offset + previous;
+      end = app->frame.view_byte_offset + relative;
+    }
+    else
+    {
+      U64 next = base_unicode_utf8_next_grapheme_boundary(app->frame.visible_text,
+                                                          relative);
+      end = app->frame.view_byte_offset + MIN(next, app->frame.visible_text.size);
+    }
+  }
+  if (end <= start) return;
+  DocSelection selection = {
+    .spine_index = app->reader.active_spine_index,
+    .text_byte_start = start,
+    .text_byte_end = end,
+  };
+  if (epub_reader_set_selection(&app->reader, selection) == EpubReaderResult_Ok)
+  {
+    app->selection_anchor_rect = anchor_rect;
+    lectern0_prepare_selected_text(app);
+  }
+}
+
+FUNCTION U32
+lectern0_reader_page_color(const Lectern0App *app)
+{
+  if (!app) return 0x00FFFDF8U;
+  if (app->theme == Lectern0Theme_Dark) return 0x00201E1BU;
+  if (app->theme == Lectern0Theme_Sepia) return 0x00F5ECD8U;
+  return 0x00FFFDF8U;
+}
+
+FUNCTION U32
+lectern0_reader_ink_color(const Lectern0App *app)
+{
+  if (app && app->theme == Lectern0Theme_Dark) return 0x00E8E1D5U;
+  if (app && app->theme == Lectern0Theme_Sepia) return 0x004A3828U;
+  return 0x002A2927U;
+}
+
+FUNCTION U32
+lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
+{
+  static const U32 light[] = {0x00FFE58AU, 0x00BFE7B7U, 0x00ADD8F4U, 0x00F3B6D2U};
+  static const U32 dark[] = {0x00786521U, 0x003A693EU, 0x00375F7AU, 0x00724662U};
+  color_index %= ARRAY_COUNT(light);
+  return app && app->theme == Lectern0Theme_Dark ? dark[color_index] : light[color_index];
+}
+
+FUNCTION void
+lectern0_draw_row_highlights(Lectern0App *app,
+                             const EpubReaderFrameStyleRow *row,
+                             const PresentationEngineBlockFlowRow *presentation_row)
+{
+  if (!app || !row || !presentation_row || row->byte_end <= row->byte_start)
+    return;
+  U64 row_start = app->frame.view_byte_offset + row->byte_start;
+  U64 row_end = app->frame.view_byte_offset + row->byte_end;
+  U64 row_size = row_end - row_start;
+  for (U32 index = 0; index < app->highlight_count; index += 1)
+  {
+    const Lectern0Highlight *highlight = app->highlights + index;
+    if (highlight->spine_index != app->frame.spine_index ||
+        highlight->end_byte <= row_start || highlight->start_byte >= row_end)
+      continue;
+    U64 start = MAX(highlight->start_byte, row_start) - row_start;
+    U64 end = MIN(highlight->end_byte, row_end) - row_start;
+    S32 x0 = presentation_row->content_rect.x +
+      (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
+    S32 x1 = presentation_row->content_rect.x +
+      (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
+    (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
+                                 x0, presentation_row->row_rect.y,
+                                 MAX(x1 - x0, 3), presentation_row->row_rect.h,
+                                 2,
+                                 lectern0_reader_highlight_color(app,
+                                                                  highlight->color_index),
+                                 lectern0_reader_highlight_color(app,
+                                                                  highlight->color_index));
+  }
+  if (app->reader.has_active_selection &&
+      app->reader.active_selection.spine_index == app->frame.spine_index &&
+      app->reader.active_selection.text_byte_end > row_start &&
+      app->reader.active_selection.text_byte_start < row_end)
+  {
+    U64 start = MAX(app->reader.active_selection.text_byte_start, row_start) - row_start;
+    U64 end = MIN(app->reader.active_selection.text_byte_end, row_end) - row_start;
+    S32 x0 = presentation_row->content_rect.x +
+      (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
+    S32 x1 = presentation_row->content_rect.x +
+      (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
+    U32 color = app->theme == Lectern0Theme_Dark ? 0x00604786U : 0x00BFD7FFU;
+    (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
+                                 x0, presentation_row->row_rect.y,
+                                 MAX(x1 - x0, 3), presentation_row->row_rect.h,
+                                 2, color, color);
+  }
+}
+
 FUNCTION void
 lectern0_draw_reader_page(Lectern0App *app)
 {
-  S32 body_x = 48;
-  S32 body_y = Lectern0ToolbarHeight + 22;
-  S32 body_w = MAX(app->width - 96, 1);
-  S32 body_h = MAX(app->height - body_y - Lectern0FooterHeight - 12, 1);
+  UI0Rect viewport = app->reader_view_ready ? app->reader_view_layout.viewport_rect :
+    ui0_rect(0, Lectern0ToolbarHeight, app->width,
+             MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
+  S32 body_x = viewport.x + 48;
+  S32 body_y = viewport.y + 22;
+  S32 body_w = MAX(viewport.w - 96, 1);
+  S32 body_h = MAX(viewport.h - 34, 1);
+  U32 page_color = lectern0_reader_page_color(app);
   (void)draw_push_rounded_rect(&app->draw_commands,
                                DrawLayer_World,
                                body_x - 16,
@@ -1600,8 +3218,9 @@ lectern0_draw_reader_page(Lectern0App *app)
                                body_w + 32,
                                body_h + 20,
                                8,
-                               0x00FFFDF8U,
-                               0x00D8D2C8U);
+                               page_color,
+                               app->theme == Lectern0Theme_Dark ?
+                                 0x004B4740U : 0x00D8D2C8U);
 
   if (!app->frame.ready || !app->frame.document_open)
   {
@@ -1619,7 +3238,7 @@ lectern0_draw_reader_page(Lectern0App *app)
                                  22,
                                  DrawTextHAlign_Center,
                                  DrawTextVAlign_Center,
-                                 0x004C4A46U);
+                                 lectern0_reader_ink_color(app));
     return;
   }
 
@@ -1769,8 +3388,11 @@ lectern0_draw_reader_page(Lectern0App *app)
 
     if (end > start)
     {
+      lectern0_draw_row_highlights(app, row, presentation_row);
       String8 text = str8(app->frame.visible_text.str + start, end - start);
-      U32 color = row->has_text_color ? row->text_color_rgb : 0x002A2927U;
+      U32 color = app->theme == Lectern0Theme_Dark ?
+        lectern0_reader_ink_color(app) :
+        (row->has_text_color ? row->text_color_rgb : lectern0_reader_ink_color(app));
       TextEngineResolvedStyle style =
         epub_reader_typography_style_for_doc_style(&app->reader.typography,
                                                     metrics.scale_px,
@@ -1802,27 +3424,6 @@ lectern0_draw_reader_page(Lectern0App *app)
     app->presentation_complete = 0;
   }
 
-  char footer[160] = {0};
-  (void)cstr_format(footer,
-                    ARRAY_COUNT(footer),
-                    "Page %llu/%llu | Section %u/%u",
-                    (unsigned long long)app->frame.page_index,
-                    (unsigned long long)app->frame.page_count,
-                    (unsigned)(app->frame.spine_index + 1),
-                    (unsigned)app->frame.section_count);
-  (void)draw_push_text_in_rect(&app->draw_commands,
-                               DrawLayer_Overlay,
-                               app->render_state.text_provider,
-                               footer,
-                               32,
-                               app->height - Lectern0FooterHeight,
-                               MAX(app->width - 64, 1),
-                               Lectern0FooterHeight,
-                               8,
-                               14,
-                               DrawTextHAlign_Center,
-                               DrawTextVAlign_Center,
-                               0x00635E56U);
 }
 
 FUNCTION void
@@ -1834,6 +3435,23 @@ lectern0_reset_input(Lectern0App *app)
   app->input.activate_pressed = 0;
   app->input.focus_next_pressed = 0;
   app->input.focus_prev_pressed = 0;
+  app->input.wheel_delta_y = 0;
+  app->input.escape_pressed = 0;
+  app->input.backspace_pressed = 0;
+  app->input.delete_pressed = 0;
+  app->input.commit_pressed = 0;
+  app->input.select_all_pressed = 0;
+  app->input.copy_pressed = 0;
+  app->input.cut_pressed = 0;
+  app->input.paste_pressed = 0;
+  app->input.undo_pressed = 0;
+  app->input.redo_pressed = 0;
+  app->input.move_delta = 0;
+  app->input.move_vertical_delta = 0;
+  app->input.range_move = ReaderViewRangeMove_None;
+  app->input.extend_selection = 0;
+  app->input.text_length = 0;
+  app->input.text[0] = 0;
 }
 
 FUNCTION void
@@ -1841,10 +3459,14 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
 {
   if (!app || !buffer || !buffer->pixels || !app->render_ready) { return; }
   app->presentation_complete = 1;
-  render_buffer_clear(buffer, 0x00E9E5DEU);
+  U32 canvas_color = app->theme == Lectern0Theme_Dark ? 0x00171412U :
+                     app->theme == Lectern0Theme_Sepia ? 0x00DED2BAU :
+                     0x00E9E5DEU;
+  render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_build_toolbar(app);
+  (void)lectern0_build_reader_view(app);
   lectern0_draw_reader_page(app);
+  if (app->reader_view_ready) lectern0_adapt_ui0_draw(app);
   render_execute_draw_commands(&app->render_state, buffer, &app->draw_commands);
   lectern0_reset_input(app);
 }
@@ -1864,6 +3486,9 @@ lectern0_render(Lectern0App *app)
                      surface.height,
                      surface.stride_pixels);
   lectern0_render_to_buffer(app, &buffer);
+  if (app->accessibility)
+    lectern0_accessibility_publish_frame(app->accessibility,
+                                         &app->reader_view_frame);
   (void)os_gfx_present_surface(&app->gfx, &surface);
 }
 
@@ -1925,7 +3550,6 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         if (app->gfx_ready && app->width > 0 && app->height > 0)
         {
           (void)os_gfx_resize(&app->gfx, app->width, app->height);
-          if (epub_reader_is_open(&app->reader)) { (void)lectern0_repaginate(app); }
           InvalidateRect(window, 0, FALSE);
         }
       }
@@ -1938,6 +3562,11 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       {
         app->input.pointer_x = GET_X_LPARAM(l_param);
         app->input.pointer_y = GET_Y_LPARAM(l_param);
+        if (app->selection_dragging && app->input.pointer_down)
+          lectern0_update_pointer_selection(app,
+                                            app->input.pointer_x,
+                                            app->input.pointer_y,
+                                            0);
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -1952,6 +3581,10 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         app->input.pointer_y = GET_Y_LPARAM(l_param);
         app->input.pointer_down = 1;
         app->input.pointer_pressed = 1;
+        lectern0_update_pointer_selection(app,
+                                          app->input.pointer_x,
+                                          app->input.pointer_y,
+                                          1);
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -1966,6 +3599,55 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         app->input.pointer_y = GET_Y_LPARAM(l_param);
         app->input.pointer_down = 0;
         app->input.pointer_released = 1;
+        if (app->selection_dragging)
+        {
+          lectern0_update_pointer_selection(app,
+                                            app->input.pointer_x,
+                                            app->input.pointer_y,
+                                            0);
+          app->selection_dragging = 0;
+        }
+        InvalidateRect(window, 0, FALSE);
+      }
+      return 0;
+    } break;
+
+    case WM_GETOBJECT:
+    {
+      if (app && (LONG)l_param == OBJID_CLIENT)
+      {
+        if (!app->accessibility)
+          (void)lectern0_accessibility_create(window,
+                                               app,
+                                               &app->accessibility);
+        if (app->accessibility)
+          return lectern0_accessibility_get_object(app->accessibility,
+                                                   w_param,
+                                                   l_param);
+      }
+    } break;
+
+    case WM_MOUSEWHEEL:
+    {
+      if (app)
+      {
+        POINT point = {GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+        ScreenToClient(window, &point);
+        app->input.pointer_x = point.x;
+        app->input.pointer_y = point.y;
+        app->input.wheel_delta_y += GET_WHEEL_DELTA_WPARAM(w_param) / WHEEL_DELTA;
+        InvalidateRect(window, 0, FALSE);
+      }
+      return 0;
+    } break;
+
+    case WM_CHAR:
+    {
+      if (app && w_param >= 32 && w_param != 127 &&
+          (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
+           app->reader_view_state.popup == ReaderViewPopup_NoteEditor))
+      {
+        lectern0_append_input_wchar(app, (wchar_t)w_param);
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -1977,15 +3659,94 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       {
         B32 control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         B32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        B32 editing = app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
+                      app->reader_view_state.popup == ReaderViewPopup_NoteEditor;
         if (w_param == 'O' && control)
         {
           (void)lectern0_pick_epub(app);
         }
-        else if (w_param == VK_LEFT || w_param == VK_PRIOR)
+        else if (w_param == 'F' && control)
+        {
+          app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
+          app->reader_view_state.most_recent_panel = ReaderViewPanel_Left;
+        }
+        else if (w_param == 'B' && control && epub_reader_is_open(&app->reader))
+        {
+          (void)lectern0_toggle_current_bookmark(app);
+        }
+        else if (w_param == VK_F11)
+        {
+          (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
+        }
+        else if (w_param == VK_ESCAPE)
+        {
+          app->input.escape_pressed = 1;
+        }
+        else if (editing && control && w_param == 'A') app->input.select_all_pressed = 1;
+        else if (editing && control && w_param == 'C') app->input.copy_pressed = 1;
+        else if (editing && control && w_param == 'X') app->input.cut_pressed = 1;
+        else if (editing && control && w_param == 'V')
+        {
+          app->input.paste_pressed = lectern0_get_clipboard_text(app);
+        }
+        else if (editing && control && w_param == 'Z') app->input.undo_pressed = 1;
+        else if (editing && control && w_param == 'Y') app->input.redo_pressed = 1;
+        else if (!editing && control && w_param == 'C' && app->selected_text[0])
+        {
+          (void)lectern0_set_clipboard_text(
+            app, lectern0_reader_view_text(app->selected_text));
+        }
+        else if (editing && w_param == VK_BACK) app->input.backspace_pressed = 1;
+        else if (editing && w_param == VK_DELETE) app->input.delete_pressed = 1;
+        else if (editing && w_param == VK_RETURN)
+        {
+          if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor)
+            lectern0_append_input_wchar(app, L'\n');
+          else
+            app->input.commit_pressed = 1;
+        }
+        else if (editing && (w_param == VK_LEFT || w_param == VK_RIGHT))
+        {
+          app->input.move_delta = w_param == VK_LEFT ? -1 : 1;
+          app->input.extend_selection = shift;
+        }
+        else if (editing && (w_param == VK_UP || w_param == VK_DOWN))
+        {
+          app->input.move_vertical_delta = w_param == VK_UP ? -1 : 1;
+          app->input.extend_selection = shift;
+        }
+        else if (!editing &&
+                 lectern0_reader_view_focus_is(app, ReaderViewSemantic_Slider) &&
+                 (w_param == VK_LEFT || w_param == VK_RIGHT))
+        {
+          app->input.move_delta = w_param == VK_LEFT ? -1 : 1;
+        }
+        else if (!editing && app->reader_view_state.focus_id != 0 &&
+                 (w_param == VK_UP || w_param == VK_DOWN))
+        {
+          app->input.move_vertical_delta = w_param == VK_UP ? -1 : 1;
+        }
+        else if (!editing && app->reader_view_state.focus_id != 0 &&
+                 (w_param == VK_HOME || w_param == VK_END))
+        {
+          app->input.range_move = w_param == VK_HOME ?
+            ReaderViewRangeMove_First : ReaderViewRangeMove_Last;
+        }
+        else if (alt && w_param == VK_LEFT)
+        {
+          (void)lectern0_move_history(app, 0);
+        }
+        else if (alt && w_param == VK_RIGHT)
+        {
+          (void)lectern0_move_history(app, 1);
+        }
+        else if (!editing && (w_param == VK_LEFT || w_param == VK_PRIOR))
         {
           (void)lectern0_move_page(app, -1);
         }
-        else if (w_param == VK_RIGHT || w_param == VK_NEXT || w_param == VK_SPACE)
+        else if (!editing &&
+                 (w_param == VK_RIGHT || w_param == VK_NEXT || w_param == VK_SPACE))
         {
           (void)lectern0_move_page(app, 1);
         }
@@ -1994,7 +3755,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
           if (shift) { app->input.focus_prev_pressed = 1; }
           else { app->input.focus_next_pressed = 1; }
         }
-        else if (w_param == VK_RETURN)
+        else if (!editing && w_param == VK_RETURN)
         {
           app->input.activate_pressed = 1;
         }
@@ -2009,16 +3770,20 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       BeginPaint(window, &paint);
       if (app) { lectern0_render(app); }
       EndPaint(window, &paint);
-      if (app && app->pending_action != Lectern0Action_None)
+      if (app)
       {
-        lectern0_apply_pending_action(app);
-        InvalidateRect(window, 0, FALSE);
+        B32 needs_frame = app->reader_view_frame.action_count > 0 ||
+          app->reader_view_frame.change_flags != ReaderViewFrameChange_None;
+        lectern0_apply_reader_view_actions(app);
+        if (needs_frame) InvalidateRect(window, 0, FALSE);
       }
       return 0;
     } break;
 
     case WM_DESTROY:
     {
+      if (app && app->accessibility)
+        lectern0_accessibility_destroy(app->accessibility);
       PostQuitMessage(0);
       return 0;
     } break;
@@ -2342,6 +4107,575 @@ lectern0_run_image_smoke(const char *path,
   return 0;
 }
 
+FUNCTION U64
+lectern0_reader_view_hash_mix(U64 hash, U64 value)
+{
+  hash ^= value;
+  hash *= 1099511628211ull;
+  return hash;
+}
+
+FUNCTION U64
+lectern0_reader_view_contract_hash(const ReaderViewFrame *frame)
+{
+  U64 hash = 1469598103934665603ull;
+  if (!frame) return hash;
+  hash = lectern0_reader_view_hash_mix(hash, (U64)frame->layout.mode);
+  hash = lectern0_reader_view_hash_mix(hash, (U64)frame->layout.toolbar_density);
+  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.x);
+  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.y);
+  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.w);
+  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.h);
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+  {
+    const ReaderViewSemanticNode *node = frame->semantic_nodes + index;
+    hash = lectern0_reader_view_hash_mix(hash, node->id);
+    hash = lectern0_reader_view_hash_mix(hash, node->parent_id);
+    hash = lectern0_reader_view_hash_mix(hash, (U64)node->role);
+    hash = lectern0_reader_view_hash_mix(hash, node->flags);
+    hash = lectern0_reader_view_hash_mix(hash, node->source_key);
+    if (node->name.data && node->name.size > 0)
+      hash = lectern0_reader_view_hash_mix(
+        hash, u64_hash_bytes(node->name.data, (U64)node->name.size));
+  }
+  return hash;
+}
+
+FUNCTION B32
+lectern0_reader_view_has_semantic(const ReaderViewFrame *frame,
+                                  const char *name)
+{
+  if (!frame || !name) return 0;
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+    if (lectern0_reader_view_text_is(frame->semantic_nodes[index].name, name))
+      return 1;
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_has_action(const ReaderViewFrame *frame,
+                                ReaderViewActionKind kind)
+{
+  if (!frame || !frame->actions) return 0;
+  for (UI0S32 index = 0; index < frame->action_count; index += 1)
+    if (frame->actions[index].kind == kind) return 1;
+  return 0;
+}
+
+FUNCTION int
+lectern0_run_reader_view_smoke(const char *path, const char *export_path)
+{
+  enum { Width = 1100, Height = 760 };
+  Lectern0App app = {0};
+  U64 pixel_count = (U64)Width * Height;
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&app, path))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=open\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!app.reader_view_ready ||
+      app.reader_view_projection.settings.count != READER_VIEW_SETTING_CAP ||
+      app.reader_view_projection.toc.row_count < 2 ||
+      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Contents") ||
+      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Find") ||
+      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark") ||
+      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Notes"))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=chrome\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  U32 initial_spine = app.reader.active_spine_index;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateTocRow,
+    .key = 2,
+  });
+  if (app.reader.active_spine_index == initial_spine)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=toc_action\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_HistoryBack,
+  });
+  B32 history_back_ok = app.reader.active_spine_index == initial_spine;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_HistoryForward,
+  });
+  B32 history_forward_ok = app.reader.active_spine_index != initial_spine;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_HistoryBack,
+  });
+  if (!history_back_ok || !history_forward_ok ||
+      app.reader.active_spine_index != initial_spine)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=history_actions initial=%u current=%u back_ok=%d forward_ok=%d back_count=%u forward_count=%u\n",
+            initial_spine,
+            app.reader.active_spine_index,
+            history_back_ok,
+            history_forward_ok,
+            app.reader.back_stack_count,
+            app.reader.forward_stack_count);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SelectSetting,
+    .setting_kind = ReaderViewSetting_FontSize,
+    .key = 2001,
+  });
+  if (app.text_size_index != 1)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=setting\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SelectSetting,
+    .setting_kind = ReaderViewSetting_LineSpacing,
+    .key = 3001,
+  });
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SelectSetting,
+    .setting_kind = ReaderViewSetting_Theme,
+    .key = 4002,
+  });
+  if (app.line_spacing_index != 1 || app.theme != Lectern0Theme_Dark)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=settings\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_prepare_reader_view_projection(&app);
+  for (UI0S32 index = 0;
+       index < app.reader_view_settings[0].choices.count;
+       index += 1)
+  {
+    ReaderViewChoice choice = app.reader_view_settings[0].choices.items[index];
+    if ((choice.flags & ReaderViewChoice_Selected) == 0)
+    {
+      U32 old_family = app.font_family;
+      lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+        .kind = ReaderViewAction_SelectSetting,
+        .setting_kind = ReaderViewSetting_FontFamily,
+        .key = choice.key,
+      });
+      if (app.font_family == old_family)
+      {
+        fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=font_setting\n");
+        free(pixels);
+        lectern0_app_release(&app);
+        return 1;
+      }
+      break;
+    }
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindChanged,
+    .text = {.data = "standalone", .size = 10},
+  });
+  if (app.reader.search_match_count == 0)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=find\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleBookmark,
+  });
+  if (app.bookmark_count != 1)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=bookmark\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleRightRowStar,
+    .key = app.bookmarks[0].id,
+    .right_row_kind = ReaderViewRightRow_Bookmark,
+  });
+  if (!app.bookmarks[0].starred)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=bookmark_star\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  U64 relative_start = 0;
+  while (relative_start < app.frame.visible_text.size &&
+         app.frame.visible_text.str[relative_start] <= ' ')
+    relative_start += 1;
+  U64 relative_end = relative_start;
+  for (U32 count = 0; count < 12 && relative_end < app.frame.visible_text.size; count += 1)
+    relative_end = base_unicode_utf8_next_grapheme_boundary(app.frame.visible_text,
+                                                            relative_end);
+  DocSelection selection = {
+    .spine_index = app.reader.active_spine_index,
+    .text_byte_start = app.frame.view_byte_offset + relative_start,
+    .text_byte_end = app.frame.view_byte_offset + relative_end,
+  };
+  if (relative_end <= relative_start ||
+      epub_reader_set_selection(&app.reader, selection) != EpubReaderResult_Ok)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=selection\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.selection_anchor_rect = ui0_rect(400, 180, 4, 24);
+  lectern0_prepare_selected_text(&app);
+  if (!lectern0_set_highlight_color(&app, 2))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=highlight\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  U64 note_revision = app.annotation_revision;
+  if (!lectern0_save_selection_note(&app,
+                                    (ReaderViewText){"Smoke note", 10}))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=note\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  (void)note_revision;
+  lectern0_prepare_reader_view_projection(&app);
+  if (app.reader_view_projection.right.row_count != 2 ||
+      app.reader_view_projection.selection.current_color_key != 5002)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=projection\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_EditRightRowNote,
+    .key = app.highlights[0].id,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  if (app.reader_view_state.popup != ReaderViewPopup_NoteEditor ||
+      !lectern0_reader_view_text_is(reader_view_note_draft(&app.reader_view_state),
+                                    "Smoke note"))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=direct_note_edit\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.reader_view_state.popup = ReaderViewPopup_None;
+  app.reader_view_state.note_dirty = 0;
+  app.reader_view_state.restore_focus_id = 0;
+  epub_reader_clear_selection(&app.reader);
+
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.export_path, ARRAY_COUNT(app.export_path), export_path);
+  (void)cstr_format(app.settings_path, ARRAY_COUNT(app.settings_path),
+                    "%s.settings", export_path);
+  (void)cstr_format(app.annotations_path, ARRAY_COUNT(app.annotations_path),
+                    "%s.annotations", export_path);
+  if (!lectern0_save_settings(&app) || !lectern0_save_annotations(&app) ||
+      !lectern0_export_annotations(&app))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=persistence\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.bookmark_count = 0;
+  app.highlight_count = 0;
+  lectern0_load_annotations(&app);
+  if (app.bookmark_count != 1 || app.highlight_count != 1 ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=reload\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  Lectern0App failed_app = {0};
+  char missing_path[Lectern0PathCap] = {0};
+  (void)cstr_format(missing_path, ARRAY_COUNT(missing_path),
+                    "%s.missing.epub", export_path);
+  (void)DeleteFileA(missing_path);
+  if (!lectern0_app_init(&failed_app, Width, Height, 1, 0) ||
+      lectern0_open_path(&failed_app, missing_path))
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=error_setup\n");
+    lectern0_app_release(&failed_app);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_render_to_buffer(&failed_app, &buffer);
+  if (!failed_app.reader_view_ready ||
+      failed_app.reader_view_projection.content.state != ReaderViewLoad_Error)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=error_state\n");
+    lectern0_app_release(&failed_app);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_app_release(&failed_app);
+
+  app.width = 680;
+  app.height = 620;
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!app.reader_view_ready ||
+      app.reader_view_layout.toolbar_density != ReaderViewToolbar_Overflow ||
+      app.reader_view_layout.mode != ReaderViewLayout_Overlay)
+  {
+    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=responsive\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  U64 hash = lectern0_reader_view_contract_hash(&app.reader_view_frame);
+  fprintf(stdout,
+          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=overflow hash=%016llx export=%s\n",
+          READERVIEW0_API_VERSION,
+          app.reader_view_projection.toc.row_count,
+          app.reader.search_match_count,
+          app.bookmark_count,
+          app.highlight_count,
+          (unsigned long long)hash,
+          export_path);
+  free(pixels);
+  lectern0_app_release(&app);
+  return 0;
+}
+
+FUNCTION int
+lectern0_run_accessibility_smoke(const char *path)
+{
+  enum { Width = 1100, Height = 760 };
+  static const wchar_t *ClassName = L"Lectern0AccessibilitySmokeWindow";
+  Lectern0Win32 win32 = {0};
+  U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
+  if (!pixels || !lectern0_app_init(&win32.app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&win32.app, path))
+  {
+    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=open\n");
+    free(pixels);
+    lectern0_app_release(&win32.app);
+    return 1;
+  }
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&win32.app, &buffer);
+
+  HINSTANCE instance = GetModuleHandleW(0);
+  WNDCLASSW window_class = {0};
+  window_class.lpfnWndProc = lectern0_win32_proc;
+  window_class.hInstance = instance;
+  window_class.lpszClassName = ClassName;
+  if (!RegisterClassW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+  {
+    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=register\n");
+    free(pixels);
+    lectern0_app_release(&win32.app);
+    return 1;
+  }
+  win32.window = CreateWindowExW(0, ClassName, L"lectern0 accessibility smoke",
+                                  WS_OVERLAPPEDWINDOW,
+                                  0, 0, Width, Height,
+                                  0, 0, instance, &win32);
+  if (!win32.window)
+  {
+    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=window\n");
+    (void)UnregisterClassW(ClassName, instance);
+    free(pixels);
+    lectern0_app_release(&win32.app);
+    return 1;
+  }
+  win32.app.window = win32.window;
+
+  IAccessible *accessible = 0;
+  HRESULT access_result = AccessibleObjectFromWindow(win32.window,
+                                                       (DWORD)OBJID_CLIENT,
+                                                       &IID_IAccessible,
+                                                       (void **)&accessible);
+  long child_count = 0;
+  UI0S32 contents_index = -1;
+  for (UI0S32 index = 0;
+       index < win32.app.reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    if (lectern0_reader_view_text_is(
+          win32.app.reader_view_frame.semantic_nodes[index].name,
+          "Contents"))
+    {
+      contents_index = index;
+      break;
+    }
+  }
+
+  VARIANT contents_child;
+  VariantInit(&contents_child);
+  contents_child.vt = VT_I4;
+  contents_child.lVal = contents_index + 1;
+  BSTR root_name = 0;
+  BSTR contents_name = 0;
+  VARIANT root_child;
+  VariantInit(&root_child);
+  root_child.vt = VT_I4;
+  root_child.lVal = CHILDID_SELF;
+  VARIANT role;
+  VariantInit(&role);
+  long left = 0;
+  long top = 0;
+  long width = 0;
+  long height = 0;
+
+  B32 valid = SUCCEEDED(access_result) && accessible && contents_index >= 0 &&
+    SUCCEEDED(accessible->lpVtbl->get_accChildCount(accessible, &child_count)) &&
+    child_count == win32.app.reader_view_frame.semantic_node_count &&
+    SUCCEEDED(accessible->lpVtbl->get_accName(accessible, root_child, &root_name)) &&
+    root_name && wcscmp(root_name, L"lectern0 EPUB reader") == 0 &&
+    SUCCEEDED(accessible->lpVtbl->get_accName(accessible, contents_child,
+                                              &contents_name)) &&
+    contents_name && wcscmp(contents_name, L"Contents") == 0 &&
+    SUCCEEDED(accessible->lpVtbl->get_accRole(accessible, contents_child, &role)) &&
+    role.vt == VT_I4 &&
+    (role.lVal == ROLE_SYSTEM_PUSHBUTTON || role.lVal == ROLE_SYSTEM_CHECKBUTTON) &&
+    SUCCEEDED(accessible->lpVtbl->accLocation(accessible,
+                                              &left, &top, &width, &height,
+                                              contents_child)) &&
+    width > 0 && height > 0 &&
+    SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
+                                            SELFLAG_TAKEFOCUS,
+                                            contents_child)) &&
+    SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                     contents_child));
+  if (valid)
+  {
+    lectern0_render_to_buffer(&win32.app, &buffer);
+    valid = win32.app.reader_view_state.left_panel == ReaderViewLeftPanel_Contents;
+  }
+
+  UI0S32 slider_index = -1;
+  for (UI0S32 index = 0;
+       valid && index < win32.app.reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    if (win32.app.reader_view_frame.semantic_nodes[index].role ==
+        ReaderViewSemantic_Slider)
+    {
+      slider_index = index;
+      break;
+    }
+  }
+  if (valid && slider_index >= 0)
+  {
+    VARIANT slider_child;
+    VariantInit(&slider_child);
+    slider_child.vt = VT_I4;
+    slider_child.lVal = slider_index + 1;
+    U64 before_offset = win32.app.reader.view_byte_offset;
+    valid = SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                             slider_child));
+    if (valid)
+    {
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      valid = lectern0_reader_view_focus_is(&win32.app,
+                                            ReaderViewSemantic_Slider);
+    }
+    if (valid)
+    {
+      win32.app.input.move_delta = 10;
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      valid = lectern0_reader_view_has_action(&win32.app.reader_view_frame,
+                                              ReaderViewAction_SeekLocation);
+      lectern0_apply_reader_view_actions(&win32.app);
+      valid = valid && win32.app.reader.view_byte_offset != before_offset;
+    }
+  }
+  else
+  {
+    valid = 0;
+  }
+
+  if (valid)
+  {
+    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleDistractionFree,
+    });
+    valid = win32.app.distraction_free;
+    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleDistractionFree,
+    });
+    valid = valid && !win32.app.distraction_free;
+  }
+  if (valid)
+  {
+    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleFullscreen,
+    });
+    valid = win32.app.fullscreen.active;
+    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleFullscreen,
+    });
+    valid = valid && !win32.app.fullscreen.active;
+  }
+
+  long role_value = role.vt == VT_I4 ? role.lVal : 0;
+
+  if (root_name) SysFreeString(root_name);
+  if (contents_name) SysFreeString(contents_name);
+  VariantClear(&role);
+  if (accessible) (void)accessible->lpVtbl->Release(accessible);
+  (void)DestroyWindow(win32.window);
+  (void)UnregisterClassW(ClassName, instance);
+
+  if (!valid)
+  {
+    fprintf(stderr,
+            "lectern0_accessibility_smoke result=fail reason=contract hr=%08lx nodes=%ld contents=%d slider=%d role=%ld rect=%ldx%ld\n",
+            (unsigned long)access_result,
+            child_count,
+            contents_index,
+            slider_index,
+            role_value,
+            width,
+            height);
+    free(pixels);
+    lectern0_app_release(&win32.app);
+    return 1;
+  }
+
+  fprintf(stdout,
+          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%d progress_child=%d role=%ld focus=shared action=shared progress=keyboard fullscreen=native distraction=shared\n",
+          child_count,
+          contents_index + 1,
+          slider_index + 1,
+          role_value);
+  free(pixels);
+  lectern0_app_release(&win32.app);
+  return 0;
+}
+
 FUNCTION int
 lectern0_run_window(const char *initial_path)
 {
@@ -2430,13 +4764,22 @@ main(int argc, char **argv)
   {
     result = lectern0_run_image_smoke(argv[2], argv[3], argv[4]);
   }
+  else if (argc == 4 && strcmp(argv[1], "--reader-view-smoke") == 0)
+  {
+    result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
+  }
+  else if (argc == 3 && strcmp(argv[1], "--accessibility-smoke") == 0)
+  {
+    result = lectern0_run_accessibility_smoke(argv[2]);
+  }
   else if (argc == 2 && strcmp(argv[1], "--version") == 0)
   {
     fprintf(stdout,
-            "lectern0 %s reader0_api=%d ui0_api=%d\n",
+            "lectern0 %s reader0_api=%d ui0_api=%d readerview0_api=%d\n",
             LECTERN0_VERSION_STRING,
             READER0_API_VERSION,
-            UI0_API_VERSION);
+            UI0_API_VERSION,
+            READERVIEW0_API_VERSION);
   }
   else if (argc <= 2)
   {
@@ -2445,7 +4788,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

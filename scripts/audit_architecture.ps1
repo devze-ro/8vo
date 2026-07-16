@@ -7,17 +7,30 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $failures = [System.Collections.Generic.List[string]]::new()
 $buildPath = Join-Path $RepoRoot "code\build.c"
 $appPath = Join-Path $RepoRoot "code\lectern0.c"
+$accessibilityPath = Join-Path $RepoRoot "code\platform\win32\lectern0_accessibility_win32.c"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/lectern0.c") }
+if (!(Test-Path -LiteralPath $accessibilityPath)) {
+  $failures.Add("missing host-owned Win32 accessibility adapter")
+}
 
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
   $app = [System.IO.File]::ReadAllText($appPath)
+  $accessibility = [System.IO.File]::ReadAllText($accessibilityPath)
   if ([regex]::Matches($build, '#include\s+"reader0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile reader0.c exactly once")
   }
   if ([regex]::Matches($build, '#include\s+"ui0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile ui0.c exactly once")
+  }
+  if ([regex]::Matches($build, '#include\s+"readerview0\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile readerview0.c exactly once")
+  }
+  if ([regex]::Matches(
+        $build,
+        '#include\s+"platform/win32/lectern0_accessibility_win32\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile the host accessibility adapter exactly once")
   }
   if ([regex]::Matches($build, '#\s*include\s+"os/os_image\.c"').Count -ne 1 -or
       [regex]::Matches($build, '#\s*include\s+"platform/win32/os_image_win32\.c"').Count -ne 1) {
@@ -31,6 +44,29 @@ if ($failures.Count -eq 0) {
   }
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
+  }
+  if ($app.IndexOf('#include "readerview0.h"') -lt 0 -or
+      $app.IndexOf('READERVIEW0_API_VERSION != 1') -lt 0) {
+    $failures.Add("lectern0 must consume Reader View API 1 through its umbrella")
+  }
+  if ($app.IndexOf('reader_view_build') -lt 0 -or
+      $app.IndexOf('lectern0_prepare_reader_view_projection') -lt 0 -or
+      $app.IndexOf('lectern0_apply_reader_view_actions') -lt 0) {
+    $failures.Add("lectern0 must project host data into Reader View API 1 and execute returned actions")
+  }
+  if ($app.IndexOf('lectern0_save_settings') -lt 0 -or
+      $app.IndexOf('lectern0_save_annotations') -lt 0 -or
+      $app.IndexOf('lectern0_export_annotations') -lt 0) {
+    $failures.Add("lectern0 must retain settings and annotation persistence ownership")
+  }
+  if ($app.IndexOf('--reader-view-smoke') -lt 0) {
+    $failures.Add("lectern0 must retain deterministic Reader View API 1 action evidence")
+  }
+  if ($app.IndexOf('--accessibility-smoke') -lt 0 -or
+      $app.IndexOf('WM_GETOBJECT') -lt 0 -or
+      $accessibility.IndexOf('IAccessible') -lt 0 -or
+      $accessibility.IndexOf('reader_view_accessibility_invoke') -lt 0) {
+    $failures.Add("lectern0 must retain its native adapter over shared semantic/action records")
   }
   if ($app.IndexOf('epub_reader_move_page') -lt 0 -or
       $app.IndexOf('epub_reader_navigate_to_nav_point') -lt 0 -or
@@ -71,4 +107,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "lectern0 architecture audit: pass"
-Write-Host "boundary: zero_foundation presentation/image/render + ui0 host chrome + reader0 concrete EPUB core"
+Write-Host "boundary: zero_foundation presentation/image/render + readerview0/UI0 chrome + reader0 concrete EPUB core"

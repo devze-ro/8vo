@@ -4,8 +4,8 @@
 
 Lectern0 is a Windows EPUB application. It owns one caller-allocated
 `EpubReader`, one bounded `EpubReaderFrameStorage`, the current layout key and
-configuration, a Win32 window/backbuffer, UI0 frame contexts, zero_foundation
-draw/render state, and a versioned last-location record.
+configuration, a Win32 window/backbuffer, readerview0/UI0 frame storage,
+zero_foundation draw/render state, and versioned host persistence records.
 
 Reader0 owns the EPUB document engine, source layout, typography, pagination,
 page transitions, semantic navigation, search/selection state, and canonical
@@ -14,7 +14,22 @@ API 3. No reader state is mirrored in application storage. Its narrow semantic
 adapters capture the resulting canonical frame, set host status, and persist
 the resulting reader-owned location.
 
-UI0 owns generic toolbar layout, signal, control, token, and draw records. A
+Readerview0 API 1 owns only the proven-common UI0 composition: the responsive
+top toolbar and overflow, page gutters and progress geometry, TOC/Find and
+annotations/bookmarks panel shells, settings and row-action popups, selection
+tools, note-editor interaction state, focus order, portable semantic records,
+and bounded returned actions. Its projection/action API does not name reader0
+types and has no reader0 or direct zero_foundation dependency.
+
+Lectern0 owns the projected TOC/search/selection meaning, settings choices,
+stable bookmark/highlight/note IDs, 128-record bookmark and highlight
+capacities, native commands, and every mutation. It persists the current
+location, reading settings, and per-book annotations in separate versioned
+host records. Projection strings and rows are borrowed for one build;
+`ReaderViewState` and `ReaderViewFrameStorage` are caller-owned. The application
+never treats an emitted action as a completed persistent mutation.
+
+UI0 owns generic signal, control, token, layout, draw, and text-edit records. A
 narrow lectern0 adapter converts those records into zero_foundation draw
 commands. UI0 does not render EPUB content and is not a reader0 dependency.
 
@@ -56,12 +71,36 @@ evidence. The wrapper repeats the render in a fresh process and requires equal
 geometry, pixel, and file hashes. It does not introduce a second layout or
 presentation implementation.
 
+## Viewport, responsive layout, focus, and accessibility
+
+`ReaderViewLayout.viewport_rect` is the only rectangle used to configure
+reader0 pagination and draw the canonical EPUB frame. Shared gutters and
+docked panels reduce that rectangle; overlays never move EPUB rendering behind
+an unrelated application layout. A layout-affecting shared state change causes
+lectern0 to recompute the contract and repaginate at the current reader-owned
+location.
+
+Full toolbar composition starts at 1024 pixels, compact composition and
+overflow run from 720 through 1023, and narrower windows use the minimal
+toolbar. Both panels can dock from 1180 pixels; one docks between 840 and 1179;
+narrower panels overlay. Distraction-free mode hides shared chrome, while the
+host independently performs native fullscreen window transitions.
+
+Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
+states, and pointer/keyboard/accessibility convergence. Lectern0 translates
+Win32 input and implements a host-owned MSAA `IAccessible` object over the
+current semantic records. `WM_GETOBJECT`, native object lifetime, screen-reader
+events, coordinate translation, and execution of returned reader actions stay
+in lectern0.
+
 ## Current exclusions
 
-No PDF backend, generic document interface, library database, search/TOC UI,
-annotations, shared reader view/chrome, theme selector, or accessibility
-redesign is included. Slice 4B proves semantic TOC and Find transitions without
-pre-implementing their UI. Unsupported, missing, oversized, corrupt, and
-cache-full image rows render bounded alt-text fallbacks. Simple-grid adoption
-waits for a second host that presents table cells as independent geometry;
-lectern0 does not invent a table UI merely to exercise the foundation API.
+No PDF backend, generic document interface, library database, shared
+persistence, renderer, decoded-image cache, or native accessibility adapter is
+moved into readerview0. Features absent from the current re10 EPUB reader—such
+as later Kindle-gap reading controls—remain deferred until re10 and lectern0
+share and stabilize this Stage 1 surface. Unsupported, missing, oversized,
+corrupt, and cache-full image rows render bounded alt-text fallbacks.
+Simple-grid adoption waits for a second host that presents table cells as
+independent geometry; lectern0 does not invent a table UI merely to exercise
+the foundation API.

@@ -53,6 +53,7 @@ function Require-Dependency {
 
 $reader0 = Resolve-DependencyPath "LECTERN0_READER0_DIR" "reader0"
 $ui0 = Resolve-DependencyPath "LECTERN0_UI0_DIR" "ui0"
+$readerview0 = Resolve-DependencyPath "LECTERN0_READERVIEW0_DIR" "readerview0"
 $zero = if ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:LECTERN0_ZERO_FOUNDATION_DIR).Path
 } elseif ($env:ZERO_FOUNDATION_DIR) {
@@ -65,6 +66,8 @@ Require-Dependency "reader0" $reader0 (Join-Path $RepoRoot "vendor\reader0_depen
   "code\reader0_version.h" "READER0_VERSION_STRING" "READER0_API_VERSION"
 Require-Dependency "ui0" $ui0 (Join-Path $RepoRoot "vendor\ui0_dependency") `
   "code\ui0_version.h" "UI0_VERSION_STRING" "UI0_API_VERSION"
+Require-Dependency "readerview0" $readerview0 (Join-Path $RepoRoot "vendor\readerview0_dependency") `
+  "code\readerview0_version.h" "READERVIEW0_VERSION_STRING" "READERVIEW0_API_VERSION"
 Require-Dependency "zero_foundation" $zero (Join-Path $RepoRoot "vendor\zero_foundation_dependency") `
   "code\foundation\version.h" "ZERO_FOUNDATION_VERSION_STRING"
 
