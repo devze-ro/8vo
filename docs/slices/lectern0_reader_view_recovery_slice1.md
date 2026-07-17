@@ -75,6 +75,13 @@ The exact dependency guard, architecture audit, and strict MSVC C11 `/W4
 - image smoke: repeatable cover/inline hashes `a976ba0298994bd4` /
   `8a575edbd2f99725`.
 
-The complete two-host reference-lock and pixel-gate run is an integration gate
-for the combined re10/readerview0/lectern0 recovery slice; this host validation
-does not claim that broader recovery is already complete.
+The combined cross-revision integration run also passed the hardened six-case
+two-host gate. Both hosts were repeatable and decoded-pixel exact in every
+case. Wide and narrow default plus the font menu had matching diagnostic
+records; Contents, Find, and bookmark/right-panel retained their accepted
+host-record differences.
+
+The same new evidence then failed the directional pre-extraction re10 lock in
+all six mapped states, as required at this checkpoint. Current cross-host
+parity is therefore intact, but broader reference restoration remains
+explicitly outstanding.
