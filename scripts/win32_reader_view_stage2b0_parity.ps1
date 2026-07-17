@@ -389,9 +389,15 @@ foreach ($case in $Cases) {
 
 $Manifest = [pscustomobject]@{
   schema = if ($CrossRevisionConformance) { "reader_view_stage2b2_v1" } else { "reader_view_stage2b0_v1" }
-  status = if ($Deterministic) {
-    if ($CrossRevisionConformance) { "conformance_recorded" } else { "baseline_recorded" }
-  } else { "failed_nondeterministic" }
+  status = if (!$Deterministic) {
+    "failed_nondeterministic"
+  } elseif (!$AllPixelExact) {
+    "failed_visual_mismatch"
+  } elseif ($CrossRevisionConformance) {
+    "conformance_recorded"
+  } else {
+    "exact_visual_parity_recorded"
+  }
   exact_parity = $AllExact
   exact_visual_parity = $AllPixelExact
   deterministic = $Deterministic
@@ -413,10 +419,8 @@ $ManifestPath = Join-Path $OutputRoot "manifest.json"
 $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ManifestPath -Encoding ASCII
 $DifferenceSummary = if ($AllPixelExact) {
   "Stage 2B-3 visual closure is exact for every scenario after normalizing decoded 32-bit pixels. Remaining record differences, if any, are reported separately and do not represent a rendered-pixel difference."
-} elseif ($CrossRevisionConformance) {
-  "Remaining cross-host differences are recorded inputs to the Stage 2B-3 pixel-closure gate. Stage 2B-2 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
 } else {
-  "Cross-host differences are expected at this baseline and are inputs to Stage 2B-1/2B-2. Stage 2B-0 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
+  "Required decoded-pixel equality failed. The manifest and report are retained for diagnosis, and this runner exits unsuccessfully. Record-hash differences remain diagnostic and are not visual failures."
 }
 
 $Report = @(
@@ -450,5 +454,6 @@ $Report += @(
 $Report | Set-Content -LiteralPath (Join-Path $OutputRoot "report.md") -Encoding ASCII
 
 if (!$Deterministic) { throw "$StageLabel parity capture was not deterministic; see $ManifestPath" }
+if (!$AllPixelExact) { throw "$StageLabel required decoded-pixel parity failed; see $ManifestPath" }
 Write-Host "Reader View $StageLabel evidence recorded: $ManifestPath"
 exit 0

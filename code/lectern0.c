@@ -3792,6 +3792,39 @@ lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
   }
 }
 
+FUNCTION void
+lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
+{
+  if (!app) return;
+  app->input.pointer_x = x;
+  app->input.pointer_y = y;
+  app->input.pointer_down = 1;
+  app->input.pointer_pressed = 1;
+  lectern0_update_pointer_selection(app, x, y, 1);
+}
+
+FUNCTION B32
+lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
+{
+  if (!app) return 0;
+  app->input.pointer_x = x;
+  app->input.pointer_y = y;
+  app->input.pointer_down = 0;
+  app->input.pointer_released = 1;
+  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  if (exit_rect.w > 0 && ui0_rect_contains_point(exit_rect, x, y))
+  {
+    app->input.pointer_released = 0;
+    return 1;
+  }
+  if (app->selection_dragging)
+  {
+    lectern0_update_pointer_selection(app, x, y, 0);
+    app->selection_dragging = 0;
+  }
+  return 0;
+}
+
 FUNCTION U32
 lectern0_reader_page_color(const Lectern0App *app)
 {
@@ -3995,19 +4028,7 @@ lectern0_draw_reader_page(Lectern0App *app)
   {
     MemoryZeroStruct(&app->presentation_frame);
     app->presentation_hash = 0;
-    (void)draw_push_text_in_rect(&app->draw_commands,
-                                 DrawLayer_World,
-                                 app->render_state.text_provider,
-                                 "Open an EPUB to begin reading.",
-                                 body_x,
-                                 body_y,
-                                 body_w,
-                                 body_h,
-                                 12,
-                                 22,
-                                 DrawTextHAlign_Center,
-                                 DrawTextVAlign_Center,
-                                 lectern0_reader_ink_color(app));
+    /* Reader View owns projected empty/loading/error status presentation. */
     return;
   }
 
@@ -4445,14 +4466,10 @@ lectern0_reader_view_parity_click(Lectern0App *app,
   if (!node || node->rect.w <= 0 || node->rect.h <= 0) return 0;
   S32 x = node->rect.x + node->rect.w / 2;
   S32 y = node->rect.y + node->rect.h / 2;
-  app->input.pointer_x = x;
-  app->input.pointer_y = y;
-  app->input.pointer_down = 1;
-  app->input.pointer_pressed = 1;
+  lectern0_host_pointer_press(app, x, y);
   lectern0_render_to_buffer(app, buffer);
   lectern0_apply_reader_view_actions(app);
-  app->input.pointer_down = 0;
-  app->input.pointer_released = 1;
+  if (lectern0_host_pointer_release(app, x, y)) return 0;
   lectern0_render_to_buffer(app, buffer);
   lectern0_apply_reader_view_actions(app);
   app->input.pointer_x = -32768;
@@ -4527,7 +4544,27 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
       lectern0_apply_reader_view_actions(app);
     }
   }
-  return 1;
+
+  ReaderViewLeftPanelMode expected_left = ReaderViewLeftPanel_None;
+  if (strcmp(left, "contents") == 0)
+    expected_left = ReaderViewLeftPanel_Contents;
+  else if (strcmp(left, "find") == 0)
+    expected_left = ReaderViewLeftPanel_Find;
+  B32 expect_right_open = strcmp(right, "closed") != 0;
+  ReaderViewPopupKind expected_popup = strcmp(popup, "font") == 0 ?
+    ReaderViewPopup_SettingMenu : ReaderViewPopup_None;
+  B32 query_matches = strcmp(query, "-") == 0 ||
+    (lectern0_reader_view_text_equals(reader_view_find_query(
+       &app->reader_view_state), query) && app->reader.search_match_count > 0);
+  B32 bookmark_matches = strcmp(right, "bookmark") != 0 ||
+                         app->bookmark_count == 1;
+  return app->reader_view_state.left_panel == expected_left &&
+         app->reader_view_state.right_panel_open == expect_right_open &&
+         app->reader_view_state.popup == expected_popup &&
+         (expected_popup != ReaderViewPopup_SettingMenu ||
+          app->reader_view_state.active_setting_kind ==
+            ReaderViewSetting_FontFamily) &&
+         query_matches && bookmark_matches;
 }
 
 FUNCTION int
@@ -4564,9 +4601,19 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
   render_buffer_init(&buffer, pixels, width, height, width);
   lectern0_render_to_buffer(&app, &buffer);
   if (!lectern0_apply_reader_view_parity_scenario(&app, &buffer,
-                                                  left, right, popup, query))
+                                                   left, right, popup, query))
   {
-    fprintf(stderr, "lectern0_reader_view_parity result=fail reason=scenario\n");
+    fprintf(stderr,
+            "lectern0_reader_view_parity result=fail reason=scenario expected_left=%s actual_left=%d expected_right=%s actual_right=%d expected_popup=%s actual_popup=%d query=%s matches=%u bookmarks=%u\n",
+            left,
+            (int)app.reader_view_state.left_panel,
+            right,
+            app.reader_view_state.right_panel_open,
+            popup,
+            (int)app.reader_view_state.popup,
+            query,
+            app.reader.search_match_count,
+            app.bookmark_count);
     free(pixels);
     lectern0_app_release(&app);
     return 1;
@@ -4641,14 +4688,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app)
       {
         SetCapture(window);
-        app->input.pointer_x = GET_X_LPARAM(l_param);
-        app->input.pointer_y = GET_Y_LPARAM(l_param);
-        app->input.pointer_down = 1;
-        app->input.pointer_pressed = 1;
-        lectern0_update_pointer_selection(app,
-                                          app->input.pointer_x,
-                                          app->input.pointer_y,
-                                          1);
+        lectern0_host_pointer_press(app,
+                                    GET_X_LPARAM(l_param),
+                                    GET_Y_LPARAM(l_param));
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -4659,27 +4701,12 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app)
       {
         ReleaseCapture();
-        app->input.pointer_x = GET_X_LPARAM(l_param);
-        app->input.pointer_y = GET_Y_LPARAM(l_param);
-        app->input.pointer_down = 0;
-        app->input.pointer_released = 1;
-        UI0Rect exit_rect = lectern0_host_exit_rect(app);
-        if (exit_rect.w > 0 &&
-            ui0_rect_contains_point(exit_rect,
-                                    app->input.pointer_x,
-                                    app->input.pointer_y))
+        if (lectern0_host_pointer_release(app,
+                                          GET_X_LPARAM(l_param),
+                                          GET_Y_LPARAM(l_param)))
         {
-          app->input.pointer_released = 0;
           PostMessageW(window, WM_CLOSE, 0, 0);
           return 0;
-        }
-        if (app->selection_dragging)
-        {
-          lectern0_update_pointer_selection(app,
-                                            app->input.pointer_x,
-                                            app->input.pointer_y,
-                                            0);
-          app->selection_dragging = 0;
         }
         InvalidateRect(window, 0, FALSE);
       }
@@ -5233,6 +5260,110 @@ lectern0_reader_view_has_action(const ReaderViewFrame *frame,
   if (!frame || !frame->actions) return 0;
   for (UI0S32 index = 0; index < frame->action_count; index += 1)
     if (frame->actions[index].kind == kind) return 1;
+  return 0;
+}
+
+FUNCTION U32
+lectern0_draw_text_command_count(const Lectern0App *app,
+                                 const char *text)
+{
+  if (!app || !text) return 0;
+  U32 result = 0;
+  for (DrawLayer layer = DrawLayer_Background;
+       layer < DrawLayer_Count;
+       layer = (DrawLayer)(layer + 1))
+  {
+    U16 count = app->draw_commands.command_count[layer];
+    for (U16 index = 0; index < count; index += 1)
+    {
+      const DrawCommand *command = app->draw_commands.commands[layer] + index;
+      if (command->type == DrawCommandType_Text &&
+          strcmp(command->v.text.text, text) == 0)
+        result += 1;
+    }
+  }
+  return result;
+}
+
+FUNCTION int
+lectern0_run_reader_view_startup_interaction_smoke(void)
+{
+  enum { Width = 1100, Height = 760 };
+  static const char *EmptyMessage = "Open an EPUB to begin reading.";
+  Lectern0App app = {0};
+  U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
+  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_startup_interaction result=fail reason=setup\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *open =
+    lectern0_reader_view_parity_semantic(&app,
+                                         ReaderViewSemantic_Button,
+                                         "Open");
+  U32 empty_message_count =
+    lectern0_draw_text_command_count(&app, EmptyMessage);
+  B32 empty_state = app.document_state == ReaderViewLoad_Empty &&
+                    app.reader_view_projection.document_key == 0 &&
+                    app.reader_view_projection.content.state ==
+                      ReaderViewLoad_Empty;
+  if (!open || open->rect.w <= 0 || open->rect.h <= 0 || !empty_state ||
+      empty_message_count != 1)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_startup_interaction result=fail reason=initial open=%d empty=%d status_text_count=%u\n",
+            open != 0,
+            empty_state,
+            empty_message_count);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  UI0ID open_id = open->id;
+  S32 x = open->rect.x + open->rect.w / 2;
+  S32 y = open->rect.y + open->rect.h / 2;
+  lectern0_host_pointer_press(&app, x, y);
+  lectern0_render_to_buffer(&app, &buffer);
+  UI0ID press_active_id = app.reader_view_state.active_id;
+  B32 press_active = press_active_id == open_id;
+  B32 press_emitted_open = lectern0_reader_view_has_action(
+    &app.reader_view_frame, ReaderViewAction_Open);
+
+  B32 requested_exit = lectern0_host_pointer_release(&app, x, y);
+  lectern0_render_to_buffer(&app, &buffer);
+  B32 release_emitted_open = lectern0_reader_view_has_action(
+    &app.reader_view_frame, ReaderViewAction_Open);
+  B32 valid = press_active && !press_emitted_open && !requested_exit &&
+              release_emitted_open &&
+              app.document_state == ReaderViewLoad_Empty;
+  if (!valid)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_startup_interaction result=fail reason=lifecycle open_id=%llu active_id=%llu active_on_press=%d open_on_press=%d exit=%d open_on_release=%d document_state=%d\n",
+            (unsigned long long)open_id,
+            (unsigned long long)press_active_id,
+            press_active,
+            press_emitted_open,
+            requested_exit,
+            release_emitted_open,
+            (int)app.document_state);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  fprintf(stdout,
+          "lectern0_reader_view_startup_interaction result=pass document=empty lifecycle=press_release action=open dialog=not_invoked status_owner=reader_view\n");
+  free(pixels);
+  lectern0_app_release(&app);
   return 0;
 }
 
@@ -5891,6 +6022,11 @@ main(int argc, char **argv)
   {
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
   }
+  else if (argc == 2 &&
+           strcmp(argv[1], "--reader-view-startup-interaction-smoke") == 0)
+  {
+    result = lectern0_run_reader_view_startup_interaction_smoke();
+  }
   else if (argc == 12 &&
            strcmp(argv[1], "--reader-view-parity-capture") == 0)
   {
@@ -5918,7 +6054,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-parity-capture epub width height theme left right popup query evidence bmp | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

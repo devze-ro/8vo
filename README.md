@@ -51,6 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.p
 cmd /c build\win32_build.bat no_run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_host_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_startup_interaction_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_accessibility_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_visual_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_image_smoke.ps1

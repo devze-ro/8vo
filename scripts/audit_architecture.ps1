@@ -84,6 +84,14 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('--reader-view-smoke') -lt 0) {
     $failures.Add("lectern0 must retain deterministic Reader View API 2 action evidence")
   }
+  if ($app.IndexOf('--reader-view-startup-interaction-smoke') -lt 0 -or
+      $app.IndexOf('lectern0_host_pointer_press') -lt 0 -or
+      $app.IndexOf('lectern0_host_pointer_release') -lt 0) {
+    $failures.Add("lectern0 must retain the empty-document native press/release action regression")
+  }
+  if ($app -match '(?s)draw_push_text_in_rect\([^;]+Open an EPUB to begin reading\.') {
+    $failures.Add("Reader View must be the single owner of empty/loading/error status painting")
+  }
   if ($app.IndexOf('--accessibility-smoke') -lt 0 -or
       $app.IndexOf('WM_GETOBJECT') -lt 0 -or
       $accessibility.IndexOf('IAccessible') -lt 0 -or
