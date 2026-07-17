@@ -23,8 +23,11 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "lectern0 requires Presentation Engine API 1"
 #endif
-#if READERVIEW0_API_VERSION != 2
-#  error "lectern0 requires Reader View API 2"
+#if UI0_API_VERSION != 91
+#  error "lectern0 requires UI0 API 91"
+#endif
+#if READERVIEW0_API_VERSION != 3
+#  error "lectern0 requires Reader View API 3"
 #endif
 
 #include <commdlg.h>
@@ -45,8 +48,6 @@ enum
   Lectern0PathCap = 1024,
   Lectern0StatusCap = 256,
   Lectern0StateFileCap = 2304,
-  Lectern0ToolbarHeight = 48,
-  Lectern0FooterHeight = 36,
   Lectern0ImageCacheCap = 64,
   Lectern0BookmarkCap = 128,
   Lectern0HighlightCap = 128,
@@ -59,6 +60,7 @@ enum
   Lectern0PresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
   Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
   Lectern0HostToolbarTrailingWidth = 38,
+  Lectern0HostToolbarSlotWidth = 30,
 };
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
@@ -237,6 +239,22 @@ typedef struct Lectern0Input
   S32 text_length;
 } Lectern0Input;
 
+enum
+{
+  Lectern0UI0IconRasterCacheCap = 32,
+  Lectern0UI0IconRasterMax = 18,
+};
+
+typedef struct Lectern0UI0IconRasterCacheEntry
+{
+  UI0IconKind icon_kind;
+  S32 width;
+  S32 height;
+  UI0Color foreground;
+  UI0Color background;
+  U32 pixels[Lectern0UI0IconRasterMax * Lectern0UI0IconRasterMax];
+} Lectern0UI0IconRasterCacheEntry;
+
 typedef struct Lectern0App
 {
   Arena *arena;
@@ -286,7 +304,9 @@ typedef struct Lectern0App
   UI0ResolvedTheme reader_view_theme;
   Lectern0ReaderContentTheme reader_content_theme;
   Lectern0DrawAdapterStats draw_adapter_stats;
-  U32 lucide_icon_pixels[32 * 32];
+  Lectern0UI0IconRasterCacheEntry
+    ui0_icon_rasters[Lectern0UI0IconRasterCacheCap];
+  U32 ui0_icon_raster_count;
   U64 reader_view_frame_index;
   B32 reader_view_ready;
   S32 pagination_viewport_width;
@@ -810,12 +830,24 @@ lectern0_update_layout_inputs(Lectern0App *app)
   static const S32 fallback_char_advances[] = {8, 10, 11, 11};
   static const S32 fallback_line_heights[] = {18, 26, 28, 30};
   static const S32 line_spacing_extra[] = {0, 5, 10};
-  UI0Rect content = app->reader_content_geometry.content_rect.w > 0 &&
-                    app->reader_content_geometry.content_rect.h > 0 ?
-    app->reader_content_geometry.content_rect :
-    ui0_rect(52, Lectern0ToolbarHeight + 68,
-             MAX(app->width - 104, 1),
-             MAX(app->height - Lectern0ToolbarHeight - 136, 1));
+  UI0Rect content = app->reader_content_geometry.content_rect;
+  if (content.w <= 0 || content.h <= 0)
+  {
+    ReaderViewLayout initial_layout = {0};
+    ReaderViewLayoutInput initial_layout_input = {
+      .bounds = ui0_rect(0, 0, app->width, app->height),
+      .features = ReaderViewFeature_Paging | ReaderViewFeature_Progress,
+      .document_flags = ReaderViewDocument_Open,
+      .host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth,
+    };
+    if (!reader_view_resolve_layout(&app->reader_view_state,
+                                    &initial_layout_input,
+                                    &initial_layout))
+    {
+      return 0;
+    }
+    content = initial_layout.content_rect;
+  }
   U32 size_index = app->text_size_index % ARRAY_COUNT(text_scales);
   U32 spacing_index = app->line_spacing_index % ARRAY_COUNT(line_spacing_extra);
   S32 content_width = MAX(content.w, 80);
@@ -1890,6 +1922,7 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
       ReaderViewLoad_Empty, "Open an EPUB to begin reading.");
   projection.labels = reader_view_default_english_labels();
   projection.labels.annotations = lectern0_reader_view_text("Annotations");
+  projection.chrome_title = lectern0_reader_view_text("EPUB Reader");
   app->document_title[0] = 0;
   if (open)
   {
@@ -1910,9 +1943,15 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
   if (open)
   {
     EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
-    if (app->frame.page_count > 0)
+    if (location.available && location.location_count > 0)
       (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
-                        "%llu of %llu",
+                        "%llu%%   Location %llu of %llu",
+                        (unsigned long long)location.percent,
+                        (unsigned long long)location.location_index,
+                        (unsigned long long)location.location_count);
+    else if (app->frame.page_count > 0)
+      (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                        "Page %llu of %llu",
                         (unsigned long long)app->frame.page_index,
                         (unsigned long long)app->frame.page_count);
     else
@@ -2057,14 +2096,11 @@ lectern0_build_reader_view(Lectern0App *app)
     app->reader_view_ready = 0;
     return 0;
   }
-  if (!reader_view_resolve_content_geometry(
-        app->reader_view_layout.viewport_rect,
-        0,
-        &app->reader_content_geometry))
-  {
-    app->reader_view_ready = 0;
-    return 0;
-  }
+  app->reader_content_geometry = (ReaderViewContentGeometry){
+    .viewport_rect = app->reader_view_layout.viewport_rect,
+    .page_surface_rect = app->reader_view_layout.page_surface_rect,
+    .content_rect = app->reader_view_layout.content_rect,
+  };
   if (epub_reader_is_open(&app->reader) &&
       (app->pagination_viewport_width != app->reader_content_geometry.content_rect.w ||
        app->pagination_viewport_height != app->reader_content_geometry.content_rect.h))
@@ -2171,19 +2207,19 @@ lectern0_app_release(Lectern0App *app)
   MemoryZeroStruct(app);
 }
 
-FUNCTION ReaderViewText
+FUNCTION const ReaderViewTextBinding *
 lectern0_reader_view_binding(const Lectern0App *app, UI0ID id)
 {
-  if (!app || !app->reader_view_frame.text_bindings) return (ReaderViewText){0};
+  if (!app || !app->reader_view_frame.text_bindings) return 0;
   for (UI0S32 index = 0;
        index < app->reader_view_frame.text_binding_count;
        index += 1)
   {
     const ReaderViewTextBinding *binding =
       app->reader_view_frame.text_bindings + index;
-    if (binding->source_id == id) return binding->text;
+    if (binding->source_id == id) return binding;
   }
-  return (ReaderViewText){0};
+  return 0;
 }
 
 FUNCTION B32
@@ -2310,14 +2346,31 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
 {
   if (!app || !command || command->rect.w <= 0 || command->rect.h <= 0 ||
       command->clip_rect.w <= 0 || command->clip_rect.h <= 0) return;
-  ReaderViewText binding = lectern0_reader_view_binding(app, command->source_id);
-  if (!binding.data || binding.size <= 0) return;
+  const ReaderViewTextBinding *binding =
+    lectern0_reader_view_binding(app, command->source_id);
+  if (!binding || !binding->text.data || binding->text.size <= 0) return;
   char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
   lectern0_copy_bytes(label, ARRAY_COUNT(label),
-                      (const U8 *)binding.data, (U64)binding.size);
+                      (const U8 *)binding->text.data, (U64)binding->text.size);
   String8 text = str8_from_cstr(label);
   const FontProvider *provider = font_provider_system_ui();
   S32 scale = MAX(command->typography_line_height, 1);
+  B32 reference_box_style = 0;
+  switch (binding->style)
+  {
+    case ReaderViewTextStyle_ChromeTitle:
+      scale = 2;
+      reference_box_style = 1;
+      break;
+    case ReaderViewTextStyle_ChromeMetadata:
+    case ReaderViewTextStyle_MenuItem:
+      scale = 1;
+      reference_box_style = 1;
+      break;
+    case ReaderViewTextStyle_Default:
+    default:
+      break;
+  }
   FontTextMetrics metrics = font_metrics_for_size(provider, scale);
   S32 text_h = MAX(metrics.ascent_px + metrics.descent_px,
                    MAX(metrics.glyph_height_px, 1));
@@ -2346,6 +2399,54 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
                                 command->rect.w, command->clip_rect.h);
   UI0Rect clip = lectern0_ui0_rect_intersect(horizontal, command->clip_rect);
   if (clip.w <= 0 || clip.h <= 0) return;
+  if (reference_box_style)
+  {
+    DrawTextVAlign v_align = DrawTextVAlign_Center;
+    if (align_y == UI0TextAlignY_Top) v_align = DrawTextVAlign_Top;
+    else if (align_y == UI0TextAlignY_Bottom) v_align = DrawTextVAlign_Bottom;
+    U16 first_command_index =
+      app->draw_commands.command_count[DrawLayer_UI];
+    (void)draw_push_text_box(&app->draw_commands,
+                             DrawLayer_UI,
+                             provider,
+                             label,
+                             command->rect.x,
+                             command->rect.y,
+                             command->rect.w,
+                             command->rect.h,
+                             0,
+                             0,
+                             scale,
+                             1,
+                             DrawTextHAlign_Left,
+                             v_align,
+                             DrawTextBoxOverflow_Truncate,
+                             lectern0_draw_color(command->color),
+                             0);
+    for (U16 command_index = first_command_index;
+         command_index < app->draw_commands.command_count[DrawLayer_UI];
+         command_index += 1)
+    {
+      DrawCommand *text_command =
+        app->draw_commands.commands[DrawLayer_UI] + command_index;
+      if (text_command->type != DrawCommandType_Text ||
+          !(text_command->v.text.flags & DrawTextFlag_Clip))
+        continue;
+      text_command->v.text.x = x;
+      text_command->v.text.y = baseline;
+      UI0Rect text_horizontal = ui0_rect(text_command->v.text.clip_x,
+                                         command->clip_rect.y,
+                                         text_command->v.text.clip_w,
+                                         command->clip_rect.h);
+      UI0Rect resolved_clip =
+        lectern0_ui0_rect_intersect(text_horizontal, command->clip_rect);
+      text_command->v.text.clip_x = resolved_clip.x;
+      text_command->v.text.clip_y = resolved_clip.y;
+      text_command->v.text.clip_w = resolved_clip.w;
+      text_command->v.text.clip_h = resolved_clip.h;
+    }
+    return;
+  }
   B32 pushed = draw_push_text_clipped_baseline_tag_s8(
     &app->draw_commands, DrawLayer_UI, text, x, baseline, scale,
     lectern0_draw_color(command->color),
@@ -2367,104 +2468,50 @@ lectern0_draw_ui0_line(Lectern0App *app, UI0Rect clip,
                                      clip.x, clip.y, clip.w, clip.h);
 }
 
-FUNCTION F64
-lectern0_distance_sq_to_segment(F64 px,
-                                F64 py,
-                                F64 x0,
-                                F64 y0,
-                                F64 x1,
-                                F64 y1)
+FUNCTION const U32 *
+lectern0_ui0_icon_raster(Lectern0App *app,
+                         const UI0DrawCommand *command)
 {
-  F64 vx = x1 - x0;
-  F64 vy = y1 - y0;
-  F64 len_sq = vx * vx + vy * vy;
-  F64 t = 0.0;
-  if (len_sq > 0.000001)
-  {
-    t = ((px - x0) * vx + (py - y0) * vy) / len_sq;
-    t = MAX(0.0, MIN(t, 1.0));
-  }
-  F64 dx = px - (x0 + t * vx);
-  F64 dy = py - (y0 + t * vy);
-  return dx * dx + dy * dy;
-}
-
-FUNCTION U32
-lectern0_blend_rgb(U32 foreground, U32 background, U32 alpha)
-{
-  alpha = MIN(alpha, 255u);
-  U32 inverse = 255u - alpha;
-  U32 r = ((((foreground >> 16) & 0xffu) * alpha) +
-           (((background >> 16) & 0xffu) * inverse) + 127u) / 255u;
-  U32 g = ((((foreground >> 8) & 0xffu) * alpha) +
-           (((background >> 8) & 0xffu) * inverse) + 127u) / 255u;
-  U32 b = (((foreground & 0xffu) * alpha) +
-           ((background & 0xffu) * inverse) + 127u) / 255u;
-  return (r << 16) | (g << 8) | b;
-}
-
-FUNCTION B32
-lectern0_draw_lucide_close_icon(Lectern0App *app,
-                                const UI0DrawCommand *command)
-{
-  if (!app || !command || command->rect.w <= 0 || command->rect.h <= 0 ||
-      command->rect.w > 32 || command->rect.h > 32 ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect))
+  Lectern0UI0IconRasterCacheEntry *entry = 0;
+  if (!app || !command || command->op != UI0DrawOp_Icon ||
+      command->rect.w <= 0 || command->rect.h <= 0 ||
+      command->rect.w > Lectern0UI0IconRasterMax ||
+      command->rect.h > Lectern0UI0IconRasterMax)
   {
     return 0;
   }
-
-  const S32 supersample = 4;
-  const U32 sample_count = supersample * supersample;
-  F64 side = (F64)MIN(command->rect.w, command->rect.h);
-  F64 x_pad = ((F64)command->rect.w - side) * 0.5;
-  F64 y_pad = ((F64)command->rect.h - side) * 0.5;
-  U32 foreground = lectern0_draw_color(command->color);
-  U32 background = lectern0_draw_color(command->stroke_color);
-  for (S32 y = 0; y < command->rect.h; y += 1)
+  for (U32 index = 0; index < app->ui0_icon_raster_count; index += 1)
   {
-    for (S32 x = 0; x < command->rect.w; x += 1)
+    Lectern0UI0IconRasterCacheEntry *candidate =
+      app->ui0_icon_rasters + index;
+    if (candidate->icon_kind == command->icon_kind &&
+        candidate->width == command->rect.w &&
+        candidate->height == command->rect.h &&
+        candidate->foreground == command->color &&
+        candidate->background == command->stroke_color)
     {
-      U32 covered = 0;
-      for (S32 sy = 0; sy < supersample; sy += 1)
-      {
-        for (S32 sx = 0; sx < supersample; sx += 1)
-        {
-          F64 px = (F64)x + (((F64)sx + 0.5) / (F64)supersample);
-          F64 py = (F64)y + (((F64)sy + 0.5) / (F64)supersample);
-          if (px >= x_pad && py >= y_pad &&
-              px < x_pad + side && py < y_pad + side)
-          {
-            F64 vx = ((px - x_pad) / side) * 24.0;
-            F64 vy = ((py - y_pad) / side) * 24.0;
-            if (lectern0_distance_sq_to_segment(vx, vy, 18.0, 6.0, 6.0, 18.0) <= 1.0 ||
-                lectern0_distance_sq_to_segment(vx, vy, 6.0, 6.0, 18.0, 18.0) <= 1.0)
-            {
-              covered += 1;
-            }
-          }
-        }
-      }
-      U32 alpha = (covered * 255u + sample_count / 2u) / sample_count;
-      app->lucide_icon_pixels[(U64)y * 32u + (U64)x] =
-        lectern0_blend_rgb(foreground, background, alpha);
+      return candidate->pixels;
     }
   }
-
-  return draw_push_sprite_clipped(&app->draw_commands,
-                                  DrawLayer_UI,
-                                  app->lucide_icon_pixels,
-                                  command->rect.w,
-                                  command->rect.h,
-                                  32,
-                                  command->rect.x,
-                                  command->rect.y,
-                                  command->rect.w,
-                                  command->rect.h,
-                                  command->clip_rect.x,
-                                  command->clip_rect.y,
-                                  command->clip_rect.w,
-                                  command->clip_rect.h);
+  if (app->ui0_icon_raster_count >= Lectern0UI0IconRasterCacheCap) { return 0; }
+  entry = app->ui0_icon_rasters + app->ui0_icon_raster_count;
+  if (!ui0_icon_rasterize_rgb32(command->icon_kind,
+                                command->rect.w,
+                                command->rect.h,
+                                command->color,
+                                command->stroke_color,
+                                entry->pixels,
+                                Lectern0UI0IconRasterMax))
+  {
+    return 0;
+  }
+  entry->icon_kind = command->icon_kind;
+  entry->width = command->rect.w;
+  entry->height = command->rect.h;
+  entry->foreground = command->color;
+  entry->background = command->stroke_color;
+  app->ui0_icon_raster_count += 1;
+  return entry->pixels;
 }
 
 FUNCTION void
@@ -2472,98 +2519,26 @@ lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
 {
   if (!app || !command ||
       !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
-  if (command->icon_kind == UI0IconKind_Close &&
-      lectern0_draw_lucide_close_icon(app, command)) return;
-  UI0Rect r = command->rect;
-  UI0Rect clip = command->clip_rect;
-  U32 color = lectern0_draw_color(command->color);
-  S32 stroke = MAX(command->stroke_width, 2);
-  S32 left = r.x + MAX(r.w / 5, 2);
-  S32 right = r.x + r.w - MAX(r.w / 5, 2) - 1;
-  S32 top = r.y + MAX(r.h / 5, 2);
-  S32 bottom = r.y + r.h - MAX(r.h / 5, 2) - 1;
-  S32 cx = r.x + r.w / 2;
-  S32 cy = r.y + r.h / 2;
-  switch (command->icon_kind)
+  const U32 *pixels = lectern0_ui0_icon_raster(app, command);
+  if (!pixels)
   {
-    case UI0IconKind_List:
-      for (S32 row = -1; row <= 1; row += 1)
-      {
-        S32 y = cy + row * MAX(r.h / 4, 3);
-        lectern0_draw_ui0_line(app, clip, left, y, left + 1, y, stroke, color);
-        lectern0_draw_ui0_line(app, clip, left + 4, y, right, y, stroke, color);
-      }
-      break;
-    case UI0IconKind_Search:
-    {
-      S32 size = MAX(MIN(r.w, r.h) * 3 / 5, 5);
-      UI0Rect circle = ui0_rect(left, top, size, size);
-      (void)draw_push_rounded_rect_stroke_clipped(
-        &app->draw_commands, DrawLayer_UI,
-        circle.x, circle.y, circle.w, circle.h, size / 2, stroke, color,
-        clip.x, clip.y, clip.w, clip.h);
-      lectern0_draw_ui0_line(app, clip, circle.x + circle.w - 1,
-                             circle.y + circle.h - 1, right, bottom,
-                             stroke, color);
-    } break;
-    case UI0IconKind_ChevronLeft:
-      lectern0_draw_ui0_line(app, clip, right, top, left, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left, cy, right, bottom, stroke, color);
-      break;
-    case UI0IconKind_ChevronRight:
-      lectern0_draw_ui0_line(app, clip, left, top, right, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right, cy, left, bottom, stroke, color);
-      break;
-    case UI0IconKind_ChevronDown:
-      lectern0_draw_ui0_line(app, clip, left, top, cx, bottom, stroke, color);
-      lectern0_draw_ui0_line(app, clip, cx, bottom, right, top, stroke, color);
-      break;
-    case UI0IconKind_ArrowLeft:
-      lectern0_draw_ui0_line(app, clip, right, cy, left, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left, cy, cx, top, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left, cy, cx, bottom, stroke, color);
-      break;
-    case UI0IconKind_ArrowRight:
-      lectern0_draw_ui0_line(app, clip, left, cy, right, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right, cy, cx, top, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right, cy, cx, bottom, stroke, color);
-      break;
-    case UI0IconKind_Bookmark:
-      lectern0_draw_ui0_line(app, clip, left, top, right, top, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left, top, left, bottom, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right, top, right, bottom, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left, bottom, cx, bottom - 3, stroke, color);
-      lectern0_draw_ui0_line(app, clip, cx, bottom - 3, right, bottom, stroke, color);
-      break;
-    case UI0IconKind_Plus:
-      lectern0_draw_ui0_line(app, clip, left, cy, right, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, cx, top, cx, bottom, stroke, color);
-      break;
-    case UI0IconKind_Close:
-      lectern0_draw_ui0_line(app, clip, left, top, right, bottom, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right, top, left, bottom, stroke, color);
-      break;
-    case UI0IconKind_TextSize:
-      lectern0_draw_ui0_line(app, clip, left, bottom, cx - 2, top, stroke, color);
-      lectern0_draw_ui0_line(app, clip, cx - 2, top, cx + 1, bottom, stroke, color);
-      lectern0_draw_ui0_line(app, clip, left + 2, cy, cx - 1, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, cx + 3, bottom, right - 1, cy, stroke, color);
-      lectern0_draw_ui0_line(app, clip, right - 1, cy, right, bottom, stroke, color);
-      break;
-    case UI0IconKind_Filter:
-      for (S32 column = -1; column <= 1; column += 1)
-      {
-        S32 x = cx + column * MAX(r.w / 4, 3);
-        S32 knob_y = column == 0 ? top + 2 : (column < 0 ? cy + 2 : cy - 2);
-        lectern0_draw_ui0_line(app, clip, x, top, x, bottom, stroke, color);
-        lectern0_draw_ui0_line(app, clip, x - 2, knob_y, x + 2, knob_y,
-                               stroke + 1, color);
-      }
-      break;
-    case UI0IconKind_None:
-    case UI0IconKind_Count:
-      break;
+    app->draw_adapter_stats.unsupported_count += 1;
+    return;
   }
+  (void)draw_push_sprite_clipped(&app->draw_commands,
+                                 DrawLayer_UI,
+                                 pixels,
+                                 command->rect.w,
+                                 command->rect.h,
+                                 Lectern0UI0IconRasterMax,
+                                 command->rect.x,
+                                 command->rect.y,
+                                 command->rect.w,
+                                 command->rect.h,
+                                 command->clip_rect.x,
+                                 command->clip_rect.y,
+                                 command->clip_rect.w,
+                                 command->clip_rect.h);
 }
 
 FUNCTION void
@@ -2592,6 +2567,7 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
 {
   if (!app) { return; }
   MemoryZeroStruct(&app->draw_adapter_stats);
+  app->ui0_icon_raster_count = 0;
   for (UI0S32 index = 0;
        index < app->reader_view_frame.draw_command_count;
        index += 1)
@@ -2702,28 +2678,58 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
   B32 hovered = ui0_rect_contains_point(rect,
                                         app->input.pointer_x,
                                         app->input.pointer_y);
-  U32 fill = lectern0_draw_color(app->reader_view_theme.colors[
-    hovered ? UI0ColorRole_SurfaceElevated : UI0ColorRole_Input]);
-  U32 border = lectern0_draw_color(
-    app->reader_view_theme.colors[
-      hovered ? UI0ColorRole_AccentHover : UI0ColorRole_BorderMuted]);
-  (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_UI,
-                               rect.x, rect.y, rect.w, rect.h, 6,
-                               fill, border);
-  S32 icon_size = MIN(18, MIN(rect.w, rect.h));
-  UI0DrawCommand icon = {
-    .op = UI0DrawOp_Icon,
-    .rect = ui0_rect(rect.x + (rect.w - icon_size) / 2,
-                     rect.y + (rect.h - icon_size) / 2,
-                     icon_size,
-                     icon_size),
+  UI0ControlStateFlags state = hovered ? UI0ControlState_Hovered : 0;
+  if (hovered && app->input.pointer_down)
+    state |= UI0ControlState_Pressed | UI0ControlState_Active;
+  UI0ControlRecord control = {
+    .id = ui0_id_from_string("lectern0.reader.exit"),
+    .kind = UI0ControlKind_IconButton,
+    .root = UI0RootKind_Normal,
+    .state = state,
+    .rect = rect,
     .clip_rect = rect,
-    .color = app->reader_view_theme.colors[UI0ColorRole_TextSecondary],
-    .stroke_color = fill,
-    .icon_kind = UI0IconKind_Close,
-    .stroke_width = 2,
+    .text_rect = rect,
+    .label_hash = ui0_id_from_string("Exit Reader"),
+    .label_len = 11,
   };
-  lectern0_draw_ui0_icon(app, &icon);
+  UI0DrawCommand commands[4] = {0};
+  UI0DrawContext draw = {0};
+  ui0_draw_begin_frame(&draw,
+                       commands,
+                       ARRAY_COUNT(commands),
+                       ui0_draw_theme_from_resolved(&app->reader_view_theme));
+  (void)ui0_draw_control_record(&draw, &control);
+  S32 icon_size = MIN(18, MIN(rect.w, rect.h));
+  (void)ui0_draw_push_icon(&draw,
+                           &control,
+                           UI0IconKind_Close,
+                           ui0_rect(rect.x + (rect.w - icon_size) / 2,
+                                    rect.y + (rect.h - icon_size) / 2,
+                                    icon_size,
+                                    icon_size));
+  for (UI0S32 index = 0; index < draw.command_count; index += 1)
+  {
+    UI0DrawCommand command = draw.commands[index];
+    if (command.op == UI0DrawOp_ControlFill)
+    {
+      for (UI0S32 candidate_index = 0;
+           candidate_index < draw.command_count;
+           candidate_index += 1)
+      {
+        const UI0DrawCommand *candidate = draw.commands + candidate_index;
+        if (lectern0_ui0_border_matches_fill(candidate, &command))
+        {
+          command.stroke_color = candidate->color;
+          break;
+        }
+      }
+      lectern0_draw_ui0_control_fill(app, &command);
+    }
+    else if (command.op == UI0DrawOp_Icon)
+    {
+      lectern0_draw_ui0_icon(app, &command);
+    }
+  }
 }
 
 FUNCTION B32
@@ -4002,27 +4008,23 @@ lectern0_draw_reader_page(Lectern0App *app)
   UI0Rect content = app->reader_content_geometry.content_rect;
   if (page.w <= 0 || page.h <= 0 || content.w <= 0 || content.h <= 0)
   {
-    UI0Rect viewport = ui0_rect(0, Lectern0ToolbarHeight, app->width,
-      MAX(app->height - Lectern0ToolbarHeight - Lectern0FooterHeight, 1));
-    (void)reader_view_resolve_content_geometry(viewport, 0,
-                                               &app->reader_content_geometry);
-    page = app->reader_content_geometry.page_surface_rect;
-    content = app->reader_content_geometry.content_rect;
+    MemoryZeroStruct(&app->presentation_frame);
+    app->presentation_hash = 0;
+    app->presentation_complete = 0;
+    return;
   }
   S32 body_x = content.x;
   S32 body_y = content.y;
   S32 body_w = MAX(content.w, 1);
   S32 body_h = MAX(content.h, 1);
   U32 page_color = lectern0_reader_page_color(app);
-  (void)draw_push_rounded_rect(&app->draw_commands,
-                               DrawLayer_World,
-                               page.x,
-                               page.y,
-                               page.w,
-                               page.h,
-                               6,
-                               page_color,
-                               page_color);
+  (void)draw_push_rect(&app->draw_commands,
+                       DrawLayer_World,
+                       page.x,
+                       page.y,
+                       page.w,
+                       page.h,
+                       page_color);
 
   if (!app->frame.ready || !app->frame.document_open)
   {
@@ -4273,8 +4275,7 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
 {
   if (!app || !buffer || !buffer->pixels || !app->render_ready) { return; }
   app->presentation_complete = 1;
-  U32 canvas_color = lectern0_draw_color(
-    lectern0_theme_profile(app->theme).resolved.colors[UI0ColorRole_AppBackground]);
+  U32 canvas_color = lectern0_reader_content_theme(app->theme).page_background;
   render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
   (void)lectern0_build_reader_view(app);
@@ -5406,6 +5407,86 @@ lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
   return result;
 }
 
+FUNCTION B32
+lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
+{
+  if (!app) return 0;
+  static const char *labels[] = {
+    "Reference title",
+    "Reference metadata",
+    "Reference menu item",
+    "Reference default",
+  };
+  static const ReaderViewTextStyle styles[] = {
+    ReaderViewTextStyle_ChromeTitle,
+    ReaderViewTextStyle_ChromeMetadata,
+    ReaderViewTextStyle_MenuItem,
+    ReaderViewTextStyle_Default,
+  };
+  static const S32 expected_scales[] = {2, 1, 1, 17};
+  ReaderViewTextBinding bindings[ARRAY_COUNT(labels)] = {0};
+  UI0DrawCommand commands[ARRAY_COUNT(labels)] = {0};
+  for (U32 index = 0; index < ARRAY_COUNT(labels); index += 1)
+  {
+    bindings[index] = (ReaderViewTextBinding){
+      .source_id = 9001 + index,
+      .text = {
+        .data = labels[index],
+        .size = (S32)strlen(labels[index]),
+      },
+      .style = styles[index],
+    };
+    commands[index] = (UI0DrawCommand){
+      .op = UI0DrawOp_Text,
+      .source_id = bindings[index].source_id,
+      .source_kind = UI0ControlKind_Label,
+      .source_index = (UI0S32)index,
+      .rect = ui0_rect(8, 8 + (S32)index * 28, 220, 24),
+      .clip_rect = ui0_rect(0, 0, 256, 128),
+      .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
+      .has_text_alignment = 1,
+      .text_align_x = UI0TextAlignX_Start,
+      .text_align_y = UI0TextAlignY_Center,
+      .has_typography_role = 1,
+      .typography_role = UI0TypographyRole_Body,
+      .typography_line_height = 17,
+    };
+  }
+
+  ReaderViewFrame saved = app->reader_view_frame;
+  app->reader_view_frame.text_bindings = bindings;
+  app->reader_view_frame.text_binding_count = ARRAY_COUNT(bindings);
+  app->reader_view_frame.draw_commands = commands;
+  app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+
+  B32 result = app->draw_adapter_stats.unsupported_count == 0;
+  for (U32 label_index = 0;
+       label_index < ARRAY_COUNT(labels);
+       label_index += 1)
+  {
+    U32 matches = 0;
+    U16 count = app->draw_commands.command_count[DrawLayer_UI];
+    for (U16 command_index = 0; command_index < count; command_index += 1)
+    {
+      const DrawCommand *command =
+        app->draw_commands.commands[DrawLayer_UI] + command_index;
+      if (command->type == DrawCommandType_Text &&
+          strcmp(command->v.text.text, labels[label_index]) == 0)
+      {
+        matches += 1;
+        result = result &&
+                 command->v.text.scale == expected_scales[label_index] &&
+                 command->v.text.color == 0x00243546U;
+      }
+    }
+    result = result && matches == 1;
+  }
+  app->reader_view_frame = saved;
+  return result;
+}
+
 FUNCTION int
 lectern0_run_reader_view_smoke(const char *path, const char *export_path)
 {
@@ -5432,7 +5513,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark") ||
       !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Annotations") ||
       app.reader_view_layout.host_toolbar_trailing_rect.w !=
-        Lectern0HostToolbarTrailingWidth ||
+        Lectern0HostToolbarSlotWidth ||
       app.reader_content_geometry.page_surface_rect.w >
         READER_VIEW_DEFAULT_PAGE_MAX_WIDTH ||
       app.reader_content_geometry.content_rect.x -
@@ -5442,7 +5523,8 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
         app.reader_content_geometry.page_surface_rect.y !=
         READER_VIEW_DEFAULT_CONTENT_INSET_Y ||
       app.draw_adapter_stats.unsupported_count != 0 ||
-      !lectern0_draw_adapter_covers_all_ops(&app))
+      !lectern0_draw_adapter_covers_all_ops(&app) ||
+      !lectern0_draw_adapter_covers_reference_text_styles(&app))
   {
     fprintf(stderr,
             "lectern0_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u icons=%u\n",
@@ -5704,8 +5786,13 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   app.height = 620;
   lectern0_render_to_buffer(&app, &buffer);
   if (!app.reader_view_ready ||
-      app.reader_view_layout.toolbar_density != ReaderViewToolbar_Overflow ||
-      app.reader_view_layout.mode != ReaderViewLayout_Overlay)
+      app.reader_view_layout.toolbar_density != ReaderViewToolbar_Compact ||
+      app.reader_view_layout.mode != ReaderViewLayout_Overlay ||
+      app.reader_view_layout.shared_toolbar_rect.x != 202 ||
+      app.reader_view_layout.shared_toolbar_rect.w != 420 ||
+      app.reader_view_layout.host_toolbar_trailing_rect.x != 630 ||
+      app.reader_view_layout.host_toolbar_trailing_rect.w !=
+        Lectern0HostToolbarSlotWidth)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=responsive\n");
     free(pixels);
@@ -5714,7 +5801,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   }
   U64 hash = lectern0_reader_view_contract_hash(&app.reader_view_frame);
   fprintf(stdout,
-          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=overflow hash=%016llx export=%s\n",
+          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact hash=%016llx export=%s\n",
           READERVIEW0_API_VERSION,
           app.reader_view_projection.toc.row_count,
           app.reader.search_match_count,

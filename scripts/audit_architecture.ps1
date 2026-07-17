@@ -45,19 +45,45 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
   }
+  if ($app.IndexOf('UI0_API_VERSION != 91') -lt 0 -or
+      $app.IndexOf('ui0_icon_rasterize_rgb32') -lt 0) {
+    $failures.Add("lectern0 must consume UI0 API 91 canonical reader icons")
+  }
   if ($app.IndexOf('#include "readerview0.h"') -lt 0 -or
-      $app.IndexOf('READERVIEW0_API_VERSION != 2') -lt 0) {
-    $failures.Add("lectern0 must consume Reader View API 2 through its umbrella")
+      $app.IndexOf('READERVIEW0_API_VERSION != 3') -lt 0) {
+    $failures.Add("lectern0 must consume Reader View API 3 through its umbrella")
   }
   if ($app.IndexOf('reader_view_build') -lt 0 -or
       $app.IndexOf('lectern0_prepare_reader_view_projection') -lt 0 -or
       $app.IndexOf('lectern0_apply_reader_view_actions') -lt 0) {
-    $failures.Add("lectern0 must project host data into Reader View API 2 and execute returned actions")
+    $failures.Add("lectern0 must project host data into Reader View API 3 and execute returned actions")
   }
-  if ($app.IndexOf('reader_view_resolve_content_geometry') -lt 0 -or
+  if ($app.IndexOf('.page_surface_rect = app->reader_view_layout.page_surface_rect') -lt 0 -or
+      $app.IndexOf('.content_rect = app->reader_view_layout.content_rect') -lt 0 -or
       $app.IndexOf('ReaderViewContentGeometry reader_content_geometry') -lt 0 -or
       $app.IndexOf('host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth') -lt 0) {
-    $failures.Add("lectern0 must adopt Reader View API 2 content geometry and retain the host toolbar slot")
+    $failures.Add("lectern0 must adopt Reader View API 3 atomic layout geometry and retain the host toolbar slot")
+  }
+  if ($app.IndexOf('projection.chrome_title = lectern0_reader_view_text("EPUB Reader")') -lt 0 -or
+      $app.IndexOf('Lectern0ToolbarHeight = 48') -ge 0 -or
+      $app.IndexOf('Lectern0FooterHeight = 36') -ge 0) {
+    $failures.Add("lectern0 must project the accepted title and must not retain independent 48/36 reader chrome")
+  }
+  if ($app.IndexOf('ReaderViewTextStyle_ChromeTitle') -lt 0 -or
+      $app.IndexOf('ReaderViewTextStyle_ChromeMetadata') -lt 0 -or
+      $app.IndexOf('ReaderViewTextStyle_MenuItem') -lt 0 -or
+      $app.IndexOf('draw_push_text_box') -lt 0) {
+    $failures.Add("lectern0 must map finite Reader View reference text styles through its host text-box raster")
+  }
+  if ($app.IndexOf('"%llu%%   Location %llu of %llu"') -lt 0 -or
+      $app.IndexOf('"Page %llu of %llu"') -lt 0) {
+    $failures.Add("lectern0 must preserve the accepted Reader View progress-label policy")
+  }
+  if ($app.IndexOf('.kind = UI0ControlKind_IconButton') -lt 0 -or
+      $app.IndexOf('ui0_draw_push_icon(&draw') -lt 0 -or
+      $app.IndexOf('UI0IconKind_Close') -lt 0 -or
+      $app.IndexOf('UI0Control_Quiet') -ge 0) {
+    $failures.Add("lectern0 Exit Reader must retain host interaction with the nonquiet UI0 IconButton shell and canonical Close icon")
   }
   if ($app.IndexOf('ui0_theme_profile_for_kind') -lt 0 -or
       $app.IndexOf('Lectern0Theme_Count == 6') -lt 0 -or
@@ -82,7 +108,7 @@ if ($failures.Count -eq 0) {
     $failures.Add("lectern0 must retain settings and annotation persistence ownership")
   }
   if ($app.IndexOf('--reader-view-smoke') -lt 0) {
-    $failures.Add("lectern0 must retain deterministic Reader View API 2 action evidence")
+    $failures.Add("lectern0 must retain deterministic Reader View API 3 action evidence")
   }
   if ($app.IndexOf('--reader-view-startup-interaction-smoke') -lt 0 -or
       $app.IndexOf('lectern0_host_pointer_press') -lt 0 -or

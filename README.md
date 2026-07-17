@@ -8,20 +8,24 @@ document-provider layer.
 The integrated host provides a native window, an EPUB file picker and
 command-line open, canonical-frame rendering, concrete reader0 API 3 page and
 semantic navigation, resize repagination, and host-owned position, settings,
-bookmark, highlight, and note persistence. Reader View API 2 composes the
-responsive UI0 chrome shared with re10: top toolbar, page gutters, progress
+bookmark, highlight, and note persistence. Reader View API 3 composes the
+accepted reference UI0 chrome shared with re10: top toolbar, page gutters, progress
 seek, history, TOC/Find, font family/size/spacing/theme settings, bookmarks,
 annotations, selection tools, note editing, and fullscreen. Lectern0 projects
 concrete host state into that package and executes
 its bounded action records; readerview0 does not own the EPUB engine or durable
 records.
 
-Stage 2B-2 pins UI0 API 90 and readerview0 API 2. Lectern0 selects all six
+Recovery Slice 2 pins UI0 API 91 and readerview0 API 3. Lectern0 selects all six
 shared chrome profiles, maps its legacy three-theme settings file explicitly,
 reserves and renders the host-owned exit slot, and uses the shared page/content
 geometry for pagination and EPUB presentation. Its draw adapter consumes every
-UI0 operation with resolved typography and clipped native draw commands; the
-former ASCII icon substitutions are gone.
+UI0 operation with resolved typography, canonical reader icon pixels, and
+clipped native draw commands. Finite Reader View text-style records select the
+accepted title, menu-row, and metadata raster scales without callbacks or font
+providers crossing the package boundary. The host-owned Exit Reader action is
+painted as the same nonquiet UI0 IconButton shell and canonical Close icon used
+by the reference; the former host-specific icon substitutions are gone.
 
 Slice 5A's lectern0-owned document/resource image cache remains over
 zero_foundation's caller-owned decoder, so EPUB cover and inline PNG, JPEG, BMP,
@@ -44,7 +48,7 @@ checkouts:
 ```powershell
 $env:LECTERN0_READER0_DIR = 'C:\path\to\reader0-api3-worktree'
 $env:LECTERN0_UI0_DIR = 'C:\path\to\ui0'
-$env:LECTERN0_READERVIEW0_DIR = 'C:\path\to\readerview0-api2-worktree'
+$env:LECTERN0_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
 $env:LECTERN0_ZERO_FOUNDATION_DIR = 'C:\path\to\zero_foundation'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies_current.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1

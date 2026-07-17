@@ -14,13 +14,19 @@ API 3. No reader state is mirrored in application storage. Its narrow semantic
 adapters capture the resulting canonical frame, set host status, and persist
 the resulting reader-owned location.
 
-Readerview0 API 2 owns only the proven-common UI0 composition: the responsive
-top toolbar and overflow, page gutters and progress geometry, TOC/Find and
+Readerview0 API 3 owns only the proven-common UI0 composition: the accepted
+fixed-slot top toolbar, page gutters and progress geometry, TOC/Find and
 annotations/bookmarks panel shells, settings and row-action popups, selection
 tools, note-editor interaction state, focus order, portable semantic records,
 bounded returned actions, and product-neutral page/content rectangles. Its
 projection/action/geometry API does not name reader0 types and has no reader0
 or direct zero_foundation dependency.
+
+Reader View text bindings carry one finite portable style identity. Lectern0
+maps `ChromeTitle` to the accepted system-UI box raster at scale 2 and maps
+`MenuItem` and `ChromeMetadata` to that raster at scale 1; `Default` continues
+through generic UI0 typography. The record conveys semantic presentation only:
+no font pointer, callback, provider table, or allocation crosses the boundary.
 
 Lectern0 owns the projected TOC/search/selection meaning, settings choices,
 stable bookmark/highlight/note IDs, 128-record bookmark and highlight
@@ -76,22 +82,22 @@ presentation implementation.
 
 ## Viewport, responsive layout, focus, and accessibility
 
-`ReaderViewLayout.viewport_rect` is the host viewport boundary. Lectern0 passes
-it to `reader_view_resolve_content_geometry()` and uses the returned
-`content_rect` as the only reader0 pagination and canonical-frame rectangle;
-the returned `page_surface_rect` owns the surrounding page paint. Shared
-gutters and docked panels reduce the viewport; overlays never move EPUB
-rendering behind an unrelated application layout. A layout-affecting shared
-state change recomputes both contracts and repaginates at the current
-reader-owned location.
+`ReaderViewLayout.viewport_rect`, `page_surface_rect`, and `content_rect` are
+one atomic host boundary. Lectern0 uses the returned `content_rect` as the only
+reader0 pagination and canonical-frame rectangle; `page_surface_rect` owns the
+surrounding page paint. Shared gutters and panels are resolved in that same
+state snapshot. A layout-affecting shared state change recomputes the contract
+and repaginates at the current reader-owned location.
 
-Full toolbar composition starts at 1024 pixels, compact composition and
-overflow run from 720 through 1023, and narrower windows use the minimal
-toolbar. Both panels can dock from 1180 pixels; one docks between 840 and 1179;
-narrower panels overlay. A 38-pixel trailing toolbar reservation belongs to
-lectern0 and contains its exit control. Distraction-free behavior remains
-dormant rather than becoming mandatory shared chrome, while the host
-independently performs native fullscreen window transitions.
+The accepted toolbar is a fixed right-aligned row of eleven shared 30 by 28 px
+icon slots followed by one host slot, with a 56 px top chrome and 38 px footer.
+A 38-pixel trailing reservation belongs to lectern0 and contains its Exit
+control. Lectern0 retains the action and native window transition, while UI0
+paints the control as a nonquiet `IconButton` with its canonical Close icon.
+Bounds too small for the fixed reference contract fail closed.
+Distraction-free behavior remains dormant rather than becoming mandatory
+shared chrome, while the host independently performs native fullscreen window
+transitions.
 
 Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
 states, and pointer/keyboard/accessibility convergence. Lectern0 translates
