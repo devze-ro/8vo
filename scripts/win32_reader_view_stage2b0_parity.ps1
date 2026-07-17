@@ -223,6 +223,41 @@ function Save-Crop([string]$SourcePath, [string]$DestinationPath,
   }
 }
 
+function Get-DecodedPixelHash([string]$Path) {
+  $bitmap = [System.Drawing.Bitmap]::FromFile($Path)
+  try {
+    $rect = [System.Drawing.Rectangle]::new(0, 0, $bitmap.Width, $bitmap.Height)
+    $data = $bitmap.LockBits(
+      $rect,
+      [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+      [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      $rowBytes = $bitmap.Width * 4
+      $bytes = [byte[]]::new(8 + $rowBytes * $bitmap.Height)
+      [System.Buffer]::BlockCopy([System.BitConverter]::GetBytes($bitmap.Width), 0,
+                                 $bytes, 0, 4)
+      [System.Buffer]::BlockCopy([System.BitConverter]::GetBytes($bitmap.Height), 0,
+                                 $bytes, 4, 4)
+      for ($y = 0; $y -lt $bitmap.Height; $y += 1) {
+        $source = [System.IntPtr]::Add($data.Scan0, $y * $data.Stride)
+        [System.Runtime.InteropServices.Marshal]::Copy(
+          $source, $bytes, 8 + $y * $rowBytes, $rowBytes)
+      }
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      try {
+        return [System.BitConverter]::ToString(
+          $sha.ComputeHash($bytes)).Replace("-", "")
+      } finally {
+        $sha.Dispose()
+      }
+    } finally {
+      $bitmap.UnlockBits($data)
+    }
+  } finally {
+    $bitmap.Dispose()
+  }
+}
+
 $Fixture = Join-Path $Generated "reader_view_stage2b0.epub"
 New-Stage2B0Epub $Fixture
 
@@ -272,6 +307,7 @@ function Invoke-Re10Capture([object]$Case, [int]$Run) {
     crop = $cropBmp
     evidence_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $evidence).Hash
     crop_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $cropBmp).Hash
+    pixel_sha256 = Get-DecodedPixelHash $cropBmp
     values = Read-Evidence $evidence
   }
 }
@@ -292,6 +328,7 @@ function Invoke-LecternCapture([object]$Case, [int]$Run) {
     crop = $bmp
     evidence_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $evidence).Hash
     crop_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $bmp).Hash
+    pixel_sha256 = Get-DecodedPixelHash $bmp
     values = Read-Evidence $evidence
   }
 }
@@ -305,21 +342,23 @@ $CompareKeys = @(
 $Results = @()
 $Deterministic = $true
 $AllExact = $true
+$AllPixelExact = $true
 foreach ($case in $Cases) {
   $re10A = Invoke-Re10Capture $case 1
   $re10B = Invoke-Re10Capture $case 2
   $lecternA = Invoke-LecternCapture $case 1
   $lecternB = Invoke-LecternCapture $case 2
   $re10Stable = $re10A.evidence_sha256 -eq $re10B.evidence_sha256 -and
-                $re10A.crop_sha256 -eq $re10B.crop_sha256
+                $re10A.pixel_sha256 -eq $re10B.pixel_sha256
   $lecternStable = $lecternA.evidence_sha256 -eq $lecternB.evidence_sha256 -and
-                   $lecternA.crop_sha256 -eq $lecternB.crop_sha256
+                   $lecternA.pixel_sha256 -eq $lecternB.pixel_sha256
   if (!$re10Stable -or !$lecternStable) { $Deterministic = $false }
   $componentMatches = [ordered]@{}
   foreach ($key in $CompareKeys) {
     $componentMatches[$key] = $re10A.values[$key] -eq $lecternA.values[$key]
   }
-  $pixelsMatch = $re10A.crop_sha256 -eq $lecternA.crop_sha256
+  $pixelsMatch = $re10A.pixel_sha256 -eq $lecternA.pixel_sha256
+  if (!$pixelsMatch) { $AllPixelExact = $false }
   $caseExact = $pixelsMatch -and !($componentMatches.Values -contains $false)
   if (!$caseExact) { $AllExact = $false }
   $Results += [pscustomobject]@{
@@ -338,7 +377,13 @@ foreach ($case in $Cases) {
     re10 = $re10A
     lectern0 = $lecternA
   }
-  $label = if ($caseExact) { "EXACT" } else { "BASELINE-DIFFERENT" }
+  $label = if ($caseExact) {
+    "EXACT"
+  } elseif ($pixelsMatch) {
+    "PIXEL-EXACT-RECORD-DIFFERENT"
+  } else {
+    "BASELINE-DIFFERENT"
+  }
   Write-Host "$label $($case.name) re10_repeatable=$re10Stable lectern0_repeatable=$lecternStable pixels=$pixelsMatch"
 }
 
@@ -348,6 +393,7 @@ $Manifest = [pscustomobject]@{
     if ($CrossRevisionConformance) { "conformance_recorded" } else { "baseline_recorded" }
   } else { "failed_nondeterministic" }
   exact_parity = $AllExact
+  exact_visual_parity = $AllPixelExact
   deterministic = $Deterministic
   fixture = $Fixture
   fixture_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture).Hash
@@ -365,7 +411,9 @@ $Manifest = [pscustomobject]@{
 }
 $ManifestPath = Join-Path $OutputRoot "manifest.json"
 $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ManifestPath -Encoding ASCII
-$DifferenceSummary = if ($CrossRevisionConformance) {
+$DifferenceSummary = if ($AllPixelExact) {
+  "Stage 2B-3 visual closure is exact for every scenario after normalizing decoded 32-bit pixels. Remaining record differences, if any, are reported separately and do not represent a rendered-pixel difference."
+} elseif ($CrossRevisionConformance) {
   "Remaining cross-host differences are recorded inputs to the Stage 2B-3 pixel-closure gate. Stage 2B-2 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
 } else {
   "Cross-host differences are expected at this baseline and are inputs to Stage 2B-1/2B-2. Stage 2B-0 fails only for capture/build failure, missing evidence, or per-host nondeterminism."
@@ -381,6 +429,8 @@ $Report = @(
   "Status: $($Manifest.status)",
   "",
   "Exact cross-host parity: $AllExact",
+  "",
+  "Exact visual parity: $AllPixelExact",
   "",
   "Fixture SHA-256: $($Manifest.fixture_sha256)",
   "",
