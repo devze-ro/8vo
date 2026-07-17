@@ -67,6 +67,8 @@ The exact dependency guard, architecture audit, and strict MSVC C11 `/W4
 /WX` build pass. Focused results:
 
 - empty-document native-like press/release: pass, Open action on release;
+- live Win32 startup acceptance: one empty-state status message, and a normal
+  Open-button click displayed the native EPUB file picker;
 - Reader View smoke: repeatable hash `6ccb4eaac405ffb9`;
 - all six lectern0 parity scenarios: settled postconditions pass;
 - MSAA accessibility smoke: pass with 18 semantic nodes;
