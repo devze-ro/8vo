@@ -2750,6 +2750,14 @@ lectern0_reader_view_space_activates_focus(const Lectern0App *app)
          !lectern0_reader_view_text_editing(app);
 }
 
+FUNCTION B32
+lectern0_reader_view_horizontal_move_is_shared(const Lectern0App *app)
+{
+  return lectern0_reader_view_text_editing(app) ||
+         lectern0_reader_view_focus_control_is(
+           app, ReaderViewSemanticControl_Progress);
+}
+
 FUNCTION void
 lectern0_reader_view_open_find_from_shortcut(Lectern0App *app)
 {
@@ -4784,10 +4792,16 @@ lectern0_reader_view_route_keydown(Lectern0App *app,
     app->input.move_vertical_delta = key == VK_UP ? -1 : 1;
     app->input.extend_selection = shift;
   }
-  else if (!editing && app->reader_view_state.focus_id != 0 &&
+  else if (!editing &&
+           lectern0_reader_view_horizontal_move_is_shared(app) &&
            (key == VK_LEFT || key == VK_RIGHT))
   {
     app->input.move_delta = key == VK_LEFT ? -1 : 1;
+  }
+  else if (!editing && app->reader_view_state.focus_id != 0 &&
+           (key == VK_LEFT || key == VK_RIGHT))
+  {
+    (void)lectern0_move_page(app, key == VK_LEFT ? -1 : 1);
   }
   else if (!editing && app->reader_view_state.focus_id != 0 &&
            (key == VK_UP || key == VK_DOWN))
@@ -7983,6 +7997,7 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
     NoteInput = 9803,
     NoteSave = 9804,
     NextPage = 9805,
+    Progress = 9806,
   };
   ReaderViewSemanticNode nodes[] = {
     {
@@ -8008,6 +8023,11 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
       .id = NextPage,
       .role = ReaderViewSemantic_Button,
       .control = ReaderViewSemanticControl_NextPage,
+    },
+    {
+      .id = Progress,
+      .role = ReaderViewSemantic_Slider,
+      .control = ReaderViewSemanticControl_Progress,
     },
   };
   ReaderViewFrame saved_frame = app->reader_view_frame;
@@ -8036,14 +8056,13 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
     input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
     input.range_move == ReaderViewRangeMove_NextPage &&
     input.find_text.move_delta == 1 && input.find_text.extend_selection &&
-    input.find_text.commit_pressed;
+    input.find_text.commit_pressed &&
+    lectern0_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.focus_id = FindClear;
   result = result &&
     lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_LEFT, 0) ==
       Lectern0ReaderKeyRoute_Handled &&
     lectern0_reader_view_route_keydown(app, VK_PRIOR, 0) ==
       Lectern0ReaderKeyRoute_Handled;
@@ -8051,8 +8070,9 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
   result = result && !lectern0_reader_view_text_editing(app) &&
     lectern0_reader_view_space_activates_focus(app) &&
     (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
-    input.move_horizontal_delta == -1 &&
-    input.range_move == ReaderViewRangeMove_PreviousPage;
+    input.move_horizontal_delta == 0 &&
+    input.range_move == ReaderViewRangeMove_PreviousPage &&
+    !lectern0_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
@@ -8071,7 +8091,8 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
     input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
     input.note_text.text_len == 1 && input.note_text.text[0] == '\n' &&
     input.note_text.move_vertical_delta == 1 &&
-    input.note_text.extend_selection;
+    input.note_text.extend_selection &&
+    lectern0_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.focus_id = NoteSave;
@@ -8081,14 +8102,13 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
   input = lectern0_reader_view_input(app);
   result = result && !lectern0_reader_view_text_editing(app) &&
     lectern0_reader_view_space_activates_focus(app) &&
-    (input.ui.flags & UI0Input_ActivatePressed) != 0;
+    (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
+    !lectern0_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.popup = ReaderViewPopup_None;
   app->reader_view_state.focus_id = NextPage;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_RIGHT, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
     lectern0_reader_view_route_keydown(app, VK_NEXT, 0) ==
       Lectern0ReaderKeyRoute_Handled &&
     lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
@@ -8097,8 +8117,22 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
   result = result && !lectern0_reader_view_text_editing(app) &&
     lectern0_reader_view_space_activates_focus(app) &&
     (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
-    input.move_horizontal_delta == 1 &&
-    input.range_move == ReaderViewRangeMove_NextPage;
+    input.move_horizontal_delta == 0 &&
+    input.range_move == ReaderViewRangeMove_NextPage &&
+    !lectern0_reader_view_horizontal_move_is_shared(app);
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.focus_id = Progress;
+  U32 progress_spine = app->reader.active_spine_index;
+  U64 progress_byte = app->reader.view_byte_offset;
+  result = result &&
+    lectern0_reader_view_route_keydown(app, VK_RIGHT, 0) ==
+      Lectern0ReaderKeyRoute_Handled;
+  input = lectern0_reader_view_input(app);
+  result = result && input.move_horizontal_delta == 1 &&
+    app->reader.active_spine_index == progress_spine &&
+    app->reader.view_byte_offset == progress_byte &&
+    lectern0_reader_view_horizontal_move_is_shared(app);
   app->reader_view_state.focus_id = 0;
   result = result && !lectern0_reader_view_text_editing(app) &&
     !lectern0_reader_view_space_activates_focus(app);
@@ -10860,6 +10894,373 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
 }
 
 FUNCTION int
+lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
+                                                  const char *output_prefix)
+{
+  enum { Width = 1400, Height = 780 };
+  Lectern0App app = {0};
+  U64 pixel_count = (U64)Width * Height;
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  RenderBuffer buffer = {0};
+  U32 checkpoint = 0;
+  int result = 1;
+  U32 bookmark_before_spine = 0;
+  U32 bookmark_right_spine = 0;
+  U32 note_before_spine = 0;
+  U32 note_right_spine = 0;
+  U32 font_before_spine = 0;
+  U32 font_right_spine = 0;
+  U64 bookmark_before_byte = 0;
+  U64 bookmark_right_byte = 0;
+  U64 note_before_byte = 0;
+  U64 note_right_byte = 0;
+  U64 font_before_byte = 0;
+  U64 font_right_byte = 0;
+  char bmp_path[Lectern0PathCap] = {0};
+
+  if (!pixels || !path || !path[0] || !output_prefix || !output_prefix[0] ||
+      !lectern0_app_init(&app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&app, path))
+    goto cleanup;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+
+  for (U32 page = 0; page < 8 && app.frame.visible_text.size < 32; page += 1)
+  {
+    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    lectern0_render_to_buffer(&app, &buffer);
+  }
+  if (app.frame.visible_text.size < 32) goto cleanup;
+  checkpoint = 1;
+
+  const ReaderViewSemanticNode *bookmark_control =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_Bookmark);
+  if (!bookmark_control ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, bookmark_control) ||
+      app.bookmark_count != 1)
+    goto cleanup;
+
+  U64 selection_start = 0;
+  while (selection_start < app.frame.visible_text.size &&
+         app.frame.visible_text.str[selection_start] <= ' ')
+    selection_start += 1;
+  U64 selection_end = selection_start;
+  for (U32 grapheme = 0;
+       grapheme < 12 && selection_end < app.frame.visible_text.size;
+       grapheme += 1)
+  {
+    selection_end = base_unicode_utf8_next_grapheme_boundary(
+      app.frame.visible_text, selection_end);
+  }
+  DocSelection selection = {
+    .spine_index = app.reader.active_spine_index,
+    .text_byte_start = app.frame.view_byte_offset + selection_start,
+    .text_byte_end = app.frame.view_byte_offset + selection_end,
+  };
+  if (selection_end <= selection_start ||
+      epub_reader_set_selection(&app.reader, selection) != EpubReaderResult_Ok)
+    goto cleanup;
+  app.selection_anchor_rect = ui0_rect(500, 260, 4, 24);
+  lectern0_prepare_selected_text(&app);
+  if (!lectern0_set_highlight_color(&app, 2) ||
+      !lectern0_save_selection_note(
+        &app, (ReaderViewText){"Focus routing note", 18}))
+    goto cleanup;
+  epub_reader_clear_selection(&app.reader);
+  app.selected_text[0] = 0;
+  app.selection_anchor_rect = (UI0Rect){0};
+  if (!lectern0_capture_frame(&app)) goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  checkpoint = 2;
+
+  for (U32 page = 0; page < 2; page += 1)
+    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *annotations =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_Annotations);
+  if (!annotations ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, annotations) ||
+      !app.reader_view_state.right_panel_open)
+    goto cleanup;
+  checkpoint = 3;
+
+  ReaderViewKey bookmark_key =
+    lectern0_reader_view_parity_right_key(&app, ReaderViewRightRow_Bookmark);
+  const ReaderViewSemanticNode *bookmark_row =
+    lectern0_reader_view_semantic_control_source(
+      &app.reader_view_frame, ReaderViewSemanticControl_RightRow, bookmark_key);
+  if (!bookmark_key || !bookmark_row ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, bookmark_row))
+    goto cleanup;
+  bookmark_row = lectern0_reader_view_semantic_control_source(
+    &app.reader_view_frame, ReaderViewSemanticControl_RightRow, bookmark_key);
+  if (!bookmark_row || app.reader_view_state.focus_id != bookmark_row->id ||
+      lectern0_reader_view_horizontal_move_is_shared(&app))
+    goto cleanup;
+  bookmark_before_spine = app.reader.active_spine_index;
+  bookmark_before_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_bookmark_before.bmp", output_prefix);
+  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
+      lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+        Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  bookmark_right_spine = app.reader.active_spine_index;
+  bookmark_right_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_bookmark_right.bmp", output_prefix);
+  if ((bookmark_right_spine == bookmark_before_spine &&
+       bookmark_right_byte == bookmark_before_byte) ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
+      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_bookmark_left.bmp", output_prefix);
+  if (app.reader.active_spine_index != bookmark_before_spine ||
+      app.reader.view_byte_offset != bookmark_before_byte ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 4;
+
+  for (U32 page = 0; page < 2; page += 1)
+    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  ReaderViewKey note_key =
+    lectern0_reader_view_parity_right_key(&app, ReaderViewRightRow_Note);
+  const ReaderViewSemanticNode *note_row =
+    lectern0_reader_view_semantic_control_source(
+      &app.reader_view_frame, ReaderViewSemanticControl_RightRow, note_key);
+  if (!note_key || !note_row ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, note_row))
+    goto cleanup;
+  note_row = lectern0_reader_view_semantic_control_source(
+    &app.reader_view_frame, ReaderViewSemanticControl_RightRow, note_key);
+  if (!note_row || app.reader_view_state.focus_id != note_row->id ||
+      lectern0_reader_view_horizontal_move_is_shared(&app))
+    goto cleanup;
+  note_before_spine = app.reader.active_spine_index;
+  note_before_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_note_before.bmp", output_prefix);
+  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
+      lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+        Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  note_right_spine = app.reader.active_spine_index;
+  note_right_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_note_right.bmp", output_prefix);
+  if ((note_right_spine == note_before_spine &&
+       note_right_byte == note_before_byte) ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
+      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_note_left.bmp", output_prefix);
+  if (app.reader.active_spine_index != note_before_spine ||
+      app.reader.view_byte_offset != note_before_byte ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 5;
+
+  annotations = lectern0_reader_view_semantic_control(
+    &app.reader_view_frame, ReaderViewSemanticControl_Annotations);
+  if (!annotations ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, annotations) ||
+      app.reader_view_state.right_panel_open)
+    goto cleanup;
+  checkpoint = 51;
+  const ReaderViewSemanticNode *font =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_FontFamily);
+  if (!font || !lectern0_reader_view_parity_space_node(&app, &buffer, font) ||
+      app.reader_view_state.popup != ReaderViewPopup_SettingMenu ||
+      app.reader_view_state.active_setting_kind != ReaderViewSetting_FontFamily)
+    goto cleanup;
+  checkpoint = 52;
+  ReaderViewKey font_key = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_settings[0].choices.count;
+       index += 1)
+  {
+    const ReaderViewChoice *choice =
+      app.reader_view_settings[0].choices.items + index;
+    if ((choice->flags & ReaderViewChoice_Enabled) != 0 &&
+        (choice->flags & ReaderViewChoice_Selected) == 0)
+    {
+      font_key = choice->key;
+      break;
+    }
+  }
+  if (!font_key) goto cleanup;
+  checkpoint = 53;
+  const ReaderViewSemanticNode *font_option = 0;
+  for (UI0S32 index = 0;
+       font_key != 0 && index < app.reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app.reader_view_frame.semantic_nodes + index;
+    if (node->role == ReaderViewSemantic_MenuItem &&
+        node->source_key == font_key)
+    {
+      font_option = node;
+      break;
+    }
+  }
+  if (!font_option) goto cleanup;
+  checkpoint = 54;
+  if (!font_option ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, font_option) ||
+      app.reader_view_state.popup != ReaderViewPopup_None ||
+      !lectern0_reader_view_focus_control_is(
+        &app, ReaderViewSemanticControl_FontFamily) ||
+      lectern0_reader_view_horizontal_move_is_shared(&app))
+    goto cleanup;
+  checkpoint = 55;
+  B32 stable_font_page = 0;
+  for (U32 probe = 0; probe < 64 && !stable_font_page; probe += 1)
+  {
+    U32 probe_spine = app.reader.active_spine_index;
+    U64 probe_byte = app.reader.view_byte_offset;
+    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) break;
+    B32 moved = app.reader.active_spine_index != probe_spine ||
+                app.reader.view_byte_offset != probe_byte;
+    if (lectern0_move_page(&app, -1) != EpubReaderResult_Ok) break;
+    stable_font_page = moved &&
+      app.reader.active_spine_index == probe_spine &&
+      app.reader.view_byte_offset == probe_byte;
+    if (!stable_font_page &&
+        lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+      break;
+  }
+  if (!stable_font_page ||
+      !lectern0_reader_view_focus_control_is(
+        &app, ReaderViewSemanticControl_FontFamily))
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  font_before_spine = app.reader.active_spine_index;
+  font_before_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_font_before.bmp", output_prefix);
+  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 56;
+  if (lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  font_right_spine = app.reader.active_spine_index;
+  font_right_byte = app.reader.view_byte_offset;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_font_right.bmp", output_prefix);
+  if ((font_right_spine == font_before_spine &&
+       font_right_byte == font_before_byte) ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 57;
+  if (lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  checkpoint = 58;
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_font_left.bmp", output_prefix);
+  if (app.reader.active_spine_index != font_before_spine ||
+      app.reader.view_byte_offset != font_before_byte ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 6;
+
+  const ReaderViewSemanticNode *find =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_Find);
+  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+      app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
+      !lectern0_reader_view_parity_click(
+        &app, &buffer, ReaderViewSemantic_SearchBox, 0))
+    goto cleanup;
+  MemoryCopy(app.input.text, "Paran", 5);
+  app.input.text[5] = 0;
+  app.input.text_length = 5;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  app.input.commit_pressed = 1;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  lectern0_render_to_buffer(&app, &buffer);
+  U32 find_spine = app.reader.active_spine_index;
+  U64 find_byte = app.reader.view_byte_offset;
+  if (!lectern0_reader_view_text_is(
+        reader_view_find_query(&app.reader_view_state), "Paran") ||
+      !lectern0_reader_view_horizontal_move_is_shared(&app) ||
+      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        Lectern0ReaderKeyRoute_Handled)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  app.input.text[0] = 'X';
+  app.input.text[1] = 0;
+  app.input.text_length = 1;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_find_input_left.bmp", output_prefix);
+  if (app.reader.active_spine_index != find_spine ||
+      app.reader.view_byte_offset != find_byte ||
+      !lectern0_reader_view_text_is(
+        reader_view_find_query(&app.reader_view_state), "ParaXn") ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 7;
+  result = 0;
+
+cleanup:
+  if (result == 0)
+  {
+    fprintf(stdout,
+            "lectern0_reader_view_post_action_arrow result=pass checkpoint=%u bookmark=%u:%llu>%u:%llu note=%u:%llu>%u:%llu font=%u:%llu>%u:%llu find=ParaXn output=%s\n",
+            checkpoint,
+            bookmark_before_spine, (unsigned long long)bookmark_before_byte,
+            bookmark_right_spine, (unsigned long long)bookmark_right_byte,
+            note_before_spine, (unsigned long long)note_before_byte,
+            note_right_spine, (unsigned long long)note_right_byte,
+            font_before_spine, (unsigned long long)font_before_byte,
+            font_right_spine, (unsigned long long)font_right_byte,
+            output_prefix);
+  }
+  else
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_post_action_arrow result=fail checkpoint=%u font=%u:%llu>%u:%llu current=%u:%llu focus=%llu popup=%d\n",
+            checkpoint,
+            font_before_spine, (unsigned long long)font_before_byte,
+            font_right_spine, (unsigned long long)font_right_byte,
+            app.reader.active_spine_index,
+            (unsigned long long)app.reader.view_byte_offset,
+            (unsigned long long)app.reader_view_state.focus_id,
+            (int)app.reader_view_state.popup);
+  }
+  free(pixels);
+  lectern0_app_release(&app);
+  return result;
+}
+
+FUNCTION int
 lectern0_run_reader_view_smoke(const char *path, const char *export_path)
 {
   enum { Width = 1100, Height = 760 };
@@ -12178,7 +12579,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   }
   U64 hash = lectern0_reader_view_contract_hash(&app.reader_view_frame);
   fprintf(stdout,
-          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
+          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate horizontal_routing=text_progress_or_page find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
           READERVIEW0_API_VERSION,
           app.reader_view_projection.toc.row_count,
           app.reader.search_match_count,
@@ -12696,6 +13097,12 @@ main(int argc, char **argv)
   {
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
   }
+  else if (argc == 4 &&
+           strcmp(argv[1], "--reader-view-post-action-arrow-smoke") == 0)
+  {
+    result = lectern0_run_reader_view_post_action_arrow_smoke(
+      argv[2], argv[3]);
+  }
   else if (argc == 2 &&
            strcmp(argv[1], "--reader-view-startup-interaction-smoke") == 0)
   {
@@ -12729,7 +13136,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

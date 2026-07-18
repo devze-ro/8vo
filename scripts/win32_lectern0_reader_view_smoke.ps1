@@ -38,6 +38,7 @@ function Invoke-Lectern0ReaderViewSmoke {
       $line -notmatch 'focus=reference13' -or
       $line -notmatch 'panel_focus=toc_find_annotations_progress_boundary' -or
       $line -notmatch 'keyboard_routing=focused_edit_or_activate' -or
+      $line -notmatch 'horizontal_routing=text_progress_or_page' -or
       $line -notmatch 'find_shortcut=focused_input' -or
       $line -notmatch 'navigation_panels=space_toc_find' -or
       $line -notmatch 'gutters=boundary_roundtrip' -or
