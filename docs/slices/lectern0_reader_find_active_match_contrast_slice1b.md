@@ -225,3 +225,24 @@ The clean 15-case re10/Lectern0 matrix rebuilt both refinement commits:
 This is the final validated, unpromoted local-only candidate. Lectern0 still
 has no remote, and nothing in this record authorizes local-main promotion,
 remote creation, or history rewriting.
+
+## Reconciled re10 cross-host evidence
+
+Re10's Find slice was subsequently replayed, with explicit user authorization,
+onto canonical re10 editor head
+`9a695470681190f7605f42a8711d8a586137ab2f`. The reconciled tested re10 commit
+is `228a38c49768fedae4beaf8c648db2ba2778e11f`. Lectern0 required no replay or
+code change and remained at tested commit
+`22ddc6f154d0e51b3e96ceb24b1f51cb1e6077ee`.
+
+The clean cross-host harness rebuilt those exact tips:
+
+- manifest:
+  `C:\Temp\re10_lectern_find1b_primary_neutral_reconciled_15_clean_20260719\manifest.json`;
+- manifest SHA-256:
+  `7B2BEFEE6C1DA46E939107CB908CCB7E7B2683AC5AD881F50CB1B385CB8D5670`;
+- result: 15/15 deterministic with exact decoded-pixel parity; and
+- clean-tree, in-run-build, exact-dependency acceptance eligibility: true.
+
+The reconciliation therefore preserves Lectern0 parity with the combined
+editor-plus-Reader re10 candidate. Lectern0 remains local-only and unpromoted.
