@@ -116,3 +116,51 @@ Clean candidate commits and clean-tree closeout evidence are recorded below
 after they exist. Nothing in this record authorizes local-main promotion, push,
 remote creation, or history rewriting.
 
+## Clean candidate closeout
+
+The implementation, exact-book gate, and initial record were committed without
+history rewriting as:
+
+- commit: `4a69da4aa4bd58e1a3de2b30fbc3d5ec100ad230`;
+- subject: `Strengthen Lectern active Find highlights`;
+- author and committer: `devze-ro <devze_ro@outlook.com>`; and
+- ancestry: one commit directly ahead of local-only promoted `8a6652ea`.
+
+The post-commit exact-book run rebuilt Lectern0 with its strict dependency and
+architecture gate, then passed all six themes:
+
+- summary:
+  `C:\Temp\lectern0_find1b_exact_clean_20260719\summary.json`;
+- summary SHA-256:
+  `674123758BAC869B228B88E1B6EFF3D6A9910CD47271DD568E1CF5F276D6FFCE`;
+- executable SHA-256:
+  `FA3AA6A24751D7B07BD7643D11B0312D11B163DB4D49F96DB2D6B6AD33A52F4C`;
+- result line:
+  `lectern0_reader_view_find_active_contrast result=pass checkpoint=5 query=Paran active_index=2 themes=6`; and
+- every theme retained one active and one inactive range/draw with exact
+  rendered pixels and passed the OKLab/text-contrast floors.
+
+The final clean-tree re10/Lectern0 matrix rebuilt both implementation commits:
+
+- manifest:
+  `C:\Temp\re10_lectern_find1b_15_clean_20260719_retry1\manifest.json`;
+- manifest SHA-256:
+  `25B7E2341028AB7D97940B9853051282458396321A0727AF7652223511A1B48A`;
+- re10 commit: `6d5756585ff9fc0c5806f384fd6e585a3a0bc74e`;
+- Lectern0 commit: `4a69da4aa4bd58e1a3de2b30fbc3d5ec100ad230`;
+- 15/15 cases deterministic with exact decoded-pixel parity;
+- both hosts rebuilt inside the run from the exact dependency pins; and
+- acceptance eligibility: true.
+
+The six pixel-exact record-difference cases are unchanged: dark Contents,
+light Contents, Find, Bookmark/right panel, annotation filter popup, and Note
+editor. This slice changes neither their classification nor shared semantic
+records.
+
+The first clean matrix attempt recorded a single nonrepeatable re10 Contents
+progress-control draw, outside this slice and absent on the fresh full retry.
+The Find case was deterministic and pixel-exact in both attempts. Both
+manifests are retained in the re10 record for transparency.
+
+This closes the Lectern0 side of Slice 1B as a validated, unpromoted local-only
+candidate. Lectern0 still has no remote, and nothing was pushed or promoted.
