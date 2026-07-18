@@ -189,6 +189,39 @@ Find actions; neither dependency changes.
 
 Strict compilation, dependency and architecture gates, the exact-book
 six-theme workflow, generated host smoke, deterministic Reader View smoke, and
-direct twelve-image review pass at the pre-commit checkpoint. Clean post-commit
-cross-host evidence remains required before this becomes the final unpromoted
-local-only candidate. Lectern0 still has no remote.
+direct twelve-image review pass at the pre-commit checkpoint.
+
+The refinement was committed without history rewriting as:
+
+- commit: `2a9d2e87302c4bf05f92b17dbbc1a690f826f15c`;
+- subject: `Separate Lectern active and dormant Find fills`; and
+- author and committer: `devze-ro <devze_ro@outlook.com>`.
+
+The clean post-commit exact-book gate rebuilt that commit and passed all six
+themes:
+
+- summary:
+  `C:\Temp\lectern0_find1b_primary_neutral_clean_20260719\summary.json`;
+- summary SHA-256:
+  `4932FC4CBEAF9CB258533B516C484D88B35C1516839DE0D5E3E9415FC7C7BED8`;
+- executable SHA-256:
+  `0A79D2FDC73696D1E19030DE38CBB31239BAB236F8ACAF84C03CB774A213D3A1`;
+- result line:
+  `lectern0_reader_view_find_active_contrast result=pass checkpoint=5 query=Paran active_index=2 themes=6`; and
+- every theme retained exact active and inactive page pixels with zero
+  selection-color Find draws or pixels.
+
+The clean 15-case re10/Lectern0 matrix rebuilt both refinement commits:
+
+- manifest:
+  `C:\Temp\re10_lectern_find1b_primary_neutral_15_clean_20260719\manifest.json`;
+- manifest SHA-256:
+  `D63F70577210F6FDA3AA36394D071FB4A3068CC57E690289791066653092DB0C`;
+- re10 commit: `733c45f0672f015fbe0d63ca215b6458e990b778`;
+- Lectern0 commit: `2a9d2e87302c4bf05f92b17dbbc1a690f826f15c`;
+- result: 15/15 deterministic with exact decoded-pixel parity; and
+- clean-tree, in-run-build, exact-dependency acceptance eligibility: true.
+
+This is the final validated, unpromoted local-only candidate. Lectern0 still
+has no remote, and nothing in this record authorizes local-main promotion,
+remote creation, or history rewriting.
