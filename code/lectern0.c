@@ -1842,35 +1842,35 @@ lectern0_reader_content_theme(Lectern0Theme theme)
     case Lectern0Theme_Light:
       result = (Lectern0ReaderContentTheme){
         0x00FFFDF9U, 0x001B1A18U, 0x0047423BU, 0x007A7368U,
-        0x00D95618U, 0x00FFE7D4U, 0x00FFF0E4U, 0x00FFF2A6U,
+        0x00D95618U, 0x00FFE7D4U, 0x00FFD166U, 0x00FFF2A6U,
         0x00D95618U,
       };
       break;
     case Lectern0Theme_CoralDark:
       result = (Lectern0ReaderContentTheme){
         0x00464644U, 0x00F5EBDDU, 0x00DED4C8U, 0x00C2B6ACU,
-        0x00E85D56U, 0x0063423EU, 0x00534A46U, 0x00524A25U,
+        0x00E85D56U, 0x0063423EU, 0x00705E18U, 0x00524A25U,
         0x00E85D56U,
       };
       break;
     case Lectern0Theme_CoralLight:
       result = (Lectern0ReaderContentTheme){
         0x00F3E8DBU, 0x00333230U, 0x0053514FU, 0x006F6D68U,
-        0x00E85D56U, 0x00F3C2B9U, 0x00F1D5CDU, 0x00F4DFA3U,
+        0x00E85D56U, 0x00F3C2B9U, 0x00FFD166U, 0x00F4DFA3U,
         0x00E85D56U,
       };
       break;
     case Lectern0Theme_BlueDark:
       result = (Lectern0ReaderContentTheme){
         0x000D1824U, 0x00EAF0F7U, 0x00B8C7D8U, 0x007E8FA3U,
-        0x007C93FFU, 0x00345F91U, 0x00131F2EU, 0x004D4A16U,
+        0x007C93FFU, 0x00345F91U, 0x00705E18U, 0x004D4A16U,
         0x007C93FFU,
       };
       break;
     case Lectern0Theme_BlueLight:
       result = (Lectern0ReaderContentTheme){
         0x00FFFDF9U, 0x00121A22U, 0x00334252U, 0x006E7680U,
-        0x00365CE7U, 0x00E6EEFFU, 0x00EEF4FFU, 0x00FFF2A6U,
+        0x00365CE7U, 0x00E6EEFFU, 0x00FFD166U, 0x00FFF2A6U,
         0x00365CE7U,
       };
       break;
@@ -1878,7 +1878,7 @@ lectern0_reader_content_theme(Lectern0Theme theme)
     default:
       result = (Lectern0ReaderContentTheme){
         0x00181716U, 0x00F2F0EAU, 0x00C9C4BAU, 0x008D877BU,
-        0x00F26A1BU, 0x004D3424U, 0x00271F18U, 0x004D4A16U,
+        0x00F26A1BU, 0x004D3424U, 0x00705E18U, 0x004D4A16U,
         0x00F26A1BU,
       };
       break;
@@ -10894,6 +10894,172 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
 }
 
 FUNCTION int
+lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
+                                                     const char *output_prefix)
+{
+  enum { Width = 1400, Height = 780 };
+  static const Lectern0Theme themes[] = {
+    Lectern0Theme_Dark,
+    Lectern0Theme_Light,
+    Lectern0Theme_CoralDark,
+    Lectern0Theme_CoralLight,
+    Lectern0Theme_BlueDark,
+    Lectern0Theme_BlueLight,
+  };
+  static const char *theme_names[] = {
+    "dark", "light", "coral-dark", "coral-light", "blue-dark", "blue-light",
+  };
+  static const U32 expected_active[] = {
+    0x00705E18U, 0x00FFD166U, 0x00705E18U,
+    0x00FFD166U, 0x00705E18U, 0x00FFD166U,
+  };
+  static const U32 expected_inactive[] = {
+    0x004D3424U, 0x00FFE7D4U, 0x0063423EU,
+    0x00F3C2B9U, 0x00345F91U, 0x00E6EEFFU,
+  };
+  Lectern0App app = {0};
+  U64 pixel_count = (U64)Width * Height;
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  RenderBuffer buffer = {0};
+  U32 checkpoint = 0;
+  int result = 1;
+  char bmp_path[Lectern0PathCap] = {0};
+
+  if (!pixels || !path || !path[0] || !output_prefix || !output_prefix[0] ||
+      !lectern0_app_init(&app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&app, path))
+    goto cleanup;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+
+  const ReaderViewSemanticNode *find =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_Find);
+  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+      app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
+      !lectern0_reader_view_parity_click(
+        &app, &buffer, ReaderViewSemantic_SearchBox, 0))
+    goto cleanup;
+  checkpoint = 1;
+
+  MemoryCopy(app.input.text, "Paran", 5);
+  app.input.text[5] = 0;
+  app.input.text_length = 5;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  app.input.commit_pressed = 1;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (app.reader.search_match_count <= 2 ||
+      app.reader_view_projection.find.row_count <= 2)
+    goto cleanup;
+  checkpoint = 2;
+
+  ReaderViewKey active_key = app.reader_view_projection.find.rows[2].key;
+  const ReaderViewSemanticNode *active_row =
+    lectern0_reader_view_semantic_control_source(
+      &app.reader_view_frame, ReaderViewSemanticControl_FindRow, active_key);
+  if (!active_row ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, active_row) ||
+      !app.reader.search_has_active || app.reader.search_active_index != 2 ||
+      app.reader_view_state.left_panel != ReaderViewLeftPanel_Find)
+    goto cleanup;
+  checkpoint = 3;
+
+  U32 active_ranges = 0;
+  U32 inactive_ranges = 0;
+  for (U32 index = 0; index < app.frame.search_highlight_count; index += 1)
+  {
+    if (app.frame.search_highlights[index].active) active_ranges += 1;
+    else inactive_ranges += 1;
+  }
+  if (active_ranges != 1 || inactive_ranges == 0) goto cleanup;
+  checkpoint = 4;
+
+  for (U32 theme_index = 0; theme_index < ARRAY_COUNT(themes); theme_index += 1)
+  {
+    app.theme = themes[theme_index];
+    lectern0_render_to_buffer(&app, &buffer);
+    Lectern0ReaderContentTheme content = app.reader_content_theme;
+    if (content.search_match != expected_active[theme_index] ||
+        content.selection != expected_inactive[theme_index] ||
+        content.search_match == content.selection)
+      goto cleanup;
+
+    U32 active_draws = 0;
+    U32 inactive_draws = 0;
+    S32 first_active = -1;
+    S32 first_inactive = -1;
+    for (U32 command_index = 0;
+         command_index < app.draw_commands.command_count[DrawLayer_World];
+         command_index += 1)
+    {
+      const DrawCommand *command =
+        app.draw_commands.commands[DrawLayer_World] + command_index;
+      if (command->type != DrawCommandType_Rect) continue;
+      if (command->v.rect.color == content.search_match)
+      {
+        if (first_active < 0) first_active = (S32)command_index;
+        active_draws += 1;
+      }
+      if (command->v.rect.color == content.selection)
+      {
+        if (first_inactive < 0) first_inactive = (S32)command_index;
+        inactive_draws += 1;
+      }
+    }
+
+    U64 active_pixels = 0;
+    U64 inactive_pixels = 0;
+    for (U64 pixel_index = 0; pixel_index < pixel_count; pixel_index += 1)
+    {
+      U32 color = pixels[pixel_index] & 0x00FFFFFFU;
+      if (color == content.search_match) active_pixels += 1;
+      if (color == content.selection) inactive_pixels += 1;
+    }
+    if (active_draws == 0 || inactive_draws == 0 ||
+        first_active <= first_inactive || active_pixels == 0 ||
+        inactive_pixels == 0)
+      goto cleanup;
+
+    (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                      "%s_%s.bmp", output_prefix, theme_names[theme_index]);
+    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height)) goto cleanup;
+    fprintf(stdout,
+            "lectern0_reader_view_find_active_contrast theme=%s active=%06X inactive=%06X active_ranges=%u inactive_ranges=%u active_draws=%u inactive_draws=%u active_pixels=%llu inactive_pixels=%llu bmp=%s\n",
+            theme_names[theme_index],
+            content.search_match, content.selection,
+            active_ranges, inactive_ranges, active_draws, inactive_draws,
+            (unsigned long long)active_pixels,
+            (unsigned long long)inactive_pixels,
+            bmp_path);
+  }
+  checkpoint = 5;
+  result = 0;
+
+cleanup:
+  if (result == 0)
+  {
+    fprintf(stdout,
+            "lectern0_reader_view_find_active_contrast result=pass checkpoint=%u query=Paran active_index=2 themes=%u output=%s\n",
+            checkpoint, (unsigned)ARRAY_COUNT(themes), output_prefix);
+  }
+  else
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_find_active_contrast result=fail checkpoint=%u matches=%u active=%u index=%u ranges=%u output=%s\n",
+            checkpoint, app.reader.search_match_count,
+            app.reader.search_has_active, app.reader.search_active_index,
+            app.frame.search_highlight_count,
+            output_prefix ? output_prefix : "-");
+  }
+  free(pixels);
+  lectern0_app_release(&app);
+  return result;
+}
+
+FUNCTION int
 lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
                                                   const char *output_prefix)
 {
@@ -13103,6 +13269,12 @@ main(int argc, char **argv)
     result = lectern0_run_reader_view_post_action_arrow_smoke(
       argv[2], argv[3]);
   }
+  else if (argc == 4 &&
+           strcmp(argv[1], "--reader-view-find-active-contrast-smoke") == 0)
+  {
+    result = lectern0_run_reader_view_find_active_contrast_smoke(
+      argv[2], argv[3]);
+  }
   else if (argc == 2 &&
            strcmp(argv[1], "--reader-view-startup-interaction-smoke") == 0)
   {
@@ -13136,7 +13308,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 
