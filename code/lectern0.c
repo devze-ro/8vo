@@ -51,6 +51,8 @@ enum
   Lectern0ImageCacheCap = 64,
   Lectern0BookmarkCap = 128,
   Lectern0HighlightCap = 128,
+  Lectern0ReaderViewRightCandidateCap =
+    Lectern0BookmarkCap + Lectern0HighlightCap * 2,
   Lectern0RecordLabelCap = 160,
   Lectern0NoteCap = READER_VIEW_NOTE_DRAFT_CAP,
   Lectern0SelectionTextCap = 1024,
@@ -61,6 +63,15 @@ enum
   Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
   Lectern0HostToolbarTrailingWidth = 38,
   Lectern0HostToolbarSlotWidth = 30,
+  Lectern0ReaderViewFindPriority_History = 2,
+  Lectern0ReaderViewFindPriority_Committed = 4,
+  Lectern0ReaderViewFindPriority_Placeholder = 5,
+  Lectern0ReaderViewFindPriority_Current = 6,
+  Lectern0ReaderViewFindPriority_Pinned = 255,
+  Lectern0ReaderViewNotePixelHeight = 18,
+  Lectern0ReaderViewNoteLineHeightFallback = 25,
+  Lectern0ReaderViewNoteAdvanceFallback = 9,
+  Lectern0ReaderViewNoteTerminalCaretGap = 1,
 };
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
@@ -113,6 +124,12 @@ _Static_assert(Lectern0Theme_Count == 6,
                "lectern0 theme persistence catalog changed");
 _Static_assert(UI0ThemeProfile_Count == 6,
                "lectern0 must cover every shared UI0 profile");
+_Static_assert((U32)Lectern0ReaderViewRightCandidateCap >=
+                 (U32)READER_VIEW_RIGHT_ROW_CAP,
+               "lectern0 annotation candidates must cover Reader View rows");
+_Static_assert(ReaderViewRightRow_Bookmark < ReaderViewRightRow_Highlight &&
+                 ReaderViewRightRow_Highlight < ReaderViewRightRow_Note,
+               "lectern0 annotation sort requires frozen row-kind order");
 
 typedef struct Lectern0ReaderContentTheme
 {
@@ -131,6 +148,8 @@ typedef struct Lectern0DrawAdapterStats
 {
   U32 op_count[UI0DrawOp_Count];
   U32 unsupported_count;
+  U32 note_editable_row_count;
+  U32 note_caret_remap_count;
 } Lectern0DrawAdapterStats;
 
 typedef struct Lectern0BookmarkV1
@@ -152,6 +171,20 @@ typedef struct Lectern0Bookmark
   char excerpt[Lectern0RecordLabelCap];
 } Lectern0Bookmark;
 
+typedef struct Lectern0HighlightV2
+{
+  U64 id;
+  U32 spine_index;
+  U64 start_byte;
+  U64 end_byte;
+  U32 color_index;
+  B32 starred;
+  B32 note_starred;
+  char section[Lectern0RecordLabelCap];
+  char text[Lectern0RecordLabelCap];
+  char note[Lectern0NoteCap];
+} Lectern0HighlightV2;
+
 typedef struct Lectern0Highlight
 {
   U64 id;
@@ -159,6 +192,7 @@ typedef struct Lectern0Highlight
   U64 start_byte;
   U64 end_byte;
   U32 color_index;
+  B32 is_highlight;
   B32 starred;
   B32 note_starred;
   char section[Lectern0RecordLabelCap];
@@ -199,8 +233,26 @@ typedef struct Lectern0AnnotationFileV1
   U64 path_hash;
   U64 next_record_id;
   Lectern0BookmarkV1 bookmarks[Lectern0BookmarkCap];
-  Lectern0Highlight highlights[Lectern0HighlightCap];
+  Lectern0HighlightV2 highlights[Lectern0HighlightCap];
 } Lectern0AnnotationFileV1;
+
+typedef struct Lectern0AnnotationFileV2
+{
+  U64 magic;
+  U32 version;
+  U32 bookmark_count;
+  U32 highlight_count;
+  U32 reserved;
+  U64 path_hash;
+  U64 next_record_id;
+  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
+  Lectern0HighlightV2 highlights[Lectern0HighlightCap];
+} Lectern0AnnotationFileV2;
+
+/* Tail padding makes the V2 and V3 record sizes equal; the file version and
+   explicit field migration, not a size accident, distinguish their layouts. */
+_Static_assert(sizeof(Lectern0HighlightV2) == sizeof(Lectern0Highlight),
+               "lectern0 annotation V2/V3 layout discriminator changed");
 
 typedef struct Lectern0Fullscreen
 {
@@ -242,7 +294,8 @@ typedef struct Lectern0Input
 enum
 {
   Lectern0UI0IconRasterCacheCap = 32,
-  Lectern0UI0IconRasterMax = 18,
+  Lectern0UI0IconRasterMaxWidth = UI0_ICON_RASTER_MAX_WIDTH,
+  Lectern0UI0IconRasterMaxHeight = UI0_ICON_RASTER_MAX_HEIGHT,
 };
 
 typedef struct Lectern0UI0IconRasterCacheEntry
@@ -252,8 +305,38 @@ typedef struct Lectern0UI0IconRasterCacheEntry
   S32 height;
   UI0Color foreground;
   UI0Color background;
-  U32 pixels[Lectern0UI0IconRasterMax * Lectern0UI0IconRasterMax];
+  U32 pixels[Lectern0UI0IconRasterMaxWidth *
+             Lectern0UI0IconRasterMaxHeight];
 } Lectern0UI0IconRasterCacheEntry;
+
+typedef enum Lectern0HostControlIdentity
+{
+  Lectern0HostControl_None,
+  Lectern0HostControl_ExitReader,
+  Lectern0HostControl_Count,
+} Lectern0HostControlIdentity;
+
+typedef struct Lectern0HostControlRecord
+{
+  Lectern0HostControlIdentity identity;
+  ReaderViewSemanticNode semantic;
+} Lectern0HostControlRecord;
+
+typedef struct Lectern0ReaderViewRightSource
+{
+  ReaderViewKey key;
+  ReaderViewRightRowKind row_kind;
+  U64 record_id;
+} Lectern0ReaderViewRightSource;
+
+typedef struct Lectern0ReaderViewRightCandidate
+{
+  ReaderViewRightRowKind row_kind;
+  U32 source_index;
+  U32 spine_index;
+  U64 byte_offset;
+  U64 record_id;
+} Lectern0ReaderViewRightCandidate;
 
 typedef struct Lectern0App
 {
@@ -297,8 +380,37 @@ typedef struct Lectern0App
   ReaderViewTocRow reader_view_toc_rows[READER_VIEW_TOC_ROW_CAP];
   ReaderViewFindRow reader_view_find_rows[READER_VIEW_FIND_ROW_CAP];
   ReaderViewRightRow reader_view_right_rows[READER_VIEW_RIGHT_ROW_CAP];
+  char reader_view_right_secondary[READER_VIEW_RIGHT_ROW_CAP]
+                                  [Lectern0RecordLabelCap];
+  Lectern0ReaderViewRightSource
+    reader_view_right_sources[READER_VIEW_RIGHT_ROW_CAP];
+  U32 reader_view_right_source_count;
+  Lectern0ReaderViewRightCandidate
+    reader_view_right_candidates[Lectern0ReaderViewRightCandidateCap];
+  U32 reader_view_right_candidate_count;
+  /* Exact host-owned target for a note editor opened from Annotations. */
+  ReaderViewKey annotation_note_selection_key;
+  DocDocumentId annotation_note_document_id;
+  U64 annotation_note_highlight_id;
+  U64 annotation_note_start_byte;
+  U64 annotation_note_end_byte;
+  U32 annotation_note_spine_index;
+  /* Bounded caller-measured values consumed by Reader View Find. */
+  ReaderViewCodepointAdvance
+    find_text_advances[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  U64 find_text_advance_last_seen[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  U8 find_text_advance_priority[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  U32 find_text_advance_count;
+  U64 find_text_metrics_generation;
+  S32 find_text_fallback_advance;
+  B32 find_text_metrics_initialized;
+  /* One-build values for the proportional shared Note TextArea. */
+  ReaderViewCodepointAdvance
+    note_text_advances[READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP];
+  U32 note_text_advance_count;
   char document_title[Lectern0RecordLabelCap];
   char progress_label[64];
+  char reader_view_find_status[64];
   char selected_text[Lectern0SelectionTextCap];
   ReaderViewLoadState document_state;
   UI0ResolvedTheme reader_view_theme;
@@ -311,6 +423,13 @@ typedef struct Lectern0App
   B32 reader_view_ready;
   S32 pagination_viewport_width;
   S32 pagination_viewport_height;
+  Lectern0HostControlRecord
+    host_controls[Lectern0HostControl_Count - 1];
+  U32 host_control_count;
+  Lectern0HostControlIdentity host_focus_control;
+  B32 host_focus_visible;
+  B32 host_exit_pointer_armed;
+  B32 host_exit_requested;
 
   Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
   U32 bookmark_count;
@@ -510,6 +629,27 @@ lectern0_clear_annotations(Lectern0App *app)
 }
 
 FUNCTION void
+lectern0_migrate_highlight_v2(Lectern0Highlight *target,
+                              const Lectern0HighlightV2 *source)
+{
+  if (!target || !source) return;
+  *target = (Lectern0Highlight){
+    .id = source->id,
+    .spine_index = source->spine_index,
+    .start_byte = source->start_byte,
+    .end_byte = source->end_byte,
+    .color_index = source->color_index,
+    .is_highlight = 1,
+    .starred = source->starred,
+    .note_starred = source->note_starred,
+  };
+  lectern0_copy_cstr(target->section, ARRAY_COUNT(target->section),
+                     source->section);
+  lectern0_copy_cstr(target->text, ARRAY_COUNT(target->text), source->text);
+  lectern0_copy_cstr(target->note, ARRAY_COUNT(target->note), source->note);
+}
+
+FUNCTION void
 lectern0_load_annotations(Lectern0App *app)
 {
   if (!app) { return; }
@@ -522,6 +662,7 @@ lectern0_load_annotations(Lectern0App *app)
   union
   {
     Lectern0AnnotationFile current;
+    Lectern0AnnotationFileV2 v2;
     Lectern0AnnotationFileV1 legacy;
   } file = {0};
   U64 size = 0;
@@ -532,7 +673,7 @@ lectern0_load_annotations(Lectern0App *app)
   }
   if (size == sizeof(file.current) &&
       file.current.magic == LECTERN0_ANNOTATION_MAGIC &&
-      file.current.version == 2 && file.current.path_hash == expected_hash &&
+      file.current.version == 3 && file.current.path_hash == expected_hash &&
       file.current.bookmark_count <= Lectern0BookmarkCap &&
       file.current.highlight_count <= Lectern0HighlightCap)
   {
@@ -543,6 +684,24 @@ lectern0_load_annotations(Lectern0App *app)
                sizeof(file.current.bookmarks[0]) * file.current.bookmark_count);
     MemoryCopy(app->highlights, file.current.highlights,
                sizeof(file.current.highlights[0]) * file.current.highlight_count);
+    for (U32 index = 0; index < app->highlight_count; index += 1)
+      app->highlights[index].is_highlight =
+        app->highlights[index].is_highlight ? 1 : 0;
+  }
+  else if (size == sizeof(file.v2) &&
+           file.v2.magic == LECTERN0_ANNOTATION_MAGIC &&
+           file.v2.version == 2 && file.v2.path_hash == expected_hash &&
+           file.v2.bookmark_count <= Lectern0BookmarkCap &&
+           file.v2.highlight_count <= Lectern0HighlightCap)
+  {
+    app->bookmark_count = file.v2.bookmark_count;
+    app->highlight_count = file.v2.highlight_count;
+    app->next_record_id = MAX(file.v2.next_record_id, 1ull);
+    MemoryCopy(app->bookmarks, file.v2.bookmarks,
+               sizeof(file.v2.bookmarks[0]) * file.v2.bookmark_count);
+    for (U32 index = 0; index < app->highlight_count; index += 1)
+      lectern0_migrate_highlight_v2(app->highlights + index,
+                                    file.v2.highlights + index);
   }
   else if (size == sizeof(file.legacy) &&
            file.legacy.magic == LECTERN0_ANNOTATION_MAGIC &&
@@ -566,8 +725,9 @@ lectern0_load_annotations(Lectern0App *app)
       lectern0_copy_cstr(target->excerpt, ARRAY_COUNT(target->excerpt),
                          "Bookmark");
     }
-    MemoryCopy(app->highlights, file.legacy.highlights,
-               sizeof(file.legacy.highlights[0]) * file.legacy.highlight_count);
+    for (U32 index = 0; index < app->highlight_count; index += 1)
+      lectern0_migrate_highlight_v2(app->highlights + index,
+                                    file.legacy.highlights + index);
   }
   else
   {
@@ -586,7 +746,7 @@ lectern0_save_annotations(Lectern0App *app)
   }
   Lectern0AnnotationFile file = {0};
   file.magic = LECTERN0_ANNOTATION_MAGIC;
-  file.version = 2;
+  file.version = 3;
   file.bookmark_count = app->bookmark_count;
   file.highlight_count = app->highlight_count;
   file.path_hash = u64_hash_str8(str8_from_cstr(app->current_path));
@@ -596,6 +756,12 @@ lectern0_save_annotations(Lectern0App *app)
   MemoryCopy(file.highlights, app->highlights,
              sizeof(file.highlights[0]) * app->highlight_count);
   return os_write_entire_file_atomic(app->annotations_path, &file, sizeof(file));
+}
+
+FUNCTION B32
+lectern0_commit_annotations(Lectern0App *app)
+{
+  return app && (!app->persistence_enabled || lectern0_save_annotations(app));
 }
 
 FUNCTION B32
@@ -1294,28 +1460,86 @@ lectern0_selection_highlight_index(const Lectern0App *app)
   return -1;
 }
 
-FUNCTION void
+FUNCTION B32
 lectern0_remove_bookmark_at(Lectern0App *app, U32 index)
 {
-  if (!app || index >= app->bookmark_count) { return; }
+  if (!app || index >= app->bookmark_count) return 0;
+  Lectern0Bookmark removed = app->bookmarks[index];
+  U64 saved_revision = app->annotation_revision;
   for (U32 at = index + 1; at < app->bookmark_count; at += 1)
     app->bookmarks[at - 1] = app->bookmarks[at];
   app->bookmark_count -= 1;
   MemoryZeroStruct(app->bookmarks + app->bookmark_count);
   app->annotation_revision += 1;
-  (void)lectern0_save_annotations(app);
+  if (lectern0_commit_annotations(app)) return 1;
+  for (U32 at = app->bookmark_count; at > index; at -= 1)
+    app->bookmarks[at] = app->bookmarks[at - 1];
+  app->bookmarks[index] = removed;
+  app->bookmark_count += 1;
+  app->annotation_revision = saved_revision;
+  lectern0_set_statusf(app, "Bookmark remove failed");
+  return 0;
 }
 
-FUNCTION void
-lectern0_remove_highlight_at(Lectern0App *app, U32 index)
+FUNCTION B32
+lectern0_remove_highlight_record_at(Lectern0App *app, U32 index)
 {
-  if (!app || index >= app->highlight_count) { return; }
+  if (!app || index >= app->highlight_count) return 0;
+  Lectern0Highlight removed = app->highlights[index];
+  U64 saved_revision = app->annotation_revision;
   for (U32 at = index + 1; at < app->highlight_count; at += 1)
     app->highlights[at - 1] = app->highlights[at];
   app->highlight_count -= 1;
   MemoryZeroStruct(app->highlights + app->highlight_count);
   app->annotation_revision += 1;
-  (void)lectern0_save_annotations(app);
+  if (lectern0_commit_annotations(app)) return 1;
+  for (U32 at = app->highlight_count; at > index; at -= 1)
+    app->highlights[at] = app->highlights[at - 1];
+  app->highlights[index] = removed;
+  app->highlight_count += 1;
+  app->annotation_revision = saved_revision;
+  lectern0_set_statusf(app, "Annotation delete failed");
+  return 0;
+}
+
+FUNCTION B32
+lectern0_remove_highlight_identity_at(Lectern0App *app, U32 index)
+{
+  if (!app || index >= app->highlight_count ||
+      !app->highlights[index].is_highlight)
+    return 0;
+  if (app->highlights[index].note[0] == 0)
+    return lectern0_remove_highlight_record_at(app, index);
+  Lectern0Highlight saved = app->highlights[index];
+  U64 saved_revision = app->annotation_revision;
+  app->highlights[index].is_highlight = 0;
+  app->highlights[index].starred = 0;
+  app->annotation_revision += 1;
+  if (lectern0_commit_annotations(app)) return 1;
+  app->highlights[index] = saved;
+  app->annotation_revision = saved_revision;
+  lectern0_set_statusf(app, "Highlight remove failed");
+  return 0;
+}
+
+FUNCTION B32
+lectern0_delete_note_at_index(Lectern0App *app, U32 index)
+{
+  if (!app || index >= app->highlight_count ||
+      app->highlights[index].note[0] == 0)
+    return 0;
+  if (!app->highlights[index].is_highlight)
+    return lectern0_remove_highlight_record_at(app, index);
+  Lectern0Highlight saved = app->highlights[index];
+  U64 saved_revision = app->annotation_revision;
+  app->highlights[index].note[0] = 0;
+  app->highlights[index].note_starred = 0;
+  app->annotation_revision += 1;
+  if (lectern0_commit_annotations(app)) return 1;
+  app->highlights[index] = saved;
+  app->annotation_revision = saved_revision;
+  lectern0_set_statusf(app, "Note delete failed");
+  return 0;
 }
 
 FUNCTION void
@@ -1361,11 +1585,14 @@ lectern0_toggle_current_bookmark(Lectern0App *app)
   S32 existing = lectern0_current_bookmark_index(app);
   if (existing >= 0)
   {
-    lectern0_remove_bookmark_at(app, (U32)existing);
+    if (!lectern0_remove_bookmark_at(app, (U32)existing)) return 0;
     lectern0_set_statusf(app, "Bookmark removed");
     return 1;
   }
   if (app->bookmark_count >= Lectern0BookmarkCap) return 0;
+  U32 saved_count = app->bookmark_count;
+  U64 saved_next_record_id = app->next_record_id;
+  U64 saved_revision = app->annotation_revision;
   Lectern0Bookmark *bookmark = app->bookmarks + app->bookmark_count++;
   MemoryZeroStruct(bookmark);
   bookmark->id = app->next_record_id++;
@@ -1380,9 +1607,40 @@ lectern0_toggle_current_bookmark(Lectern0App *app)
   lectern0_prepare_bookmark_excerpt(app, bookmark->excerpt,
                                     ARRAY_COUNT(bookmark->excerpt));
   app->annotation_revision += 1;
-  (void)lectern0_save_annotations(app);
+  if (!lectern0_commit_annotations(app))
+  {
+    app->bookmark_count = saved_count;
+    app->next_record_id = saved_next_record_id;
+    app->annotation_revision = saved_revision;
+    MemoryZeroStruct(app->bookmarks + saved_count);
+    lectern0_set_statusf(app, "Bookmark add failed");
+    return 0;
+  }
   lectern0_set_statusf(app, "Bookmark added");
   return 1;
+}
+
+FUNCTION B32
+lectern0_toggle_highlight_star_at(Lectern0App *app, U32 index, B32 note)
+{
+  if (!app || index >= app->highlight_count ||
+      (note && app->highlights[index].note[0] == 0) ||
+      (!note && !app->highlights[index].is_highlight))
+    return 0;
+  Lectern0Highlight saved = app->highlights[index];
+  U64 saved_revision = app->annotation_revision;
+  if (note)
+    app->highlights[index].note_starred =
+      !app->highlights[index].note_starred;
+  else
+    app->highlights[index].starred = !app->highlights[index].starred;
+  app->annotation_revision += 1;
+  if (lectern0_commit_annotations(app)) return 1;
+  app->highlights[index] = saved;
+  app->annotation_revision = saved_revision;
+  lectern0_set_statusf(app, note ? "Note star failed" :
+                                   "Highlight star failed");
+  return 0;
 }
 
 FUNCTION EpubReaderResult
@@ -1446,9 +1704,16 @@ lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
 {
   if (!app || !app->reader.has_active_selection) { return 0; }
   S32 existing = lectern0_selection_highlight_index(app);
+  U32 saved_count = app->highlight_count;
+  U64 saved_next_record_id = app->next_record_id;
+  U64 saved_revision = app->annotation_revision;
+  Lectern0Highlight saved = {0};
   Lectern0Highlight *highlight = 0;
   if (existing >= 0)
+  {
     highlight = app->highlights + existing;
+    saved = *highlight;
+  }
   else
   {
     if (app->highlight_count >= Lectern0HighlightCap) return 0;
@@ -1463,29 +1728,90 @@ lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
     lectern0_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
                        app->selected_text);
   }
+  highlight->is_highlight = 1;
   highlight->color_index = color_index % READER_VIEW_HIGHLIGHT_COLOR_CAP;
   app->annotation_revision += 1;
-  (void)lectern0_save_annotations(app);
+  if (!lectern0_commit_annotations(app))
+  {
+    if (existing >= 0) *highlight = saved;
+    else
+    {
+      app->highlight_count = saved_count;
+      app->next_record_id = saved_next_record_id;
+      MemoryZeroStruct(app->highlights + saved_count);
+    }
+    app->annotation_revision = saved_revision;
+    lectern0_set_statusf(app, "Highlight save failed");
+    return 0;
+  }
   lectern0_set_statusf(app, "Highlight saved");
+  return 1;
+}
+
+FUNCTION B32
+lectern0_save_note_at_index(Lectern0App *app,
+                            U32 index,
+                            ReaderViewText note)
+{
+  if (!app || index >= app->highlight_count || note.size < 0 ||
+      note.size >= (UI0S32)ARRAY_COUNT(app->highlights[index].note) ||
+      (note.size > 0 && !note.data))
+    return 0;
+  Lectern0Highlight *highlight = app->highlights + index;
+  Lectern0Highlight saved = *highlight;
+  U64 saved_revision = app->annotation_revision;
+  lectern0_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
+                      (const U8 *)note.data, (U64)note.size);
+  app->annotation_revision += 1;
+  if (!lectern0_commit_annotations(app))
+  {
+    *highlight = saved;
+    app->annotation_revision = saved_revision;
+    lectern0_set_statusf(app, "Note save failed");
+    return 0;
+  }
+  lectern0_set_statusf(app, "Note saved");
   return 1;
 }
 
 FUNCTION B32
 lectern0_save_selection_note(Lectern0App *app, ReaderViewText note)
 {
-  if (!app || !app->reader.has_active_selection || note.size < 0) { return 0; }
+  if (!app || !app->reader.has_active_selection || note.size < 0 ||
+      note.size >= Lectern0NoteCap || (note.size > 0 && !note.data))
+    return 0;
   S32 index = lectern0_selection_highlight_index(app);
-  if (index < 0)
-  {
-    if (!lectern0_set_highlight_color(app, 0)) return 0;
-    index = lectern0_selection_highlight_index(app);
-  }
-  if (index < 0) return 0;
-  Lectern0Highlight *highlight = app->highlights + index;
+  if (index >= 0)
+    return lectern0_save_note_at_index(app, (U32)index, note);
+  if (app->highlight_count >= Lectern0HighlightCap) return 0;
+
+  U32 saved_count = app->highlight_count;
+  U64 saved_next_record_id = app->next_record_id;
+  U64 saved_revision = app->annotation_revision;
+  Lectern0Highlight *highlight = app->highlights + app->highlight_count++;
+  MemoryZeroStruct(highlight);
+  highlight->id = app->next_record_id++;
+  highlight->spine_index = app->reader.active_selection.spine_index;
+  highlight->start_byte = app->reader.active_selection.text_byte_start;
+  highlight->end_byte = app->reader.active_selection.text_byte_end;
+  highlight->color_index = 0;
+  highlight->is_highlight = 1;
+  lectern0_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
+                     lectern0_current_section_label(app));
+  lectern0_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
+                     app->selected_text);
   lectern0_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
                       (const U8 *)note.data, (U64)note.size);
   app->annotation_revision += 1;
-  (void)lectern0_save_annotations(app);
+  if (!lectern0_commit_annotations(app))
+  {
+    app->highlight_count = saved_count;
+    app->next_record_id = saved_next_record_id;
+    app->annotation_revision = saved_revision;
+    MemoryZeroStruct(app->highlights + saved_count);
+    lectern0_set_statusf(app, "Note save failed");
+    return 0;
+  }
   lectern0_set_statusf(app, "Note saved");
   return 1;
 }
@@ -1715,6 +2041,25 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
 {
   U32 count = MIN(app->frame.search_item_count,
                   (U32)READER_VIEW_FIND_ROW_CAP);
+  if (app->frame.search_query.size == 0)
+  {
+    cstr_format(app->reader_view_find_status,
+                sizeof(app->reader_view_find_status),
+                "Type and press Enter");
+  }
+  else if (app->frame.search_total_count == 0)
+  {
+    cstr_format(app->reader_view_find_status,
+                sizeof(app->reader_view_find_status),
+                "No matches");
+  }
+  else
+  {
+    cstr_format(app->reader_view_find_status,
+                sizeof(app->reader_view_find_status),
+                "%u matches",
+                (unsigned)app->frame.search_total_count);
+  }
   for (U32 index = 0; index < count; index += 1)
   {
     const EpubReaderFrameSearchItem *source = app->frame.search_items + index;
@@ -1732,7 +2077,8 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
     };
   }
   app->reader_view_projection.find = (ReaderViewFindProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready,
+                                          app->reader_view_find_status),
     .committed_query = lectern0_reader_view_bytes(
       (const char *)app->frame.search_query.str, app->frame.search_query.size),
     .rows = app->reader_view_find_rows,
@@ -1747,67 +2093,400 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
   };
 }
 
+FUNCTION U64
+lectern0_reader_location_for_position(Lectern0App *app,
+                                      U32 spine_index,
+                                      U64 byte_offset)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) return 1;
+  EpubReader *reader = &app->reader;
+  U32 pump_cap = reader->location_spine_count ?
+                 reader->location_spine_count : 1;
+  for (U32 pump = 0;
+       pump < pump_cap &&
+       !(reader->location_cache_complete && reader->location_cache_valid);
+       pump += 1)
+  {
+    (void)epub_reader_location_cache_ensure(reader);
+    if (reader->location_spine_count > pump_cap)
+      pump_cap = reader->location_spine_count;
+  }
+  if (!reader->location_cache_complete || !reader->location_cache_valid ||
+      !reader->location_spine_text_sizes ||
+      spine_index >= reader->location_spine_count ||
+      reader->location_total_text_bytes == 0)
+    return 1;
+
+  U64 global_byte = 0;
+  for (U32 index = 0; index < spine_index; index += 1)
+    global_byte += reader->location_spine_text_sizes[index];
+  global_byte += byte_offset;
+  enum { Lectern0LocationBytes = 128 };
+  return global_byte / Lectern0LocationBytes + 1;
+}
+
+FUNCTION ReaderViewText
+lectern0_reader_view_right_secondary(Lectern0App *app,
+                                     U32 row_index,
+                                     const char *kind,
+                                     U32 spine_index,
+                                     U64 byte_offset)
+{
+  if (!app || !kind || row_index >= READER_VIEW_RIGHT_ROW_CAP)
+    return (ReaderViewText){0};
+  char *storage = app->reader_view_right_secondary[row_index];
+  (void)cstr_format(storage,
+                    Lectern0RecordLabelCap,
+                    "%s - re10 loc %llu",
+                    kind,
+                    (unsigned long long)lectern0_reader_location_for_position(
+                      app, spine_index, byte_offset));
+  return lectern0_reader_view_text(storage);
+}
+
+FUNCTION UI0Color
+lectern0_reader_view_rail_color(const Lectern0App *app, U32 color_index)
+{
+  B32 dark = app && lectern0_theme_profile(app->theme).appearance ==
+                      UI0AppearanceMode_Dark;
+  switch (color_index)
+  {
+    case 1:
+      return dark ? UI0_COLOR_RGB(0x47, 0x35, 0x5c) :
+                    UI0_COLOR_RGB(0xff, 0xd4, 0xec);
+    case 2:
+      return dark ? UI0_COLOR_RGB(0x2a, 0x46, 0x62) :
+                    UI0_COLOR_RGB(0xcd, 0xe7, 0xff);
+    case 3:
+      return dark ? UI0_COLOR_RGB(0x52, 0x3f, 0x1c) :
+                    UI0_COLOR_RGB(0xff, 0xdc, 0xa8);
+    default:
+      return dark ? UI0_COLOR_RGB(0x4d, 0x4a, 0x16) :
+                    UI0_COLOR_RGB(0xff, 0xf2, 0xa6);
+  }
+}
+
+FUNCTION ReaderViewKey
+lectern0_reader_view_right_key(Lectern0App *app,
+                               ReaderViewRightRowKind row_kind,
+                               U64 record_id)
+{
+  if (!app || record_id == 0) return 0;
+  U64 values[3] = {
+    (U64)row_kind,
+    row_kind == ReaderViewRightRow_Bookmark ? 0 : record_id,
+    row_kind == ReaderViewRightRow_Bookmark ? record_id : 0,
+  };
+  ReaderViewKey key = u64_hash_bytes(values, sizeof(values));
+  if (key == 0) key = 1;
+  for (U32 attempt = 0;
+       attempt <= app->reader_view_right_source_count;
+       attempt += 1)
+  {
+    B32 collision = 0;
+    for (U32 prior = 0;
+         prior < app->reader_view_right_source_count;
+         prior += 1)
+    {
+      if (app->reader_view_right_sources[prior].key == key)
+      {
+        collision = 1;
+        break;
+      }
+    }
+    if (!collision) return key;
+    key ^= 0x9e3779b97f4a7c15ull +
+           app->reader_view_right_source_count + attempt;
+    if (key == 0) key = 1;
+  }
+  return 0;
+}
+
+FUNCTION ReaderViewKey
+lectern0_reader_view_register_right_source(Lectern0App *app,
+                                            ReaderViewRightRowKind row_kind,
+                                            U64 record_id)
+{
+  if (!app || app->reader_view_right_source_count >=
+              READER_VIEW_RIGHT_ROW_CAP)
+    return 0;
+  ReaderViewKey key =
+    lectern0_reader_view_right_key(app, row_kind, record_id);
+  if (key == 0) return 0;
+  app->reader_view_right_sources[app->reader_view_right_source_count++] =
+    (Lectern0ReaderViewRightSource){
+      .key = key,
+      .row_kind = row_kind,
+      .record_id = record_id,
+    };
+  return key;
+}
+
+FUNCTION const Lectern0ReaderViewRightSource *
+lectern0_reader_view_right_source(const Lectern0App *app,
+                                  ReaderViewKey key,
+                                  ReaderViewRightRowKind row_kind)
+{
+  if (!app || key == 0) return 0;
+  for (U32 index = 0;
+       index < app->reader_view_right_source_count;
+       index += 1)
+  {
+    const Lectern0ReaderViewRightSource *source =
+      app->reader_view_right_sources + index;
+    if (source->key == key && source->row_kind == row_kind)
+      return source;
+  }
+  return 0;
+}
+
+FUNCTION S32
+lectern0_reader_view_right_candidate_compare(
+  const Lectern0ReaderViewRightCandidate *left,
+  const Lectern0ReaderViewRightCandidate *right)
+{
+  if (!left || !right) return 0;
+  if (left->spine_index != right->spine_index)
+    return left->spine_index < right->spine_index ? -1 : 1;
+  if (left->byte_offset != right->byte_offset)
+    return left->byte_offset < right->byte_offset ? -1 : 1;
+  if (left->row_kind != right->row_kind)
+    return left->row_kind < right->row_kind ? -1 : 1;
+  if (left->record_id != right->record_id)
+    return left->record_id < right->record_id ? -1 : 1;
+  if (left->source_index != right->source_index)
+    return left->source_index < right->source_index ? -1 : 1;
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_push_right_candidate(
+  Lectern0App *app,
+  ReaderViewRightRowKind row_kind,
+  U32 source_index,
+  U32 spine_index,
+  U64 byte_offset,
+  U64 record_id)
+{
+  if (!app || record_id == 0 ||
+      app->reader_view_right_candidate_count >=
+        Lectern0ReaderViewRightCandidateCap)
+    return 0;
+  app->reader_view_right_candidates[app->reader_view_right_candidate_count++] =
+    (Lectern0ReaderViewRightCandidate){
+      .row_kind = row_kind,
+      .source_index = source_index,
+      .spine_index = spine_index,
+      .byte_offset = byte_offset,
+      .record_id = record_id,
+    };
+  return 1;
+}
+
+FUNCTION void
+lectern0_reader_view_sort_right_candidates(Lectern0App *app)
+{
+  if (!app) return;
+  for (U32 index = 1;
+       index < app->reader_view_right_candidate_count;
+       index += 1)
+  {
+    Lectern0ReaderViewRightCandidate candidate =
+      app->reader_view_right_candidates[index];
+    U32 insert = index;
+    while (insert > 0 &&
+           lectern0_reader_view_right_candidate_compare(
+             &candidate,
+             app->reader_view_right_candidates + insert - 1) < 0)
+    {
+      app->reader_view_right_candidates[insert] =
+        app->reader_view_right_candidates[insert - 1];
+      insert -= 1;
+    }
+    app->reader_view_right_candidates[insert] = candidate;
+  }
+}
+
 FUNCTION void
 lectern0_prepare_reader_view_right_rows(Lectern0App *app)
 {
+  if (!app) return;
   U32 count = 0;
-  for (U32 index = 0;
-       index < app->bookmark_count && count < READER_VIEW_RIGHT_ROW_CAP;
-       index += 1)
+  UI0U64 bookmark_total = app->bookmark_count;
+  UI0U64 highlight_total = 0;
+  UI0U64 note_total = 0;
+  for (U32 index = 0; index < app->highlight_count; index += 1)
   {
-    if (app->reader_view_state.right_filter != ReaderViewRightFilter_All &&
-        app->reader_view_state.right_filter != ReaderViewRightFilter_Bookmarks)
-      continue;
-    const Lectern0Bookmark *bookmark = app->bookmarks + index;
-    app->reader_view_right_rows[count++] = (ReaderViewRightRow){
-      .key = bookmark->id,
-      .kind = ReaderViewRightRow_Bookmark,
-      .section = lectern0_reader_view_text(bookmark->label),
-      .primary = lectern0_reader_view_text(bookmark->excerpt),
-      .flags = ReaderViewRow_Enabled |
-        (lectern0_current_bookmark_index(app) == (S32)index ?
-          ReaderViewRow_Current : 0),
-      .actions = ReaderViewRightAction_Activate |
-                 ReaderViewRightAction_Delete,
-    };
+    if (app->highlights[index].is_highlight) highlight_total += 1;
+    if (app->highlights[index].note[0] != 0) note_total += 1;
   }
-  for (U32 index = 0;
-       index < app->highlight_count && count < READER_VIEW_RIGHT_ROW_CAP;
-       index += 1)
+  UI0U64 all_total = bookmark_total + highlight_total + note_total;
+  app->reader_view_right_source_count = 0;
+  app->reader_view_right_candidate_count = 0;
+  B32 show_bookmarks =
+    app->reader_view_state.right_filter == ReaderViewRightFilter_All ||
+    app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks;
+  B32 show_highlights =
+    app->reader_view_state.right_filter == ReaderViewRightFilter_All ||
+    app->reader_view_state.right_filter == ReaderViewRightFilter_Highlights;
+  B32 show_notes =
+    app->reader_view_state.right_filter == ReaderViewRightFilter_All ||
+    app->reader_view_state.right_filter == ReaderViewRightFilter_Notes;
+  for (U32 index = 0; index < app->bookmark_count; index += 1)
+  {
+    if (!show_bookmarks) continue;
+    const Lectern0Bookmark *bookmark = app->bookmarks + index;
+    (void)lectern0_reader_view_push_right_candidate(
+      app, ReaderViewRightRow_Bookmark, index,
+      bookmark->spine_index, bookmark->byte_offset, bookmark->id);
+  }
+  for (U32 index = 0; index < app->highlight_count; index += 1)
   {
     const Lectern0Highlight *highlight = app->highlights + index;
     B32 has_note = highlight->note[0] != 0;
-    if (app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks ||
-        (app->reader_view_state.right_filter == ReaderViewRightFilter_Notes && !has_note))
+    if (highlight->is_highlight && show_highlights)
+      (void)lectern0_reader_view_push_right_candidate(
+        app, ReaderViewRightRow_Highlight, index,
+        highlight->spine_index, highlight->start_byte, highlight->id);
+    if (has_note && show_notes)
+      (void)lectern0_reader_view_push_right_candidate(
+        app, ReaderViewRightRow_Note, index,
+        highlight->spine_index, highlight->start_byte, highlight->id);
+  }
+  lectern0_reader_view_sort_right_candidates(app);
+  for (U32 candidate_index = 0;
+       candidate_index < app->reader_view_right_candidate_count &&
+       count < READER_VIEW_RIGHT_ROW_CAP;
+       candidate_index += 1)
+  {
+    const Lectern0ReaderViewRightCandidate *candidate =
+      app->reader_view_right_candidates + candidate_index;
+    U32 row_index = count++;
+    ReaderViewKey key = lectern0_reader_view_register_right_source(
+      app, candidate->row_kind, candidate->record_id);
+    if (candidate->row_kind == ReaderViewRightRow_Bookmark)
+    {
+      const Lectern0Bookmark *bookmark =
+        app->bookmarks + candidate->source_index;
+      app->reader_view_right_rows[row_index] = (ReaderViewRightRow){
+        .key = key,
+        .kind = ReaderViewRightRow_Bookmark,
+        .section = lectern0_reader_view_text(bookmark->label),
+        .primary = lectern0_reader_view_text(bookmark->excerpt),
+        .secondary = lectern0_reader_view_right_secondary(
+          app, row_index, "Bookmark", bookmark->spine_index,
+          bookmark->byte_offset),
+        .rail_color = 0,
+        /* A bookmark is itself the starred state in the frozen re10 model;
+           invoking its inline star removes the bookmark. */
+        .flags = ReaderViewRow_Enabled | ReaderViewRow_Starred |
+          (lectern0_current_bookmark_index(app) ==
+             (S32)candidate->source_index ? ReaderViewRow_Current : 0),
+        .actions = ReaderViewRightAction_Activate |
+                   ReaderViewRightAction_ToggleStar |
+                   ReaderViewRightAction_Delete,
+      };
       continue;
-    app->reader_view_right_rows[count++] = (ReaderViewRightRow){
-      .key = highlight->id,
-      .kind = has_note ? ReaderViewRightRow_Note : ReaderViewRightRow_Highlight,
+    }
+    const Lectern0Highlight *highlight =
+      app->highlights + candidate->source_index;
+    B32 note = candidate->row_kind == ReaderViewRightRow_Note;
+    B32 attached = note && row_index > 0 &&
+      app->reader_view_right_sources[row_index - 1].record_id ==
+        candidate->record_id &&
+      app->reader_view_right_sources[row_index - 1].row_kind ==
+        ReaderViewRightRow_Highlight;
+    app->reader_view_right_rows[row_index] = (ReaderViewRightRow){
+      .key = key,
+      .kind = candidate->row_kind,
       .section = lectern0_reader_view_text(highlight->section),
-      .primary = lectern0_reader_view_text(highlight->text),
-      .secondary = lectern0_reader_view_text(highlight->note),
+      .primary = lectern0_reader_view_text(
+        note ? highlight->note : highlight->text),
+      .secondary = lectern0_reader_view_right_secondary(
+        app, row_index, note ? "Note" : "Highlight",
+        highlight->spine_index, highlight->start_byte),
       .color_key = 5000ull + highlight->color_index,
+      .rail_color = lectern0_reader_view_rail_color(
+        app, highlight->color_index),
       .flags = ReaderViewRow_Enabled |
-        ((highlight->starred || highlight->note_starred) ?
-          ReaderViewRow_Starred : 0),
+        (note ? (highlight->note_starred ? ReaderViewRow_Starred : 0) :
+                (highlight->starred ? ReaderViewRow_Starred : 0)) |
+        (attached ? ReaderViewRow_AttachedToPrevious : 0),
       .actions = ReaderViewRightAction_Activate |
                  ReaderViewRightAction_ToggleStar |
-                 ReaderViewRightAction_EditNote |
-                 ReaderViewRightAction_Delete,
+                 ReaderViewRightAction_Delete |
+                 (note ? ReaderViewRightAction_EditNote : 0),
     };
   }
   app->reader_view_projection.right = (ReaderViewRightProjection){
     .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
     .rows = app->reader_view_right_rows,
     .row_count = (UI0S32)count,
-    .total_count = count,
-    .has_more = (UI0U64)app->bookmark_count + (UI0U64)app->highlight_count >
-                (UI0U64)count,
+    .total_count = app->reader_view_right_candidate_count,
+    .has_more = app->reader_view_right_candidate_count > count,
+    .all_count = all_total,
+    .bookmark_count = bookmark_total,
+    .highlight_count = highlight_total,
+    .note_count = note_total,
     .available_filters = ReaderViewRightFilterFlag_All |
                          ReaderViewRightFilterFlag_Bookmarks |
                          ReaderViewRightFilterFlag_Highlights |
                          ReaderViewRightFilterFlag_Notes,
   };
+}
+
+FUNCTION void
+lectern0_reader_view_clear_annotation_note_target(Lectern0App *app)
+{
+  if (!app) return;
+  app->annotation_note_selection_key = 0;
+  app->annotation_note_document_id = 0;
+  app->annotation_note_highlight_id = 0;
+  app->annotation_note_start_byte = 0;
+  app->annotation_note_end_byte = 0;
+  app->annotation_note_spine_index = 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_prepare_annotation_note_selection(
+  Lectern0App *app,
+  ReaderViewSelectionProjection *out_selection)
+{
+  if (!app || !out_selection) return 0;
+  if (app->reader_view_state.popup != ReaderViewPopup_NoteEditor)
+  {
+    lectern0_reader_view_clear_annotation_note_target(app);
+    return 0;
+  }
+  if (app->annotation_note_selection_key == 0 ||
+      app->annotation_note_document_id != app->frame.document_id ||
+      app->annotation_note_selection_key !=
+        app->reader_view_state.note_selection_key)
+  {
+    return 0;
+  }
+  S32 index = lectern0_highlight_index(
+    app, app->annotation_note_highlight_id);
+  if (index < 0) return 0;
+  const Lectern0Highlight *highlight = app->highlights + index;
+  if (highlight->spine_index != app->annotation_note_spine_index ||
+      highlight->start_byte != app->annotation_note_start_byte ||
+      highlight->end_byte != app->annotation_note_end_byte ||
+      highlight->note[0] == 0)
+  {
+    return 0;
+  }
+  *out_selection = (ReaderViewSelectionProjection){
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .selection_key = app->annotation_note_selection_key,
+    .revision = app->annotation_revision,
+    .selected_text = lectern0_reader_view_text(highlight->text),
+    .note_text = reader_view_note_draft(&app->reader_view_state),
+    .flags = ReaderViewSelection_Active |
+             ReaderViewSelection_CanEditNote |
+             ReaderViewSelection_CanDeleteNote,
+  };
+  return 1;
 }
 
 FUNCTION void
@@ -1817,6 +2496,12 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
   ReaderViewSelectionProjection selection = {
     .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
   };
+  if (lectern0_reader_view_prepare_annotation_note_selection(
+        app, &selection))
+  {
+    app->reader_view_projection.selection = selection;
+    return;
+  }
   lectern0_prepare_selected_text(app);
   if (app->reader.has_active_selection && app->selected_text[0])
   {
@@ -1838,10 +2523,13 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
     if (highlight_index >= 0)
     {
       const Lectern0Highlight *highlight = app->highlights + highlight_index;
-      selection.current_color_key = 5000ull + highlight->color_index;
       selection.note_text = lectern0_reader_view_text(highlight->note);
-      selection.flags |= ReaderViewSelection_CanRemoveHighlight |
-                         ReaderViewSelection_CanEditNote;
+      selection.flags |= ReaderViewSelection_CanEditNote;
+      if (highlight->is_highlight)
+      {
+        selection.current_color_key = 5000ull + highlight->color_index;
+        selection.flags |= ReaderViewSelection_CanRemoveHighlight;
+      }
       if (highlight->note[0]) selection.flags |= ReaderViewSelection_CanDeleteNote;
     }
     for (U32 index = 0; index < ARRAY_COUNT(color_labels); index += 1)
@@ -1922,6 +2610,8 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
       ReaderViewLoad_Empty, "Open an EPUB to begin reading.");
   projection.labels = reader_view_default_english_labels();
   projection.labels.annotations = lectern0_reader_view_text("Annotations");
+  projection.labels.highlights =
+    lectern0_reader_view_text("All Highlight Colors");
   projection.chrome_title = lectern0_reader_view_text("EPUB Reader");
   app->document_title[0] = 0;
   if (open)
@@ -2019,10 +2709,67 @@ lectern0_reader_view_focus_is(const Lectern0App *app,
   return 0;
 }
 
+FUNCTION B32
+lectern0_reader_view_focus_control_is(const Lectern0App *app,
+                                      ReaderViewSemanticControl control)
+{
+  if (!app || !app->reader_view_frame.semantic_nodes ||
+      app->reader_view_state.focus_id == 0 ||
+      control == ReaderViewSemanticControl_None)
+    return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->id == app->reader_view_state.focus_id &&
+        node->control == control)
+      return 1;
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_text_editing(const Lectern0App *app)
+{
+  if (!app) return 0;
+  return (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
+          (app->reader_view_state.pending_left_panel_focus ==
+             ReaderViewLeftPanel_Find ||
+           lectern0_reader_view_focus_control_is(
+             app, ReaderViewSemanticControl_FindInput))) ||
+         (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+          lectern0_reader_view_focus_is(app, ReaderViewSemantic_TextArea));
+}
+
+FUNCTION B32
+lectern0_reader_view_space_activates_focus(const Lectern0App *app)
+{
+  return app && app->reader_view_state.focus_id != 0 &&
+         !lectern0_reader_view_text_editing(app);
+}
+
+FUNCTION void
+lectern0_reader_view_open_find_from_shortcut(Lectern0App *app)
+{
+  if (!app) return;
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
+  app->reader_view_state.most_recent_panel = ReaderViewPanel_Left;
+  app->reader_view_state.pending_left_panel_focus = ReaderViewLeftPanel_Find;
+  app->host_focus_control = Lectern0HostControl_None;
+  app->host_focus_visible = 0;
+}
+
 FUNCTION ReaderViewInput
 lectern0_reader_view_input(Lectern0App *app)
 {
   ReaderViewInput result = {0};
+  /* Escape is a keyboard transition. The frozen filter popup returns to a
+     visibly focused toolbar trigger even when pointer activation opened it. */
+  if (app->input.escape_pressed &&
+      app->reader_view_state.popup == ReaderViewPopup_RightFilter)
+    app->reader_view_state.focus_visible = 1;
   result.ui = ui0_input_pointer_wheel(app->input.pointer_x,
                                       app->input.pointer_y,
                                       app->input.pointer_down,
@@ -2034,14 +2781,13 @@ lectern0_reader_view_input(Lectern0App *app)
   if (app->input.focus_next_pressed) result.ui.flags |= UI0Input_FocusNextPressed;
   if (app->input.focus_prev_pressed) result.ui.flags |= UI0Input_FocusPrevPressed;
   result.escape_pressed = app->input.escape_pressed;
-  B32 editing = app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
-                app->reader_view_state.popup == ReaderViewPopup_NoteEditor;
+  B32 editing = lectern0_reader_view_text_editing(app);
   if (!editing)
   {
     result.move_horizontal_delta = app->input.move_delta;
     result.move_vertical_delta = app->input.move_vertical_delta;
-    result.range_move = app->input.range_move;
   }
+  result.range_move = app->input.range_move;
 
   UI0TextInputFrameInput text = {0};
   text.text = app->input.text;
@@ -2075,6 +2821,347 @@ lectern0_reader_view_input(Lectern0App *app)
     .backspace_pressed = text.backspace_pressed,
     .delete_pressed = text.delete_pressed,
   };
+  return result;
+}
+
+FUNCTION S32
+lectern0_reader_view_measure_find_text(const char *text, U64 size)
+{
+  if (!text || size == 0) return 0;
+  S32 advance = font_measure_text_width_s8(
+    font_provider_system_ui(), str8((U8 *)text, size), 1);
+  return MIN(MAX(advance, 0), 0x100000);
+}
+
+FUNCTION void
+lectern0_reader_view_remember_find_scalar(Lectern0App *app,
+                                           U32 scalar,
+                                           const char *text,
+                                           U32 size,
+                                           U64 generation,
+                                           U8 priority)
+{
+  if (!app || !text || size == 0 || scalar == 0 ||
+      scalar > 0x10ffffu ||
+      (scalar >= 0xd800u && scalar <= 0xdfffu))
+  {
+    return;
+  }
+  for (U32 index = 0; index < app->find_text_advance_count; index += 1)
+  {
+    if (app->find_text_advances[index].codepoint == scalar)
+    {
+      if (app->find_text_advance_priority[index] !=
+          Lectern0ReaderViewFindPriority_Pinned)
+      {
+        if (app->find_text_advance_last_seen[index] != generation)
+        {
+          /* Priority belongs to the scalar's source in this build. */
+          app->find_text_advance_priority[index] = priority;
+        }
+        app->find_text_advance_last_seen[index] = generation;
+        if (app->find_text_advance_priority[index] < priority)
+          app->find_text_advance_priority[index] = priority;
+      }
+      return;
+    }
+  }
+
+  U32 entry_index = app->find_text_advance_count;
+  if (app->find_text_advance_count >=
+      READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP)
+  {
+    U32 candidate = UINT32_MAX;
+    U64 oldest_generation = UINT64_MAX;
+    for (U32 index = 0;
+         index < app->find_text_advance_count;
+         index += 1)
+    {
+      U8 candidate_priority = app->find_text_advance_priority[index];
+      U64 last_seen = app->find_text_advance_last_seen[index];
+      if (candidate_priority == Lectern0ReaderViewFindPriority_Pinned)
+        continue;
+      if (last_seen != generation &&
+          (candidate == UINT32_MAX || last_seen < oldest_generation))
+      {
+        candidate = index;
+        oldest_generation = last_seen;
+      }
+    }
+    if (candidate == UINT32_MAX)
+    {
+      U8 lowest_priority = UINT8_MAX;
+      for (U32 index = 0;
+           index < app->find_text_advance_count;
+           index += 1)
+      {
+        U8 candidate_priority = app->find_text_advance_priority[index];
+        if (candidate_priority != Lectern0ReaderViewFindPriority_Pinned &&
+            candidate_priority < priority &&
+            candidate_priority < lowest_priority)
+        {
+          candidate = index;
+          lowest_priority = candidate_priority;
+        }
+      }
+    }
+    if (candidate == UINT32_MAX) return;
+    entry_index = candidate;
+  }
+
+  app->find_text_advances[entry_index] = (ReaderViewCodepointAdvance){
+    .codepoint = scalar,
+    .advance = lectern0_reader_view_measure_find_text(text, size),
+  };
+  app->find_text_advance_last_seen[entry_index] = generation;
+  app->find_text_advance_priority[entry_index] = priority;
+  if (entry_index == app->find_text_advance_count)
+    app->find_text_advance_count += 1;
+}
+
+FUNCTION void
+lectern0_reader_view_remember_find_text(Lectern0App *app,
+                                         const char *text,
+                                         U64 size,
+                                         U64 generation,
+                                         U8 priority)
+{
+  if (!app || !text || size == 0) return;
+  String8 value = str8((U8 *)text, size);
+  for (U64 at = 0; at < value.size; )
+  {
+    BaseUnicodeDecode decode = base_unicode_utf8_decode(value, at);
+    U32 advance = decode.advance > 0 ? decode.advance : 1;
+    if (decode.valid && decode.scalar != (U32)'\r' &&
+        decode.scalar != (U32)'\n')
+    {
+      lectern0_reader_view_remember_find_scalar(
+        app, decode.scalar, text + at, advance, generation, priority);
+    }
+    at += advance;
+  }
+}
+
+FUNCTION void
+lectern0_reader_view_initialize_find_text_metrics(Lectern0App *app)
+{
+  if (!app || app->find_text_metrics_initialized) return;
+  const FontProvider *provider = font_provider_system_ui();
+  char fallback[2] = {'?', 0};
+  if (provider && provider->fallback_codepoint != 0)
+    fallback[0] = (char)provider->fallback_codepoint;
+  app->find_text_fallback_advance =
+    lectern0_reader_view_measure_find_text(fallback, 1);
+  if (app->find_text_fallback_advance <= 0)
+  {
+    FontTextMetrics metrics = font_metrics_for_size(provider, 1);
+    app->find_text_fallback_advance = MAX(metrics.glyph_advance_px, 1);
+  }
+  for (U32 scalar = 0x20u; scalar <= 0x7eu; scalar += 1)
+  {
+    char byte = (char)scalar;
+    lectern0_reader_view_remember_find_scalar(
+      app, scalar, &byte, 1, 0, Lectern0ReaderViewFindPriority_Pinned);
+  }
+  app->find_text_metrics_initialized = 1;
+}
+
+FUNCTION ReaderViewFindTextMetrics
+lectern0_reader_view_find_text_metrics(Lectern0App *app,
+                                        const ReaderViewInput *input)
+{
+  ReaderViewFindTextMetrics result = {0};
+  if (!app) return result;
+  lectern0_reader_view_initialize_find_text_metrics(app);
+  app->find_text_metrics_generation += 1;
+  if (app->find_text_metrics_generation == 0)
+  {
+    app->find_text_metrics_generation = 1;
+    for (U32 index = 0; index < app->find_text_advance_count; index += 1)
+    {
+      if (app->find_text_advance_priority[index] !=
+          Lectern0ReaderViewFindPriority_Pinned)
+        app->find_text_advance_last_seen[index] = 0;
+    }
+  }
+  U64 generation = app->find_text_metrics_generation;
+  ReaderViewState *state = &app->reader_view_state;
+
+  if (state->find_query_length > 0 &&
+      state->find_query_length < READER_VIEW_FIND_QUERY_CAP)
+  {
+    lectern0_reader_view_remember_find_text(
+      app, state->find_query, (U64)state->find_query_length,
+      generation, Lectern0ReaderViewFindPriority_Current);
+  }
+  if (app->reader_view_projection.labels.find_placeholder.size > 0)
+  {
+    ReaderViewText placeholder =
+      app->reader_view_projection.labels.find_placeholder;
+    lectern0_reader_view_remember_find_text(
+      app, placeholder.data, (U64)placeholder.size,
+      generation, Lectern0ReaderViewFindPriority_Placeholder);
+  }
+  if (input)
+  {
+    if (input->find_text.text && input->find_text.text_len > 0)
+    {
+      lectern0_reader_view_remember_find_text(
+        app, input->find_text.text, (U64)input->find_text.text_len,
+        generation, Lectern0ReaderViewFindPriority_Current);
+    }
+    const UI0TextInputTransferBuffer *buffers[2] = {
+      input->find_text.transfer_buffer,
+      input->find_text.commit_buffer,
+    };
+    for (U32 index = 0; index < ARRAY_COUNT(buffers); index += 1)
+    {
+      const UI0TextInputTransferBuffer *buffer = buffers[index];
+      if (buffer && buffer->data && buffer->length &&
+          *buffer->length > 0 && *buffer->length < buffer->cap)
+      {
+        lectern0_reader_view_remember_find_text(
+          app, buffer->data, (U64)*buffer->length,
+          generation, Lectern0ReaderViewFindPriority_Current);
+      }
+    }
+  }
+  if (app->reader_view_projection.find.committed_query.size > 0)
+  {
+    ReaderViewText committed =
+      app->reader_view_projection.find.committed_query;
+    lectern0_reader_view_remember_find_text(
+      app, committed.data, (U64)committed.size,
+      generation, Lectern0ReaderViewFindPriority_Committed);
+  }
+  if (state->find_history.text_size > 0 &&
+      state->find_history.text_size <= ARRAY_COUNT(state->find_history_text))
+  {
+    lectern0_reader_view_remember_find_text(
+      app, state->find_history_text, state->find_history.text_size,
+      generation, Lectern0ReaderViewFindPriority_History);
+  }
+  if (state->find_history.scratch_size > 0 &&
+      state->find_history.scratch_size <=
+        ARRAY_COUNT(state->find_history_scratch))
+  {
+    lectern0_reader_view_remember_find_text(
+      app, state->find_history_scratch, state->find_history.scratch_size,
+      generation, Lectern0ReaderViewFindPriority_History);
+  }
+
+  result.advances = app->find_text_advances;
+  result.advance_count = (UI0S32)app->find_text_advance_count;
+  result.fallback_advance = app->find_text_fallback_advance;
+  return result;
+}
+
+FUNCTION S32
+lectern0_reader_view_measure_note_text(const char *text, U64 size)
+{
+  if (!text || size == 0) return 0;
+  S32 advance = font_measure_text_width_s8(
+    font_provider_system_ui(), str8((U8 *)text, size),
+    Lectern0ReaderViewNotePixelHeight);
+  return MIN(MAX(advance, 0), 0x100000);
+}
+
+FUNCTION void
+lectern0_reader_view_remember_note_scalar(Lectern0App *app,
+                                           U32 scalar,
+                                           const char *text,
+                                           U32 size)
+{
+  if (!app || !text || size == 0 || scalar == 0 ||
+      scalar > 0x10ffffu ||
+      (scalar >= 0xd800u && scalar <= 0xdfffu))
+  {
+    return;
+  }
+  for (U32 index = 0; index < app->note_text_advance_count; index += 1)
+    if (app->note_text_advances[index].codepoint == scalar) return;
+  if (app->note_text_advance_count >=
+      READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP)
+  {
+    return;
+  }
+  app->note_text_advances[app->note_text_advance_count++] =
+    (ReaderViewCodepointAdvance){
+      .codepoint = scalar,
+      .advance = lectern0_reader_view_measure_note_text(text, size),
+    };
+}
+
+FUNCTION void
+lectern0_reader_view_remember_note_text(Lectern0App *app,
+                                         ReaderViewText text)
+{
+  if (!app || !text.data || text.size <= 0) return;
+  String8 value = str8((U8 *)text.data, (U64)text.size);
+  for (U64 at = 0; at < value.size; )
+  {
+    BaseUnicodeDecode decode = base_unicode_utf8_decode(value, at);
+    U32 advance = decode.advance > 0 ? decode.advance : 1;
+    if (decode.valid && decode.scalar != (U32)'\r' &&
+        decode.scalar != (U32)'\n')
+    {
+      lectern0_reader_view_remember_note_scalar(
+        app, decode.scalar, text.data + at, advance);
+    }
+    at += advance;
+  }
+}
+
+FUNCTION ReaderViewNoteTextMetrics
+lectern0_reader_view_note_text_metrics(Lectern0App *app,
+                                        const ReaderViewInput *input)
+{
+  ReaderViewNoteTextMetrics result = {0};
+  if (!app || app->reader_view_state.popup != ReaderViewPopup_NoteEditor)
+    return result;
+
+  const FontProvider *provider = font_provider_system_ui();
+  FontTextMetrics font_metrics = font_metrics_for_size(
+    provider, Lectern0ReaderViewNotePixelHeight);
+  S32 fallback_advance = lectern0_reader_view_measure_note_text("?", 1);
+  result.advances = app->note_text_advances;
+  result.fallback_advance = fallback_advance > 0 ?
+    fallback_advance : Lectern0ReaderViewNoteAdvanceFallback;
+  result.pixel_height = Lectern0ReaderViewNotePixelHeight;
+  result.line_height = font_metrics.line_advance_px > 0 ?
+    MAX(font_metrics.line_advance_px, result.pixel_height) :
+    Lectern0ReaderViewNoteLineHeightFallback;
+
+  MemoryZeroArray(app->note_text_advances);
+  app->note_text_advance_count = 0;
+  if (provider && fallback_advance > 0)
+  {
+    /* Current state first, then text arriving in this build, then transfer
+       text, and finally the empty-editor placeholder. Missing values use the
+       explicit fallback when the bounded table is full. */
+    lectern0_reader_view_remember_note_text(
+      app, reader_view_note_draft(&app->reader_view_state));
+    if (input)
+    {
+      if (input->note_text.text && input->note_text.text_len > 0)
+      {
+        lectern0_reader_view_remember_note_text(
+          app, (ReaderViewText){input->note_text.text,
+                                input->note_text.text_len});
+      }
+      const UI0TextInputTransferBuffer *transfer =
+        input->note_text.transfer_buffer;
+      if (transfer && transfer->data && transfer->length &&
+          *transfer->length > 0 && *transfer->length < transfer->cap)
+      {
+        lectern0_reader_view_remember_note_text(
+          app, (ReaderViewText){transfer->data, *transfer->length});
+      }
+    }
+    lectern0_reader_view_remember_note_text(
+      app, app->reader_view_projection.labels.note_placeholder);
+  }
+  result.advance_count = (UI0S32)app->note_text_advance_count;
   return result;
 }
 
@@ -2120,6 +3207,10 @@ lectern0_build_reader_view(Lectern0App *app)
     .projection = &app->reader_view_projection,
     .input = &input,
     .theme = &app->reader_view_theme,
+    .find_text_metrics =
+      lectern0_reader_view_find_text_metrics(app, &input),
+    .note_text_metrics =
+      lectern0_reader_view_note_text_metrics(app, &input),
   };
   app->reader_view_ready = reader_view_build(&build,
                                              &app->reader_view_storage,
@@ -2258,6 +3349,38 @@ lectern0_ui0_rect_intersect(UI0Rect a, UI0Rect b)
   return result;
 }
 
+FUNCTION void
+lectern0_draw_ui0_rect_border_clipped(Lectern0App *app,
+                                      UI0Rect rect,
+                                      UI0Rect clip,
+                                      UI0Color color)
+{
+  if (!app || rect.w <= 1 || rect.h <= 1 ||
+      !lectern0_ui0_rect_visible(rect, clip))
+    return;
+  U32 resolved = lectern0_draw_color(color);
+  (void)draw_push_line_clipped(&app->draw_commands, DrawLayer_UI,
+                               rect.x, rect.y,
+                               rect.x + rect.w - 1, rect.y,
+                               resolved,
+                               clip.x, clip.y, clip.w, clip.h);
+  (void)draw_push_line_clipped(&app->draw_commands, DrawLayer_UI,
+                               rect.x, rect.y + rect.h - 1,
+                               rect.x + rect.w - 1, rect.y + rect.h - 1,
+                               resolved,
+                               clip.x, clip.y, clip.w, clip.h);
+  (void)draw_push_line_clipped(&app->draw_commands, DrawLayer_UI,
+                               rect.x, rect.y,
+                               rect.x, rect.y + rect.h - 1,
+                               resolved,
+                               clip.x, clip.y, clip.w, clip.h);
+  (void)draw_push_line_clipped(&app->draw_commands, DrawLayer_UI,
+                               rect.x + rect.w - 1, rect.y,
+                               rect.x + rect.w - 1, rect.y + rect.h - 1,
+                               resolved,
+                               clip.x, clip.y, clip.w, clip.h);
+}
+
 FUNCTION B32
 lectern0_ui0_border_matches_fill(const UI0DrawCommand *border,
                                   const UI0DrawCommand *fill)
@@ -2308,10 +3431,8 @@ lectern0_draw_ui0_control_fill(Lectern0App *app,
       U32 border = lectern0_ui0_border_color_for_fill(&app->reader_view_frame,
                                                        command);
       if (border && border != lectern0_draw_color(command->color))
-        (void)draw_push_rounded_rect_stroke_clipped(
-          &app->draw_commands, DrawLayer_UI,
-          rect.x, rect.y, rect.w, rect.h, 0, 1, border,
-          clip.x, clip.y, clip.w, clip.h);
+        lectern0_draw_ui0_rect_border_clipped(
+          app, rect, clip, (UI0Color)border);
       return;
     }
     if (round_top && !round_bottom) rect.h += radius;
@@ -2341,6 +3462,266 @@ lectern0_set_last_text_style(DrawCommandBuffer *buffer,
     command->v.text.font_style_flags = style_flags;
 }
 
+FUNCTION U32
+lectern0_reader_view_utf8_next_byte(const char *text,
+                                    U32 text_length,
+                                    U32 at)
+{
+  if (!text || at >= text_length) return text_length;
+  U8 lead = (U8)text[at];
+  U32 size = 1;
+  if ((lead & 0x80) == 0) size = 1;
+  else if ((lead & 0xe0) == 0xc0) size = 2;
+  else if ((lead & 0xf0) == 0xe0) size = 3;
+  else if ((lead & 0xf8) == 0xf0) size = 4;
+  if (at + size > text_length) size = 1;
+  for (U32 index = 1; index < size; index += 1)
+  {
+    if (((U8)text[at + index] & 0xc0) != 0x80)
+    {
+      size = 1;
+      break;
+    }
+  }
+  return at + size;
+}
+
+FUNCTION U32
+lectern0_reader_view_find_line_end(const char *text,
+                                   U32 text_length,
+                                   U32 start,
+                                   S32 max_width)
+{
+  if (!text || start >= text_length || max_width <= 0) return start;
+  U32 boundaries[EPUB_READER_FRAME_NAV_DETAIL_CAP + 1] = {0};
+  U32 boundary_count = 0;
+  boundaries[boundary_count++] = start;
+  for (U32 at = start;
+       at < text_length && boundary_count < ARRAY_COUNT(boundaries); )
+  {
+    U32 next = lectern0_reader_view_utf8_next_byte(text, text_length, at);
+    if (next <= at || next > text_length) next = at + 1;
+    boundaries[boundary_count++] = next;
+    at = next;
+  }
+  U32 best = boundaries[boundary_count > 1 ? 1 : 0];
+  U32 low = 1;
+  U32 high = boundary_count > 0 ? boundary_count - 1 : 0;
+  while (low <= high)
+  {
+    U32 middle = low + (high - low) / 2;
+    U32 end = boundaries[middle];
+    S32 width = font_measure_text_width_s8(
+      font_provider_system_ui(), str8((U8 *)text + start, end - start), 1);
+    if (width > max_width && end > start)
+    {
+      if (middle == 0) break;
+      high = middle - 1;
+    }
+    else
+    {
+      best = end;
+      low = middle + 1;
+    }
+  }
+  if (best < text_length)
+  {
+    U32 last_space = start;
+    for (U32 at = start; at < best; at += 1)
+      if (text[at] == ' ') last_space = at;
+    if (last_space > start) best = last_space;
+  }
+  return best > start ? best : MIN(start + 1, text_length);
+}
+
+FUNCTION B32
+lectern0_draw_reader_view_find_excerpt(
+  Lectern0App *app,
+  const UI0DrawCommand *command,
+  const ReaderViewTextBinding *binding)
+{
+  if (!app || !command || !binding || command->op != UI0DrawOp_Text ||
+      !binding->text.data || binding->text.size <= 0 ||
+      binding->match_size == 0 ||
+      binding->match_start > (UI0U32)binding->text.size ||
+      binding->match_size >
+        (UI0U32)binding->text.size - binding->match_start)
+    return 0;
+  UI0Rect highlight_clip = command->clip_rect;
+  if (highlight_clip.y > 0)
+  {
+    highlight_clip.y -= 1;
+    highlight_clip.h += 1;
+  }
+  UI0Rect text_rect =
+    lectern0_ui0_rect_intersect(command->rect, highlight_clip);
+  if (text_rect.w <= 0 || text_rect.h <= 0) return 1;
+
+  const char *text = binding->text.data;
+  U32 text_length = (U32)binding->text.size;
+  U32 cursor = 0;
+  while (cursor < text_length && text[cursor] == ' ') cursor += 1;
+  U32 line_end = lectern0_reader_view_find_line_end(
+    text, text_length, cursor, text_rect.w);
+  U32 draw_end = line_end;
+  while (draw_end > cursor && text[draw_end - 1] == ' ') draw_end -= 1;
+  if (draw_end <= cursor) return 1;
+
+  U32 match_start = MAX(cursor, binding->match_start);
+  U32 match_end = MIN(draw_end,
+                      binding->match_start + binding->match_size);
+  FontTextMetrics metrics =
+    font_metrics_for_size(font_provider_system_ui(), 1);
+  S32 baseline = text_rect.y + metrics.ascent_px;
+  if (match_end > match_start)
+  {
+    S32 pre_width = font_measure_text_width_s8(
+      font_provider_system_ui(),
+      str8((U8 *)text + cursor, match_start - cursor), 1);
+    S32 match_width = font_measure_text_width_s8(
+      font_provider_system_ui(),
+      str8((U8 *)text + match_start, match_end - match_start), 1);
+    UI0Rect highlight = lectern0_ui0_rect_intersect(
+      ui0_rect(text_rect.x + pre_width,
+               baseline - metrics.ascent_px - 1,
+               MAX(match_width, 1),
+               MAX(metrics.ascent_px + metrics.descent_px + 2, 1)),
+      highlight_clip);
+    if (highlight.w > 0 && highlight.h > 0)
+    {
+      Lectern0ReaderContentTheme theme =
+        lectern0_reader_content_theme(app->theme);
+      (void)draw_push_rect(&app->draw_commands, DrawLayer_UI,
+                           highlight.x, highlight.y,
+                           highlight.w, highlight.h,
+                           theme.user_highlight);
+    }
+  }
+  Lectern0ReaderContentTheme theme =
+    lectern0_reader_content_theme(app->theme);
+  (void)draw_push_text_clipped_baseline_s8(
+    &app->draw_commands, DrawLayer_UI,
+    str8((U8 *)text + cursor, draw_end - cursor),
+    text_rect.x, baseline, 1, theme.ink,
+    text_rect.x, text_rect.y, text_rect.w, text_rect.h);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_reader_view_note_binding_source_range(
+  const Lectern0App *app,
+  const ReaderViewTextBinding *binding,
+  U64 *out_start,
+  U64 *out_end)
+{
+  if (out_start) *out_start = 0;
+  if (out_end) *out_end = 0;
+  if (!app || !binding || !binding->text.data || binding->text.size <= 0 ||
+      !out_start || !out_end)
+  {
+    return 0;
+  }
+  const char *draft = app->reader_view_state.note_draft;
+  U64 draft_size = (U64)MAX(app->reader_view_state.note_draft_length, 0);
+  U64 draft_address = (U64)(uintptr_t)draft;
+  U64 text_address = (U64)(uintptr_t)binding->text.data;
+  if (text_address < draft_address || text_address > draft_address + draft_size)
+    return 0;
+  *out_start = text_address - draft_address;
+  if ((U64)binding->text.size > draft_size - *out_start) return 0;
+  *out_end = *out_start + (U64)binding->text.size;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_draw_reader_view_note_editable_row(
+  Lectern0App *app,
+  const UI0DrawCommand *command,
+  const UI0DrawCommand *caret_command,
+  const ReaderViewTextBinding *binding,
+  S32 *out_caret_x,
+  B32 *out_caret_x_valid)
+{
+  U64 source_start = 0;
+  U64 source_end = 0;
+  if (!app || !command || !binding || command->op != UI0DrawOp_Text ||
+      binding->style != ReaderViewTextStyle_NoteEditor ||
+      command->rect.w <= 0 || command->rect.h <= 0 ||
+      command->clip_rect.w <= 0 || command->clip_rect.h <= 0 ||
+      !lectern0_reader_view_note_binding_source_range(
+        app, binding, &source_start, &source_end))
+  {
+    return 0;
+  }
+
+  S32 pixel_height = command->has_typography_role &&
+                     command->typography_line_height > 0 ?
+    command->typography_line_height : Lectern0ReaderViewNotePixelHeight;
+  Scratch scratch = scratch_begin(0, 0);
+  TextEngineResolvedStyle style = text_engine_resolved_style_make(
+    font_provider_system_ui(),
+    (FontTag){0},
+    pixel_height,
+    lectern0_draw_color(command->color),
+    0,
+    FontRasterFlag_Smooth | FontRasterFlag_Hinted);
+  TextEngineSourceRange source_range =
+    text_engine_source_range_from_bytes(source_start, source_end);
+  TextEngineEditableRow row = {0};
+  B32 drew_text = text_engine_editable_row_make(
+    &row,
+    scratch.arena,
+    str8((U8 *)binding->text.data, (U64)binding->text.size),
+    &style,
+    source_range,
+    0,
+    command->rect.x,
+    command->rect.y,
+    command->rect.h,
+    Lectern0ReaderViewNoteTerminalCaretGap) &&
+    text_engine_editable_row_push_text_span_s8(
+      &app->draw_commands,
+      DrawLayer_UI,
+      &row,
+      0,
+      row.text.size,
+      (DrawClipRect){command->clip_rect.x,
+                     command->clip_rect.y,
+                     command->clip_rect.w,
+                     command->clip_rect.h});
+  if (drew_text) app->draw_adapter_stats.note_editable_row_count += 1;
+  if (drew_text && caret_command && out_caret_x && out_caret_x_valid)
+  {
+    U64 caret = (U64)MAX(app->reader_view_state.note_input.caret, 0);
+    B32 caret_in_source = caret >= source_start && caret <= source_end;
+    B32 caret_in_row = caret_command->rect.y >= command->rect.y &&
+      caret_command->rect.y < command->rect.y + command->rect.h;
+    if (caret_in_source && caret_in_row &&
+        text_engine_editable_row_caret_x_for_source_byte(
+          &row, caret, out_caret_x))
+    {
+      *out_caret_x_valid = 1;
+    }
+  }
+  scratch_end(scratch);
+  return drew_text;
+}
+
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_semantic_node(const Lectern0App *app, UI0ID id)
+{
+  if (!app || !id || !app->reader_view_frame.semantic_nodes) return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->id == id) return node;
+  }
+  return 0;
+}
+
 FUNCTION void
 lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
 {
@@ -2349,29 +3730,38 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
   const ReaderViewTextBinding *binding =
     lectern0_reader_view_binding(app, command->source_id);
   if (!binding || !binding->text.data || binding->text.size <= 0) return;
+  if (lectern0_draw_reader_view_find_excerpt(app, command, binding)) return;
   char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
   lectern0_copy_bytes(label, ARRAY_COUNT(label),
                       (const U8 *)binding->text.data, (U64)binding->text.size);
   String8 text = str8_from_cstr(label);
   const FontProvider *provider = font_provider_system_ui();
-  S32 scale = MAX(command->typography_line_height, 1);
-  B32 reference_box_style = 0;
-  switch (binding->style)
+  S32 scale = binding->style == ReaderViewTextStyle_ChromeTitle ? 2 : 1;
+  if (binding->style == ReaderViewTextStyle_NoteEditor)
   {
-    case ReaderViewTextStyle_ChromeTitle:
-      scale = 2;
-      reference_box_style = 1;
-      break;
-    case ReaderViewTextStyle_ChromeMetadata:
-    case ReaderViewTextStyle_MenuItem:
-      scale = 1;
-      reference_box_style = 1;
-      break;
-    case ReaderViewTextStyle_Default:
-    default:
-      break;
+    scale = command->has_typography_role &&
+            command->typography_role == UI0TypographyRole_Body &&
+            command->typography_line_height > 0 ?
+      command->typography_line_height : Lectern0ReaderViewNotePixelHeight;
   }
   FontTextMetrics metrics = font_metrics_for_size(provider, scale);
+  const ReaderViewSemanticNode *node =
+    lectern0_reader_view_semantic_node(app, command->source_id);
+  const ReaderViewSemanticNode *parent = node ?
+    lectern0_reader_view_semantic_node(app, node->parent_id) : 0;
+  if (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
+      parent && parent->control == ReaderViewSemanticControl_FindRow)
+  {
+    S32 text_width = font_measure_text_width_s8(provider, text, scale);
+    S32 text_x = command->rect.x + MAX(command->rect.w - text_width, 0);
+    (void)draw_push_text_clipped_baseline_s8(
+      &app->draw_commands, DrawLayer_UI, text,
+      text_x, command->rect.y + metrics.ascent_px,
+      scale, lectern0_draw_color(command->color),
+      command->clip_rect.x, command->clip_rect.y,
+      command->clip_rect.w, command->clip_rect.h);
+    return;
+  }
   S32 text_h = MAX(metrics.ascent_px + metrics.descent_px,
                    MAX(metrics.glyph_height_px, 1));
   S32 line_h = MIN(text_h, MAX(command->rect.h, 1));
@@ -2384,6 +3774,30 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
   S32 baseline = line_y + MAX((line_h - text_h) / 2, 0) + metrics.ascent_px;
   if (line_h > 0 && metrics.descent_px > 0)
     baseline = MIN(baseline, line_y + line_h - metrics.descent_px);
+  if (node && node->role == ReaderViewSemantic_Status &&
+      app->reader_view_state.left_panel == ReaderViewLeftPanel_Find)
+  {
+    UI0Rect panel = app->reader_view_layout.left_panel_rect;
+    B32 belongs_to_left_panel =
+      command->rect.x >= panel.x && command->rect.y >= panel.y &&
+      command->rect.x + command->rect.w <= panel.x + panel.w &&
+      command->rect.y + command->rect.h <= panel.y + panel.h;
+    if (belongs_to_left_panel)
+    {
+      S32 status_baseline = font_text_baseline_y_in_rect(
+        provider, command->rect.y, command->rect.h, scale);
+      for (U32 pass = 0; pass < 2; pass += 1)
+      {
+        (void)draw_push_text_clipped_baseline_s8(
+          &app->draw_commands, DrawLayer_UI, text,
+          command->rect.x, status_baseline,
+          scale, lectern0_draw_color(command->color),
+          command->clip_rect.x, command->clip_rect.y,
+          command->clip_rect.w, command->clip_rect.h);
+      }
+      return;
+    }
+  }
   S32 x = command->rect.x;
   UI0TextAlignX align_x = command->has_text_alignment ?
     command->text_align_x : UI0TextAlignX_Start;
@@ -2399,7 +3813,6 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
                                 command->rect.w, command->clip_rect.h);
   UI0Rect clip = lectern0_ui0_rect_intersect(horizontal, command->clip_rect);
   if (clip.w <= 0 || clip.h <= 0) return;
-  if (reference_box_style)
   {
     DrawTextVAlign v_align = DrawTextVAlign_Center;
     if (align_y == UI0TextAlignY_Top) v_align = DrawTextVAlign_Top;
@@ -2447,15 +3860,6 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
     }
     return;
   }
-  B32 pushed = draw_push_text_clipped_baseline_tag_s8(
-    &app->draw_commands, DrawLayer_UI, text, x, baseline, scale,
-    lectern0_draw_color(command->color),
-    clip.x, clip.y, clip.w, clip.h,
-    font_tag_zero(), FontRasterFlag_Smooth | FontRasterFlag_Hinted);
-  if (pushed && command->has_typography_role &&
-      (command->typography_role == UI0TypographyRole_PageTitle ||
-       command->typography_role == UI0TypographyRole_SectionTitle))
-    lectern0_set_last_text_style(&app->draw_commands, FontFaceStyleFlag_Bold);
 }
 
 FUNCTION void
@@ -2468,6 +3872,112 @@ lectern0_draw_ui0_line(Lectern0App *app, UI0Rect clip,
                                      clip.x, clip.y, clip.w, clip.h);
 }
 
+typedef struct Lectern0ReaderFilterSegment
+{
+  F32 x0;
+  F32 y0;
+  F32 x1;
+  F32 y1;
+} Lectern0ReaderFilterSegment;
+
+FUNCTION F64
+lectern0_reader_filter_distance_sq(F64 px, F64 py,
+                                   const Lectern0ReaderFilterSegment *segment)
+{
+  F64 vx = (F64)segment->x1 - (F64)segment->x0;
+  F64 vy = (F64)segment->y1 - (F64)segment->y0;
+  F64 len_sq = vx * vx + vy * vy;
+  F64 t = 0.0;
+  if (len_sq > 0.000001)
+  {
+    t = ((px - (F64)segment->x0) * vx +
+         (py - (F64)segment->y0) * vy) / len_sq;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+  }
+  F64 dx = px - ((F64)segment->x0 + t * vx);
+  F64 dy = py - ((F64)segment->y0 + t * vy);
+  return dx * dx + dy * dy;
+}
+
+FUNCTION B32
+lectern0_reader_filter_sample_covered(F64 x, F64 y)
+{
+  static const Lectern0ReaderFilterSegment segments[] = {
+    {4.0f, 21.0f, 4.0f, 14.0f},
+    {4.0f, 10.0f, 4.0f, 3.0f},
+    {12.0f, 21.0f, 12.0f, 12.0f},
+    {12.0f, 8.0f, 12.0f, 3.0f},
+    {20.0f, 21.0f, 20.0f, 16.0f},
+    {20.0f, 12.0f, 20.0f, 3.0f},
+    {2.0f, 14.0f, 6.0f, 14.0f},
+    {10.0f, 8.0f, 14.0f, 8.0f},
+    {18.0f, 16.0f, 22.0f, 16.0f},
+  };
+  for (U32 index = 0; index < ARRAY_COUNT(segments); index += 1)
+    if (lectern0_reader_filter_distance_sq(x, y, segments + index) <= 1.0)
+      return 1;
+  return 0;
+}
+
+FUNCTION U32
+lectern0_reader_filter_blend(U32 foreground, U32 background, U32 alpha)
+{
+  alpha = MIN(alpha, 255u);
+  U32 inverse = 255u - alpha;
+  U32 foreground_r = (foreground >> 16) & 0xffu;
+  U32 foreground_g = (foreground >> 8) & 0xffu;
+  U32 foreground_b = foreground & 0xffu;
+  U32 background_r = (background >> 16) & 0xffu;
+  U32 background_g = (background >> 8) & 0xffu;
+  U32 background_b = background & 0xffu;
+  U32 r = (foreground_r * alpha + background_r * inverse + 127u) / 255u;
+  U32 g = (foreground_g * alpha + background_g * inverse + 127u) / 255u;
+  U32 b = (foreground_b * alpha + background_b * inverse + 127u) / 255u;
+  return (r << 16) | (g << 8) | b;
+}
+
+FUNCTION B32
+lectern0_reader_filter_rasterize_rgb32(S32 width, S32 height,
+                                       U32 foreground, U32 background,
+                                       U32 *pixels, S32 stride_pixels)
+{
+  enum { supersample = 4 };
+  if (!pixels || width <= 0 || height <= 0 || stride_pixels < width)
+    return 0;
+  F64 side = (F64)MIN(width, height);
+  F64 x_pad = ((F64)width - side) * 0.5;
+  F64 y_pad = ((F64)height - side) * 0.5;
+  U32 sample_count = supersample * supersample;
+  for (S32 y = 0; y < height; y += 1)
+  {
+    for (S32 x = 0; x < width; x += 1)
+    {
+      U32 covered = 0;
+      for (S32 sample_y = 0; sample_y < supersample; sample_y += 1)
+      {
+        for (S32 sample_x = 0; sample_x < supersample; sample_x += 1)
+        {
+          F64 px = (F64)x + (((F64)sample_x + 0.5) / supersample);
+          F64 py = (F64)y + (((F64)sample_y + 0.5) / supersample);
+          if (px >= x_pad && py >= y_pad &&
+              px < x_pad + side && py < y_pad + side)
+          {
+            F64 source_x = ((px - x_pad) / side) * 24.0;
+            F64 source_y = ((py - y_pad) / side) * 24.0;
+            covered += lectern0_reader_filter_sample_covered(source_x,
+                                                              source_y) ? 1u : 0u;
+          }
+        }
+      }
+      U32 alpha = (covered * 255u + sample_count / 2u) / sample_count;
+      pixels[(U64)y * (U64)stride_pixels + (U64)x] =
+        lectern0_reader_filter_blend(foreground, background, alpha);
+    }
+  }
+  return 1;
+}
+
 FUNCTION const U32 *
 lectern0_ui0_icon_raster(Lectern0App *app,
                          const UI0DrawCommand *command)
@@ -2475,8 +3985,8 @@ lectern0_ui0_icon_raster(Lectern0App *app,
   Lectern0UI0IconRasterCacheEntry *entry = 0;
   if (!app || !command || command->op != UI0DrawOp_Icon ||
       command->rect.w <= 0 || command->rect.h <= 0 ||
-      command->rect.w > Lectern0UI0IconRasterMax ||
-      command->rect.h > Lectern0UI0IconRasterMax)
+      command->rect.w > Lectern0UI0IconRasterMaxWidth ||
+      command->rect.h > Lectern0UI0IconRasterMaxHeight)
   {
     return 0;
   }
@@ -2495,13 +4005,22 @@ lectern0_ui0_icon_raster(Lectern0App *app,
   }
   if (app->ui0_icon_raster_count >= Lectern0UI0IconRasterCacheCap) { return 0; }
   entry = app->ui0_icon_rasters + app->ui0_icon_raster_count;
-  if (!ui0_icon_rasterize_rgb32(command->icon_kind,
-                                command->rect.w,
-                                command->rect.h,
-                                command->color,
-                                command->stroke_color,
-                                entry->pixels,
-                                Lectern0UI0IconRasterMax))
+  /* The frozen re10 benchmark renders this generic intent with its established
+     24x24 SlidersVertical geometry. Keep that exact host-boundary raster while
+     all other icons continue through UI0's portable rasterizer. */
+  B32 rasterized = command->icon_kind == UI0IconKind_Filter ?
+    lectern0_reader_filter_rasterize_rgb32(
+      command->rect.w, command->rect.h,
+      command->color, command->stroke_color,
+      entry->pixels, Lectern0UI0IconRasterMaxWidth) :
+    ui0_icon_rasterize_rgb32(command->icon_kind,
+                             command->rect.w,
+                             command->rect.h,
+                             command->color,
+                             command->stroke_color,
+                             entry->pixels,
+                             Lectern0UI0IconRasterMaxWidth);
+  if (!rasterized)
   {
     return 0;
   }
@@ -2530,7 +4049,7 @@ lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
                                  pixels,
                                  command->rect.w,
                                  command->rect.h,
-                                 Lectern0UI0IconRasterMax,
+                                 Lectern0UI0IconRasterMaxWidth,
                                  command->rect.x,
                                  command->rect.y,
                                  command->rect.w,
@@ -2563,16 +4082,95 @@ lectern0_draw_ui0_check_mark(Lectern0App *app,
 }
 
 FUNCTION void
+lectern0_draw_ui0_focus_ring(Lectern0App *app,
+                             const UI0DrawCommand *command)
+{
+  if (!app || !command ||
+      !lectern0_ui0_rect_visible(command->rect, command->clip_rect))
+    return;
+  UI0Rect rect = command->rect;
+  UI0Rect clip = command->clip_rect;
+  S32 radius = MAX(command->corner_radius, 0);
+  U32 color = lectern0_draw_color(command->color);
+  if ((command->flags & UI0DrawFlag_CornerMask) != 0)
+  {
+    clip = lectern0_ui0_rect_intersect(rect, clip);
+    B32 round_top = (command->flags & UI0DrawFlag_RoundTop) != 0;
+    B32 round_bottom = (command->flags & UI0DrawFlag_RoundBottom) != 0;
+    if (!round_top && !round_bottom)
+    {
+      lectern0_draw_ui0_rect_border_clipped(app, rect, clip, command->color);
+      return;
+    }
+    if (round_top && !round_bottom) rect.h += radius;
+    else if (round_bottom && !round_top)
+    {
+      rect.y -= radius;
+      rect.h += radius;
+    }
+  }
+  (void)draw_push_rounded_rect_stroke_clipped(
+    &app->draw_commands, DrawLayer_UI,
+    rect.x, rect.y, rect.w, rect.h, radius, 1, color,
+    clip.x, clip.y, clip.w, clip.h);
+}
+
+FUNCTION void
+lectern0_draw_ui0_indicator_border(Lectern0App *app,
+                                   const UI0DrawCommand *command)
+{
+  if (!app || !command ||
+      !lectern0_ui0_rect_visible(command->rect, command->clip_rect))
+    return;
+  if (command->source_kind == UI0ControlKind_Checkbox)
+  {
+    (void)draw_push_rounded_rect_stroke_clipped(
+      &app->draw_commands, DrawLayer_UI,
+      command->rect.x, command->rect.y,
+      command->rect.w, command->rect.h,
+      MAX(command->corner_radius, 0), 1,
+      lectern0_draw_color(command->color),
+      command->clip_rect.x, command->clip_rect.y,
+      command->clip_rect.w, command->clip_rect.h);
+  }
+  else
+  {
+    lectern0_draw_ui0_rect_border_clipped(
+      app, command->rect, command->clip_rect, command->color);
+  }
+}
+
+FUNCTION void
 lectern0_adapt_ui0_draw(Lectern0App *app)
 {
   if (!app) { return; }
+  const UI0DrawCommand *note_caret_command = 0;
+  S32 note_caret_x = 0;
+  B32 note_caret_x_valid = 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.draw_command_count;
+       index += 1)
+  {
+    const UI0DrawCommand *candidate =
+      app->reader_view_frame.draw_commands + index;
+    if (candidate->op != UI0DrawOp_TextCaret) continue;
+    const ReaderViewTextBinding *binding =
+      lectern0_reader_view_binding(app, candidate->source_id);
+    if (binding && binding->style == ReaderViewTextStyle_NoteEditor)
+    {
+      note_caret_command = candidate;
+      break;
+    }
+  }
   MemoryZeroStruct(&app->draw_adapter_stats);
   app->ui0_icon_raster_count = 0;
   for (UI0S32 index = 0;
        index < app->reader_view_frame.draw_command_count;
        index += 1)
   {
-    UI0DrawCommand command = app->reader_view_frame.draw_commands[index];
+    const UI0DrawCommand *source_command =
+      app->reader_view_frame.draw_commands + index;
+    UI0DrawCommand command = *source_command;
     U32 color = lectern0_draw_color(command.color);
     if (command.op >= 0 && command.op < UI0DrawOp_Count)
       app->draw_adapter_stats.op_count[command.op] += 1;
@@ -2587,13 +4185,6 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
         break;
 
       case UI0DrawOp_IndicatorFill:
-      case UI0DrawOp_ToggleTrack:
-      case UI0DrawOp_ToggleKnob:
-      case UI0DrawOp_ScrollTrack:
-      case UI0DrawOp_ScrollThumb:
-      case UI0DrawOp_SliderTrack:
-      case UI0DrawOp_SliderFill:
-      case UI0DrawOp_SliderThumb:
       {
         (void)draw_push_rounded_rect_clipped(&app->draw_commands,
                                              DrawLayer_UI,
@@ -2610,26 +4201,51 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
                                              command.clip_rect.h);
       } break;
 
-      case UI0DrawOp_IndicatorBorder:
-      case UI0DrawOp_FocusRing:
+      case UI0DrawOp_ToggleTrack:
+      case UI0DrawOp_ToggleKnob:
+      case UI0DrawOp_ScrollTrack:
+      case UI0DrawOp_ScrollThumb:
+      case UI0DrawOp_SliderTrack:
+      case UI0DrawOp_SliderFill:
+      case UI0DrawOp_SliderThumb:
       {
-        (void)draw_push_rounded_rect_stroke_clipped(&app->draw_commands,
-                                                    DrawLayer_UI,
-                                                    command.rect.x,
-                                                    command.rect.y,
-                                                    command.rect.w,
-                                                    command.rect.h,
-                                                    MAX(command.corner_radius, 0),
-                                                    MAX(command.stroke_width, 1),
-                                                    color,
-                                                    command.clip_rect.x,
-                                                    command.clip_rect.y,
-                                                    command.clip_rect.w,
-                                                    command.clip_rect.h);
+        (void)draw_push_rounded_rect_clipped(&app->draw_commands,
+                                             DrawLayer_UI,
+                                             command.rect.x,
+                                             command.rect.y,
+                                             command.rect.w,
+                                             command.rect.h,
+                                             MAX(command.corner_radius, 0),
+                                             color,
+                                             lectern0_draw_color(
+                                               command.stroke_color ?
+                                                 command.stroke_color :
+                                                 command.color),
+                                             command.clip_rect.x,
+                                             command.clip_rect.y,
+                                             command.clip_rect.w,
+                                             command.clip_rect.h);
       } break;
 
+      case UI0DrawOp_IndicatorBorder:
+        lectern0_draw_ui0_indicator_border(app, &command);
+        break;
+
+      case UI0DrawOp_FocusRing:
+        lectern0_draw_ui0_focus_ring(app, &command);
+        break;
+
       case UI0DrawOp_Text:
-        lectern0_draw_ui0_text(app, &command);
+      {
+        const ReaderViewTextBinding *binding =
+          lectern0_reader_view_binding(app, command.source_id);
+        if (!lectern0_draw_reader_view_note_editable_row(
+              app, &command, note_caret_command, binding,
+              &note_caret_x, &note_caret_x_valid))
+        {
+          lectern0_draw_ui0_text(app, &command);
+        }
+      }
         break;
 
       case UI0DrawOp_Icon:
@@ -2643,6 +4259,11 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
       case UI0DrawOp_SegmentJoin:
       case UI0DrawOp_TextSelection:
       case UI0DrawOp_TextCaret:
+        if (source_command == note_caret_command && note_caret_x_valid)
+        {
+          command.rect.x = note_caret_x;
+          app->draw_adapter_stats.note_caret_remap_count += 1;
+        }
         if (lectern0_ui0_rect_visible(command.rect, command.clip_rect))
           (void)draw_push_rect_clipped(&app->draw_commands, DrawLayer_UI,
                                        command.rect.x, command.rect.y,
@@ -2670,6 +4291,268 @@ lectern0_host_exit_rect(const Lectern0App *app)
                   host.y + MAX((host.h - height) / 2, 0), width, height);
 }
 
+FUNCTION Lectern0HostControlRecord *
+lectern0_host_control_record(Lectern0App *app,
+                             Lectern0HostControlIdentity identity)
+{
+  if (!app || identity <= Lectern0HostControl_None ||
+      identity >= Lectern0HostControl_Count)
+    return 0;
+  for (U32 index = 0; index < app->host_control_count; index += 1)
+    if (app->host_controls[index].identity == identity)
+      return app->host_controls + index;
+  return 0;
+}
+
+FUNCTION void
+lectern0_update_host_control_records(Lectern0App *app)
+{
+  if (!app) return;
+  app->host_control_count = 0;
+  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  if (exit_rect.w <= 0 || exit_rect.h <= 0)
+  {
+    app->host_focus_control = Lectern0HostControl_None;
+    app->host_focus_visible = 0;
+    app->host_exit_pointer_armed = 0;
+    return;
+  }
+
+  UI0ID toolbar_id = 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->role == ReaderViewSemantic_Toolbar)
+    {
+      toolbar_id = node->id;
+      break;
+    }
+  }
+  ReaderViewSemanticFlags flags =
+    ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
+  if (app->host_focus_control == Lectern0HostControl_ExitReader)
+    flags |= ReaderViewSemantic_Focused;
+  app->host_controls[0] = (Lectern0HostControlRecord){
+    .identity = Lectern0HostControl_ExitReader,
+    .semantic = {
+      .id = ui0_id_from_string("lectern0.reader.exit"),
+      .parent_id = toolbar_id,
+      .role = ReaderViewSemantic_Button,
+      .flags = flags,
+      .rect = exit_rect,
+      .name = {.data = "Exit Reader", .size = 11},
+      .control = ReaderViewSemanticControl_None,
+      .source_key = Lectern0HostControl_ExitReader,
+    },
+  };
+  app->host_control_count = 1;
+}
+
+FUNCTION B32
+lectern0_host_focus_set(Lectern0App *app,
+                        Lectern0HostControlIdentity identity,
+                        B32 visible)
+{
+  if (!app || identity >= Lectern0HostControl_Count)
+    return 0;
+  if (identity != Lectern0HostControl_None &&
+      !lectern0_host_control_record(app, identity))
+    return 0;
+  app->host_focus_control = identity;
+  app->host_focus_visible = identity != Lectern0HostControl_None && visible;
+  if (identity != Lectern0HostControl_None)
+  {
+    app->reader_view_state.focus_id = 0;
+    app->reader_view_state.focus_visible = 0;
+    app->reader_view_state.pending_accessibility_focus_id = 0;
+  }
+  lectern0_update_host_control_records(app);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_host_control_invoke(Lectern0App *app,
+                             Lectern0HostControlIdentity identity)
+{
+  if (!app || identity != Lectern0HostControl_ExitReader ||
+      !lectern0_host_control_record(app, identity))
+    return 0;
+  app->host_exit_requested = 1;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_host_focus_neighbors(const Lectern0App *app,
+                              UI0ID *out_before,
+                              UI0ID *out_after)
+{
+  if (out_before) *out_before = 0;
+  if (out_after) *out_after = 0;
+  if (!app || !app->reader_view_frame.semantic_nodes ||
+      app->reader_view_state.popup != ReaderViewPopup_None)
+    return 0;
+  UI0ID before_id = 0;
+  UI0ID after_id = 0;
+  UI0ID open_id = 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->control == ReaderViewSemanticControl_Open)
+      open_id = node->id;
+    else if (node->control == ReaderViewSemanticControl_Find)
+      before_id = node->id;
+    else if (node->control == ReaderViewSemanticControl_Fullscreen)
+      after_id = node->id;
+  }
+  if ((!before_id || !after_id) && open_id)
+  {
+    before_id = open_id;
+    after_id = open_id;
+  }
+  if (!before_id || !after_id) return 0;
+  if (out_before) *out_before = before_id;
+  if (out_after) *out_after = after_id;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
+{
+  enum { OpenOrderCount = 2, ReferenceOrderCount = 13 };
+  static const ReaderViewSemanticControl open_order[OpenOrderCount] = {
+    ReaderViewSemanticControl_Open,
+    ReaderViewSemanticControl_None,
+  };
+  static const ReaderViewSemanticControl
+    reference_order[ReferenceOrderCount] = {
+      ReaderViewSemanticControl_Contents,
+      ReaderViewSemanticControl_Find,
+      ReaderViewSemanticControl_None,
+      ReaderViewSemanticControl_Fullscreen,
+      ReaderViewSemanticControl_Annotations,
+      ReaderViewSemanticControl_FontSize,
+      ReaderViewSemanticControl_LineSpacing,
+      ReaderViewSemanticControl_FontFamily,
+      ReaderViewSemanticControl_Theme,
+      ReaderViewSemanticControl_Bookmark,
+      ReaderViewSemanticControl_PreviousPage,
+      ReaderViewSemanticControl_NextPage,
+      ReaderViewSemanticControl_Progress,
+    };
+  if (!app || app->reader_view_state.popup != ReaderViewPopup_None) return 0;
+
+  ReaderViewSemanticControl current_shared = ReaderViewSemanticControl_None;
+  B32 open_present = 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->control == ReaderViewSemanticControl_Open) open_present = 1;
+    if (node->id == app->reader_view_state.focus_id)
+      current_shared = node->control;
+  }
+
+  const ReaderViewSemanticControl *order =
+    open_present ? open_order : reference_order;
+  S32 order_count = open_present ? OpenOrderCount : ReferenceOrderCount;
+  S32 current_index = -1;
+  for (S32 index = 0; index < order_count; index += 1)
+  {
+    if ((order[index] == ReaderViewSemanticControl_None &&
+         app->host_focus_control == Lectern0HostControl_ExitReader) ||
+        (order[index] != ReaderViewSemanticControl_None &&
+         app->host_focus_control == Lectern0HostControl_None &&
+         order[index] == current_shared))
+    {
+      current_index = index;
+      break;
+    }
+  }
+  if (current_index < 0) return 0;
+
+  B32 panel_open = app->reader_view_state.left_panel !=
+                     ReaderViewLeftPanel_None ||
+                   app->reader_view_state.right_panel_open;
+  for (S32 offset = 1; offset <= order_count; offset += 1)
+  {
+    S32 target_index = reverse ? current_index - offset :
+                                 current_index + offset;
+    /* Shared panel controls are published after Progress. Preserve the
+       frozen toolbar order, but let Reader View traverse that panel tail
+       instead of wrapping across it. */
+    if (panel_open &&
+        ((reverse && target_index < 0) ||
+         (!reverse && target_index >= order_count)))
+      return 0;
+    while (target_index < 0) target_index += order_count;
+    target_index %= order_count;
+    ReaderViewSemanticControl target = order[target_index];
+    if (target == ReaderViewSemanticControl_None)
+      return lectern0_host_focus_set(app, Lectern0HostControl_ExitReader, 1);
+    for (UI0S32 index = 0;
+         index < app->reader_view_frame.semantic_node_count;
+         index += 1)
+    {
+      const ReaderViewSemanticNode *node =
+        app->reader_view_frame.semantic_nodes + index;
+      if (node->control == target &&
+          (node->flags & ReaderViewSemantic_Focusable) != 0)
+      {
+        (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+        return reader_view_accessibility_focus(&app->reader_view_state,
+                                               node->id);
+      }
+    }
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_host_keyboard_activate(Lectern0App *app)
+{
+  if (!app || app->host_focus_control != Lectern0HostControl_ExitReader)
+    return 0;
+  return lectern0_host_control_invoke(app, Lectern0HostControl_ExitReader);
+}
+
+FUNCTION void
+lectern0_host_pointer_move(Lectern0App *app, S32 x, S32 y)
+{
+  if (!app) return;
+  app->input.pointer_x = x;
+  app->input.pointer_y = y;
+  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  if (app->host_exit_pointer_armed &&
+      (exit_rect.w <= 0 || !ui0_rect_contains_point(exit_rect, x, y)))
+    app->host_exit_pointer_armed = 0;
+}
+
+FUNCTION void
+lectern0_host_pointer_cancel(Lectern0App *app)
+{
+  if (!app) return;
+  B32 cancel_active = app->input.pointer_down ||
+                      app->host_exit_pointer_armed ||
+                      app->selection_dragging;
+  app->host_exit_pointer_armed = 0;
+  app->input.pointer_down = 0;
+  app->input.pointer_pressed = 0;
+  if (cancel_active)
+  {
+    app->input.pointer_released = 0;
+    app->reader_view_state.active_id = 0;
+    app->selection_dragging = 0;
+  }
+}
+
 FUNCTION void
 lectern0_draw_host_exit_slot(Lectern0App *app)
 {
@@ -2679,20 +4562,30 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
                                         app->input.pointer_x,
                                         app->input.pointer_y);
   UI0ControlStateFlags state = hovered ? UI0ControlState_Hovered : 0;
-  if (hovered && app->input.pointer_down)
+  if (hovered && app->input.pointer_down && app->host_exit_pointer_armed)
     state |= UI0ControlState_Pressed | UI0ControlState_Active;
+  if (app->host_focus_control == Lectern0HostControl_ExitReader)
+  {
+    state |= UI0ControlState_Focused;
+    if (app->host_focus_visible) state |= UI0ControlState_FocusVisible;
+  }
   UI0ControlRecord control = {
     .id = ui0_id_from_string("lectern0.reader.exit"),
     .kind = UI0ControlKind_IconButton,
     .root = UI0RootKind_Normal,
     .state = state,
     .rect = rect,
-    .clip_rect = rect,
+    .clip_rect = app->reader_view_layout.host_toolbar_trailing_rect,
     .text_rect = rect,
     .label_hash = ui0_id_from_string("Exit Reader"),
     .label_len = 11,
   };
-  UI0DrawCommand commands[4] = {0};
+  /*
+  A focused labeled IconButton emits fill, border, text, and focus-ring
+  commands before the explicit Close icon. Keep all five bounded records so
+  keyboard focus cannot silently displace either the ring or the glyph.
+  */
+  UI0DrawCommand commands[5] = {0};
   UI0DrawContext draw = {0};
   ui0_draw_begin_frame(&draw,
                        commands,
@@ -2728,6 +4621,10 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
     else if (command.op == UI0DrawOp_Icon)
     {
       lectern0_draw_ui0_icon(app, &command);
+    }
+    else if (command.op == UI0DrawOp_FocusRing)
+    {
+      lectern0_draw_ui0_focus_ring(app, &command);
     }
   }
 }
@@ -2852,6 +4749,108 @@ lectern0_append_input_wchar(Lectern0App *app, wchar_t value)
   }
 }
 
+typedef enum Lectern0ReaderKeyRoute
+{
+  Lectern0ReaderKeyRoute_None,
+  Lectern0ReaderKeyRoute_Handled,
+  Lectern0ReaderKeyRoute_CloseRequested,
+} Lectern0ReaderKeyRoute;
+
+FUNCTION Lectern0ReaderKeyRoute
+lectern0_reader_view_route_keydown(Lectern0App *app,
+                                   WPARAM key,
+                                   B32 shift)
+{
+  if (!app) return Lectern0ReaderKeyRoute_None;
+  B32 editing = lectern0_reader_view_text_editing(app);
+  if (editing && key == VK_BACK)
+    app->input.backspace_pressed = 1;
+  else if (editing && key == VK_DELETE)
+    app->input.delete_pressed = 1;
+  else if (editing && key == VK_RETURN)
+  {
+    if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor)
+      lectern0_append_input_wchar(app, L'\n');
+    else
+      app->input.commit_pressed = 1;
+  }
+  else if (editing && (key == VK_LEFT || key == VK_RIGHT))
+  {
+    app->input.move_delta = key == VK_LEFT ? -1 : 1;
+    app->input.extend_selection = shift;
+  }
+  else if (editing && (key == VK_UP || key == VK_DOWN))
+  {
+    app->input.move_vertical_delta = key == VK_UP ? -1 : 1;
+    app->input.extend_selection = shift;
+  }
+  else if (!editing && app->reader_view_state.focus_id != 0 &&
+           (key == VK_LEFT || key == VK_RIGHT))
+  {
+    app->input.move_delta = key == VK_LEFT ? -1 : 1;
+  }
+  else if (!editing && app->reader_view_state.focus_id != 0 &&
+           (key == VK_UP || key == VK_DOWN))
+  {
+    app->input.move_vertical_delta = key == VK_UP ? -1 : 1;
+  }
+  else if (app->reader_view_state.focus_id != 0 &&
+           (key == VK_PRIOR || key == VK_NEXT))
+  {
+    app->input.range_move = key == VK_PRIOR ?
+      ReaderViewRangeMove_PreviousPage : ReaderViewRangeMove_NextPage;
+  }
+  else if (app->reader_view_state.focus_id != 0 &&
+           (key == VK_HOME || key == VK_END))
+  {
+    app->input.range_move = key == VK_HOME ?
+      ReaderViewRangeMove_First : ReaderViewRangeMove_Last;
+  }
+  else if (!editing &&
+           app->host_focus_control == Lectern0HostControl_ExitReader &&
+           (key == VK_RETURN || key == VK_SPACE))
+  {
+    return lectern0_host_keyboard_activate(app) ?
+      Lectern0ReaderKeyRoute_CloseRequested :
+      Lectern0ReaderKeyRoute_Handled;
+  }
+  else if (!editing && app->reader_view_state.focus_id == 0 &&
+           app->host_focus_control == Lectern0HostControl_None &&
+           (key == VK_LEFT || key == VK_PRIOR))
+  {
+    (void)lectern0_move_page(app, -1);
+  }
+  else if (key == VK_SPACE &&
+           lectern0_reader_view_space_activates_focus(app))
+  {
+    app->input.activate_pressed = 1;
+  }
+  else if (!editing && app->reader_view_state.focus_id == 0 &&
+           app->host_focus_control == Lectern0HostControl_None &&
+           (key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE))
+  {
+    (void)lectern0_move_page(app, 1);
+  }
+  else if (key == VK_TAB)
+  {
+    if (!lectern0_host_keyboard_tab(app, shift))
+    {
+      if (shift) app->input.focus_prev_pressed = 1;
+      else app->input.focus_next_pressed = 1;
+    }
+  }
+  else if (!editing && app->reader_view_state.focus_id != 0 &&
+           key == VK_RETURN)
+  {
+    app->input.activate_pressed = 1;
+  }
+  else
+  {
+    return Lectern0ReaderKeyRoute_None;
+  }
+  return Lectern0ReaderKeyRoute_Handled;
+}
+
 FUNCTION B32
 lectern0_launch_lookup(Lectern0App *app,
                        const char *prefix,
@@ -2902,12 +4901,16 @@ lectern0_export_annotations(Lectern0App *app)
   for (U32 index = 0; index < app->highlight_count && size < ARRAY_COUNT(data); index += 1)
   {
     const Lectern0Highlight *item = app->highlights + index;
-    size += cstr_format(data + size, ARRAY_COUNT(data) - size,
-                        "Highlight %llu | %s | %s%s%s\n",
-                        (unsigned long long)item->id,
-                        item->section, item->text,
-                        item->note[0] ? " | Note: " : "",
-                        item->note);
+    if (item->is_highlight)
+      size += cstr_format(data + size, ARRAY_COUNT(data) - size,
+                          "Highlight %llu | %s | %s\n",
+                          (unsigned long long)item->id,
+                          item->section, item->text);
+    if (item->note[0] && size < ARRAY_COUNT(data))
+      size += cstr_format(data + size, ARRAY_COUNT(data) - size,
+                          "Note %llu | %s | %s\n",
+                          (unsigned long long)item->id,
+                          item->section, item->note);
   }
   B32 result = size < ARRAY_COUNT(data) &&
     os_write_entire_file_atomic(app->export_path, data, size);
@@ -3003,6 +5006,108 @@ lectern0_select_highlight(Lectern0App *app, const Lectern0Highlight *highlight)
   (void)epub_reader_set_selection(&app->reader, selection);
 }
 
+FUNCTION B32
+lectern0_reader_view_open_annotation_note(Lectern0App *app,
+                                           const Lectern0Highlight *highlight)
+{
+  if (!app || !highlight || highlight->id == 0 ||
+      highlight->end_byte <= highlight->start_byte ||
+      highlight->note[0] == 0)
+  {
+    return 0;
+  }
+  U64 values[4] = {
+    (U64)app->frame.document_id,
+    highlight->start_byte,
+    highlight->end_byte,
+    highlight->id,
+  };
+  ReaderViewSelectionProjection selection = {
+    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .selection_key = u64_hash_bytes(values, sizeof(values)),
+    .revision = app->annotation_revision,
+    .selected_text = lectern0_reader_view_text(highlight->text),
+    .note_text = lectern0_reader_view_text(highlight->note),
+    .flags = ReaderViewSelection_Active |
+             ReaderViewSelection_CanEditNote |
+             ReaderViewSelection_CanDeleteNote,
+  };
+  if (selection.selection_key == 0) selection.selection_key = 1;
+  if (!reader_view_open_note_editor(&app->reader_view_state, &selection))
+    return 0;
+
+  app->annotation_note_selection_key = selection.selection_key;
+  app->annotation_note_document_id = app->frame.document_id;
+  app->annotation_note_highlight_id = highlight->id;
+  app->annotation_note_start_byte = highlight->start_byte;
+  app->annotation_note_end_byte = highlight->end_byte;
+  app->annotation_note_spine_index = highlight->spine_index;
+  /* Retain this host record without selecting or navigating the document. */
+  return app->reader_view_state.note_selection_key == selection.selection_key;
+}
+
+FUNCTION S32
+lectern0_reader_view_note_editor_highlight_index(const Lectern0App *app)
+{
+  if (!app) return -1;
+  if (app->annotation_note_selection_key != 0)
+  {
+    if (app->reader_view_state.popup != ReaderViewPopup_NoteEditor ||
+        app->annotation_note_selection_key !=
+          app->reader_view_state.note_selection_key ||
+        app->annotation_note_document_id != app->frame.document_id)
+    {
+      return -1;
+    }
+    S32 index = lectern0_highlight_index(
+      app, app->annotation_note_highlight_id);
+    if (index < 0) return -1;
+    const Lectern0Highlight *highlight = app->highlights + index;
+    if (highlight->spine_index != app->annotation_note_spine_index ||
+        highlight->start_byte != app->annotation_note_start_byte ||
+        highlight->end_byte != app->annotation_note_end_byte)
+    {
+      return -1;
+    }
+    return index;
+  }
+  return lectern0_selection_highlight_index(app);
+}
+
+FUNCTION void
+lectern0_reader_view_finish_note_editor(Lectern0App *app)
+{
+  if (!app) return;
+  B32 annotation_origin = app->annotation_note_selection_key != 0;
+  lectern0_reader_view_clear_annotation_note_target(app);
+  if (!annotation_origin)
+  {
+    epub_reader_clear_selection(&app->reader);
+    app->selected_text[0] = 0;
+    app->selection_anchor_rect = (UI0Rect){0};
+  }
+  (void)lectern0_capture_frame(app);
+}
+
+FUNCTION B32
+lectern0_reader_view_set_find_query(Lectern0App *app, ReaderViewText query)
+{
+  if (!app || query.size < 0 || (query.size > 0 && !query.data) ||
+      (U64)query.size >= ARRAY_COUNT(app->reader_view_state.find_query))
+    return 0;
+  if (query.size > 0 && query.data != app->reader_view_state.find_query)
+    MemoryCopy(app->reader_view_state.find_query,
+               query.data,
+               (U64)query.size);
+  app->reader_view_state.find_query[query.size] = 0;
+  app->reader_view_state.find_query_length = query.size;
+  app->reader_view_state.find_input.caret =
+    MIN(app->reader_view_state.find_input.caret, query.size);
+  app->reader_view_state.find_input.selection_anchor =
+    MIN(app->reader_view_state.find_input.selection_anchor, query.size);
+  return 1;
+}
+
 FUNCTION void
 lectern0_apply_reader_view_action(Lectern0App *app,
                                   const ReaderViewAction *action)
@@ -3023,18 +5128,32 @@ lectern0_apply_reader_view_action(Lectern0App *app,
       (void)lectern0_toggle_current_bookmark(app);
       break;
     case ReaderViewAction_FindChanged:
-      if (action->text.size > 0)
-        (void)epub_reader_rebuild_search(&app->reader,
-          str8((U8 *)action->text.data, (U64)action->text.size));
-      else
+      if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      if (action->text.size == 0)
+      {
         epub_reader_clear_search(&app->reader);
-      (void)lectern0_capture_frame(app);
+        (void)lectern0_capture_frame(app);
+      }
       break;
     case ReaderViewAction_FindCommitted:
-      if (app->reader.search_match_count > 0)
-        (void)lectern0_navigate_to_search_match(
-          app, app->reader.search_has_active ? app->reader.search_active_index : 0,
-          &(EpubReaderSearchNavigationResult){0});
+      if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      if (action->text.size == 0)
+      {
+        epub_reader_clear_search(&app->reader);
+        (void)lectern0_capture_frame(app);
+      }
+      else if (epub_reader_rebuild_search(
+                 &app->reader,
+                 str8((U8 *)action->text.data, (U64)action->text.size)))
+      {
+        if (app->reader.search_match_count > 0)
+          (void)lectern0_navigate_to_search_match(
+            app,
+            app->reader.search_has_active ? app->reader.search_active_index : 0,
+            &(EpubReaderSearchNavigationResult){0});
+        else
+          (void)lectern0_capture_frame(app);
+      }
       break;
     case ReaderViewAction_FindPrevious:
     case ReaderViewAction_FindNext:
@@ -3045,20 +5164,26 @@ lectern0_apply_reader_view_action(Lectern0App *app,
           &(EpubReaderSearchNavigationResult){0});
       break;
     case ReaderViewAction_ActivateTocRow:
-      if (action->key > 0)
+      if (action->key > 0 && action->key - 1 <= 0xffffffffull)
         (void)lectern0_navigate_to_nav_point(
           app, (U32)(action->key - 1), &(EpubReaderNavPointResult){0});
       break;
     case ReaderViewAction_ActivateFindRow:
-      if (action->key >= 0x100000ull)
+      if (action->key >= 0x100000ull &&
+          action->key - 0x100000ull <= 0xffffffffull)
         (void)lectern0_navigate_to_search_match(
           app, (U32)(action->key - 0x100000ull),
           &(EpubReaderSearchNavigationResult){0});
       break;
     case ReaderViewAction_ActivateRightRow:
     {
-      S32 bookmark = lectern0_bookmark_index(app, action->key);
-      S32 highlight = lectern0_highlight_index(app, action->key);
+      const Lectern0ReaderViewRightSource *source =
+        lectern0_reader_view_right_source(
+          app, action->key, action->right_row_kind);
+      S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
+        lectern0_bookmark_index(app, source->record_id) : -1;
+      S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
+        lectern0_highlight_index(app, source->record_id) : -1;
       if (bookmark >= 0)
         (void)lectern0_navigate_to_location(app,
           app->bookmarks[bookmark].spine_index,
@@ -3072,42 +5197,48 @@ lectern0_apply_reader_view_action(Lectern0App *app,
     } break;
     case ReaderViewAction_ToggleRightRowStar:
     {
-      S32 bookmark = lectern0_bookmark_index(app, action->key);
-      S32 highlight = lectern0_highlight_index(app, action->key);
-      if (bookmark >= 0) app->bookmarks[bookmark].starred = !app->bookmarks[bookmark].starred;
-      else if (highlight >= 0 && action->right_row_kind == ReaderViewRightRow_Note)
-        app->highlights[highlight].note_starred = !app->highlights[highlight].note_starred;
+      const Lectern0ReaderViewRightSource *source =
+        lectern0_reader_view_right_source(
+          app, action->key, action->right_row_kind);
+      S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
+        lectern0_bookmark_index(app, source->record_id) : -1;
+      S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
+        lectern0_highlight_index(app, source->record_id) : -1;
+      if (bookmark >= 0)
+        (void)lectern0_remove_bookmark_at(app, (U32)bookmark);
+      else if (highlight >= 0 && source->row_kind == ReaderViewRightRow_Note)
+        (void)lectern0_toggle_highlight_star_at(
+          app, (U32)highlight, 1);
       else if (highlight >= 0)
-        app->highlights[highlight].starred = !app->highlights[highlight].starred;
-      app->annotation_revision += 1;
-      (void)lectern0_save_annotations(app);
+        (void)lectern0_toggle_highlight_star_at(
+          app, (U32)highlight, 0);
     } break;
     case ReaderViewAction_EditRightRowNote:
     {
-      S32 highlight = lectern0_highlight_index(app, action->key);
+      const Lectern0ReaderViewRightSource *source =
+        lectern0_reader_view_right_source(
+          app, action->key, action->right_row_kind);
+      S32 highlight = source && source->row_kind == ReaderViewRightRow_Note ?
+        lectern0_highlight_index(app, source->record_id) : -1;
       if (highlight >= 0)
-      {
-        Lectern0Highlight value = app->highlights[highlight];
-        if (lectern0_navigate_to_location(app, value.spine_index,
-                                          value.start_byte,
-                                          EpubReaderNavigationReason_Annotation) ==
-            EpubReaderResult_Ok)
-        {
-          lectern0_select_highlight(app, &value);
-          lectern0_prepare_reader_view_projection(app);
-          if (!reader_view_open_note_editor(
-                &app->reader_view_state,
-                &app->reader_view_projection.selection))
-            app->reader_view_state.popup = ReaderViewPopup_SelectionTools;
-        }
-      }
+        (void)lectern0_reader_view_open_annotation_note(
+          app, app->highlights + highlight);
     } break;
     case ReaderViewAction_DeleteRightRow:
     {
-      S32 bookmark = lectern0_bookmark_index(app, action->key);
-      S32 highlight = lectern0_highlight_index(app, action->key);
-      if (bookmark >= 0) lectern0_remove_bookmark_at(app, (U32)bookmark);
-      else if (highlight >= 0) lectern0_remove_highlight_at(app, (U32)highlight);
+      const Lectern0ReaderViewRightSource *source =
+        lectern0_reader_view_right_source(
+          app, action->key, action->right_row_kind);
+      S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
+        lectern0_bookmark_index(app, source->record_id) : -1;
+      S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
+        lectern0_highlight_index(app, source->record_id) : -1;
+      if (bookmark >= 0)
+        (void)lectern0_remove_bookmark_at(app, (U32)bookmark);
+      else if (highlight >= 0 && source->row_kind == ReaderViewRightRow_Note)
+        (void)lectern0_delete_note_at_index(app, (U32)highlight);
+      else if (highlight >= 0)
+        (void)lectern0_remove_highlight_identity_at(app, (U32)highlight);
     } break;
     case ReaderViewAction_ExportRightRows: (void)lectern0_export_annotations(app); break;
     case ReaderViewAction_SetHighlightColor:
@@ -3118,7 +5249,8 @@ lectern0_apply_reader_view_action(Lectern0App *app,
     case ReaderViewAction_RemoveHighlight:
     {
       S32 index = lectern0_selection_highlight_index(app);
-      if (index >= 0) lectern0_remove_highlight_at(app, (U32)index);
+      if (index >= 0)
+        (void)lectern0_remove_highlight_identity_at(app, (U32)index);
     } break;
     case ReaderViewAction_CopySelection:
       (void)lectern0_set_clipboard_text(app, action->text);
@@ -3136,27 +5268,43 @@ lectern0_apply_reader_view_action(Lectern0App *app,
         "https://translate.google.com/?sl=auto&tl=en&text=", action->text);
       break;
     case ReaderViewAction_SaveNote:
-      if (action->value == app->annotation_revision)
+      if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+          action->key == app->reader_view_state.note_selection_key &&
+          action->value == app->reader_view_state.note_source_revision &&
+          action->value == app->annotation_revision)
       {
-        if (lectern0_save_selection_note(app, action->text))
+        S32 index = lectern0_reader_view_note_editor_highlight_index(app);
+        B32 saved = index >= 0 ?
+          lectern0_save_note_at_index(app, (U32)index, action->text) :
+          (app->annotation_note_selection_key == 0 &&
+           lectern0_save_selection_note(app, action->text));
+        if (saved &&
+            reader_view_close_note_editor(&app->reader_view_state))
         {
-          app->reader_view_state.popup = ReaderViewPopup_None;
-          app->reader_view_state.note_dirty = 0;
+          lectern0_reader_view_finish_note_editor(app);
         }
       }
       break;
     case ReaderViewAction_DeleteNote:
     {
-      S32 index = lectern0_selection_highlight_index(app);
-      if (index >= 0)
+      S32 index = lectern0_reader_view_note_editor_highlight_index(app);
+      if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+          action->key == app->reader_view_state.note_selection_key &&
+          action->value == app->reader_view_state.note_source_revision &&
+          action->value == app->annotation_revision && index >= 0)
       {
-        app->highlights[index].note[0] = 0;
-        app->annotation_revision += 1;
-        (void)lectern0_save_annotations(app);
-        app->reader_view_state.popup = ReaderViewPopup_None;
-        app->reader_view_state.note_dirty = 0;
+        if (lectern0_delete_note_at_index(app, (U32)index) &&
+            reader_view_close_note_editor(&app->reader_view_state))
+          lectern0_reader_view_finish_note_editor(app);
       }
     } break;
+    case ReaderViewAction_CancelNote:
+      /* Shared Cancel already closes the modal. The host releases the
+         annotation target and only a selection-origin editor's selection. */
+      if (action->key == app->reader_view_state.note_selection_key &&
+          action->value == app->reader_view_state.note_source_revision)
+        lectern0_reader_view_finish_note_editor(app);
+      break;
     case ReaderViewAction_ToggleFullscreen:
       (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
       break;
@@ -3806,7 +5954,18 @@ lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_y = y;
   app->input.pointer_down = 1;
   app->input.pointer_pressed = 1;
-  lectern0_update_pointer_selection(app, x, y, 1);
+  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  app->host_exit_pointer_armed =
+    exit_rect.w > 0 && ui0_rect_contains_point(exit_rect, x, y);
+  if (app->host_exit_pointer_armed)
+  {
+    (void)lectern0_host_focus_set(app, Lectern0HostControl_ExitReader, 0);
+  }
+  else
+  {
+    (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+    lectern0_update_pointer_selection(app, x, y, 1);
+  }
 }
 
 FUNCTION B32
@@ -3818,10 +5977,13 @@ lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_down = 0;
   app->input.pointer_released = 1;
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
-  if (exit_rect.w > 0 && ui0_rect_contains_point(exit_rect, x, y))
+  B32 activate_exit = app->host_exit_pointer_armed && exit_rect.w > 0 &&
+                      ui0_rect_contains_point(exit_rect, x, y);
+  app->host_exit_pointer_armed = 0;
+  if (activate_exit)
   {
     app->input.pointer_released = 0;
-    return 1;
+    return lectern0_host_control_invoke(app, Lectern0HostControl_ExitReader);
   }
   if (app->selection_dragging)
   {
@@ -3857,6 +6019,150 @@ lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
   }
 }
 
+typedef struct Lectern0ReaderRowMeasure
+{
+  B32 valid;
+  U32 local_start;
+  U32 local_end;
+  DocTextStyleFlags style_flags;
+  U32 scale_permille;
+  S32 text_x;
+  S32 fill_h;
+} Lectern0ReaderRowMeasure;
+
+FUNCTION B32
+lectern0_reader_row_measure(Lectern0App *app,
+                            const EpubReaderFrameStyleRow *row,
+                            const PresentationEngineBlockFlowRow *presentation_row,
+                            U32 local_start,
+                            U32 local_end,
+                            Lectern0ReaderRowMeasure *out_measure)
+{
+  if (out_measure) *out_measure = (Lectern0ReaderRowMeasure){0};
+  if (!app || !row || !presentation_row || !out_measure ||
+      local_end <= local_start)
+    return 0;
+
+  Lectern0PresentationRowMetrics metrics = {0};
+  if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics))
+    return 0;
+
+  DocTextStyleFlags style_flags = lectern0_reader_block_style_flags(row);
+  U32 scale_permille = (U32)MAX(
+    ((S64)metrics.scale_px * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
+      MAX(app->layout_key.text_scale, 1),
+    1);
+  String8 row_text = str8(app->frame.visible_text.str + local_start,
+                          local_end - local_start);
+  S32 row_text_width = epub_reader_typography_measure_text(
+    &app->reader.typography,
+    row_text,
+    style_flags,
+    scale_permille,
+    row->font_family_hint,
+    row->font_face_index);
+  S32 text_x = presentation_row->content_rect.x;
+  if (row->block_kind == DocTextBlockKind_Heading ||
+      row->text_align == DocTextAlign_Center)
+  {
+    text_x += MAX((presentation_row->content_rect.w - row_text_width) / 2, 0);
+  }
+  else if (row->text_align == DocTextAlign_Right)
+  {
+    text_x += MAX(presentation_row->content_rect.w - row_text_width, 0);
+  }
+  TextEngineResolvedStyle style =
+    epub_reader_typography_style_for_doc_style(&app->reader.typography,
+                                                metrics.scale_px,
+                                                lectern0_reader_ink_color(app),
+                                                row->font_family_hint,
+                                                row->font_face_index,
+                                                style_flags,
+                                                0);
+  FontTextMetrics font_metrics = font_metrics_for_size(style.provider,
+                                                       metrics.scale_px);
+  S32 fill_h = MAX(font_metrics.ascent_px + font_metrics.descent_px,
+                   MAX(font_metrics.glyph_height_px, 1));
+  *out_measure = (Lectern0ReaderRowMeasure){
+    .valid = 1,
+    .local_start = local_start,
+    .local_end = local_end,
+    .style_flags = style_flags,
+    .scale_permille = scale_permille,
+    .text_x = text_x,
+    .fill_h = MIN(fill_h, presentation_row->row_rect.h),
+  };
+  return 1;
+}
+
+FUNCTION S32
+lectern0_reader_row_x_for_local_byte(
+  Lectern0App *app,
+  const EpubReaderFrameStyleRow *row,
+  const Lectern0ReaderRowMeasure *measure,
+  U32 local_byte)
+{
+  if (!app || !row || !measure || !measure->valid)
+    return 0;
+  local_byte = MIN(MAX(local_byte, measure->local_start), measure->local_end);
+  String8 prefix = str8(app->frame.visible_text.str + measure->local_start,
+                        local_byte - measure->local_start);
+  return measure->text_x + epub_reader_typography_measure_text(
+    &app->reader.typography,
+    prefix,
+    measure->style_flags,
+    measure->scale_permille,
+    row->font_family_hint,
+    row->font_face_index);
+}
+
+FUNCTION void
+lectern0_reader_row_range_x(Lectern0App *app,
+                            const EpubReaderFrameStyleRow *row,
+                            const PresentationEngineBlockFlowRow *presentation_row,
+                            const Lectern0ReaderRowMeasure *measure,
+                            U64 row_size,
+                            U64 start,
+                            U64 end,
+                            S32 *out_x0,
+                            S32 *out_x1)
+{
+  if (!out_x0 || !out_x1) return;
+  if (measure && measure->valid)
+  {
+    U64 local_start = (U64)row->byte_start + start;
+    U64 local_end = (U64)row->byte_start + end;
+    *out_x0 = lectern0_reader_row_x_for_local_byte(
+      app, row, measure, (U32)MIN(local_start, (U64)UINT32_MAX));
+    *out_x1 = lectern0_reader_row_x_for_local_byte(
+      app, row, measure, (U32)MIN(local_end, (U64)UINT32_MAX));
+    return;
+  }
+  *out_x0 = presentation_row->content_rect.x +
+    (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) /
+          MAX(row_size, 1));
+  *out_x1 = presentation_row->content_rect.x +
+    (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) /
+          MAX(row_size, 1));
+}
+
+FUNCTION void
+lectern0_draw_reader_note_marker(Lectern0App *app, S32 anchor_x, S32 row_y,
+                                 S32 row_h)
+{
+  if (!app) return;
+  S32 x = anchor_x + 2;
+  S32 y = row_y - MAX(2, row_h / 5);
+  (void)draw_push_rect(&app->draw_commands, DrawLayer_UI,
+                       x, y, 7, 8, app->reader_content_theme.note_marker);
+  (void)draw_push_rect(&app->draw_commands, DrawLayer_UI,
+                       x + 2, y + 2, 3, 1,
+                       app->reader_content_theme.page_background);
+  (void)draw_push_rect(&app->draw_commands, DrawLayer_UI,
+                       x + 2, y + 4, 3, 1,
+                       app->reader_content_theme.page_background);
+}
+
 FUNCTION void
 lectern0_draw_row_highlights(Lectern0App *app,
                              const EpubReaderFrameStyleRow *row,
@@ -3867,27 +6173,6 @@ lectern0_draw_row_highlights(Lectern0App *app,
   U64 row_start = app->frame.view_byte_offset + row->byte_start;
   U64 row_end = app->frame.view_byte_offset + row->byte_end;
   U64 row_size = row_end - row_start;
-  for (U32 index = 0; index < app->highlight_count; index += 1)
-  {
-    const Lectern0Highlight *highlight = app->highlights + index;
-    if (highlight->spine_index != app->frame.spine_index ||
-        highlight->end_byte <= row_start || highlight->start_byte >= row_end)
-      continue;
-    U64 start = MAX(highlight->start_byte, row_start) - row_start;
-    U64 end = MIN(highlight->end_byte, row_end) - row_start;
-    S32 x0 = presentation_row->content_rect.x +
-      (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
-    S32 x1 = presentation_row->content_rect.x +
-      (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
-    (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
-                                 x0, presentation_row->row_rect.y,
-                                 MAX(x1 - x0, 3), presentation_row->row_rect.h,
-                                 2,
-                                 lectern0_reader_highlight_color(app,
-                                                                  highlight->color_index),
-                                 lectern0_reader_highlight_color(app,
-                                                                  highlight->color_index));
-  }
   U32 local_row_start = MIN(row->byte_start, (U32)app->frame.visible_text.size);
   U32 local_row_end = MIN(row->byte_end, (U32)app->frame.visible_text.size);
   while (local_row_end > local_row_start &&
@@ -3896,89 +6181,73 @@ lectern0_draw_row_highlights(Lectern0App *app,
   {
     local_row_end -= 1;
   }
-  if (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
-      local_row_end > local_row_start)
+  Lectern0ReaderRowMeasure row_measure = {0};
+  (void)lectern0_reader_row_measure(app, row, presentation_row,
+                                    local_row_start, local_row_end,
+                                    &row_measure);
+  for (U32 index = 0; index < app->highlight_count; index += 1)
   {
-    Lectern0PresentationRowMetrics metrics = {0};
-    DocTextStyleFlags block_style_flags = lectern0_reader_block_style_flags(row);
-    if (lectern0_resolve_presentation_row_metrics(app, row, &metrics))
+    const Lectern0Highlight *highlight = app->highlights + index;
+    if (highlight->spine_index != app->frame.spine_index)
+      continue;
+    if (highlight->is_highlight &&
+        highlight->end_byte > row_start && highlight->start_byte < row_end)
     {
-      U32 measure_scale_permille = (U32)MAX(
-        ((S64)metrics.scale_px * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
-          MAX(app->layout_key.text_scale, 1),
-        1);
-      String8 row_text = str8(app->frame.visible_text.str + local_row_start,
-                              local_row_end - local_row_start);
-      S32 row_text_width = epub_reader_typography_measure_text(
-        &app->reader.typography,
-        row_text,
-        block_style_flags,
-        measure_scale_permille,
-        row->font_family_hint,
-        row->font_face_index);
-      S32 row_text_x = presentation_row->content_rect.x;
-      if (row->block_kind == DocTextBlockKind_Heading ||
-          row->text_align == DocTextAlign_Center)
+      U64 start = MAX(highlight->start_byte, row_start) - row_start;
+      U64 end = MIN(highlight->end_byte, row_end) - row_start;
+      S32 x0 = 0;
+      S32 x1 = 0;
+      lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+                                  row_size, start, end, &x0, &x1);
+      U32 color = lectern0_reader_highlight_color(app,
+                                                  highlight->color_index);
+      (void)draw_push_rect(&app->draw_commands, DrawLayer_World,
+                           x0, presentation_row->row_rect.y,
+                           MAX(x1 - x0, 3), presentation_row->row_rect.h,
+                           color);
+    }
+    if (highlight->note[0] && highlight->end_byte >= row_start &&
+        highlight->end_byte <= row_end)
+    {
+      U64 marker = highlight->end_byte - row_start;
+      S32 marker_x0 = 0;
+      S32 marker_x1 = 0;
+      lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+                                  row_size, marker, marker,
+                                  &marker_x0, &marker_x1);
+      lectern0_draw_reader_note_marker(app, marker_x1,
+                                      presentation_row->row_rect.y,
+                                      presentation_row->row_rect.h);
+    }
+  }
+  if (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
+      row_measure.valid)
+  {
+    for (U32 search_pass = 0; search_pass < 2; search_pass += 1)
+    {
+      B32 draw_active = search_pass == 1;
+      for (U32 index = 0; index < app->frame.search_highlight_count; index += 1)
       {
-        row_text_x += MAX((presentation_row->content_rect.w - row_text_width) / 2, 0);
-      }
-      else if (row->text_align == DocTextAlign_Right)
-      {
-        row_text_x += MAX(presentation_row->content_rect.w - row_text_width, 0);
-      }
-      TextEngineResolvedStyle style =
-        epub_reader_typography_style_for_doc_style(&app->reader.typography,
-                                                    metrics.scale_px,
-                                                    lectern0_reader_ink_color(app),
-                                                    row->font_family_hint,
-                                                    row->font_face_index,
-                                                    block_style_flags,
-                                                    0);
-      FontTextMetrics font_metrics = font_metrics_for_size(style.provider,
-                                                           metrics.scale_px);
-      S32 fill_h = MAX(font_metrics.ascent_px + font_metrics.descent_px,
-                       MAX(font_metrics.glyph_height_px, 1));
-      fill_h = MIN(fill_h, presentation_row->row_rect.h);
-      for (U32 search_pass = 0; search_pass < 2; search_pass += 1)
-      {
-        B32 draw_active = search_pass == 1;
-        for (U32 index = 0; index < app->frame.search_highlight_count; index += 1)
-        {
-          const EpubReaderFrameSearchHighlightRange *range =
-            app->frame.search_highlights + index;
-          if ((range->active != 0) != draw_active ||
-              range->end <= local_row_start || range->start >= local_row_end)
-            continue;
-          U32 overlap_start = (U32)MAX(range->start, (U64)local_row_start);
-          U32 overlap_end = (U32)MIN(range->end, (U64)local_row_end);
-          String8 prefix = str8(app->frame.visible_text.str + local_row_start,
-                                overlap_start - local_row_start);
-          String8 through = str8(app->frame.visible_text.str + local_row_start,
-                                 overlap_end - local_row_start);
-          S32 x0 = row_text_x + epub_reader_typography_measure_text(
-            &app->reader.typography,
-            prefix,
-            block_style_flags,
-            measure_scale_permille,
-            row->font_family_hint,
-            row->font_face_index);
-          S32 x1 = row_text_x + epub_reader_typography_measure_text(
-            &app->reader.typography,
-            through,
-            block_style_flags,
-            measure_scale_permille,
-            row->font_family_hint,
-            row->font_face_index);
-          U32 color = draw_active ? app->reader_content_theme.search_match :
-                                    app->reader_content_theme.selection;
-          (void)draw_push_rect(&app->draw_commands,
-                               DrawLayer_World,
-                               x0,
-                               presentation_row->row_rect.y,
-                               MAX(x1 - x0, 1),
-                               MAX(fill_h, 1),
-                               color);
-        }
+        const EpubReaderFrameSearchHighlightRange *range =
+          app->frame.search_highlights + index;
+        if ((range->active != 0) != draw_active ||
+            range->end <= local_row_start || range->start >= local_row_end)
+          continue;
+        U32 overlap_start = (U32)MAX(range->start, (U64)local_row_start);
+        U32 overlap_end = (U32)MIN(range->end, (U64)local_row_end);
+        S32 x0 = lectern0_reader_row_x_for_local_byte(
+          app, row, &row_measure, overlap_start);
+        S32 x1 = lectern0_reader_row_x_for_local_byte(
+          app, row, &row_measure, overlap_end);
+        U32 color = draw_active ? app->reader_content_theme.search_match :
+                                  app->reader_content_theme.selection;
+        (void)draw_push_rect(&app->draw_commands,
+                             DrawLayer_World,
+                             x0,
+                             presentation_row->row_rect.y,
+                             MAX(x1 - x0, 1),
+                             MAX(row_measure.fill_h, 1),
+                             color);
       }
     }
   }
@@ -3989,10 +6258,10 @@ lectern0_draw_row_highlights(Lectern0App *app,
   {
     U64 start = MAX(app->reader.active_selection.text_byte_start, row_start) - row_start;
     U64 end = MIN(app->reader.active_selection.text_byte_end, row_end) - row_start;
-    S32 x0 = presentation_row->content_rect.x +
-      (S32)((start * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
-    S32 x1 = presentation_row->content_rect.x +
-      (S32)((end * (U64)MAX(presentation_row->content_rect.w, 1)) / row_size);
+    S32 x0 = 0;
+    S32 x1 = 0;
+    lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+                                row_size, start, end, &x0, &x1);
     U32 color = app->reader_content_theme.selection;
     (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
                                  x0, presentation_row->row_rect.y,
@@ -4279,6 +6548,7 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
   render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
   (void)lectern0_build_reader_view(app);
+  lectern0_update_host_control_records(app);
   lectern0_draw_reader_page(app);
   if (app->reader_view_ready)
   {
@@ -4404,9 +6674,13 @@ lectern0_configure_reader_view_parity(Lectern0App *app,
                                       const char *left,
                                       const char *right,
                                       const char *popup,
-                                      const char *query)
+                                      const char *query,
+                                      const char *focus,
+                                      const char *annotation_case)
 {
-  if (!app || !theme || !left || !right || !popup || !query) return 0;
+  if (!app || !theme || !left || !right || !popup || !query || !focus ||
+      !annotation_case)
+    return 0;
   B32 theme_found = 0;
   for (U32 index = 0; index < Lectern0Theme_Count; index += 1)
   {
@@ -4425,8 +6699,65 @@ lectern0_configure_reader_view_parity(Lectern0App *app,
           strcmp(left, "find") == 0) &&
          (strcmp(right, "closed") == 0 || strcmp(right, "open") == 0 ||
           strcmp(right, "bookmark") == 0) &&
-         (strcmp(popup, "none") == 0 || strcmp(popup, "font") == 0) &&
-         (strcmp(query, "-") == 0 || strlen(query) < READER_VIEW_FIND_QUERY_CAP);
+          (strcmp(popup, "none") == 0 || strcmp(popup, "font") == 0 ||
+           strcmp(popup, "annotations-filter") == 0 ||
+           strcmp(popup, "row-actions") == 0 ||
+           strcmp(popup, "note-editor") == 0) &&
+         (strcmp(query, "-") == 0 ||
+          strlen(query) < READER_VIEW_FIND_QUERY_CAP) &&
+          (strcmp(focus, "none") == 0 || strcmp(focus, "exit") == 0 ||
+           strcmp(focus, "previous") == 0 ||
+           strcmp(focus, "previous-enabled") == 0 ||
+           strcmp(focus, "next") == 0) &&
+          (strcmp(annotation_case, "none") == 0 ||
+           strcmp(annotation_case, "highlight-note") == 0 ||
+           strcmp(annotation_case, "row-actions") == 0 ||
+           strcmp(annotation_case, "note-editor") == 0) &&
+          ((strcmp(annotation_case, "none") == 0 &&
+            strcmp(popup, "row-actions") != 0 &&
+            strcmp(popup, "note-editor") != 0) ||
+           (strcmp(annotation_case, "highlight-note") == 0 &&
+            strcmp(right, "open") == 0 && strcmp(popup, "none") == 0) ||
+           (strcmp(annotation_case, "row-actions") == 0 &&
+            strcmp(right, "open") == 0 &&
+            strcmp(popup, "row-actions") == 0) ||
+           (strcmp(annotation_case, "note-editor") == 0 &&
+            strcmp(right, "open") == 0 &&
+            strcmp(popup, "note-editor") == 0));
+}
+
+FUNCTION B32
+lectern0_seed_reader_view_parity_annotations(Lectern0App *app,
+                                              const char *annotation_case)
+{
+  if (!app || !annotation_case) return 0;
+  if (strcmp(annotation_case, "none") == 0) return 1;
+  if (app->bookmark_count != 0 || app->highlight_count != 0) return 0;
+  DocSelection selection = {
+    .spine_index = 0,
+    .text_byte_start = 82,
+    .text_byte_end = 110,
+  };
+  if (epub_reader_set_selection(&app->reader, selection) != EpubReaderResult_Ok)
+    return 0;
+  lectern0_prepare_selected_text(app);
+  if (strcmp(app->selected_text, "Alpha reader parity sentence") != 0 ||
+      !lectern0_set_highlight_color(app, 2) ||
+      !lectern0_save_selection_note(
+        app, (ReaderViewText){"Attached parity note", 20}))
+    return 0;
+  epub_reader_clear_selection(&app->reader);
+  app->selection_anchor_rect = (UI0Rect){0};
+  lectern0_prepare_reader_view_projection(app);
+  return app->highlight_count == 1 && app->highlights[0].id == 1 &&
+         app->highlights[0].is_highlight &&
+         app->highlights[0].color_index == 2 &&
+         !app->highlights[0].starred && !app->highlights[0].note_starred &&
+         !app->reader.has_active_selection &&
+         strcmp(app->highlights[0].section, "First Light") == 0 &&
+         strcmp(app->highlights[0].text,
+                "Alpha reader parity sentence") == 0 &&
+         strcmp(app->highlights[0].note, "Attached parity note") == 0;
 }
 
 FUNCTION B32
@@ -4456,14 +6787,64 @@ lectern0_reader_view_parity_semantic(const Lectern0App *app,
   return 0;
 }
 
-FUNCTION B32
-lectern0_reader_view_parity_click(Lectern0App *app,
-                                  RenderBuffer *buffer,
-                                  ReaderViewSemanticRole role,
-                                  const char *name)
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_parity_control(const Lectern0App *app,
+                                    ReaderViewSemanticControl control)
 {
-  const ReaderViewSemanticNode *node =
-    lectern0_reader_view_parity_semantic(app, role, name);
+  if (!app || !app->reader_view_frame.semantic_nodes ||
+      control == ReaderViewSemanticControl_None)
+    return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->control == control) return node;
+  }
+  return 0;
+}
+
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_parity_control_source(
+  const Lectern0App *app,
+  ReaderViewSemanticControl control,
+  ReaderViewKey source_key)
+{
+  if (!app || !app->reader_view_frame.semantic_nodes ||
+      control == ReaderViewSemanticControl_None || source_key == 0)
+    return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->control == control && node->source_key == source_key)
+      return node;
+  }
+  return 0;
+}
+
+FUNCTION ReaderViewKey
+lectern0_reader_view_parity_right_key(const Lectern0App *app,
+                                      ReaderViewRightRowKind kind)
+{
+  if (!app) return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_projection.right.row_count;
+       index += 1)
+    if (app->reader_view_projection.right.rows[index].kind == kind)
+      return app->reader_view_projection.right.rows[index].key;
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_parity_click_node(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  const ReaderViewSemanticNode *node)
+{
   if (!node || node->rect.w <= 0 || node->rect.h <= 0) return 0;
   S32 x = node->rect.x + node->rect.w / 2;
   S32 y = node->rect.y + node->rect.h / 2;
@@ -4481,14 +6862,115 @@ lectern0_reader_view_parity_click(Lectern0App *app,
 }
 
 FUNCTION B32
+lectern0_reader_view_parity_space_node(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  const ReaderViewSemanticNode *node)
+{
+  if (!app || !buffer || !node || node->id == 0 ||
+      !reader_view_accessibility_focus(&app->reader_view_state, node->id))
+    return 0;
+  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+  lectern0_render_to_buffer(app, buffer);
+  if (app->reader_view_state.focus_id != node->id ||
+      !lectern0_reader_view_space_activates_focus(app))
+    return 0;
+  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  lectern0_apply_reader_view_actions(app);
+  lectern0_render_to_buffer(app, buffer);
+  lectern0_apply_reader_view_actions(app);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_reader_view_parity_click(Lectern0App *app,
+                                  RenderBuffer *buffer,
+                                  ReaderViewSemanticRole role,
+                                  const char *name)
+{
+  return lectern0_reader_view_parity_click_node(
+    app, buffer, lectern0_reader_view_parity_semantic(app, role, name));
+}
+
+FUNCTION B32
+lectern0_reader_view_parity_click_control(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  ReaderViewSemanticControl control)
+{
+  return lectern0_reader_view_parity_click_node(
+    app, buffer, lectern0_reader_view_parity_control(app, control));
+}
+
+FUNCTION B32
+lectern0_reader_view_parity_focus(Lectern0App *app,
+                                  RenderBuffer *buffer,
+                                  const char *focus)
+{
+  if (!app || !buffer || !focus) return 0;
+  if (strcmp(focus, "none") == 0) return 1;
+  if (strcmp(focus, "previous-enabled") == 0)
+  {
+    U32 before_spine = app->reader.active_spine_index;
+    U64 before_byte = app->reader.view_byte_offset;
+    if (lectern0_move_page(app, 1) != EpubReaderResult_Ok) return 0;
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    if (app->reader.active_spine_index == before_spine &&
+        app->reader.view_byte_offset == before_byte)
+      return 0;
+  }
+  U32 tab_count = strcmp(focus, "exit") == 0 ? 3 :
+                  (strcmp(focus, "previous") == 0 ||
+                   strcmp(focus, "previous-enabled") == 0) ? 11 :
+                  strcmp(focus, "next") == 0 ? 12 : 0;
+  if (tab_count == 0) return 0;
+  for (U32 tab = 0; tab < tab_count; tab += 1)
+  {
+    if (!lectern0_host_keyboard_tab(app, 0))
+      app->input.focus_next_pressed = 1;
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+  }
+  if (strcmp(focus, "exit") == 0)
+  {
+    Lectern0HostControlRecord *exit = lectern0_host_control_record(
+      app, Lectern0HostControl_ExitReader);
+    return exit && app->host_focus_control == Lectern0HostControl_ExitReader &&
+           app->host_focus_visible &&
+           (exit->semantic.flags & ReaderViewSemantic_Focused) != 0;
+  }
+  ReaderViewSemanticControl expected =
+    (strcmp(focus, "previous") == 0 ||
+     strcmp(focus, "previous-enabled") == 0) ?
+    ReaderViewSemanticControl_PreviousPage :
+    ReaderViewSemanticControl_NextPage;
+  const ReaderViewSemanticNode *node =
+    lectern0_reader_view_parity_control(app, expected);
+  return node && (node->flags & ReaderViewSemantic_Focused) != 0 &&
+         (strcmp(focus, "previous-enabled") != 0 ||
+          (node->flags & ReaderViewSemantic_Enabled) != 0) &&
+         app->reader_view_state.focus_id == node->id &&
+         app->reader_view_state.focus_visible;
+}
+
+FUNCTION B32
 lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
                                            RenderBuffer *buffer,
                                            const char *left,
                                            const char *right,
                                            const char *popup,
-                                           const char *query)
+                                           const char *query,
+                                           const char *focus,
+                                           const char *annotation_case)
 {
-  if (!app || !buffer || !left || !right || !popup || !query) return 0;
+  if (!app || !buffer || !left || !right || !popup || !query || !focus ||
+      !annotation_case)
+    return 0;
+  UI0ID filter_restore_id = 0;
   if (strcmp(left, "contents") == 0 &&
       !lectern0_reader_view_parity_click(app, buffer,
                                         ReaderViewSemantic_Button,
@@ -4522,6 +7004,69 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
                                         "Font"))
     return 0;
 
+  ReaderViewKey highlight_key = 0;
+  ReaderViewKey note_key = 0;
+  if (strcmp(annotation_case, "none") != 0)
+  {
+    highlight_key = lectern0_reader_view_parity_right_key(
+      app, ReaderViewRightRow_Highlight);
+    note_key = lectern0_reader_view_parity_right_key(
+      app, ReaderViewRightRow_Note);
+    if (highlight_key == 0 || note_key == 0) return 0;
+  }
+  if (strcmp(annotation_case, "highlight-note") == 0)
+  {
+    const ReaderViewSemanticNode *star =
+      lectern0_reader_view_parity_control_source(
+        app, ReaderViewSemanticControl_RightRowStar, highlight_key);
+    UI0Rect star_rect = star ? star->rect : (UI0Rect){0};
+    if (!lectern0_reader_view_parity_click_node(app, buffer, star) ||
+        !app->highlights[0].starred || app->highlights[0].note_starred)
+      return 0;
+    /* re10's automation leaves the pointer over the activated Star. Preserve
+       that final hover state for the deterministic visual comparison. */
+    app->input.pointer_x = star_rect.x + star_rect.w / 2;
+    app->input.pointer_y = star_rect.y + star_rect.h / 2;
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+  }
+  else if (strcmp(annotation_case, "row-actions") == 0)
+  {
+    const ReaderViewSemanticNode *menu =
+      lectern0_reader_view_parity_control_source(
+        app, ReaderViewSemanticControl_RightRowMenu, highlight_key);
+    if (!lectern0_reader_view_parity_click_node(app, buffer, menu) ||
+        app->reader_view_state.popup != ReaderViewPopup_RightRowActions)
+      return 0;
+  }
+  else if (strcmp(annotation_case, "note-editor") == 0)
+  {
+    const ReaderViewSemanticNode *menu =
+      lectern0_reader_view_parity_control_source(
+        app, ReaderViewSemanticControl_RightRowMenu, note_key);
+    if (!lectern0_reader_view_parity_click_node(app, buffer, menu)) return 0;
+    const ReaderViewSemanticNode *edit =
+      lectern0_reader_view_parity_control_source(
+        app, ReaderViewSemanticControl_RightActionEditNote, note_key);
+    if (!lectern0_reader_view_parity_click_node(app, buffer, edit) ||
+        app->reader_view_state.popup != ReaderViewPopup_NoteEditor ||
+        !lectern0_reader_view_text_equals(
+          reader_view_note_draft(&app->reader_view_state),
+          "Attached parity note"))
+      return 0;
+  }
+  if (strcmp(popup, "annotations-filter") == 0)
+  {
+    const ReaderViewSemanticNode *filter =
+      lectern0_reader_view_parity_control(
+        app, ReaderViewSemanticControl_RightFilter);
+    if (!filter) return 0;
+    filter_restore_id = filter->id;
+    if (!lectern0_reader_view_parity_click_control(
+          app, buffer, ReaderViewSemanticControl_RightFilter))
+      return 0;
+  }
+
   if (strcmp(query, "-") != 0)
   {
     size_t query_size = strlen(query);
@@ -4546,6 +7091,8 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
     }
   }
 
+  if (!lectern0_reader_view_parity_focus(app, buffer, focus)) return 0;
+
   ReaderViewLeftPanelMode expected_left = ReaderViewLeftPanel_None;
   if (strcmp(left, "contents") == 0)
     expected_left = ReaderViewLeftPanel_Contents;
@@ -4553,19 +7100,51 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
     expected_left = ReaderViewLeftPanel_Find;
   B32 expect_right_open = strcmp(right, "closed") != 0;
   ReaderViewPopupKind expected_popup = strcmp(popup, "font") == 0 ?
-    ReaderViewPopup_SettingMenu : ReaderViewPopup_None;
+    ReaderViewPopup_SettingMenu :
+    strcmp(popup, "annotations-filter") == 0 ?
+      ReaderViewPopup_RightFilter :
+    strcmp(popup, "row-actions") == 0 ?
+      ReaderViewPopup_RightRowActions :
+    strcmp(popup, "note-editor") == 0 ?
+      ReaderViewPopup_NoteEditor : ReaderViewPopup_None;
   B32 query_matches = strcmp(query, "-") == 0 ||
     (lectern0_reader_view_text_equals(reader_view_find_query(
-       &app->reader_view_state), query) && app->reader.search_match_count > 0);
+       &app->reader_view_state), query) && app->reader.search_match_count > 0 &&
+     lectern0_reader_view_text_equals(
+       app->reader_view_projection.find.status.message, "18 matches"));
   B32 bookmark_matches = strcmp(right, "bookmark") != 0 ||
                          app->bookmark_count == 1;
+  B32 filter_focus_matches = 1;
+  if (expected_popup == ReaderViewPopup_RightFilter)
+  {
+    const ReaderViewSemanticNode *option =
+      lectern0_reader_view_parity_control(
+        app, ReaderViewSemanticControl_RightFilterOption);
+    filter_focus_matches = option &&
+      option->source_key == ReaderViewRightFilter_All &&
+      (option->flags & ReaderViewSemantic_Focused) != 0 &&
+      app->reader_view_state.focus_id == option->id &&
+      !app->reader_view_state.focus_visible &&
+      app->reader_view_state.restore_focus_id == filter_restore_id;
+  }
+  B32 annotation_matches = strcmp(annotation_case, "none") == 0 ||
+    (app->highlight_count == 1 && app->highlights[0].is_highlight &&
+     app->highlights[0].color_index == 2 &&
+     strcmp(app->highlights[0].text,
+            "Alpha reader parity sentence") == 0 &&
+     strcmp(app->highlights[0].note, "Attached parity note") == 0 &&
+     app->reader_view_projection.right.highlight_count == 1 &&
+     app->reader_view_projection.right.note_count == 1 &&
+     (strcmp(annotation_case, "highlight-note") != 0 ||
+      (app->highlights[0].starred && !app->highlights[0].note_starred)));
   return app->reader_view_state.left_panel == expected_left &&
          app->reader_view_state.right_panel_open == expect_right_open &&
          app->reader_view_state.popup == expected_popup &&
          (expected_popup != ReaderViewPopup_SettingMenu ||
           app->reader_view_state.active_setting_kind ==
             ReaderViewSetting_FontFamily) &&
-         query_matches && bookmark_matches;
+         query_matches && bookmark_matches && filter_focus_matches &&
+         annotation_matches;
 }
 
 FUNCTION int
@@ -4578,7 +7157,9 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
                                         const char *popup,
                                         const char *query,
                                         const char *evidence_path,
-                                        const char *bmp_path)
+                                        const char *bmp_path,
+                                        const char *focus,
+                                        const char *annotation_case)
 {
   S32 width = (S32)atoi(width_text);
   S32 height = (S32)atoi(height_text);
@@ -4591,7 +7172,9 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
   if (!pixels || !lectern0_app_init(&app, width, height, 1, 0) ||
       !lectern0_open_path(&app, epub_path) ||
       !lectern0_configure_reader_view_parity(&app, theme, left, right,
-                                             popup, query))
+                                             popup, query, focus,
+                                             annotation_case) ||
+      !lectern0_seed_reader_view_parity_annotations(&app, annotation_case))
   {
     fprintf(stderr, "lectern0_reader_view_parity result=fail reason=setup\n");
     free(pixels);
@@ -4602,10 +7185,11 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
   render_buffer_init(&buffer, pixels, width, height, width);
   lectern0_render_to_buffer(&app, &buffer);
   if (!lectern0_apply_reader_view_parity_scenario(&app, &buffer,
-                                                   left, right, popup, query))
+                                                   left, right, popup, query,
+                                                   focus, annotation_case))
   {
     fprintf(stderr,
-            "lectern0_reader_view_parity result=fail reason=scenario expected_left=%s actual_left=%d expected_right=%s actual_right=%d expected_popup=%s actual_popup=%d query=%s matches=%u bookmarks=%u\n",
+            "lectern0_reader_view_parity result=fail reason=scenario expected_left=%s actual_left=%d expected_right=%s actual_right=%d expected_popup=%s actual_popup=%d query=%s focus=%s annotation=%s matches=%u bookmarks=%u highlights=%u\n",
             left,
             (int)app.reader_view_state.left_panel,
             right,
@@ -4613,11 +7197,22 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
             popup,
             (int)app.reader_view_state.popup,
             query,
+            focus,
+            annotation_case,
             app.reader.search_match_count,
-            app.bookmark_count);
+            app.bookmark_count,
+            app.highlight_count);
     free(pixels);
     lectern0_app_release(&app);
     return 1;
+  }
+  if (strcmp(query, "-") != 0)
+  {
+    /* The re10 automation capture lands on the first hidden caret frame.
+       Keep this headless comparison at the same deterministic blink phase;
+       interactive lectern0 continues to use its monotonically increasing
+       host frame counter. */
+    app.reader_view_frame_index = 30;
   }
   lectern0_render_to_buffer(&app, &buffer);
   B32 wrote_evidence = lectern0_write_reader_view_parity(evidence_path, &app);
@@ -4632,8 +7227,9 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
     return 1;
   }
   fprintf(stdout,
-          "lectern0_reader_view_parity result=pass size=%dx%d theme=%s left=%s right=%s popup=%s query=%s\n",
-          width, height, theme, left, right, popup, query);
+          "lectern0_reader_view_parity result=pass size=%dx%d theme=%s left=%s right=%s popup=%s query=%s focus=%s annotation=%s\n",
+          width, height, theme, left, right, popup, query, focus,
+          annotation_case);
   free(pixels);
   lectern0_app_release(&app);
   return 0;
@@ -4672,8 +7268,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     {
       if (app)
       {
-        app->input.pointer_x = GET_X_LPARAM(l_param);
-        app->input.pointer_y = GET_Y_LPARAM(l_param);
+        lectern0_host_pointer_move(app,
+                                   GET_X_LPARAM(l_param),
+                                   GET_Y_LPARAM(l_param));
         if (app->selection_dragging && app->input.pointer_down)
           lectern0_update_pointer_selection(app,
                                             app->input.pointer_x,
@@ -4681,6 +7278,13 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
                                             0);
         InvalidateRect(window, 0, FALSE);
       }
+      return 0;
+    } break;
+
+    case WM_CANCELMODE:
+    case WM_CAPTURECHANGED:
+    {
+      if (app) lectern0_host_pointer_cancel(app);
       return 0;
     } break;
 
@@ -4701,10 +7305,10 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     {
       if (app)
       {
+        B32 exit_requested = lectern0_host_pointer_release(
+          app, GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param));
         ReleaseCapture();
-        if (lectern0_host_pointer_release(app,
-                                          GET_X_LPARAM(l_param),
-                                          GET_Y_LPARAM(l_param)))
+        if (exit_requested)
         {
           PostMessageW(window, WM_CLOSE, 0, 0);
           return 0;
@@ -4746,8 +7350,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     case WM_CHAR:
     {
       if (app && w_param >= 32 && w_param != 127 &&
-          (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
-           app->reader_view_state.popup == ReaderViewPopup_NoteEditor))
+          lectern0_reader_view_text_editing(app))
       {
         lectern0_append_input_wchar(app, (wchar_t)w_param);
         InvalidateRect(window, 0, FALSE);
@@ -4762,16 +7365,14 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         B32 control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         B32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-        B32 editing = app->reader_view_state.left_panel == ReaderViewLeftPanel_Find ||
-                      app->reader_view_state.popup == ReaderViewPopup_NoteEditor;
+        B32 editing = lectern0_reader_view_text_editing(app);
         if (w_param == 'O' && control)
         {
           (void)lectern0_pick_epub(app);
         }
         else if (w_param == 'F' && control)
         {
-          app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
-          app->reader_view_state.most_recent_panel = ReaderViewPanel_Left;
+          lectern0_reader_view_open_find_from_shortcut(app);
         }
         else if (w_param == 'B' && control && epub_reader_is_open(&app->reader))
         {
@@ -4799,42 +7400,6 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
           (void)lectern0_set_clipboard_text(
             app, lectern0_reader_view_text(app->selected_text));
         }
-        else if (editing && w_param == VK_BACK) app->input.backspace_pressed = 1;
-        else if (editing && w_param == VK_DELETE) app->input.delete_pressed = 1;
-        else if (editing && w_param == VK_RETURN)
-        {
-          if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor)
-            lectern0_append_input_wchar(app, L'\n');
-          else
-            app->input.commit_pressed = 1;
-        }
-        else if (editing && (w_param == VK_LEFT || w_param == VK_RIGHT))
-        {
-          app->input.move_delta = w_param == VK_LEFT ? -1 : 1;
-          app->input.extend_selection = shift;
-        }
-        else if (editing && (w_param == VK_UP || w_param == VK_DOWN))
-        {
-          app->input.move_vertical_delta = w_param == VK_UP ? -1 : 1;
-          app->input.extend_selection = shift;
-        }
-        else if (!editing &&
-                 lectern0_reader_view_focus_is(app, ReaderViewSemantic_Slider) &&
-                 (w_param == VK_LEFT || w_param == VK_RIGHT))
-        {
-          app->input.move_delta = w_param == VK_LEFT ? -1 : 1;
-        }
-        else if (!editing && app->reader_view_state.focus_id != 0 &&
-                 (w_param == VK_UP || w_param == VK_DOWN))
-        {
-          app->input.move_vertical_delta = w_param == VK_UP ? -1 : 1;
-        }
-        else if (!editing && app->reader_view_state.focus_id != 0 &&
-                 (w_param == VK_HOME || w_param == VK_END))
-        {
-          app->input.range_move = w_param == VK_HOME ?
-            ReaderViewRangeMove_First : ReaderViewRangeMove_Last;
-        }
         else if (alt && w_param == VK_LEFT)
         {
           (void)lectern0_move_history(app, 0);
@@ -4843,23 +7408,15 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)lectern0_move_history(app, 1);
         }
-        else if (!editing && (w_param == VK_LEFT || w_param == VK_PRIOR))
+        else
         {
-          (void)lectern0_move_page(app, -1);
-        }
-        else if (!editing &&
-                 (w_param == VK_RIGHT || w_param == VK_NEXT || w_param == VK_SPACE))
-        {
-          (void)lectern0_move_page(app, 1);
-        }
-        else if (w_param == VK_TAB)
-        {
-          if (shift) { app->input.focus_prev_pressed = 1; }
-          else { app->input.focus_next_pressed = 1; }
-        }
-        else if (!editing && w_param == VK_RETURN)
-        {
-          app->input.activate_pressed = 1;
+          Lectern0ReaderKeyRoute route =
+            lectern0_reader_view_route_keydown(app, w_param, shift);
+          if (route == Lectern0ReaderKeyRoute_CloseRequested)
+          {
+            (void)PostMessageW(window, WM_CLOSE, 0, 0);
+            return 0;
+          }
         }
         InvalidateRect(window, 0, FALSE);
       }
@@ -4893,6 +7450,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
   return DefWindowProcW(window, message, w_param, l_param);
 }
 
+FUNCTION B32
+lectern0_reader_view_host_icon_raster_regression(Lectern0App *app);
+
 FUNCTION int
 lectern0_run_headless(const char *path)
 {
@@ -4900,6 +7460,13 @@ lectern0_run_headless(const char *path)
   if (!lectern0_app_init(&app, 1000, 720, 0, 0) || !lectern0_open_path(&app, path))
   {
     fprintf(stderr, "lectern0_host_smoke result=fail reason=open\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+  if (!lectern0_reader_view_host_icon_raster_regression(&app))
+  {
+    fprintf(stderr,
+            "lectern0_host_smoke result=fail reason=host_icon_raster\n");
     lectern0_app_release(&app);
     return 1;
   }
@@ -5004,7 +7571,7 @@ lectern0_run_headless(const char *path)
 
   U64 hash = u64_hash_str8(app.frame.visible_text);
   fprintf(stdout,
-          "lectern0_host_smoke result=pass spine=%u page=%llu/%llu text=%llu toc=1 find=1 hash=%016llx\n",
+          "lectern0_host_smoke result=pass spine=%u page=%llu/%llu text=%llu toc=1 find=1 carets=frozen18x32 hash=%016llx\n",
           app.frame.spine_index,
           (unsigned long long)app.frame.page_index,
           (unsigned long long)app.frame.page_count,
@@ -5218,6 +7785,36 @@ lectern0_reader_view_hash_mix(U64 hash, U64 value)
 }
 
 FUNCTION U64
+lectern0_reader_view_icon_hash_u32(U64 hash, U32 value)
+{
+  U64 result = hash;
+  for (U32 shift = 0; shift < 32; shift += 8)
+  {
+    result ^= (U64)((value >> shift) & 0xffu);
+    result *= 1099511628211ull;
+  }
+  return result;
+}
+
+FUNCTION U64
+lectern0_reader_view_icon_raster_hash(const U32 *pixels,
+                                      S32 width,
+                                      S32 height,
+                                      S32 stride_pixels)
+{
+  U64 hash = 1469598103934665603ull;
+  if (!pixels || width <= 0 || height <= 0 || stride_pixels < width)
+    return 0;
+  hash = lectern0_reader_view_icon_hash_u32(hash, (U32)width);
+  hash = lectern0_reader_view_icon_hash_u32(hash, (U32)height);
+  for (S32 y = 0; y < height; y += 1)
+    for (S32 x = 0; x < width; x += 1)
+      hash = lectern0_reader_view_icon_hash_u32(
+        hash, pixels[(size_t)y * (size_t)stride_pixels + (size_t)x]);
+  return hash;
+}
+
+FUNCTION U64
 lectern0_reader_view_contract_hash(const ReaderViewFrame *frame)
 {
   U64 hash = 1469598103934665603ull;
@@ -5256,12 +7853,1374 @@ lectern0_reader_view_has_semantic(const ReaderViewFrame *frame,
 
 FUNCTION B32
 lectern0_reader_view_has_action(const ReaderViewFrame *frame,
+                                ReaderViewActionKind kind);
+
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_semantic_control(const ReaderViewFrame *frame,
+                                      ReaderViewSemanticControl control)
+{
+  if (!frame || !frame->semantic_nodes ||
+      control == ReaderViewSemanticControl_None)
+    return 0;
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+    if (frame->semantic_nodes[index].control == control)
+      return frame->semantic_nodes + index;
+  return 0;
+}
+
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_semantic_control_source(
+  const ReaderViewFrame *frame,
+  ReaderViewSemanticControl control,
+  ReaderViewKey source_key)
+{
+  if (!frame || !frame->semantic_nodes ||
+      control == ReaderViewSemanticControl_None)
+    return 0;
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+  {
+    const ReaderViewSemanticNode *node = frame->semantic_nodes + index;
+    if (node->control == control && node->source_key == source_key)
+      return node;
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_has_draw_for_source(const ReaderViewFrame *frame,
+                                         UI0DrawOpKind op,
+                                         UI0ID source_id)
+{
+  if (!frame || !frame->draw_commands || source_id == 0) return 0;
+  for (UI0S32 index = 0; index < frame->draw_command_count; index += 1)
+    if (frame->draw_commands[index].op == op &&
+        frame->draw_commands[index].source_id == source_id)
+      return 1;
+  return 0;
+}
+
+FUNCTION const UI0DrawCommand *
+lectern0_reader_view_draw_for_source(const ReaderViewFrame *frame,
+                                     UI0DrawOpKind op,
+                                     UI0ID source_id)
+{
+  if (!frame || !frame->draw_commands || source_id == 0) return 0;
+  for (UI0S32 index = 0; index < frame->draw_command_count; index += 1)
+    if (frame->draw_commands[index].op == op &&
+        frame->draw_commands[index].source_id == source_id)
+      return frame->draw_commands + index;
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_host_icon_raster_regression(Lectern0App *app)
+{
+  UI0DrawCommand command = {0};
+  const U32 *left_first;
+  const U32 *left_repeat;
+  const U32 *right;
+  const U32 *filter;
+  if (!app || Lectern0UI0IconRasterMaxWidth != 32 ||
+      Lectern0UI0IconRasterMaxHeight != 32)
+    return 0;
+
+  app->ui0_icon_raster_count = 0;
+  command.op = UI0DrawOp_Icon;
+  command.icon_kind = UI0IconKind_PageCaretLeft;
+  command.rect = ui0_rect(0, 0, 18, 32);
+  command.color = UI0_COLOR_RGB(31, 41, 55);
+  command.stroke_color = UI0_COLOR_RGB(253, 251, 247);
+  left_first = lectern0_ui0_icon_raster(app, &command);
+  left_repeat = lectern0_ui0_icon_raster(app, &command);
+  if (!left_first || left_repeat != left_first ||
+      app->ui0_icon_raster_count != 1)
+    return 0;
+
+  command.icon_kind = UI0IconKind_PageCaretRight;
+  right = lectern0_ui0_icon_raster(app, &command);
+  if (!right || right == left_first || app->ui0_icon_raster_count != 2)
+    return 0;
+
+  if (lectern0_reader_view_icon_raster_hash(
+        left_first, 18, 32, Lectern0UI0IconRasterMaxWidth) !=
+        2165135300752429591ull ||
+      lectern0_reader_view_icon_raster_hash(
+        right, 18, 32, Lectern0UI0IconRasterMaxWidth) !=
+        7851032404797536851ull)
+    return 0;
+
+  command.icon_kind = UI0IconKind_Filter;
+  command.rect = ui0_rect(120, 72, 18, 18);
+  command.clip_rect = ui0_rect(112, 64, 34, 34);
+  command.color = UI0_COLOR_RGB(35, 42, 53);
+  command.stroke_color = UI0_COLOR_RGB(246, 241, 232);
+  filter = lectern0_ui0_icon_raster(app, &command);
+  if (!filter || app->ui0_icon_raster_count != 3 ||
+      lectern0_reader_view_icon_raster_hash(
+        filter, 18, 18, Lectern0UI0IconRasterMaxWidth) !=
+        768785035519145851ull)
+    return 0;
+
+  command.rect.h = Lectern0UI0IconRasterMaxHeight + 1;
+  return lectern0_ui0_icon_raster(app, &command) == 0 &&
+         app->ui0_icon_raster_count == 3;
+}
+
+typedef struct Lectern0ExpectedFocus
+{
+  Lectern0HostControlIdentity host;
+  ReaderViewSemanticControl shared;
+} Lectern0ExpectedFocus;
+
+FUNCTION B32
+lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
+{
+  if (!app) return 0;
+  enum
+  {
+    FindInput = 9801,
+    FindClear = 9802,
+    NoteInput = 9803,
+    NoteSave = 9804,
+    NextPage = 9805,
+  };
+  ReaderViewSemanticNode nodes[] = {
+    {
+      .id = FindInput,
+      .role = ReaderViewSemantic_SearchBox,
+      .control = ReaderViewSemanticControl_FindInput,
+    },
+    {
+      .id = FindClear,
+      .role = ReaderViewSemantic_Button,
+      .control = ReaderViewSemanticControl_FindClear,
+    },
+    {
+      .id = NoteInput,
+      .role = ReaderViewSemantic_TextArea,
+    },
+    {
+      .id = NoteSave,
+      .role = ReaderViewSemantic_Button,
+      .control = ReaderViewSemanticControl_RightActionEditNote,
+    },
+    {
+      .id = NextPage,
+      .role = ReaderViewSemantic_Button,
+      .control = ReaderViewSemanticControl_NextPage,
+    },
+  };
+  ReaderViewFrame saved_frame = app->reader_view_frame;
+  ReaderViewState saved_state = app->reader_view_state;
+  Lectern0Input saved_input = app->input;
+  app->reader_view_frame.semantic_nodes = nodes;
+  app->reader_view_frame.semantic_node_count = ARRAY_COUNT(nodes);
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  app->reader_view_state.pending_left_panel_focus = ReaderViewLeftPanel_None;
+  app->reader_view_state.focus_id = FindInput;
+  B32 result = lectern0_reader_view_text_editing(app) &&
+    !lectern0_reader_view_space_activates_focus(app) &&
+    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      Lectern0ReaderKeyRoute_None &&
+    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_RIGHT, 1) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_NEXT, 0) ==
+      Lectern0ReaderKeyRoute_Handled;
+  ReaderViewInput input = lectern0_reader_view_input(app);
+  result = result &&
+    input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
+    input.range_move == ReaderViewRangeMove_NextPage &&
+    input.find_text.move_delta == 1 && input.find_text.extend_selection &&
+    input.find_text.commit_pressed;
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.focus_id = FindClear;
+  result = result &&
+    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_LEFT, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_PRIOR, 0) ==
+      Lectern0ReaderKeyRoute_Handled;
+  input = lectern0_reader_view_input(app);
+  result = result && !lectern0_reader_view_text_editing(app) &&
+    lectern0_reader_view_space_activates_focus(app) &&
+    (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
+    input.move_horizontal_delta == -1 &&
+    input.range_move == ReaderViewRangeMove_PreviousPage;
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  app->reader_view_state.popup = ReaderViewPopup_NoteEditor;
+  app->reader_view_state.focus_id = NoteInput;
+  result = result &&
+    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      Lectern0ReaderKeyRoute_None &&
+    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_DOWN, 1) ==
+      Lectern0ReaderKeyRoute_Handled;
+  input = lectern0_reader_view_input(app);
+  result = result && lectern0_reader_view_text_editing(app) &&
+    !lectern0_reader_view_space_activates_focus(app) &&
+    input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
+    input.note_text.text_len == 1 && input.note_text.text[0] == '\n' &&
+    input.note_text.move_vertical_delta == 1 &&
+    input.note_text.extend_selection;
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.focus_id = NoteSave;
+  result = result &&
+    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      Lectern0ReaderKeyRoute_Handled;
+  input = lectern0_reader_view_input(app);
+  result = result && !lectern0_reader_view_text_editing(app) &&
+    lectern0_reader_view_space_activates_focus(app) &&
+    (input.ui.flags & UI0Input_ActivatePressed) != 0;
+
+  MemoryZeroStruct(&app->input);
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  app->reader_view_state.focus_id = NextPage;
+  result = result &&
+    lectern0_reader_view_route_keydown(app, VK_RIGHT, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_NEXT, 0) ==
+      Lectern0ReaderKeyRoute_Handled &&
+    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      Lectern0ReaderKeyRoute_Handled;
+  input = lectern0_reader_view_input(app);
+  result = result && !lectern0_reader_view_text_editing(app) &&
+    lectern0_reader_view_space_activates_focus(app) &&
+    (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
+    input.move_horizontal_delta == 1 &&
+    input.range_move == ReaderViewRangeMove_NextPage;
+  app->reader_view_state.focus_id = 0;
+  result = result && !lectern0_reader_view_text_editing(app) &&
+    !lectern0_reader_view_space_activates_focus(app);
+
+  app->input = saved_input;
+  app->reader_view_state = saved_state;
+  app->reader_view_frame = saved_frame;
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_find_shortcut_focus_regression(Lectern0App *app,
+                                                     RenderBuffer *buffer)
+{
+  if (!app || !buffer) return 0;
+  ReaderViewState saved_state = app->reader_view_state;
+  Lectern0Input saved_input = app->input;
+  Lectern0HostControlIdentity saved_host_focus = app->host_focus_control;
+  B32 saved_host_visible = app->host_focus_visible;
+
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  app->reader_view_state.focus_id = 0;
+  app->host_focus_control = Lectern0HostControl_ExitReader;
+  app->host_focus_visible = 1;
+  lectern0_reader_view_open_find_from_shortcut(app);
+  B32 result =
+    app->reader_view_state.pending_left_panel_focus == ReaderViewLeftPanel_Find &&
+    app->host_focus_control == Lectern0HostControl_None &&
+    lectern0_reader_view_text_editing(app) &&
+    !lectern0_reader_view_space_activates_focus(app);
+  if (result)
+  {
+    app->input.text[0] = 'q';
+    app->input.text[1] = 0;
+    app->input.text_length = 1;
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    const ReaderViewSemanticNode *input =
+      lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_FindInput);
+    result = input && app->reader_view_state.focus_id == input->id &&
+      app->reader_view_state.pending_left_panel_focus ==
+        ReaderViewLeftPanel_None &&
+      lectern0_reader_view_text_editing(app) &&
+      !lectern0_reader_view_space_activates_focus(app) &&
+      lectern0_reader_view_text_equals(
+        reader_view_find_query(&app->reader_view_state), "q");
+  }
+
+  app->reader_view_state = saved_state;
+  app->input = saved_input;
+  app->host_focus_control = saved_host_focus;
+  app->host_focus_visible = saved_host_visible;
+  lectern0_render_to_buffer(app, buffer);
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_reference_focus_order(Lectern0App *app,
+                                           RenderBuffer *buffer)
+{
+  static const Lectern0ExpectedFocus expected[] = {
+    {.shared = ReaderViewSemanticControl_Contents},
+    {.shared = ReaderViewSemanticControl_Find},
+    {.host = Lectern0HostControl_ExitReader},
+    {.shared = ReaderViewSemanticControl_Fullscreen},
+    {.shared = ReaderViewSemanticControl_Annotations},
+    {.shared = ReaderViewSemanticControl_FontSize},
+    {.shared = ReaderViewSemanticControl_LineSpacing},
+    {.shared = ReaderViewSemanticControl_FontFamily},
+    {.shared = ReaderViewSemanticControl_Theme},
+    {.shared = ReaderViewSemanticControl_Bookmark},
+    {.shared = ReaderViewSemanticControl_PreviousPage},
+    {.shared = ReaderViewSemanticControl_NextPage},
+    {.shared = ReaderViewSemanticControl_Progress},
+  };
+  if (!app || !buffer) return 0;
+  const ReaderViewSemanticNode *contents =
+    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                          ReaderViewSemanticControl_Contents);
+  if (!contents ||
+      !reader_view_accessibility_focus(&app->reader_view_state, contents->id))
+    return 0;
+  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+  lectern0_render_to_buffer(app, buffer);
+
+  for (U32 index = 0; index < ARRAY_COUNT(expected); index += 1)
+  {
+    if (expected[index].host != Lectern0HostControl_None)
+    {
+      if (app->host_focus_control != expected[index].host) return 0;
+    }
+    else
+    {
+      const ReaderViewSemanticNode *node =
+        lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                              expected[index].shared);
+      if (!node || app->host_focus_control != Lectern0HostControl_None ||
+          app->reader_view_state.focus_id != node->id)
+        return 0;
+    }
+
+    if (!lectern0_host_keyboard_tab(app, 0))
+      app->input.focus_next_pressed = 1;
+    lectern0_render_to_buffer(app, buffer);
+  }
+
+  const ReaderViewSemanticNode *wrapped =
+    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                          ReaderViewSemanticControl_Contents);
+  if (!wrapped || app->host_focus_control != Lectern0HostControl_None ||
+      app->reader_view_state.focus_id != wrapped->id)
+    return 0;
+
+  for (U32 offset = 0; offset < ARRAY_COUNT(expected); offset += 1)
+  {
+    U32 index = (U32)ARRAY_COUNT(expected) - 1 - offset;
+    if (!lectern0_host_keyboard_tab(app, 1))
+      app->input.focus_prev_pressed = 1;
+    lectern0_render_to_buffer(app, buffer);
+    if (expected[index].host != Lectern0HostControl_None)
+    {
+      if (app->host_focus_control != expected[index].host) return 0;
+    }
+    else
+    {
+      const ReaderViewSemanticNode *node =
+        lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                              expected[index].shared);
+      if (!node || app->host_focus_control != Lectern0HostControl_None ||
+          app->reader_view_state.focus_id != node->id)
+        return 0;
+    }
+  }
+  return 1;
+}
+
+FUNCTION const ReaderViewSemanticNode *
+lectern0_reader_view_focused_semantic(const ReaderViewFrame *frame)
+{
+  if (!frame || !frame->semantic_nodes) return 0;
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+  {
+    const ReaderViewSemanticNode *node = frame->semantic_nodes + index;
+    if ((node->flags & ReaderViewSemantic_Focused) != 0) return node;
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_semantic_center_in_rect(
+  const ReaderViewSemanticNode *node,
+  UI0Rect rect)
+{
+  return node && node->rect.w > 0 && node->rect.h > 0 &&
+    rect.w > 0 && rect.h > 0 &&
+    ui0_rect_contains_point(rect,
+                            node->rect.x + node->rect.w / 2,
+                            node->rect.y + node->rect.h / 2);
+}
+
+FUNCTION B32
+lectern0_reader_view_panel_focus_regression(Lectern0App *app,
+                                             RenderBuffer *buffer)
+{
+  typedef struct Lectern0PanelFocusCase
+  {
+    ReaderViewLeftPanelMode left_panel;
+    B32 right_panel_open;
+  } Lectern0PanelFocusCase;
+  static const Lectern0PanelFocusCase cases[] = {
+    {ReaderViewLeftPanel_Contents, 0},
+    {ReaderViewLeftPanel_Find, 0},
+    {ReaderViewLeftPanel_None, 1},
+  };
+  if (!app || !buffer || !epub_reader_is_open(&app->reader)) return 0;
+
+  ReaderViewState saved_state = app->reader_view_state;
+  Lectern0HostControlIdentity saved_host_focus = app->host_focus_control;
+  B32 saved_host_visible = app->host_focus_visible;
+  U32 saved_spine = app->reader.active_spine_index;
+  U64 saved_byte = app->reader.view_byte_offset;
+  U32 saved_back_count = app->reader.back_stack_count;
+  U32 saved_forward_count = app->reader.forward_stack_count;
+  B32 result = 1;
+  U32 failed_case = 0;
+  U32 checkpoint = 0;
+
+  for (U32 case_index = 0;
+       result && case_index < ARRAY_COUNT(cases);
+       case_index += 1)
+  {
+    checkpoint = 0;
+    const Lectern0PanelFocusCase *test = cases + case_index;
+    app->reader_view_state = saved_state;
+    app->reader_view_state.left_panel = test->left_panel;
+    app->reader_view_state.right_panel_open = test->right_panel_open;
+    app->reader_view_state.popup = ReaderViewPopup_None;
+    app->reader_view_state.focus_id = 0;
+    app->reader_view_state.focus_visible = 0;
+    app->reader_view_state.hot_id = 0;
+    app->reader_view_state.active_id = 0;
+    app->reader_view_state.restore_focus_id = 0;
+    app->reader_view_state.pending_accessibility_focus_id = 0;
+    app->reader_view_state.pending_accessibility_invoke_id = 0;
+    app->host_focus_control = Lectern0HostControl_None;
+    app->host_focus_visible = 0;
+    lectern0_render_to_buffer(app, buffer);
+
+    UI0Rect panel = test->right_panel_open ?
+      app->reader_view_layout.right_panel_rect :
+      app->reader_view_layout.left_panel_rect;
+    const ReaderViewSemanticNode *progress =
+      lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Progress);
+    result = progress &&
+      (progress->flags & ReaderViewSemantic_Focusable) != 0 &&
+      reader_view_accessibility_focus(&app->reader_view_state, progress->id);
+    if (result)
+    {
+      lectern0_render_to_buffer(app, buffer);
+      progress = lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Progress);
+      result = progress &&
+        app->reader_view_state.focus_id == progress->id &&
+        app->reader_view_state.focus_visible &&
+        (progress->flags & ReaderViewSemantic_Focused) != 0 &&
+        app->reader_view_frame.action_count == 0;
+    }
+    if (result) checkpoint = 1;
+
+    B32 host_handled = result ? lectern0_host_keyboard_tab(app, 0) : 0;
+    result = result && !host_handled;
+    if (result)
+    {
+      app->input.focus_next_pressed = 1;
+      lectern0_render_to_buffer(app, buffer);
+      const ReaderViewSemanticNode *focused =
+        lectern0_reader_view_focused_semantic(&app->reader_view_frame);
+      result = focused && app->reader_view_state.focus_visible &&
+        app->reader_view_state.focus_id == focused->id &&
+        (focused->flags & ReaderViewSemantic_Focusable) != 0 &&
+        lectern0_reader_view_semantic_center_in_rect(focused, panel) &&
+        app->reader_view_frame.action_count == 0;
+    }
+    if (result) checkpoint = 2;
+
+    host_handled = result ? lectern0_host_keyboard_tab(app, 1) : 0;
+    result = result && !host_handled;
+    if (result)
+    {
+      app->input.focus_prev_pressed = 1;
+      lectern0_render_to_buffer(app, buffer);
+      progress = lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Progress);
+      result = progress &&
+        app->reader_view_state.focus_id == progress->id &&
+        app->reader_view_state.focus_visible &&
+        (progress->flags & ReaderViewSemantic_Focused) != 0 &&
+        app->reader_view_frame.action_count == 0;
+    }
+    if (result) checkpoint = 3;
+
+    const ReaderViewSemanticNode *contents = result ?
+      lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Contents) : 0;
+    result = result && contents &&
+      reader_view_accessibility_focus(&app->reader_view_state, contents->id);
+    if (result)
+    {
+      lectern0_render_to_buffer(app, buffer);
+      contents = lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Contents);
+      result = contents &&
+        app->reader_view_state.focus_id == contents->id &&
+        app->reader_view_state.focus_visible &&
+        (contents->flags & ReaderViewSemantic_Focused) != 0 &&
+        app->reader_view_frame.action_count == 0;
+    }
+
+    host_handled = result ? lectern0_host_keyboard_tab(app, 1) : 0;
+    result = result && !host_handled;
+    if (result)
+    {
+      app->input.focus_prev_pressed = 1;
+      lectern0_render_to_buffer(app, buffer);
+      const ReaderViewSemanticNode *focused =
+        lectern0_reader_view_focused_semantic(&app->reader_view_frame);
+      result = focused && app->reader_view_state.focus_visible &&
+        app->reader_view_state.focus_id == focused->id &&
+        (focused->flags & ReaderViewSemantic_Focusable) != 0 &&
+        lectern0_reader_view_semantic_center_in_rect(focused, panel) &&
+        app->reader_view_frame.action_count == 0;
+    }
+    if (result) checkpoint = 4;
+
+    host_handled = result ? lectern0_host_keyboard_tab(app, 0) : 0;
+    result = result && !host_handled;
+    if (result)
+    {
+      app->input.focus_next_pressed = 1;
+      lectern0_render_to_buffer(app, buffer);
+      contents = lectern0_reader_view_semantic_control(
+        &app->reader_view_frame, ReaderViewSemanticControl_Contents);
+      result = contents &&
+        app->reader_view_state.focus_id == contents->id &&
+        app->reader_view_state.focus_visible &&
+        (contents->flags & ReaderViewSemantic_Focused) != 0 &&
+        app->reader_view_frame.action_count == 0;
+    }
+    if (result) checkpoint = 5;
+
+    result = result &&
+      app->reader_view_state.left_panel == test->left_panel &&
+      app->reader_view_state.right_panel_open == test->right_panel_open &&
+      app->reader.active_spine_index == saved_spine &&
+      app->reader.view_byte_offset == saved_byte &&
+      app->reader.back_stack_count == saved_back_count &&
+      app->reader.forward_stack_count == saved_forward_count;
+    if (!result) failed_case = case_index + 1;
+  }
+
+  app->reader_view_state = saved_state;
+  app->host_focus_control = saved_host_focus;
+  app->host_focus_visible = saved_host_visible;
+  lectern0_render_to_buffer(app, buffer);
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0 panel focus regression case=%u checkpoint=%u focus=%llu left=%d right=%d actions=%d\n",
+            failed_case,
+            checkpoint,
+            (unsigned long long)app->reader_view_state.focus_id,
+            (int)app->reader_view_state.left_panel,
+            (int)app->reader_view_state.right_panel_open,
+            (int)app->reader_view_frame.action_count);
+  }
+  return result && app->reader.active_spine_index == saved_spine &&
+    app->reader.view_byte_offset == saved_byte &&
+    app->reader.back_stack_count == saved_back_count &&
+    app->reader.forward_stack_count == saved_forward_count;
+}
+
+FUNCTION B32
+lectern0_reader_view_gutter_keyboard_regression(Lectern0App *app,
+                                                RenderBuffer *buffer)
+{
+  if (!app || !buffer || !epub_reader_is_open(&app->reader)) return 0;
+  U32 start_spine = app->reader.active_spine_index;
+  U64 start_byte = app->reader.view_byte_offset;
+  const ReaderViewSemanticNode *previous =
+    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                          ReaderViewSemanticControl_PreviousPage);
+  if (!previous || (previous->flags & ReaderViewSemantic_Enabled) != 0 ||
+      (previous->flags & ReaderViewSemantic_Focusable) == 0)
+    return 0;
+
+  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+  if (!reader_view_accessibility_focus(&app->reader_view_state, previous->id))
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  previous = lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
+  const UI0DrawCommand *previous_icon = previous ?
+    lectern0_reader_view_draw_for_source(
+      &app->reader_view_frame, UI0DrawOp_Icon, previous->id) : 0;
+  if (!previous ||
+      (previous->flags & ReaderViewSemantic_Focused) == 0 ||
+      !previous_icon ||
+      previous_icon->icon_kind != UI0IconKind_PageCaretLeft ||
+      previous_icon->rect.w != 18 || previous_icon->rect.h != 32 ||
+      !lectern0_reader_view_space_activates_focus(app) ||
+      !lectern0_reader_view_has_draw_for_source(
+        &app->reader_view_frame, UI0DrawOp_FocusRing, previous->id))
+    return 0;
+  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  B32 disabled_previous_emitted = lectern0_reader_view_has_action(
+    &app->reader_view_frame, ReaderViewAction_PreviousPage);
+  lectern0_apply_reader_view_actions(app);
+  if (disabled_previous_emitted || app->reader.active_spine_index != start_spine ||
+      app->reader.view_byte_offset != start_byte)
+    return 0;
+
+  lectern0_render_to_buffer(app, buffer);
+  const ReaderViewSemanticNode *next =
+    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+                                          ReaderViewSemanticControl_NextPage);
+  if (!next || (next->flags & ReaderViewSemantic_Enabled) == 0 ||
+      !reader_view_accessibility_focus(&app->reader_view_state, next->id))
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  next = lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_NextPage);
+  const UI0DrawCommand *next_icon = next ?
+    lectern0_reader_view_draw_for_source(
+      &app->reader_view_frame, UI0DrawOp_Icon, next->id) : 0;
+  if (!next || !next_icon ||
+      next_icon->icon_kind != UI0IconKind_PageCaretRight ||
+      next_icon->rect.w != 18 || next_icon->rect.h != 32 ||
+      !lectern0_reader_view_space_activates_focus(app))
+    return 0;
+  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  B32 next_emitted = lectern0_reader_view_has_action(
+    &app->reader_view_frame, ReaderViewAction_NextPage);
+  lectern0_apply_reader_view_actions(app);
+  B32 moved_next = app->reader.active_spine_index != start_spine ||
+                   app->reader.view_byte_offset != start_byte;
+  if (!next_emitted || !moved_next) return 0;
+
+  lectern0_render_to_buffer(app, buffer);
+  previous = lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
+  if (!previous || (previous->flags & ReaderViewSemantic_Enabled) == 0 ||
+      !reader_view_accessibility_focus(&app->reader_view_state, previous->id))
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  if (!lectern0_reader_view_space_activates_focus(app)) return 0;
+  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      Lectern0ReaderKeyRoute_Handled)
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  B32 previous_emitted = lectern0_reader_view_has_action(
+    &app->reader_view_frame, ReaderViewAction_PreviousPage);
+  lectern0_apply_reader_view_actions(app);
+  if (!previous_emitted || app->reader.active_spine_index != start_spine ||
+      app->reader.view_byte_offset != start_byte)
+    return 0;
+
+  lectern0_render_to_buffer(app, buffer);
+  next = lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_NextPage);
+  if (!next || !lectern0_reader_view_parity_click_node(app, buffer, next) ||
+      (app->reader.active_spine_index == start_spine &&
+       app->reader.view_byte_offset == start_byte))
+    return 0;
+  lectern0_render_to_buffer(app, buffer);
+  previous = lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
+  return previous &&
+    lectern0_reader_view_parity_click_node(app, buffer, previous) &&
+    app->reader.active_spine_index == start_spine &&
+    app->reader.view_byte_offset == start_byte;
+}
+
+FUNCTION B32
+lectern0_reader_view_navigation_panel_interaction_regression(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  ReaderViewKey find_key)
+{
+  if (!app || !buffer || find_key < 0x100000ull ||
+      find_key - 0x100000ull > 0xffffffffull ||
+      !epub_reader_is_open(&app->reader))
+    return 0;
+  U32 start_spine = app->reader.active_spine_index;
+  U64 start_byte = app->reader.view_byte_offset;
+  U32 start_back_count = app->reader.back_stack_count;
+  U32 checkpoint = 0;
+
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  lectern0_render_to_buffer(app, buffer);
+  const ReaderViewSemanticNode *contents =
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_Contents);
+  B32 result = contents &&
+    lectern0_reader_view_parity_space_node(app, buffer, contents) &&
+    app->reader_view_state.left_panel == ReaderViewLeftPanel_Contents &&
+    app->draw_adapter_stats.unsupported_count == 0;
+  if (result) checkpoint = 1;
+
+  const ReaderViewSemanticNode *toc_row = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame, ReaderViewSemanticControl_TocRow, 2) : 0;
+  result = result && toc_row &&
+    lectern0_reader_view_parity_space_node(app, buffer, toc_row) &&
+    (app->reader.active_spine_index != start_spine ||
+     app->reader.view_byte_offset != start_byte) &&
+    app->reader.back_stack_count > start_back_count;
+  if (result) checkpoint = 2;
+
+  if (result)
+  {
+    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+      .kind = ReaderViewAction_HistoryBack,
+    });
+    lectern0_render_to_buffer(app, buffer);
+    result = app->reader.active_spine_index == start_spine &&
+      app->reader.view_byte_offset == start_byte;
+  }
+  if (result) checkpoint = 3;
+
+  const ReaderViewSemanticNode *find = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_Find) : 0;
+  result = result && find &&
+    lectern0_reader_view_parity_space_node(app, buffer, find) &&
+    app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
+    app->draw_adapter_stats.unsupported_count == 0;
+  if (result) checkpoint = 4;
+
+  const ReaderViewSemanticNode *find_row = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame, ReaderViewSemanticControl_FindRow, find_key) : 0;
+  U32 expected_find_index = (U32)(find_key - 0x100000ull);
+  result = result && find_row &&
+    lectern0_reader_view_parity_space_node(app, buffer, find_row) &&
+    app->reader.search_has_active &&
+    app->reader.search_active_index == expected_find_index &&
+    app->reader_view_state.left_panel == ReaderViewLeftPanel_Find;
+  if (result) checkpoint = 5;
+
+  const ReaderViewSemanticNode *close = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_LeftPanelClose) : 0;
+  result = result && close &&
+    lectern0_reader_view_parity_click_node(app, buffer, close) &&
+    app->reader_view_state.left_panel == ReaderViewLeftPanel_None &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    app->reader_view_frame.action_count == 0 &&
+    app->draw_adapter_stats.unsupported_count == 0;
+  if (result) checkpoint = 6;
+
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0 navigation panel interaction checkpoint=%u left=%d popup=%d spine=%u byte=%llu active=%u/%u\n",
+            checkpoint,
+            (int)app->reader_view_state.left_panel,
+            (int)app->reader_view_state.popup,
+            app->reader.active_spine_index,
+            (unsigned long long)app->reader.view_byte_offset,
+            app->reader.search_has_active,
+            app->reader.search_active_index);
+  }
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_has_action(const ReaderViewFrame *frame,
                                 ReaderViewActionKind kind)
 {
   if (!frame || !frame->actions) return 0;
   for (UI0S32 index = 0; index < frame->action_count; index += 1)
     if (frame->actions[index].kind == kind) return 1;
   return 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_document_selection_is(
+  const Lectern0App *app,
+  DocSelection selection,
+  const char *selected_text,
+  UI0Rect anchor)
+{
+  if (!app || !selected_text || !app->reader.has_active_selection) return 0;
+  return app->reader.active_selection.spine_index == selection.spine_index &&
+    app->reader.active_selection.text_byte_start == selection.text_byte_start &&
+    app->reader.active_selection.text_byte_end == selection.text_byte_end &&
+    strcmp(app->selected_text, selected_text) == 0 &&
+    app->selection_anchor_rect.x == anchor.x &&
+    app->selection_anchor_rect.y == anchor.y &&
+    app->selection_anchor_rect.w == anchor.w &&
+    app->selection_anchor_rect.h == anchor.h;
+}
+
+FUNCTION B32
+lectern0_reader_view_annotation_interaction_regression(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  ReaderViewKey note_key)
+{
+  if (!app || !buffer || note_key == 0) return 0;
+  const Lectern0ReaderViewRightSource *source =
+    lectern0_reader_view_right_source(
+      app, note_key, ReaderViewRightRow_Note);
+  S32 highlight_index = source ?
+    lectern0_highlight_index(app, source->record_id) : -1;
+  if (highlight_index < 0) return 0;
+
+  ReaderViewState saved_state = app->reader_view_state;
+  U64 saved_revision = app->annotation_revision;
+  B32 saved_has_selection = app->reader.has_active_selection;
+  DocSelection saved_selection = app->reader.active_selection;
+  char saved_selected_text[Lectern0SelectionTextCap] = {0};
+  MemoryCopy(saved_selected_text, app->selected_text,
+             sizeof(saved_selected_text));
+  UI0Rect saved_selection_anchor = app->selection_anchor_rect;
+  B32 result = 1;
+  U32 checkpoint = 0;
+  UI0ID annotations_id = 0;
+
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  app->reader_view_state.right_panel_open = 0;
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  app->reader_view_state.focus_id = 0;
+  app->reader_view_state.restore_focus_id = 0;
+  epub_reader_clear_selection(&app->reader);
+  app->selected_text[0] = 0;
+  app->selection_anchor_rect = (UI0Rect){0};
+  (void)lectern0_capture_frame(app);
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+
+  const ReaderViewSemanticNode *annotations =
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
+  annotations_id = annotations ? annotations->id : 0;
+  ReaderViewSemanticFlags annotations_flags = annotations ?
+    annotations->flags : ReaderViewSemantic_None;
+  B32 queued_focus = annotations &&
+    reader_view_accessibility_focus(&app->reader_view_state, annotations->id);
+  B32 queued_invoke = 0;
+  result = annotations && queued_focus;
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    annotations = lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
+    queued_invoke = annotations &&
+      app->reader_view_state.focus_id == annotations->id &&
+      lectern0_reader_view_space_activates_focus(app) &&
+      reader_view_accessibility_invoke(
+        &app->reader_view_state, annotations->id);
+    result = queued_invoke;
+  }
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    result = app->reader_view_state.right_panel_open &&
+      app->reader_view_state.popup == ReaderViewPopup_None &&
+      app->draw_adapter_stats.unsupported_count == 0;
+    if (result)
+      lectern0_render_to_buffer(app, buffer);
+  }
+  if (result) checkpoint = 1;
+
+  const ReaderViewSemanticNode *close = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightPanelClose) : 0;
+  result = result && close &&
+    reader_view_accessibility_focus(&app->reader_view_state, close->id) &&
+    reader_view_accessibility_invoke(&app->reader_view_state, close->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    result = !app->reader_view_state.right_panel_open &&
+      app->reader_view_state.popup == ReaderViewPopup_None &&
+      app->reader_view_state.focus_id == annotations_id;
+  }
+  if (result) checkpoint = 2;
+
+  annotations = result ? lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_Annotations) : 0;
+  result = result && annotations &&
+    reader_view_accessibility_invoke(&app->reader_view_state, annotations->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    result = app->reader_view_state.right_panel_open;
+    if (result)
+      lectern0_render_to_buffer(app, buffer);
+  }
+  if (result) checkpoint = 3;
+
+  const ReaderViewSemanticNode *filter = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
+  result = result && filter &&
+    reader_view_accessibility_focus(&app->reader_view_state, filter->id) &&
+    reader_view_accessibility_invoke(&app->reader_view_state, filter->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    result = app->reader_view_state.popup == ReaderViewPopup_RightFilter;
+    if (result)
+      lectern0_render_to_buffer(app, buffer);
+  }
+  if (result) checkpoint = 4;
+
+  const ReaderViewSemanticNode *bookmarks_option = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightFilterOption,
+      (ReaderViewKey)ReaderViewRightFilter_Bookmarks) : 0;
+  result = result && bookmarks_option &&
+    reader_view_accessibility_focus(
+      &app->reader_view_state, bookmarks_option->id) &&
+    reader_view_accessibility_invoke(
+      &app->reader_view_state, bookmarks_option->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    result = app->reader_view_state.popup == ReaderViewPopup_None &&
+      app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks &&
+      lectern0_reader_view_has_action(
+        &app->reader_view_frame, ReaderViewAction_RightFilterChanged);
+    lectern0_apply_reader_view_actions(app);
+  }
+  if (result) checkpoint = 5;
+
+  if (result)
+  {
+    app->reader_view_state.right_filter = ReaderViewRightFilter_All;
+    app->reader_view_state.popup = ReaderViewPopup_None;
+    lectern0_prepare_reader_view_projection(app);
+    lectern0_render_to_buffer(app, buffer);
+  }
+  const ReaderViewSemanticNode *menu = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightRowMenu,
+      note_key) : 0;
+  result = result && menu &&
+    reader_view_accessibility_focus(&app->reader_view_state, menu->id) &&
+    reader_view_accessibility_invoke(&app->reader_view_state, menu->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    result = app->reader_view_state.popup == ReaderViewPopup_RightRowActions;
+    if (result)
+      lectern0_render_to_buffer(app, buffer);
+  }
+  if (result) checkpoint = 6;
+
+  const ReaderViewSemanticNode *edit_note = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightActionEditNote,
+      note_key) : 0;
+  U32 before_spine = app->reader.active_spine_index;
+  U64 before_byte = app->reader.view_byte_offset;
+  U32 before_back_count = app->reader.back_stack_count;
+  U32 before_forward_count = app->reader.forward_stack_count;
+  result = result && edit_note &&
+    reader_view_accessibility_focus(
+      &app->reader_view_state, edit_note->id) &&
+    reader_view_accessibility_invoke(
+      &app->reader_view_state, edit_note->id);
+  if (result)
+  {
+    lectern0_render_to_buffer(app, buffer);
+    result = app->reader_view_state.popup == ReaderViewPopup_None &&
+      lectern0_reader_view_has_action(
+        &app->reader_view_frame, ReaderViewAction_EditRightRowNote);
+    lectern0_apply_reader_view_actions(app);
+    result = result &&
+      app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+      app->annotation_note_highlight_id ==
+        app->highlights[highlight_index].id &&
+      app->reader.active_spine_index == before_spine &&
+      app->reader.view_byte_offset == before_byte &&
+      app->reader.back_stack_count == before_back_count &&
+      app->reader.forward_stack_count == before_forward_count &&
+      reader_view_close_note_editor(&app->reader_view_state);
+    lectern0_reader_view_clear_annotation_note_target(app);
+  }
+  if (result) checkpoint = 7;
+
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0 annotation interaction checkpoint=%u ready=%d errors=%u popup=%d right=%d filter=%d focus=%llu annotation=%llu flags=%u queued=%d/%d pending=%llu/%llu\n",
+            checkpoint,
+            (int)app->reader_view_ready,
+            (unsigned)app->reader_view_frame.error_flags,
+            (int)app->reader_view_state.popup,
+            (int)app->reader_view_state.right_panel_open,
+            (int)app->reader_view_state.right_filter,
+            (unsigned long long)app->reader_view_state.focus_id,
+            (unsigned long long)annotations_id,
+            (unsigned)annotations_flags,
+            (int)queued_focus,
+            (int)queued_invoke,
+            (unsigned long long)
+              app->reader_view_state.pending_accessibility_focus_id,
+            (unsigned long long)
+              app->reader_view_state.pending_accessibility_invoke_id);
+  }
+
+  app->annotation_revision = saved_revision;
+  app->reader_view_state = saved_state;
+  if (saved_has_selection)
+    (void)epub_reader_set_selection(&app->reader, saved_selection);
+  MemoryCopy(app->selected_text, saved_selected_text,
+             sizeof(saved_selected_text));
+  app->selection_anchor_rect = saved_selection_anchor;
+  (void)lectern0_capture_frame(app);
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+  return result && app->draw_adapter_stats.unsupported_count == 0;
+}
+
+FUNCTION B32
+lectern0_reader_view_pointer_open_annotation_note(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  ReaderViewKey note_key)
+{
+  if (!app || !buffer || note_key == 0) return 0;
+  const ReaderViewSemanticNode *menu =
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightRowMenu,
+      note_key);
+  U32 before_spine = app->reader.active_spine_index;
+  U64 before_byte = app->reader.view_byte_offset;
+  U32 before_back_count = app->reader.back_stack_count;
+  U32 before_forward_count = app->reader.forward_stack_count;
+  if (!menu || !lectern0_reader_view_parity_click_node(app, buffer, menu) ||
+      app->reader_view_state.popup != ReaderViewPopup_RightRowActions ||
+      app->reader.active_spine_index != before_spine ||
+      app->reader.view_byte_offset != before_byte ||
+      app->reader.back_stack_count != before_back_count ||
+      app->reader.forward_stack_count != before_forward_count)
+    return 0;
+  const ReaderViewSemanticNode *edit =
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightActionEditNote,
+      note_key);
+  return edit &&
+    lectern0_reader_view_parity_click_node(app, buffer, edit) &&
+    app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app->reader.active_spine_index == before_spine &&
+    app->reader.view_byte_offset == before_byte &&
+    app->reader.back_stack_count == before_back_count &&
+    app->reader.forward_stack_count == before_forward_count;
+}
+
+FUNCTION B32
+lectern0_reader_view_pointer_replace_note_draft(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  const char *text)
+{
+  if (!app || !buffer || !text ||
+      app->reader_view_state.popup != ReaderViewPopup_NoteEditor)
+    return 0;
+  size_t size = strlen(text);
+  if (size == 0 || size >= ARRAY_COUNT(app->input.text)) return 0;
+  const ReaderViewSemanticNode *editor =
+    lectern0_reader_view_parity_semantic(
+      app, ReaderViewSemantic_TextArea, 0);
+  if (!editor || !lectern0_reader_view_parity_click_node(app, buffer, editor))
+    return 0;
+  app->input.select_all_pressed = 1;
+  MemoryCopy(app->input.text, text, (U64)size);
+  app->input.text[size] = 0;
+  app->input.text_length = (S32)size;
+  lectern0_render_to_buffer(app, buffer);
+  lectern0_apply_reader_view_actions(app);
+  return app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app->reader_view_state.note_dirty &&
+    lectern0_reader_view_text_is(reader_view_note_draft(
+      &app->reader_view_state), text);
+}
+
+FUNCTION B32
+lectern0_reader_view_annotation_pointer_regression(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  ReaderViewKey note_key)
+{
+  if (!app || !buffer || note_key == 0) return 0;
+  const Lectern0ReaderViewRightSource *source =
+    lectern0_reader_view_right_source(
+      app, note_key, ReaderViewRightRow_Note);
+  S32 highlight_index = source ?
+    lectern0_highlight_index(app, source->record_id) : -1;
+  if (highlight_index < 0 || app->highlights[highlight_index].note[0] == 0)
+    return 0;
+
+  ReaderViewState saved_state = app->reader_view_state;
+  Lectern0Highlight saved_highlight = app->highlights[highlight_index];
+  U64 saved_revision = app->annotation_revision;
+  B32 saved_has_selection = app->reader.has_active_selection;
+  DocSelection saved_selection = app->reader.active_selection;
+  char saved_selected_text[Lectern0SelectionTextCap] = {0};
+  MemoryCopy(saved_selected_text, app->selected_text,
+             sizeof(saved_selected_text));
+  UI0Rect saved_selection_anchor = app->selection_anchor_rect;
+  B32 result = 1;
+  U32 checkpoint = 0;
+  U32 save_semantic_flags = 0;
+  U64 save_source_revision = 0;
+  U64 save_annotation_revision = 0;
+  U64 save_projection_revision = 0;
+
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
+  app->reader_view_state.right_panel_open = 0;
+  app->reader_view_state.right_filter = ReaderViewRightFilter_All;
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  app->reader_view_state.focus_id = 0;
+  app->reader_view_state.restore_focus_id = 0;
+  epub_reader_clear_selection(&app->reader);
+  app->selected_text[0] = 0;
+  app->selection_anchor_rect = (UI0Rect){0};
+  (void)lectern0_capture_frame(app);
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+
+  const ReaderViewSemanticNode *annotations =
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
+  result = annotations &&
+    lectern0_reader_view_parity_click_node(app, buffer, annotations) &&
+    app->reader_view_state.right_panel_open &&
+    app->reader_view_state.popup == ReaderViewPopup_None;
+  if (result) checkpoint = 1;
+
+  const ReaderViewSemanticNode *filter = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
+  UI0ID filter_id = filter ? filter->id : 0;
+  result = result && filter &&
+    lectern0_reader_view_parity_click_node(app, buffer, filter) &&
+    app->reader_view_state.popup == ReaderViewPopup_RightFilter;
+  if (result) checkpoint = 2;
+
+  if (result)
+  {
+    app->input.escape_pressed = 1;
+    lectern0_render_to_buffer(app, buffer);
+    lectern0_apply_reader_view_actions(app);
+    filter = lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightFilter);
+    result = app->reader_view_state.popup == ReaderViewPopup_None &&
+      app->reader_view_state.right_panel_open && filter &&
+      app->reader_view_state.focus_id == filter_id &&
+      app->reader_view_state.focus_visible &&
+      (filter->flags & ReaderViewSemantic_Focused) != 0;
+  }
+  if (result) checkpoint = 3;
+
+  filter = result ? lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
+  result = result && filter &&
+    lectern0_reader_view_parity_click_node(app, buffer, filter);
+  const ReaderViewSemanticNode *bookmarks_option = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightFilterOption,
+      (ReaderViewKey)ReaderViewRightFilter_Bookmarks) : 0;
+  result = result && bookmarks_option &&
+    lectern0_reader_view_parity_click_node(
+      app, buffer, bookmarks_option) &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks;
+  if (result) checkpoint = 4;
+
+  filter = result ? lectern0_reader_view_semantic_control(
+    &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
+  result = result && filter &&
+    lectern0_reader_view_parity_click_node(app, buffer, filter);
+  const ReaderViewSemanticNode *all_option = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame,
+      ReaderViewSemanticControl_RightFilterOption,
+      (ReaderViewKey)ReaderViewRightFilter_All) : 0;
+  result = result && all_option &&
+    lectern0_reader_view_parity_click_node(app, buffer, all_option) &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    app->reader_view_state.right_filter == ReaderViewRightFilter_All;
+  if (result) checkpoint = 5;
+
+  const ReaderViewSemanticNode *row = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightRow,
+      note_key) : 0;
+  result = result && row &&
+    lectern0_reader_view_parity_click_node(app, buffer, row) &&
+    app->reader.active_spine_index == saved_highlight.spine_index;
+  if (result) checkpoint = 6;
+
+  B32 initial_star = saved_highlight.note_starred;
+  U32 star_spine = app->reader.active_spine_index;
+  U64 star_byte = app->reader.view_byte_offset;
+  U32 star_back_count = app->reader.back_stack_count;
+  U32 star_forward_count = app->reader.forward_stack_count;
+  const ReaderViewSemanticNode *star = result ?
+    lectern0_reader_view_semantic_control_source(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightRowStar,
+      note_key) : 0;
+  result = result && star &&
+    lectern0_reader_view_parity_click_node(app, buffer, star) &&
+    app->highlights[highlight_index].note_starred != initial_star &&
+    app->reader.active_spine_index == star_spine &&
+    app->reader.view_byte_offset == star_byte &&
+    app->reader.back_stack_count == star_back_count &&
+    app->reader.forward_stack_count == star_forward_count;
+  star = result ? lectern0_reader_view_semantic_control_source(
+    &app->reader_view_frame, ReaderViewSemanticControl_RightRowStar,
+    note_key) : 0;
+  result = result && star &&
+    lectern0_reader_view_parity_click_node(app, buffer, star) &&
+    app->highlights[highlight_index].note_starred == initial_star &&
+    app->reader.active_spine_index == star_spine &&
+    app->reader.view_byte_offset == star_byte &&
+    app->reader.back_stack_count == star_back_count &&
+    app->reader.forward_stack_count == star_forward_count;
+  if (result) checkpoint = 7;
+
+  result = result && lectern0_reader_view_pointer_open_annotation_note(
+    app, buffer, note_key) &&
+    lectern0_reader_view_pointer_replace_note_draft(
+      app, buffer, "Pointer saved note");
+  const ReaderViewSemanticNode *save = result ?
+    lectern0_reader_view_parity_semantic(
+      app, ReaderViewSemantic_Button, "Save note") : 0;
+  if (save)
+  {
+    save_semantic_flags = save->flags;
+    save_source_revision = app->reader_view_state.note_source_revision;
+    save_annotation_revision = app->annotation_revision;
+    save_projection_revision = app->reader_view_projection.selection.revision;
+  }
+  result = result && save &&
+    (save->flags & (ReaderViewSemantic_Enabled |
+                    ReaderViewSemantic_Focusable)) ==
+      (ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable) &&
+    lectern0_reader_view_parity_click_node(app, buffer, save) &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    strcmp(app->highlights[highlight_index].note, "Pointer saved note") == 0 &&
+    app->annotation_note_selection_key == 0;
+  if (result) checkpoint = 8;
+
+  result = result && lectern0_save_note_at_index(
+    app, (U32)highlight_index,
+    lectern0_reader_view_text(saved_highlight.note));
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+  result = result && lectern0_reader_view_pointer_open_annotation_note(
+    app, buffer, note_key) &&
+    lectern0_reader_view_pointer_replace_note_draft(
+      app, buffer, "Pointer cancelled note");
+  const ReaderViewSemanticNode *cancel = result ?
+    lectern0_reader_view_parity_semantic(
+      app, ReaderViewSemantic_Button, "Cancel note") : 0;
+  result = result && cancel &&
+    lectern0_reader_view_parity_click_node(app, buffer, cancel) &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    strcmp(app->highlights[highlight_index].note, saved_highlight.note) == 0 &&
+    app->annotation_note_selection_key == 0;
+  if (result) checkpoint = 9;
+
+  result = result && lectern0_reader_view_pointer_open_annotation_note(
+    app, buffer, note_key);
+  const ReaderViewSemanticNode *delete_note = result ?
+    lectern0_reader_view_parity_semantic(
+      app, ReaderViewSemantic_Button, "Delete note") : 0;
+  result = result && delete_note &&
+    lectern0_reader_view_parity_click_node(app, buffer, delete_note) &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    app->highlights[highlight_index].note[0] == 0 &&
+    app->annotation_note_selection_key == 0;
+  if (result) checkpoint = 10;
+
+  app->highlights[highlight_index] = saved_highlight;
+  app->annotation_revision = saved_revision;
+  B32 restore_persisted = !app->persistence_enabled ||
+                          lectern0_save_annotations(app);
+  result = result && restore_persisted;
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+  const ReaderViewSemanticNode *close = result ?
+    lectern0_reader_view_semantic_control(
+      &app->reader_view_frame, ReaderViewSemanticControl_RightPanelClose) : 0;
+  B32 close_present = close != 0;
+  B32 close_clicked = result && close &&
+    lectern0_reader_view_parity_click_node(app, buffer, close);
+  result = result && close_present && close_clicked &&
+    !app->reader_view_state.right_panel_open &&
+    app->reader_view_state.popup == ReaderViewPopup_None &&
+    app->draw_adapter_stats.unsupported_count == 0;
+  if (result) checkpoint = 11;
+
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0 annotation pointer regression checkpoint=%u popup=%d right=%d filter=%d note=%s star=%d target=%llu save_flags=%u revisions=%llu/%llu/%llu persisted=%d close=%d/%d\n",
+            checkpoint,
+            (int)app->reader_view_state.popup,
+            (int)app->reader_view_state.right_panel_open,
+            (int)app->reader_view_state.right_filter,
+            app->highlights[highlight_index].note,
+            app->highlights[highlight_index].note_starred,
+            (unsigned long long)app->annotation_note_selection_key,
+            (unsigned)save_semantic_flags,
+            (unsigned long long)save_source_revision,
+            (unsigned long long)save_annotation_revision,
+            (unsigned long long)save_projection_revision,
+            restore_persisted,
+            close_present,
+            close_clicked);
+  }
+
+  app->highlights[highlight_index] = saved_highlight;
+  app->annotation_revision = saved_revision;
+  (void)lectern0_save_annotations(app);
+  app->reader_view_state = saved_state;
+  if (saved_has_selection)
+    (void)epub_reader_set_selection(&app->reader, saved_selection);
+  else
+    epub_reader_clear_selection(&app->reader);
+  MemoryCopy(app->selected_text, saved_selected_text,
+             sizeof(saved_selected_text));
+  app->selection_anchor_rect = saved_selection_anchor;
+  (void)lectern0_capture_frame(app);
+  lectern0_prepare_reader_view_projection(app);
+  lectern0_render_to_buffer(app, buffer);
+  return result && app->draw_adapter_stats.unsupported_count == 0;
 }
 
 FUNCTION U32
@@ -5338,21 +9297,31 @@ lectern0_run_reader_view_startup_interaction_smoke(void)
   B32 press_emitted_open = lectern0_reader_view_has_action(
     &app.reader_view_frame, ReaderViewAction_Open);
 
+  lectern0_host_pointer_cancel(&app);
+  lectern0_render_to_buffer(&app, &buffer);
+  B32 cancel_suppressed_open = !lectern0_reader_view_has_action(
+    &app.reader_view_frame, ReaderViewAction_Open) &&
+    app.reader_view_state.active_id == 0;
+
+  lectern0_host_pointer_press(&app, x, y);
+  lectern0_render_to_buffer(&app, &buffer);
   B32 requested_exit = lectern0_host_pointer_release(&app, x, y);
+  lectern0_host_pointer_cancel(&app);
   lectern0_render_to_buffer(&app, &buffer);
   B32 release_emitted_open = lectern0_reader_view_has_action(
     &app.reader_view_frame, ReaderViewAction_Open);
-  B32 valid = press_active && !press_emitted_open && !requested_exit &&
-              release_emitted_open &&
+  B32 valid = press_active && !press_emitted_open && cancel_suppressed_open &&
+              !requested_exit && release_emitted_open &&
               app.document_state == ReaderViewLoad_Empty;
   if (!valid)
   {
     fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=lifecycle open_id=%llu active_id=%llu active_on_press=%d open_on_press=%d exit=%d open_on_release=%d document_state=%d\n",
+            "lectern0_reader_view_startup_interaction result=fail reason=lifecycle open_id=%llu active_id=%llu active_on_press=%d open_on_press=%d cancel_suppressed=%d exit=%d open_on_release=%d document_state=%d\n",
             (unsigned long long)open_id,
             (unsigned long long)press_active_id,
             press_active,
             press_emitted_open,
+            cancel_suppressed_open,
             requested_exit,
             release_emitted_open,
             (int)app.document_state);
@@ -5361,8 +9330,117 @@ lectern0_run_reader_view_startup_interaction_smoke(void)
     return 1;
   }
 
+  UI0Rect exit_rect = lectern0_host_exit_rect(&app);
+  S32 exit_x = exit_rect.x + exit_rect.w / 2;
+  S32 exit_y = exit_rect.y + exit_rect.h / 2;
+  lectern0_host_pointer_press(&app, 0, Height - 1);
+  lectern0_host_pointer_move(&app, exit_x, exit_y);
+  B32 drag_in_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
+  lectern0_render_to_buffer(&app, &buffer);
+
+  lectern0_host_pointer_press(&app, exit_x, exit_y);
+  lectern0_host_pointer_move(&app, 0, Height - 1);
+  lectern0_host_pointer_move(&app, exit_x, exit_y);
+  B32 leave_reenter_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
+  lectern0_render_to_buffer(&app, &buffer);
+
+  lectern0_host_pointer_press(&app, exit_x, exit_y);
+  B32 valid_exit_armed = app.host_exit_pointer_armed;
+  B32 valid_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
+  B32 valid_exit_requested = app.host_exit_requested;
+  app.host_exit_requested = 0;
+  lectern0_render_to_buffer(&app, &buffer);
+
+  UI0ID before_exit_id = 0;
+  UI0ID after_exit_id = 0;
+  B32 has_focus_neighbors = lectern0_host_focus_neighbors(
+    &app, &before_exit_id, &after_exit_id);
+  (void)lectern0_host_focus_set(&app, Lectern0HostControl_None, 0);
+  B32 prepared_keyboard_focus = has_focus_neighbors &&
+    reader_view_accessibility_focus(&app.reader_view_state, before_exit_id);
+  lectern0_render_to_buffer(&app, &buffer);
+  B32 tab_reached_exit = prepared_keyboard_focus &&
+                         lectern0_host_keyboard_tab(&app, 0) &&
+                         app.host_focus_control ==
+                           Lectern0HostControl_ExitReader &&
+                         app.host_focus_visible;
+  Lectern0HostControlRecord *focused_exit =
+    lectern0_host_control_record(&app, Lectern0HostControl_ExitReader);
+  tab_reached_exit = tab_reached_exit && focused_exit &&
+                     (focused_exit->semantic.flags &
+                      ReaderViewSemantic_Focused) != 0;
+  lectern0_render_to_buffer(&app, &buffer);
+  UI0Rect exit_clip = app.reader_view_layout.host_toolbar_trailing_rect;
+  S32 exit_icon_size = MIN(18, MIN(exit_rect.w, exit_rect.h));
+  S32 exit_icon_x = exit_rect.x + (exit_rect.w - exit_icon_size) / 2;
+  S32 exit_icon_y = exit_rect.y + (exit_rect.h - exit_icon_size) / 2;
+  B32 focused_exit_icon_drawn = 0;
+  B32 focused_exit_ring_drawn = 0;
+  for (U16 index = 0;
+       index < app.draw_commands.command_count[DrawLayer_UI];
+       index += 1)
+  {
+    const DrawCommand *command =
+      app.draw_commands.commands[DrawLayer_UI] + index;
+    if (command->type == DrawCommandType_Sprite &&
+        command->v.sprite.dst_x == exit_icon_x &&
+        command->v.sprite.dst_y == exit_icon_y &&
+        command->v.sprite.dst_w == exit_icon_size &&
+        command->v.sprite.dst_h == exit_icon_size &&
+        command->v.sprite.clip.x == exit_clip.x &&
+        command->v.sprite.clip.y == exit_clip.y &&
+        command->v.sprite.clip.w == exit_clip.w &&
+        command->v.sprite.clip.h == exit_clip.h)
+      focused_exit_icon_drawn = 1;
+    else if (command->type == DrawCommandType_RoundedRectStroke &&
+             command->v.rounded_rect_stroke.x == exit_rect.x - 2 &&
+             command->v.rounded_rect_stroke.y == exit_rect.y - 2 &&
+             command->v.rounded_rect_stroke.w == exit_rect.w + 4 &&
+             command->v.rounded_rect_stroke.h == exit_rect.h + 4 &&
+             command->v.rounded_rect_stroke.stroke_width == 1 &&
+             command->v.rounded_rect_stroke.clip.x == exit_clip.x &&
+             command->v.rounded_rect_stroke.clip.y == exit_clip.y &&
+             command->v.rounded_rect_stroke.clip.w == exit_clip.w &&
+             command->v.rounded_rect_stroke.clip.h == exit_clip.h)
+      focused_exit_ring_drawn = 1;
+  }
+  B32 keyboard_exit = tab_reached_exit &&
+                       lectern0_host_keyboard_activate(&app) &&
+                       app.host_exit_requested;
+  app.host_exit_requested = 0;
+  B32 tab_left_exit = lectern0_host_keyboard_tab(&app, 0);
+  lectern0_render_to_buffer(&app, &buffer);
+  tab_left_exit = tab_left_exit &&
+                  app.host_focus_control == Lectern0HostControl_None &&
+                  app.reader_view_state.focus_id == after_exit_id;
+
+  if (exit_rect.w <= 0 || exit_rect.h <= 0 || drag_in_exit ||
+      leave_reenter_exit || !valid_exit_armed || !valid_exit ||
+      !valid_exit_requested || !tab_reached_exit || !keyboard_exit ||
+      !focused_exit_icon_drawn || !focused_exit_ring_drawn || !tab_left_exit)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_startup_interaction result=fail reason=host_exit rect=%dx%d drag_in=%d leave_reenter=%d armed=%d click=%d requested=%d neighbors=%d tab_in=%d icon=%d ring=%d keyboard=%d tab_out=%d\n",
+            exit_rect.w,
+            exit_rect.h,
+            drag_in_exit,
+            leave_reenter_exit,
+            valid_exit_armed,
+            valid_exit,
+            valid_exit_requested,
+            has_focus_neighbors,
+            tab_reached_exit,
+            focused_exit_icon_drawn,
+            focused_exit_ring_drawn,
+            keyboard_exit,
+            tab_left_exit);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
   fprintf(stdout,
-          "lectern0_reader_view_startup_interaction result=pass document=empty lifecycle=press_release action=open dialog=not_invoked status_owner=reader_view\n");
+          "lectern0_reader_view_startup_interaction result=pass document=empty lifecycle=press_release capture=cancel_and_release action=open dialog=not_invoked status_owner=reader_view exit_pointer=armed_release exit_keyboard=tab_activate exit_focus=icon_ring\n");
   free(pixels);
   lectern0_app_release(&app);
   return 0;
@@ -5408,6 +9486,317 @@ lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
 }
 
 FUNCTION B32
+lectern0_draw_clip_matches(DrawClipRect actual, UI0Rect expected)
+{
+  return actual.x == expected.x && actual.y == expected.y &&
+         actual.w == expected.w && actual.h == expected.h;
+}
+
+FUNCTION B32
+lectern0_draw_adapter_rect_border_matches(const DrawCommand *commands,
+                                          UI0Rect rect,
+                                          UI0Rect clip,
+                                          U32 color)
+{
+  if (!commands) return 0;
+  const S32 endpoints[4][4] = {
+    {rect.x, rect.y, rect.x + rect.w - 1, rect.y},
+    {rect.x, rect.y + rect.h - 1,
+     rect.x + rect.w - 1, rect.y + rect.h - 1},
+    {rect.x, rect.y, rect.x, rect.y + rect.h - 1},
+    {rect.x + rect.w - 1, rect.y,
+     rect.x + rect.w - 1, rect.y + rect.h - 1},
+  };
+  for (U32 index = 0; index < ARRAY_COUNT(endpoints); index += 1)
+  {
+    const DrawCommand *command = commands + index;
+    if (command->type != DrawCommandType_Line ||
+        command->v.line.x0 != endpoints[index][0] ||
+        command->v.line.y0 != endpoints[index][1] ||
+        command->v.line.x1 != endpoints[index][2] ||
+        command->v.line.y1 != endpoints[index][3] ||
+        command->v.line.stroke_width != 1 ||
+        command->v.line.color != color ||
+        !lectern0_draw_clip_matches(command->v.line.clip, clip))
+      return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
+lectern0_draw_adapter_covers_reference_edges(Lectern0App *app)
+{
+  if (!app) return 0;
+  const UI0Color focus_color = UI0_COLOR_RGB(0x11, 0x22, 0x33);
+  const UI0Color border_color = UI0_COLOR_RGB(0x44, 0x55, 0x66);
+  const UI0Color fill_color = UI0_COLOR_RGB(0x77, 0x88, 0x99);
+  const UI0Color stroke_color = UI0_COLOR_RGB(0x12, 0x34, 0x56);
+  const UI0Rect clip = {0, 0, 256, 256};
+  UI0DrawCommand commands[] = {
+    {
+      .op = UI0DrawOp_FocusRing,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {10, 10, 20, 20},
+      .clip_rect = clip,
+      .color = focus_color,
+      .corner_radius = 4,
+      .flags = UI0DrawFlag_CornerMask,
+    },
+    {
+      .op = UI0DrawOp_FocusRing,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {40, 10, 20, 20},
+      .clip_rect = clip,
+      .color = focus_color,
+      .corner_radius = 4,
+      .flags = UI0DrawFlag_CornerMask | UI0DrawFlag_RoundTop,
+    },
+    {
+      .op = UI0DrawOp_FocusRing,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {70, 10, 20, 20},
+      .clip_rect = clip,
+      .color = focus_color,
+      .corner_radius = 4,
+      .flags = UI0DrawFlag_CornerMask | UI0DrawFlag_RoundBottom,
+    },
+    {
+      .op = UI0DrawOp_FocusRing,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {100, 10, 20, 20},
+      .clip_rect = clip,
+      .color = focus_color,
+      .corner_radius = 4,
+      .flags = UI0DrawFlag_CornerMask | UI0DrawFlag_RoundTop |
+               UI0DrawFlag_RoundBottom,
+    },
+    {
+      .op = UI0DrawOp_FocusRing,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {130, 10, 20, 20},
+      .clip_rect = clip,
+      .color = focus_color,
+      .corner_radius = 4,
+    },
+    {
+      .op = UI0DrawOp_IndicatorBorder,
+      .source_kind = UI0ControlKind_TextButton,
+      .rect = {10, 40, 20, 20},
+      .clip_rect = clip,
+      .color = border_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_IndicatorBorder,
+      .source_kind = UI0ControlKind_Checkbox,
+      .rect = {40, 40, 20, 20},
+      .clip_rect = clip,
+      .color = border_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_IndicatorFill,
+      .source_kind = UI0ControlKind_Checkbox,
+      .rect = {70, 40, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ToggleTrack,
+      .source_kind = UI0ControlKind_Toggle,
+      .rect = {100, 40, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ToggleKnob,
+      .source_kind = UI0ControlKind_Toggle,
+      .rect = {130, 40, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ScrollTrack,
+      .source_kind = UI0ControlKind_ScrollRegion,
+      .rect = {160, 40, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ScrollThumb,
+      .source_kind = UI0ControlKind_ScrollRegion,
+      .rect = {190, 40, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_SliderTrack,
+      .source_kind = UI0ControlKind_Slider,
+      .rect = {10, 70, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_SliderFill,
+      .source_kind = UI0ControlKind_Slider,
+      .rect = {40, 70, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_SliderThumb,
+      .source_kind = UI0ControlKind_Slider,
+      .rect = {70, 70, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ControlFill,
+      .source_id = 98,
+      .source_kind = UI0ControlKind_TextButton,
+      .source_index = 6,
+      .rect = {100, 70, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .stroke_color = stroke_color,
+      .corner_radius = 5,
+    },
+    {
+      .op = UI0DrawOp_ControlFill,
+      .source_id = 99,
+      .source_kind = UI0ControlKind_TextButton,
+      .source_index = 7,
+      .rect = {130, 70, 20, 20},
+      .clip_rect = clip,
+      .color = fill_color,
+      .corner_radius = 5,
+      .flags = UI0DrawFlag_CornerMask,
+    },
+    {
+      .op = UI0DrawOp_ControlBorder,
+      .source_id = 99,
+      .source_kind = UI0ControlKind_TextButton,
+      .source_index = 7,
+      .rect = {130, 70, 20, 20},
+      .clip_rect = clip,
+      .color = border_color,
+      .corner_radius = 5,
+      .flags = UI0DrawFlag_CornerMask,
+    },
+  };
+
+  ReaderViewFrame saved = app->reader_view_frame;
+  app->reader_view_frame.draw_commands = commands;
+  app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+
+  const DrawCommand *draw = app->draw_commands.commands[DrawLayer_UI];
+  B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
+               app->draw_commands.overflow_count == 0 &&
+               app->draw_commands.command_count[DrawLayer_UI] == 27 &&
+               lectern0_draw_adapter_rect_border_matches(
+                 draw, commands[0].rect, commands[0].rect,
+                 lectern0_draw_color(focus_color));
+  if (result)
+  {
+    const DrawRoundedRectStrokeCommand *round_top =
+      &draw[4].v.rounded_rect_stroke;
+    const DrawRoundedRectStrokeCommand *round_bottom =
+      &draw[5].v.rounded_rect_stroke;
+    const DrawRoundedRectStrokeCommand *round_both =
+      &draw[6].v.rounded_rect_stroke;
+    const DrawRoundedRectStrokeCommand *round_all =
+      &draw[7].v.rounded_rect_stroke;
+    const DrawRoundedRectStrokeCommand *checkbox =
+      &draw[12].v.rounded_rect_stroke;
+    result = draw[4].type == DrawCommandType_RoundedRectStroke &&
+      round_top->x == 40 && round_top->y == 10 &&
+      round_top->w == 20 && round_top->h == 24 &&
+      round_top->radius == 4 && round_top->stroke_width == 1 &&
+      round_top->color == lectern0_draw_color(focus_color) &&
+      lectern0_draw_clip_matches(round_top->clip, commands[1].rect) &&
+      draw[5].type == DrawCommandType_RoundedRectStroke &&
+      round_bottom->x == 70 && round_bottom->y == 6 &&
+      round_bottom->w == 20 && round_bottom->h == 24 &&
+      round_bottom->radius == 4 && round_bottom->stroke_width == 1 &&
+      round_bottom->color == lectern0_draw_color(focus_color) &&
+      lectern0_draw_clip_matches(round_bottom->clip, commands[2].rect) &&
+      draw[6].type == DrawCommandType_RoundedRectStroke &&
+      round_both->x == 100 && round_both->y == 10 &&
+      round_both->w == 20 && round_both->h == 20 &&
+      round_both->radius == 4 && round_both->stroke_width == 1 &&
+      round_both->color == lectern0_draw_color(focus_color) &&
+      lectern0_draw_clip_matches(round_both->clip, commands[3].rect) &&
+      draw[7].type == DrawCommandType_RoundedRectStroke &&
+      round_all->x == 130 && round_all->y == 10 &&
+      round_all->w == 20 && round_all->h == 20 &&
+      round_all->radius == 4 && round_all->stroke_width == 1 &&
+      round_all->color == lectern0_draw_color(focus_color) &&
+      lectern0_draw_clip_matches(round_all->clip, clip) &&
+      lectern0_draw_adapter_rect_border_matches(
+        draw + 8, commands[5].rect, clip,
+        lectern0_draw_color(border_color)) &&
+      draw[12].type == DrawCommandType_RoundedRectStroke &&
+      checkbox->radius == 5 && checkbox->stroke_width == 1 &&
+      checkbox->color == lectern0_draw_color(border_color) &&
+      lectern0_draw_clip_matches(checkbox->clip, clip);
+  }
+  result = result && draw[13].type == DrawCommandType_RoundedRect &&
+    draw[13].v.rounded_rect.radius == 5 &&
+    draw[13].v.rounded_rect.fill_color == lectern0_draw_color(fill_color) &&
+    draw[13].v.rounded_rect.border_color == lectern0_draw_color(fill_color) &&
+    lectern0_draw_clip_matches(draw[13].v.rounded_rect.clip, clip);
+  for (U32 index = 14; result && index <= 20; index += 1)
+  {
+    const DrawCommand *visual = draw + index;
+    result = visual->type == DrawCommandType_RoundedRect &&
+      visual->v.rounded_rect.radius == 5 &&
+      visual->v.rounded_rect.fill_color ==
+        lectern0_draw_color(fill_color) &&
+      visual->v.rounded_rect.border_color ==
+        lectern0_draw_color(stroke_color) &&
+      lectern0_draw_clip_matches(visual->v.rounded_rect.clip, clip);
+  }
+  result = result && draw[21].type == DrawCommandType_RoundedRect &&
+    draw[21].v.rounded_rect.x == 100 &&
+    draw[21].v.rounded_rect.y == 70 &&
+    draw[21].v.rounded_rect.w == 20 &&
+    draw[21].v.rounded_rect.h == 20 &&
+    draw[21].v.rounded_rect.radius == 5 &&
+    draw[21].v.rounded_rect.fill_color == lectern0_draw_color(fill_color) &&
+    draw[21].v.rounded_rect.border_color == lectern0_draw_color(stroke_color) &&
+    lectern0_draw_clip_matches(draw[21].v.rounded_rect.clip, clip) &&
+    draw[22].type == DrawCommandType_Rect &&
+    draw[22].v.rect.x == 130 && draw[22].v.rect.y == 70 &&
+    draw[22].v.rect.w == 20 && draw[22].v.rect.h == 20 &&
+    draw[22].v.rect.color == lectern0_draw_color(fill_color) &&
+    lectern0_draw_clip_matches(draw[22].v.rect.clip, commands[16].rect) &&
+    lectern0_draw_adapter_rect_border_matches(
+      draw + 23, commands[16].rect, commands[16].rect,
+      lectern0_draw_color(border_color));
+
+  app->reader_view_frame = saved;
+  return result;
+}
+
+FUNCTION B32
 lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
 {
   if (!app) return 0;
@@ -5416,14 +9805,16 @@ lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
     "Reference metadata",
     "Reference menu item",
     "Reference default",
+    "Reference note editor",
   };
   static const ReaderViewTextStyle styles[] = {
     ReaderViewTextStyle_ChromeTitle,
     ReaderViewTextStyle_ChromeMetadata,
     ReaderViewTextStyle_MenuItem,
     ReaderViewTextStyle_Default,
+    ReaderViewTextStyle_NoteEditor,
   };
-  static const S32 expected_scales[] = {2, 1, 1, 17};
+  static const S32 expected_scales[] = {2, 1, 1, 1, 18};
   ReaderViewTextBinding bindings[ARRAY_COUNT(labels)] = {0};
   UI0DrawCommand commands[ARRAY_COUNT(labels)] = {0};
   for (U32 index = 0; index < ARRAY_COUNT(labels); index += 1)
@@ -5442,14 +9833,15 @@ lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
       .source_kind = UI0ControlKind_Label,
       .source_index = (UI0S32)index,
       .rect = ui0_rect(8, 8 + (S32)index * 28, 220, 24),
-      .clip_rect = ui0_rect(0, 0, 256, 128),
+      .clip_rect = ui0_rect(0, 0, 256, 160),
       .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
       .has_text_alignment = 1,
       .text_align_x = UI0TextAlignX_Start,
       .text_align_y = UI0TextAlignY_Center,
       .has_typography_role = 1,
       .typography_role = UI0TypographyRole_Body,
-      .typography_line_height = 17,
+      .typography_line_height =
+        styles[index] == ReaderViewTextStyle_NoteEditor ? 18 : 17,
     };
   }
 
@@ -5487,6 +9879,986 @@ lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
   return result;
 }
 
+FUNCTION B32
+lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
+{
+  if (!app) return 0;
+  static const char note[] = "Attached parity note";
+  static const char placeholder[] = "Type a note";
+  enum { RowSource = 9301, EditorSource = 9302 };
+  ReaderViewFrame saved_frame = app->reader_view_frame;
+  ReaderViewState saved_state = app->reader_view_state;
+  lectern0_copy_cstr(app->reader_view_state.note_draft,
+                     ARRAY_COUNT(app->reader_view_state.note_draft), note);
+  app->reader_view_state.note_draft_length = (UI0S32)strlen(note);
+  app->reader_view_state.note_input.caret =
+    app->reader_view_state.note_draft_length;
+  app->reader_view_state.popup = ReaderViewPopup_NoteEditor;
+
+  ReaderViewTextBinding bindings[] = {
+    {
+      .source_id = RowSource,
+      .text = {
+        .data = app->reader_view_state.note_draft,
+        .size = app->reader_view_state.note_draft_length,
+      },
+      .style = ReaderViewTextStyle_NoteEditor,
+    },
+    {
+      .source_id = EditorSource,
+      .text = {.data = placeholder, .size = (UI0S32)sizeof(placeholder) - 1},
+      .style = ReaderViewTextStyle_NoteEditor,
+    },
+  };
+  UI0Rect clip = ui0_rect(400, 200, 260, 25);
+  UI0DrawCommand commands[] = {
+    {
+      .op = UI0DrawOp_Text,
+      .source_id = RowSource,
+      .source_kind = UI0ControlKind_TextArea,
+      .rect = clip,
+      .clip_rect = clip,
+      .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
+      .has_typography_role = 1,
+      .typography_role = UI0TypographyRole_Body,
+      .typography_line_height = Lectern0ReaderViewNotePixelHeight,
+    },
+    {
+      .op = UI0DrawOp_TextCaret,
+      .source_id = EditorSource,
+      .source_kind = UI0ControlKind_TextArea,
+      .rect = {499, 201, 1, 23},
+      .clip_rect = clip,
+      .color = UI0_COLOR_RGB(0x11, 0x52, 0x93),
+    },
+  };
+  app->reader_view_frame.text_bindings = bindings;
+  app->reader_view_frame.text_binding_count = ARRAY_COUNT(bindings);
+  app->reader_view_frame.draw_commands = commands;
+  app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+
+  Scratch scratch = scratch_begin(0, 0);
+  TextEngineResolvedStyle style = text_engine_resolved_style_make(
+    font_provider_system_ui(),
+    (FontTag){0},
+    Lectern0ReaderViewNotePixelHeight,
+    0x00243546U,
+    0,
+    FontRasterFlag_Smooth | FontRasterFlag_Hinted);
+  TextEngineEditableRow expected_row = {0};
+  S32 expected_caret_x = 0;
+  B32 expected = text_engine_editable_row_make(
+    &expected_row,
+    scratch.arena,
+    str8((U8 *)note, sizeof(note) - 1),
+    &style,
+    text_engine_source_range_from_bytes(0, sizeof(note) - 1),
+    0,
+    clip.x,
+    clip.y,
+    clip.h,
+    Lectern0ReaderViewNoteTerminalCaretGap) &&
+    text_engine_editable_row_caret_x_for_source_byte(
+      &expected_row, sizeof(note) - 1, &expected_caret_x);
+
+  U32 text_matches = 0;
+  U32 caret_matches = 0;
+  U16 draw_count = app->draw_commands.command_count[DrawLayer_UI];
+  for (U16 index = 0; index < draw_count; index += 1)
+  {
+    const DrawCommand *draw =
+      app->draw_commands.commands[DrawLayer_UI] + index;
+    if (draw->type == DrawCommandType_Text &&
+        strcmp(draw->v.text.text, note) == 0)
+    {
+      text_matches += 1;
+      expected = expected && draw->v.text.x == clip.x &&
+        draw->v.text.scale == Lectern0ReaderViewNotePixelHeight &&
+        draw->v.text.color == 0x00243546U &&
+        (draw->v.text.flags & DrawTextFlag_Shaped) != 0;
+    }
+    else if (draw->type == DrawCommandType_Rect &&
+             draw->v.rect.color == 0x00115293U)
+    {
+      caret_matches += 1;
+      expected = expected && draw->v.rect.x == expected_caret_x &&
+        draw->v.rect.x != commands[1].rect.x &&
+        draw->v.rect.y == commands[1].rect.y &&
+        draw->v.rect.w == 1 && draw->v.rect.h == 23;
+    }
+  }
+  B32 result = expected && text_matches == 1 && caret_matches == 1 &&
+    app->draw_adapter_stats.unsupported_count == 0 &&
+    app->draw_adapter_stats.note_editable_row_count == 1 &&
+    app->draw_adapter_stats.note_caret_remap_count == 1;
+  scratch_end(scratch);
+  app->reader_view_state = saved_state;
+  app->reader_view_frame = saved_frame;
+  return result;
+}
+
+FUNCTION B32
+lectern0_draw_adapter_covers_measured_find_match(Lectern0App *app)
+{
+  if (!app) return 0;
+  static const char text[] = "prefix alpha suffix";
+  enum { MatchStart = 7, MatchSize = 5 };
+  ReaderViewTextBinding binding = {
+    .source_id = 9101,
+    .text = {.data = text, .size = (S32)sizeof(text) - 1},
+    .style = ReaderViewTextStyle_Default,
+    .match_start = MatchStart,
+    .match_size = MatchSize,
+  };
+  UI0DrawCommand command = {
+    .op = UI0DrawOp_Text,
+    .source_id = binding.source_id,
+    .source_kind = UI0ControlKind_Label,
+    .rect = {8, 8, 180, 18},
+    .clip_rect = {0, 0, 220, 40},
+    .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
+    .has_typography_role = 1,
+    .typography_role = UI0TypographyRole_Body,
+    .typography_line_height = 17,
+  };
+  ReaderViewFrame saved = app->reader_view_frame;
+  app->reader_view_frame.text_bindings = &binding;
+  app->reader_view_frame.text_binding_count = 1;
+  app->reader_view_frame.draw_commands = &command;
+  app->reader_view_frame.draw_command_count = 1;
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+
+  FontTextMetrics metrics =
+    font_metrics_for_size(font_provider_system_ui(), 1);
+  S32 prefix_width = font_measure_text_width_s8(
+    font_provider_system_ui(), str8((U8 *)text, MatchStart), 1);
+  S32 match_width = font_measure_text_width_s8(
+    font_provider_system_ui(),
+    str8((U8 *)text + MatchStart, MatchSize), 1);
+  Lectern0ReaderContentTheme theme =
+    lectern0_reader_content_theme(app->theme);
+  B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
+               app->draw_commands.overflow_count == 0 &&
+               app->draw_commands.command_count[DrawLayer_UI] == 2;
+  if (result)
+  {
+    const DrawCommand *highlight =
+      app->draw_commands.commands[DrawLayer_UI];
+    const DrawCommand *excerpt = highlight + 1;
+    result = highlight->type == DrawCommandType_Rect &&
+      highlight->v.rect.x == command.rect.x + prefix_width &&
+      highlight->v.rect.y == command.rect.y - 1 &&
+      highlight->v.rect.w == MAX(match_width, 1) &&
+      highlight->v.rect.h ==
+        MAX(metrics.ascent_px + metrics.descent_px + 2, 1) &&
+      highlight->v.rect.color == theme.user_highlight &&
+      excerpt->type == DrawCommandType_Text &&
+      strcmp(excerpt->v.text.text, text) == 0 &&
+      excerpt->v.text.x == command.rect.x &&
+      excerpt->v.text.y == command.rect.y + metrics.ascent_px &&
+      excerpt->v.text.scale == 1 &&
+      excerpt->v.text.color == theme.ink &&
+      excerpt->v.text.origin == DrawTextOrigin_Baseline &&
+      excerpt->v.text.clip_x == command.rect.x &&
+      excerpt->v.text.clip_y == command.rect.y &&
+      excerpt->v.text.clip_w == command.rect.w &&
+      excerpt->v.text.clip_h == command.rect.h;
+  }
+  app->reader_view_frame = saved;
+  return result;
+}
+
+FUNCTION B32
+lectern0_draw_adapter_covers_find_status_and_metadata(Lectern0App *app)
+{
+  if (!app) return 0;
+  static const char metadata[] = "First Light";
+  static const char status[] = "18 matches";
+  enum
+  {
+    FindRowSource = 9201,
+    MetadataSource = 9202,
+    StatusSource = 9203,
+  };
+  ReaderViewSemanticNode nodes[] = {
+    {
+      .id = FindRowSource,
+      .control = ReaderViewSemanticControl_FindRow,
+    },
+    {
+      .id = MetadataSource,
+      .parent_id = FindRowSource,
+    },
+    {
+      .id = StatusSource,
+      .role = ReaderViewSemantic_Status,
+    },
+  };
+  ReaderViewTextBinding bindings[] = {
+    {
+      .source_id = MetadataSource,
+      .text = {.data = metadata, .size = (S32)sizeof(metadata) - 1},
+      .style = ReaderViewTextStyle_ChromeMetadata,
+    },
+    {
+      .source_id = StatusSource,
+      .text = {.data = status, .size = (S32)sizeof(status) - 1},
+      .style = ReaderViewTextStyle_Default,
+    },
+  };
+  UI0DrawCommand commands[] = {
+    {
+      .op = UI0DrawOp_Text,
+      .source_id = MetadataSource,
+      .source_kind = UI0ControlKind_Label,
+      .rect = {12, 10, 180, 18},
+      .clip_rect = {0, 0, 240, 80},
+      .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
+    },
+    {
+      .op = UI0DrawOp_Text,
+      .source_id = StatusSource,
+      .source_kind = UI0ControlKind_Label,
+      .rect = {12, 36, 180, 20},
+      .clip_rect = {0, 0, 240, 80},
+      .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
+      .has_text_alignment = 1,
+      .text_align_x = UI0TextAlignX_Start,
+      .text_align_y = UI0TextAlignY_Center,
+    },
+  };
+  ReaderViewFrame saved_frame = app->reader_view_frame;
+  ReaderViewState saved_state = app->reader_view_state;
+  ReaderViewLayout saved_layout = app->reader_view_layout;
+  app->reader_view_frame.semantic_nodes = nodes;
+  app->reader_view_frame.semantic_node_count = ARRAY_COUNT(nodes);
+  app->reader_view_frame.text_bindings = bindings;
+  app->reader_view_frame.text_binding_count = ARRAY_COUNT(bindings);
+  app->reader_view_frame.draw_commands = commands;
+  app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
+  app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
+  app->reader_view_layout.left_panel_rect = (UI0Rect){0, 0, 240, 80};
+  draw_command_buffer_begin(&app->draw_commands);
+  lectern0_adapt_ui0_draw(app);
+
+  const FontProvider *provider = font_provider_system_ui();
+  FontTextMetrics metrics = font_metrics_for_size(provider, 1);
+  S32 metadata_width = font_measure_text_width_s8(
+    provider, str8((U8 *)metadata, sizeof(metadata) - 1), 1);
+  S32 status_baseline = font_text_baseline_y_in_rect(
+    provider, commands[1].rect.y, commands[1].rect.h, 1);
+  U32 metadata_matches = 0;
+  U32 status_matches = 0;
+  B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
+               app->draw_commands.overflow_count == 0;
+  U16 draw_count = app->draw_commands.command_count[DrawLayer_UI];
+  for (U16 index = 0; index < draw_count; index += 1)
+  {
+    const DrawCommand *draw =
+      app->draw_commands.commands[DrawLayer_UI] + index;
+    if (draw->type != DrawCommandType_Text) continue;
+    if (strcmp(draw->v.text.text, metadata) == 0)
+    {
+      metadata_matches += 1;
+      result = result &&
+        draw->v.text.x == commands[0].rect.x +
+          commands[0].rect.w - metadata_width &&
+        draw->v.text.y == commands[0].rect.y + metrics.ascent_px;
+    }
+    else if (strcmp(draw->v.text.text, status) == 0)
+    {
+      status_matches += 1;
+      result = result && draw->v.text.x == commands[1].rect.x &&
+        draw->v.text.y == status_baseline;
+    }
+  }
+  result = result && metadata_matches == 1 && status_matches == 2 &&
+           draw_count == 3;
+  app->reader_view_layout = saved_layout;
+  app->reader_view_state = saved_state;
+  app->reader_view_frame = saved_frame;
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
+{
+  if (!app) return 0;
+  ReaderViewState saved_state = app->reader_view_state;
+  ReaderViewProjection saved_projection = app->reader_view_projection;
+  Lectern0Input saved_input = app->input;
+  ReaderViewCodepointAdvance
+    saved_advances[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  U64 saved_last_seen[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  U8 saved_priority[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
+  MemoryCopy(saved_advances, app->find_text_advances,
+             sizeof(saved_advances));
+  MemoryCopy(saved_last_seen, app->find_text_advance_last_seen,
+             sizeof(saved_last_seen));
+  MemoryCopy(saved_priority, app->find_text_advance_priority,
+             sizeof(saved_priority));
+  U32 saved_count = app->find_text_advance_count;
+  U64 saved_generation = app->find_text_metrics_generation;
+  S32 saved_fallback = app->find_text_fallback_advance;
+  B32 saved_initialized = app->find_text_metrics_initialized;
+
+  MemoryZeroArray(app->find_text_advances);
+  MemoryZeroArray(app->find_text_advance_last_seen);
+  MemoryZeroArray(app->find_text_advance_priority);
+  app->find_text_advance_count = 0;
+  app->find_text_metrics_generation = 0;
+  app->find_text_fallback_advance = 0;
+  app->find_text_metrics_initialized = 0;
+
+  static const char omega[] = "\xce\xa9";
+  static const char beta[] = "\xce\xb2";
+  static const char e_acute[] = "\xc3\xa9";
+  static const char snowman[] = "\xe2\x98\x83";
+  static const char zhe[] = "\xd0\x96";
+  static const char boundary[] = "\xe7\x95\x8c";
+  static const char grin[] = "\xf0\x9f\x98\x80";
+  static const char smile[] = "\xf0\x9f\x99\x82";
+  char transfer_text[sizeof(beta)] = {0};
+  char commit_text[sizeof(snowman)] = {0};
+  S32 transfer_length = (S32)sizeof(beta) - 1;
+  S32 commit_length = (S32)sizeof(snowman) - 1;
+  UI0TextInputTransferBuffer transfer = {
+    .data = transfer_text,
+    .length = &transfer_length,
+    .cap = (S32)sizeof(transfer_text),
+  };
+  UI0TextInputTransferBuffer commit = {
+    .data = commit_text,
+    .length = &commit_length,
+    .cap = (S32)sizeof(commit_text),
+  };
+  ReaderViewInput input = {0};
+  MemoryCopy(transfer_text, beta, sizeof(beta) - 1);
+  MemoryCopy(commit_text, snowman, sizeof(snowman) - 1);
+  MemoryCopy(app->reader_view_state.find_query, omega, sizeof(omega) - 1);
+  app->reader_view_state.find_query_length = (S32)sizeof(omega) - 1;
+  MemoryCopy(app->reader_view_state.find_history_text,
+             zhe, sizeof(zhe) - 1);
+  app->reader_view_state.find_history.text_size = sizeof(zhe) - 1;
+  MemoryCopy(app->reader_view_state.find_history_scratch,
+             boundary, sizeof(boundary) - 1);
+  app->reader_view_state.find_history.scratch_size = sizeof(boundary) - 1;
+  app->reader_view_projection.labels = reader_view_default_english_labels();
+  app->reader_view_projection.find.committed_query =
+    (ReaderViewText){.data = beta, .size = (S32)sizeof(beta) - 1};
+  input.find_text.text = e_acute;
+  input.find_text.text_len = (S32)sizeof(e_acute) - 1;
+  input.find_text.transfer_buffer = &transfer;
+  input.find_text.commit_buffer = &commit;
+
+  ReaderViewFindTextMetrics metrics =
+    lectern0_reader_view_find_text_metrics(app, &input);
+  static const U32 expected_scalars[] = {
+    0x03a9u, 0x03b2u, 0x00e9u, 0x2603u, 0x0416u, 0x754cu,
+  };
+  static const char *expected_text[] = {
+    omega, beta, e_acute, snowman, zhe, boundary,
+  };
+  static const U32 expected_sizes[] = {
+    sizeof(omega) - 1, sizeof(beta) - 1, sizeof(e_acute) - 1,
+    sizeof(snowman) - 1, sizeof(zhe) - 1, sizeof(boundary) - 1,
+  };
+  S32 expected_fallback = font_measure_text_width_s8(
+    font_provider_system_ui(), str8_from_cstr("?"), 1);
+  if (expected_fallback <= 0)
+  {
+    expected_fallback = MAX(
+      font_metrics_for_size(font_provider_system_ui(), 1).glyph_advance_px,
+      1);
+  }
+  B32 result = metrics.advances == app->find_text_advances &&
+    metrics.advance_count == 95 + (S32)ARRAY_COUNT(expected_scalars) &&
+    metrics.fallback_advance == expected_fallback;
+  for (U32 scalar_index = 0;
+       result && scalar_index < ARRAY_COUNT(expected_scalars);
+       scalar_index += 1)
+  {
+    const ReaderViewCodepointAdvance *found = 0;
+    for (S32 metric_index = 0;
+         metric_index < metrics.advance_count;
+         metric_index += 1)
+    {
+      if (metrics.advances[metric_index].codepoint ==
+          expected_scalars[scalar_index])
+      {
+        found = metrics.advances + metric_index;
+        break;
+      }
+    }
+    result = found && found->advance == font_measure_text_width_s8(
+      font_provider_system_ui(),
+      str8((U8 *)expected_text[scalar_index], expected_sizes[scalar_index]),
+      1);
+  }
+
+  U32 retained_count = app->find_text_advance_count;
+  input = (ReaderViewInput){0};
+  app->reader_view_state.find_query_length = 0;
+  app->reader_view_projection.find.committed_query = (ReaderViewText){0};
+  app->reader_view_state.find_history.text_size = 0;
+  app->reader_view_state.find_history.scratch_size = 0;
+  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  result = result && (U32)metrics.advance_count == retained_count;
+
+  MemoryCopy(app->reader_view_state.find_history_text,
+             omega, sizeof(omega) - 1);
+  app->reader_view_state.find_history.text_size = sizeof(omega) - 1;
+  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  U32 omega_index = UINT32_MAX;
+  for (U32 index = 0; index < app->find_text_advance_count; index += 1)
+  {
+    if (app->find_text_advances[index].codepoint == 0x03a9u)
+    {
+      omega_index = index;
+      break;
+    }
+  }
+  result = result && omega_index != UINT32_MAX &&
+    app->find_text_advance_priority[omega_index] ==
+      Lectern0ReaderViewFindPriority_History;
+
+  app->reader_view_state.find_history.text_size = 0;
+  input.find_text.text = grin;
+  input.find_text.text_len = (S32)sizeof(grin) - 1;
+  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  result = result && (U32)metrics.advance_count == retained_count + 1 &&
+    metrics.advances[metrics.advance_count - 1].codepoint == 0x1f600u &&
+    metrics.advances[metrics.advance_count - 1].advance ==
+      font_measure_text_width_s8(
+        font_provider_system_ui(), str8((U8 *)grin, sizeof(grin) - 1), 1);
+
+  while (app->find_text_advance_count <
+         READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP)
+  {
+    U32 index = app->find_text_advance_count;
+    app->find_text_advances[index] = (ReaderViewCodepointAdvance){
+      .codepoint = 0x10000u + index,
+      .advance = 1,
+    };
+    app->find_text_advance_last_seen[index] = 1;
+    app->find_text_advance_priority[index] =
+      Lectern0ReaderViewFindPriority_History;
+    app->find_text_advance_count += 1;
+  }
+  U64 next_generation = app->find_text_metrics_generation + 1;
+  for (U32 index = 95;
+       index < app->find_text_advance_count;
+       index += 1)
+  {
+    app->find_text_advance_last_seen[index] = next_generation;
+    app->find_text_advance_priority[index] =
+      Lectern0ReaderViewFindPriority_History;
+  }
+  input.find_text.text = smile;
+  input.find_text.text_len = (S32)sizeof(smile) - 1;
+  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  const ReaderViewCodepointAdvance *smile_metric = 0;
+  for (S32 index = 0; index < metrics.advance_count; index += 1)
+  {
+    if (metrics.advances[index].codepoint == 0x1f642u)
+    {
+      smile_metric = metrics.advances + index;
+      break;
+    }
+  }
+  result = result &&
+    metrics.advance_count == READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP &&
+    smile_metric && smile_metric->advance == font_measure_text_width_s8(
+      font_provider_system_ui(), str8((U8 *)smile, sizeof(smile) - 1), 1) &&
+    app->find_text_advances[0x41u - 0x20u].codepoint == 0x41u &&
+    app->find_text_advance_priority[0x41u - 0x20u] ==
+      Lectern0ReaderViewFindPriority_Pinned;
+
+  app->find_text_metrics_generation = UINT64_MAX;
+  for (U32 index = 95;
+       index < app->find_text_advance_count;
+       index += 1)
+  {
+    app->find_text_advance_last_seen[index] = UINT64_MAX;
+  }
+  input = (ReaderViewInput){0};
+  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  B32 wrap_reset = app->find_text_metrics_generation == 1;
+  for (U32 index = 95;
+       wrap_reset && index < app->find_text_advance_count;
+       index += 1)
+  {
+    if (app->find_text_advance_last_seen[index] != 0) wrap_reset = 0;
+  }
+  result = result && wrap_reset;
+
+  app->reader_view_state = saved_state;
+  app->reader_view_projection = saved_projection;
+  app->input = saved_input;
+  MemoryCopy(app->find_text_advances, saved_advances,
+             sizeof(saved_advances));
+  MemoryCopy(app->find_text_advance_last_seen, saved_last_seen,
+             sizeof(saved_last_seen));
+  MemoryCopy(app->find_text_advance_priority, saved_priority,
+             sizeof(saved_priority));
+  app->find_text_advance_count = saved_count;
+  app->find_text_metrics_generation = saved_generation;
+  app->find_text_fallback_advance = saved_fallback;
+  app->find_text_metrics_initialized = saved_initialized;
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
+{
+  if (!app) return 0;
+  ReaderViewState saved_state = app->reader_view_state;
+  ReaderViewProjection saved_projection = app->reader_view_projection;
+  ReaderViewCodepointAdvance
+    saved_advances[READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP];
+  MemoryCopy(saved_advances, app->note_text_advances,
+             sizeof(saved_advances));
+  U32 saved_count = app->note_text_advance_count;
+
+  static const char draft[] = "Draft \xce\xa9";
+  static const char incoming[] = "\xce\xb2";
+  static const char transfer_text[] = "\xe2\x98\x83";
+  char transfer_storage[sizeof(transfer_text)] = {0};
+  S32 transfer_length = (S32)sizeof(transfer_text) - 1;
+  UI0TextInputTransferBuffer transfer = {
+    .data = transfer_storage,
+    .length = &transfer_length,
+    .cap = (S32)sizeof(transfer_storage),
+  };
+  MemoryCopy(transfer_storage, transfer_text, sizeof(transfer_text) - 1);
+  app->reader_view_state.popup = ReaderViewPopup_NoteEditor;
+  MemoryZeroArray(app->reader_view_state.note_draft);
+  MemoryCopy(app->reader_view_state.note_draft, draft, sizeof(draft) - 1);
+  app->reader_view_state.note_draft_length = (S32)sizeof(draft) - 1;
+  app->reader_view_projection.labels = reader_view_default_english_labels();
+  ReaderViewInput input = {0};
+  input.note_text.text = incoming;
+  input.note_text.text_len = (S32)sizeof(incoming) - 1;
+  input.note_text.transfer_buffer = &transfer;
+
+  ReaderViewNoteTextMetrics metrics =
+    lectern0_reader_view_note_text_metrics(app, &input);
+  S32 expected_fallback = lectern0_reader_view_measure_note_text("?", 1);
+  if (expected_fallback <= 0)
+    expected_fallback = Lectern0ReaderViewNoteAdvanceFallback;
+  B32 result = metrics.advances == app->note_text_advances &&
+    metrics.advance_count > 0 &&
+    metrics.advance_count <= READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP &&
+    metrics.fallback_advance == expected_fallback &&
+    metrics.pixel_height == Lectern0ReaderViewNotePixelHeight &&
+    metrics.line_height == Lectern0ReaderViewNoteLineHeightFallback;
+  for (S32 index = 0; result && index < metrics.advance_count; index += 1)
+  {
+    const ReaderViewCodepointAdvance *item = metrics.advances + index;
+    result = item->codepoint != 0 && item->codepoint <= 0x10ffffu &&
+      !(item->codepoint >= 0xd800u && item->codepoint <= 0xdfffu) &&
+      item->advance >= 0;
+    for (S32 earlier = 0; result && earlier < index; earlier += 1)
+      result = metrics.advances[earlier].codepoint != item->codepoint;
+  }
+
+  static const U32 expected_scalars[] = {
+    (U32)'D', 0x03a9u, 0x03b2u, 0x2603u, (U32)'T',
+  };
+  static const char *expected_text[] = {
+    "D", draft + sizeof(draft) - 3, incoming, transfer_text, "T",
+  };
+  static const U32 expected_sizes[] = {
+    1, 2, sizeof(incoming) - 1, sizeof(transfer_text) - 1, 1,
+  };
+  S32 previous_index = -1;
+  for (U32 scalar_index = 0;
+       result && scalar_index < ARRAY_COUNT(expected_scalars);
+       scalar_index += 1)
+  {
+    S32 found_index = -1;
+    for (S32 index = 0; index < metrics.advance_count; index += 1)
+    {
+      if (metrics.advances[index].codepoint == expected_scalars[scalar_index])
+      {
+        found_index = index;
+        break;
+      }
+    }
+    result = found_index > previous_index &&
+      metrics.advances[found_index].advance ==
+        lectern0_reader_view_measure_note_text(
+          expected_text[scalar_index], expected_sizes[scalar_index]);
+    previous_index = found_index;
+  }
+
+  app->reader_view_state.popup = ReaderViewPopup_None;
+  ReaderViewNoteTextMetrics closed =
+    lectern0_reader_view_note_text_metrics(app, &input);
+  result = result && !closed.advances && closed.advance_count == 0 &&
+    closed.fallback_advance == 0 && closed.pixel_height == 0 &&
+    closed.line_height == 0;
+
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0 note metrics regression count=%d fallback=%d pixel=%d line=%d provider_line=%d placeholder=%.*s\n",
+            metrics.advance_count, metrics.fallback_advance,
+            metrics.pixel_height, metrics.line_height,
+            font_metrics_for_size(font_provider_system_ui(),
+                                  Lectern0ReaderViewNotePixelHeight)
+              .line_advance_px,
+            app->reader_view_projection.labels.note_placeholder.size,
+            app->reader_view_projection.labels.note_placeholder.data);
+  }
+
+  app->reader_view_state = saved_state;
+  app->reader_view_projection = saved_projection;
+  MemoryCopy(app->note_text_advances, saved_advances,
+             sizeof(saved_advances));
+  app->note_text_advance_count = saved_count;
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_covers_noncontiguous_toc_identity(Lectern0App *app)
+{
+  if (!app || !app->frame.section_items || app->frame.section_item_count == 0)
+    return 0;
+  EpubReaderFrameSectionItem rows[2] = {0};
+  rows[0].nav_index = 7;
+  rows[0].depth = 3;
+  rows[0].active = 1;
+  lectern0_copy_cstr(rows[0].label, ARRAY_COUNT(rows[0].label), "Nested A");
+  rows[0].label_length = 8;
+  rows[1].nav_index = 42;
+  rows[1].depth = 1;
+  lectern0_copy_cstr(rows[1].label, ARRAY_COUNT(rows[1].label), "Nested B");
+  rows[1].label_length = 8;
+
+  EpubReaderFrameSectionItem *saved_rows = app->frame.section_items;
+  U32 saved_count = app->frame.section_item_count;
+  U32 saved_total = app->frame.section_item_total_count;
+  app->frame.section_items = rows;
+  app->frame.section_item_count = ARRAY_COUNT(rows);
+  app->frame.section_item_total_count = 73;
+  lectern0_prepare_reader_view_toc(app);
+  B32 result = app->reader_view_projection.toc.row_count == 2 &&
+    app->reader_view_projection.toc.total_count == 73 &&
+    app->reader_view_projection.toc.rows[0].key == 8 &&
+    app->reader_view_projection.toc.rows[1].key == 43 &&
+    app->reader_view_projection.toc.rows[0].depth == 3 &&
+    app->reader_view_projection.toc.rows[1].depth == 1 &&
+    (app->reader_view_projection.toc.rows[0].flags &
+     (ReaderViewRow_Current | ReaderViewRow_Selected)) ==
+      (ReaderViewRow_Current | ReaderViewRow_Selected);
+
+  app->frame.section_items = saved_rows;
+  app->frame.section_item_count = saved_count;
+  app->frame.section_item_total_count = saved_total;
+  lectern0_prepare_reader_view_toc(app);
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
+{
+  if (!app || app->persistence_enabled || app->bookmark_count != 0 ||
+      app->highlight_count != 0)
+    return 0;
+  ReaderViewRightFilter saved_filter = app->reader_view_state.right_filter;
+  U64 saved_revision = app->annotation_revision;
+  app->bookmark_count = 2;
+  app->bookmarks[0] = (Lectern0Bookmark){
+    .id = 11, .spine_index = 1, .byte_offset = 10,
+  };
+  app->bookmarks[1] = (Lectern0Bookmark){
+    .id = 12, .spine_index = 0, .byte_offset = 90,
+  };
+  lectern0_copy_cstr(app->bookmarks[0].label,
+                     ARRAY_COUNT(app->bookmarks[0].label), "Second");
+  lectern0_copy_cstr(app->bookmarks[0].excerpt,
+                     ARRAY_COUNT(app->bookmarks[0].excerpt), "Later bookmark");
+  lectern0_copy_cstr(app->bookmarks[1].label,
+                     ARRAY_COUNT(app->bookmarks[1].label), "First");
+  lectern0_copy_cstr(app->bookmarks[1].excerpt,
+                     ARRAY_COUNT(app->bookmarks[1].excerpt), "Earlier bookmark");
+  app->highlight_count = 2;
+  app->highlights[0] = (Lectern0Highlight){
+    .id = 21, .spine_index = 0, .start_byte = 90, .end_byte = 100,
+    .color_index = 2, .is_highlight = 1,
+  };
+  app->highlights[1] = (Lectern0Highlight){
+    .id = 22, .spine_index = 0, .start_byte = 20, .end_byte = 30,
+    .color_index = 1, .is_highlight = 1,
+  };
+  lectern0_copy_cstr(app->highlights[0].section,
+                     ARRAY_COUNT(app->highlights[0].section), "First");
+  lectern0_copy_cstr(app->highlights[0].text,
+                     ARRAY_COUNT(app->highlights[0].text), "Attached excerpt");
+  lectern0_copy_cstr(app->highlights[0].note,
+                     ARRAY_COUNT(app->highlights[0].note), "Attached note");
+  lectern0_copy_cstr(app->highlights[1].section,
+                     ARRAY_COUNT(app->highlights[1].section), "First");
+  lectern0_copy_cstr(app->highlights[1].text,
+                     ARRAY_COUNT(app->highlights[1].text), "Leading excerpt");
+  app->reader_view_state.right_filter = ReaderViewRightFilter_All;
+  lectern0_prepare_reader_view_projection(app);
+
+  static const ReaderViewRightRowKind expected_kinds[] = {
+    ReaderViewRightRow_Highlight,
+    ReaderViewRightRow_Bookmark,
+    ReaderViewRightRow_Highlight,
+    ReaderViewRightRow_Note,
+    ReaderViewRightRow_Bookmark,
+  };
+  static const U64 expected_ids[] = {22, 12, 21, 21, 11};
+  B32 result = app->reader_view_projection.right.row_count ==
+                 (UI0S32)ARRAY_COUNT(expected_kinds) &&
+               app->reader_view_right_source_count ==
+                 ARRAY_COUNT(expected_kinds);
+  for (U32 index = 0; result && index < ARRAY_COUNT(expected_kinds); index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app->reader_view_projection.right.rows + index;
+    const Lectern0ReaderViewRightSource *source =
+      app->reader_view_right_sources + index;
+    result = row->kind == expected_kinds[index] &&
+             source->key == row->key &&
+             source->row_kind == expected_kinds[index] &&
+             source->record_id == expected_ids[index];
+  }
+  if (result)
+  {
+    const ReaderViewRightRow *note =
+      app->reader_view_projection.right.rows + 3;
+    result = note->color_key == 5002 &&
+             (note->flags & ReaderViewRow_AttachedToPrevious) != 0;
+  }
+  if (result)
+  {
+    const ReaderViewRightRow *highlight =
+      app->reader_view_projection.right.rows + 2;
+    const ReaderViewRightRow *note = highlight + 1;
+    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = highlight->key,
+      .right_row_kind = ReaderViewRightRow_Highlight,
+    });
+    B32 highlight_routed = app->highlights[0].starred &&
+                           !app->highlights[0].note_starred &&
+                           !app->highlights[1].starred;
+    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = note->key,
+      .right_row_kind = ReaderViewRightRow_Note,
+    });
+    result = highlight_routed && app->highlights[0].starred &&
+             app->highlights[0].note_starred &&
+             !app->highlights[1].starred;
+    ReaderViewKey bookmark_key =
+      app->reader_view_projection.right.rows[1].key;
+    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = bookmark_key,
+      .right_row_kind = ReaderViewRightRow_Bookmark,
+    });
+    result = result && app->bookmark_count == 1 &&
+             app->bookmarks[0].id == 11 &&
+             app->annotation_revision == saved_revision + 3;
+  }
+
+  app->bookmark_count = 0;
+  app->highlight_count = 0;
+  MemoryZeroArray(app->bookmarks);
+  MemoryZeroArray(app->highlights);
+  app->annotation_revision = saved_revision;
+  app->reader_view_state.right_filter = saved_filter;
+  lectern0_prepare_reader_view_projection(app);
+  return result;
+}
+
+FUNCTION B32
+lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
+{
+  if (!app || app->persistence_enabled || app->bookmark_count != 0 ||
+      app->highlight_count != 0)
+    return 0;
+  static const ReaderViewRightFilter filters[] = {
+    ReaderViewRightFilter_All,
+    ReaderViewRightFilter_Bookmarks,
+    ReaderViewRightFilter_Highlights,
+    ReaderViewRightFilter_Notes,
+  };
+  static const UI0U64 filter_totals[] = {9, 1, 4, 4};
+  static const U32 filter_bookmark_rows[] = {1, 1, 0, 0};
+  static const U32 filter_highlight_rows[] = {4, 0, 4, 0};
+  static const U32 filter_note_rows[] = {4, 0, 0, 4};
+  static const UI0Color light_colors[] = {
+    UI0_COLOR_RGB(0xff, 0xf2, 0xa6),
+    UI0_COLOR_RGB(0xff, 0xd4, 0xec),
+    UI0_COLOR_RGB(0xcd, 0xe7, 0xff),
+    UI0_COLOR_RGB(0xff, 0xdc, 0xa8),
+  };
+  static const UI0Color dark_colors[] = {
+    UI0_COLOR_RGB(0x4d, 0x4a, 0x16),
+    UI0_COLOR_RGB(0x47, 0x35, 0x5c),
+    UI0_COLOR_RGB(0x2a, 0x46, 0x62),
+    UI0_COLOR_RGB(0x52, 0x3f, 0x1c),
+  };
+
+  ReaderViewRightFilter saved_filter = app->reader_view_state.right_filter;
+  Lectern0Theme saved_theme = app->theme;
+  U64 saved_revision = app->annotation_revision;
+  app->bookmark_count = 1;
+  app->bookmarks[0] = (Lectern0Bookmark){
+    .id = 51, .spine_index = 0, .byte_offset = 50,
+  };
+  lectern0_copy_cstr(app->bookmarks[0].label,
+                     ARRAY_COUNT(app->bookmarks[0].label), "Section");
+  lectern0_copy_cstr(app->bookmarks[0].excerpt,
+                     ARRAY_COUNT(app->bookmarks[0].excerpt), "Bookmark");
+  app->highlight_count = 4;
+  for (U32 color_index = 0; color_index < app->highlight_count; color_index += 1)
+  {
+    Lectern0Highlight *highlight = app->highlights + color_index;
+    *highlight = (Lectern0Highlight){
+      .id = 101 + color_index,
+      .spine_index = 0,
+      .start_byte = 100 + 100 * color_index,
+      .end_byte = 150 + 100 * color_index,
+      .color_index = color_index,
+      .is_highlight = 1,
+    };
+    lectern0_copy_cstr(highlight->section,
+                       ARRAY_COUNT(highlight->section), "Section");
+    lectern0_copy_cstr(highlight->text,
+                       ARRAY_COUNT(highlight->text), "Highlight");
+    lectern0_copy_cstr(highlight->note,
+                       ARRAY_COUNT(highlight->note), "Attached note");
+  }
+
+  B32 result = 1;
+  for (U32 appearance = 0; appearance < 2; appearance += 1)
+  {
+    const UI0Color *expected_colors = appearance ? dark_colors : light_colors;
+    app->theme = appearance ? Lectern0Theme_Dark : Lectern0Theme_Light;
+    for (U32 filter_index = 0;
+         filter_index < ARRAY_COUNT(filters);
+         filter_index += 1)
+    {
+      app->reader_view_state.right_filter = filters[filter_index];
+      lectern0_prepare_reader_view_projection(app);
+      const ReaderViewRightProjection *right =
+        &app->reader_view_projection.right;
+      result = result &&
+        app->reader_view_state.right_filter == filters[filter_index] &&
+        right->status.state == ReaderViewLoad_Ready &&
+        right->row_count == (UI0S32)filter_totals[filter_index] &&
+        right->total_count == filter_totals[filter_index] &&
+        right->all_count == 9 &&
+        right->bookmark_count == 1 &&
+        right->highlight_count == 4 &&
+        right->note_count == 4 &&
+        !right->has_more &&
+        right->available_filters ==
+          (ReaderViewRightFilterFlag_All |
+           ReaderViewRightFilterFlag_Bookmarks |
+           ReaderViewRightFilterFlag_Highlights |
+           ReaderViewRightFilterFlag_Notes) &&
+        lectern0_reader_view_text_is(app->reader_view_projection.labels.all,
+                                     "All") &&
+        lectern0_reader_view_text_is(
+          app->reader_view_projection.labels.bookmarks, "Bookmarks") &&
+        lectern0_reader_view_text_is(
+          app->reader_view_projection.labels.highlights,
+          "All Highlight Colors") &&
+        lectern0_reader_view_text_is(app->reader_view_projection.labels.notes,
+                                     "Notes");
+
+      U32 bookmark_rows = 0;
+      U32 highlight_rows = 0;
+      U32 note_rows = 0;
+      for (UI0S32 row_index = 0;
+           row_index < right->row_count;
+           row_index += 1)
+      {
+        const ReaderViewRightRow *row = right->rows + row_index;
+        const Lectern0ReaderViewRightSource *source =
+          lectern0_reader_view_right_source(app, row->key, row->kind);
+        result = result && source != 0;
+        if (!source) continue;
+        if (row->kind == ReaderViewRightRow_Bookmark)
+        {
+          bookmark_rows += 1;
+          result = result && source->record_id == 51 &&
+                   row->color_key == 0 && row->rail_color == 0 &&
+                   (row->flags & ReaderViewRow_Starred) != 0 &&
+                   (row->flags & ReaderViewRow_AttachedToPrevious) == 0;
+          continue;
+        }
+
+        U32 color_index = source->record_id >= 101 ?
+                          (U32)(source->record_id - 101) :
+                          ARRAY_COUNT(light_colors);
+        result = result && color_index < ARRAY_COUNT(light_colors);
+        if (color_index >= ARRAY_COUNT(light_colors)) continue;
+        result = result && row->color_key == 5000ull + color_index &&
+                 row->rail_color == expected_colors[color_index];
+        if (row->kind == ReaderViewRightRow_Highlight)
+        {
+          highlight_rows += 1;
+          result = result &&
+            (row->flags & ReaderViewRow_AttachedToPrevious) == 0;
+        }
+        else if (row->kind == ReaderViewRightRow_Note)
+        {
+          note_rows += 1;
+          /* Notes-only filtering changes adjacency, never the colored rail. */
+          B32 attached =
+            (row->flags & ReaderViewRow_AttachedToPrevious) != 0;
+          B32 expected_attached =
+            filters[filter_index] == ReaderViewRightFilter_All;
+          result = result && attached == expected_attached;
+          if (expected_attached)
+          {
+            result = result && row_index > 0;
+            if (row_index > 0)
+            {
+              const ReaderViewRightRow *previous = row - 1;
+              const Lectern0ReaderViewRightSource *previous_source =
+                lectern0_reader_view_right_source(
+                  app, previous->key, previous->kind);
+              result = result &&
+                previous->kind == ReaderViewRightRow_Highlight &&
+                previous_source &&
+                previous_source->record_id == source->record_id;
+            }
+          }
+        }
+        else result = 0;
+      }
+      result = result &&
+        bookmark_rows == filter_bookmark_rows[filter_index] &&
+        highlight_rows == filter_highlight_rows[filter_index] &&
+        note_rows == filter_note_rows[filter_index];
+    }
+  }
+
+  app->bookmark_count = 0;
+  app->highlight_count = 0;
+  MemoryZeroArray(app->bookmarks);
+  MemoryZeroArray(app->highlights);
+  app->annotation_revision = saved_revision;
+  app->reader_view_state.right_filter = saved_filter;
+  app->theme = saved_theme;
+  lectern0_prepare_reader_view_projection(app);
+  return result;
+}
+
 FUNCTION int
 lectern0_run_reader_view_smoke(const char *path, const char *export_path)
 {
@@ -5505,6 +10877,27 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
   lectern0_render_to_buffer(&app, &buffer);
+  B32 adapter_all_ops = lectern0_draw_adapter_covers_all_ops(&app);
+  B32 adapter_edges = lectern0_draw_adapter_covers_reference_edges(&app);
+  B32 adapter_text =
+    lectern0_draw_adapter_covers_reference_text_styles(&app);
+  B32 adapter_find =
+    lectern0_draw_adapter_covers_measured_find_match(&app);
+  B32 adapter_find_labels =
+    lectern0_draw_adapter_covers_find_status_and_metadata(&app);
+  B32 adapter_note =
+    lectern0_draw_adapter_covers_note_editable_row(&app);
+  B32 find_metrics = lectern0_reader_view_covers_find_text_metrics(&app);
+  B32 note_metrics = lectern0_reader_view_covers_note_text_metrics(&app);
+  B32 toc_identity =
+    lectern0_reader_view_covers_noncontiguous_toc_identity(&app);
+  B32 right_order = lectern0_reader_view_covers_mixed_right_order(&app);
+  B32 right_projection =
+    lectern0_reader_view_covers_right_projection_contract(&app);
+  B32 keyboard_routing =
+    lectern0_reader_view_keyboard_input_routing_regression(&app);
+  B32 find_shortcut =
+    lectern0_reader_view_find_shortcut_focus_regression(&app, &buffer);
   if (!app.reader_view_ready ||
       app.reader_view_projection.settings.count != READER_VIEW_SETTING_CAP ||
       app.reader_view_projection.toc.row_count < 2 ||
@@ -5523,11 +10916,13 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
         app.reader_content_geometry.page_surface_rect.y !=
         READER_VIEW_DEFAULT_CONTENT_INSET_Y ||
       app.draw_adapter_stats.unsupported_count != 0 ||
-      !lectern0_draw_adapter_covers_all_ops(&app) ||
-      !lectern0_draw_adapter_covers_reference_text_styles(&app))
+      !adapter_all_ops || !adapter_edges || !adapter_text || !adapter_find ||
+      !adapter_find_labels || !adapter_note ||
+      !find_metrics || !note_metrics || !toc_identity || !right_order ||
+      !right_projection || !keyboard_routing || !find_shortcut)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u icons=%u\n",
+            "lectern0_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u adapters=%d/%d/%d/%d/%d/%d metrics=%d/%d identities=%d/%d/%d keyboard=%d shortcut=%d\n",
             app.reader_view_ready,
             app.reader_view_projection.settings.count,
             app.reader_view_projection.toc.row_count,
@@ -5542,7 +10937,28 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
             app.reader_content_geometry.content_rect.y -
               app.reader_content_geometry.page_surface_rect.y,
             app.draw_adapter_stats.unsupported_count,
-            app.draw_adapter_stats.op_count[UI0DrawOp_Icon]);
+            adapter_all_ops, adapter_edges, adapter_text, adapter_find,
+            adapter_find_labels, adapter_note,
+            find_metrics, note_metrics, toc_identity, right_order,
+            right_projection, keyboard_routing, find_shortcut);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  B32 reference_focus =
+    lectern0_reader_view_reference_focus_order(&app, &buffer);
+  B32 panel_focus = reference_focus &&
+    lectern0_reader_view_panel_focus_regression(&app, &buffer);
+  B32 gutter_keyboard = panel_focus &&
+    lectern0_reader_view_gutter_keyboard_regression(&app, &buffer);
+  if (!reference_focus || !panel_focus || !gutter_keyboard)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=reference_panel_focus_or_gutter focus=%d panel=%d gutter=%d\n",
+            reference_focus,
+            panel_focus,
+            gutter_keyboard);
     free(pixels);
     lectern0_app_release(&app);
     return 1;
@@ -5640,16 +11056,123 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       break;
     }
   }
+  U32 find_edit_match_count = app.reader.search_match_count;
+  U32 find_edit_back_count = app.reader.back_stack_count;
+  U32 find_edit_spine = app.reader.active_spine_index;
+  U64 find_edit_byte = app.reader.view_byte_offset;
   lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_FindChanged,
     .text = {.data = "standalone", .size = 10},
   });
-  if (app.reader.search_match_count == 0)
+  if (!lectern0_reader_view_text_is(
+        reader_view_find_query(&app.reader_view_state), "standalone") ||
+      app.reader.search_match_count != find_edit_match_count ||
+      app.reader.search_query_size != 0 ||
+      app.reader.back_stack_count != find_edit_back_count ||
+      app.reader.active_spine_index != find_edit_spine ||
+      app.reader.view_byte_offset != find_edit_byte)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=find\n");
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=find_edit_executed\n");
     free(pixels);
     lectern0_app_release(&app);
     return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindCommitted,
+    .text = {.data = "standalone", .size = 10},
+  });
+  lectern0_prepare_reader_view_projection(&app);
+  if (app.reader.search_match_count < 2 ||
+      app.reader.search_query_size != 10 ||
+      memcmp(app.reader.search_query_storage, "standalone", 10) != 0 ||
+      !app.reader.search_has_active || app.reader.search_active_index != 0 ||
+      app.reader_view_projection.find.row_count < 2 ||
+      !lectern0_reader_view_text_is(
+        app.reader_view_projection.find.committed_query, "standalone"))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=find_commit\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  ReaderViewKey second_find_key =
+    app.reader_view_projection.find.rows[1].key;
+  if (!lectern0_reader_view_navigation_panel_interaction_regression(
+        &app, &buffer, second_find_key))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=navigation_panel_interactions\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateFindRow,
+    .key = second_find_key,
+  });
+  if (!app.reader.search_has_active || app.reader.search_active_index != 1)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=find_result_action\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  U32 find_clear_spine = app.reader.active_spine_index;
+  U64 find_clear_byte = app.reader.view_byte_offset;
+  U32 find_clear_back_count = app.reader.back_stack_count;
+  U32 find_clear_forward_count = app.reader.forward_stack_count;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindChanged,
+    .text = {.data = "", .size = 0},
+  });
+  lectern0_prepare_reader_view_projection(&app);
+  if (!lectern0_reader_view_text_is(
+        reader_view_find_query(&app.reader_view_state), "") ||
+      app.reader.search_match_count != 0 ||
+      app.reader.search_query_size != 0 || app.reader.search_has_active ||
+      app.reader_view_projection.find.row_count != 0 ||
+      app.reader.active_spine_index != find_clear_spine ||
+      app.reader.view_byte_offset != find_clear_byte ||
+      app.reader.back_stack_count != find_clear_back_count ||
+      app.reader.forward_stack_count != find_clear_forward_count)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=find_clear\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  {
+    char rollback_path[Lectern0PathCap] = {0};
+    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+                       app.annotations_path);
+    B32 rollback_persistence = app.persistence_enabled;
+    U32 rollback_count = app.bookmark_count;
+    U64 rollback_next_id = app.next_record_id;
+    U64 rollback_revision = app.annotation_revision;
+    app.persistence_enabled = 1;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path),
+                       "?:\\lectern0_reader_view_bookmark_add_failure.annotations");
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleBookmark,
+    });
+    app.persistence_enabled = rollback_persistence;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path), rollback_path);
+    if (app.bookmark_count != rollback_count ||
+        app.next_record_id != rollback_next_id ||
+        app.annotation_revision != rollback_revision)
+    {
+      fprintf(stderr,
+              "lectern0_reader_view_smoke result=fail reason=bookmark_add_rollback\n");
+      free(pixels);
+      lectern0_app_release(&app);
+      return 1;
+    }
   }
   lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleBookmark,
@@ -5684,6 +11207,64 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   }
   app.selection_anchor_rect = ui0_rect(400, 180, 4, 24);
   lectern0_prepare_selected_text(&app);
+  char selection_failure_annotations_path[Lectern0PathCap] = {0};
+  lectern0_copy_cstr(selection_failure_annotations_path,
+                     ARRAY_COUNT(selection_failure_annotations_path),
+                     app.annotations_path);
+  B32 selection_failure_persistence_enabled = app.persistence_enabled;
+  U32 selection_failure_count = app.highlight_count;
+  U64 selection_failure_next_id = app.next_record_id;
+  U64 selection_failure_revision = app.annotation_revision;
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.annotations_path,
+                     ARRAY_COUNT(app.annotations_path),
+                     "?:\\lectern0_reader_view_selection_note_failure.annotations");
+  B32 selection_note_failure_rejected = !lectern0_save_selection_note(
+    &app, (ReaderViewText){"Must not persist", 16});
+  app.persistence_enabled = selection_failure_persistence_enabled;
+  lectern0_copy_cstr(app.annotations_path,
+                     ARRAY_COUNT(app.annotations_path),
+                     selection_failure_annotations_path);
+  if (!selection_note_failure_rejected ||
+      app.highlight_count != selection_failure_count ||
+      app.next_record_id != selection_failure_next_id ||
+      app.annotation_revision != selection_failure_revision ||
+      app.highlights[selection_failure_count].id != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=selection_note_atomic_rollback\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  {
+    char rollback_path[Lectern0PathCap] = {0};
+    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+                       app.annotations_path);
+    B32 rollback_persistence = app.persistence_enabled;
+    Lectern0Bookmark rollback_bookmark = app.bookmarks[0];
+    U64 rollback_revision = app.annotation_revision;
+    app.persistence_enabled = 1;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path),
+                       "?:\\lectern0_reader_view_bookmark_remove_failure.annotations");
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleBookmark,
+    });
+    app.persistence_enabled = rollback_persistence;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path), rollback_path);
+    if (app.bookmark_count != 1 ||
+        app.bookmarks[0].id != rollback_bookmark.id ||
+        app.annotation_revision != rollback_revision)
+    {
+      fprintf(stderr,
+              "lectern0_reader_view_smoke result=fail reason=bookmark_remove_rollback\n");
+      free(pixels);
+      lectern0_app_release(&app);
+      return 1;
+    }
+  }
   if (!lectern0_set_highlight_color(&app, 2))
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=highlight\n");
@@ -5691,43 +11272,638 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     lectern0_app_release(&app);
     return 1;
   }
+  lectern0_prepare_reader_view_projection(&app);
+  const ReaderViewRightRow *highlight_row = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Highlight)
+    {
+      highlight_row = row;
+      break;
+    }
+  }
+  char expected_highlight_secondary[Lectern0RecordLabelCap] = {0};
+  (void)cstr_format(
+    expected_highlight_secondary,
+    ARRAY_COUNT(expected_highlight_secondary),
+    "Highlight - re10 loc %llu",
+    (unsigned long long)lectern0_reader_location_for_position(
+      &app, app.highlights[0].spine_index, app.highlights[0].start_byte));
+  if (!highlight_row ||
+      !lectern0_reader_view_text_is(highlight_row->secondary,
+                                    expected_highlight_secondary))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=highlight_metadata\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
   U64 note_revision = app.annotation_revision;
-  if (!lectern0_save_selection_note(&app,
-                                    (ReaderViewText){"Smoke note", 10}))
+  B32 note_saved = lectern0_save_selection_note(
+    &app, (ReaderViewText){"Smoke note", 10});
+  if (!note_saved || app.annotation_revision != note_revision + 1)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=note\n");
     free(pixels);
     lectern0_app_release(&app);
     return 1;
   }
-  (void)note_revision;
   lectern0_prepare_reader_view_projection(&app);
-  if (app.reader_view_projection.right.row_count != 2 ||
-      app.reader_view_projection.selection.current_color_key != 5002)
+  const ReaderViewRightRow *bookmark_row = 0;
+  const ReaderViewRightRow *attached_highlight_row = 0;
+  const ReaderViewRightRow *note_row = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Bookmark) bookmark_row = row;
+    else if (row->kind == ReaderViewRightRow_Highlight)
+      attached_highlight_row = row;
+    else if (row->kind == ReaderViewRightRow_Note) note_row = row;
+  }
+  char expected_bookmark_secondary[Lectern0RecordLabelCap] = {0};
+  char expected_note_secondary[Lectern0RecordLabelCap] = {0};
+  (void)cstr_format(
+    expected_bookmark_secondary,
+    ARRAY_COUNT(expected_bookmark_secondary),
+    "Bookmark - re10 loc %llu",
+    (unsigned long long)lectern0_reader_location_for_position(
+      &app, app.bookmarks[0].spine_index, app.bookmarks[0].byte_offset));
+  (void)cstr_format(
+    expected_note_secondary,
+    ARRAY_COUNT(expected_note_secondary),
+    "Note - re10 loc %llu",
+    (unsigned long long)lectern0_reader_location_for_position(
+      &app, app.highlights[0].spine_index, app.highlights[0].start_byte));
+  if (app.reader_view_projection.right.row_count != 3 ||
+      app.reader_view_projection.selection.current_color_key != 5002 ||
+      !bookmark_row || !attached_highlight_row || !note_row ||
+      bookmark_row->key == attached_highlight_row->key ||
+      bookmark_row->key == note_row->key ||
+      attached_highlight_row->key == note_row->key ||
+      bookmark_row->color_key != 0 ||
+      (bookmark_row->flags & ReaderViewRow_Starred) == 0 ||
+      attached_highlight_row->color_key != 5002 ||
+      note_row->color_key != 5002 ||
+      (bookmark_row->flags & ReaderViewRow_AttachedToPrevious) != 0 ||
+      (attached_highlight_row->flags &
+       ReaderViewRow_AttachedToPrevious) != 0 ||
+      (note_row->flags & ReaderViewRow_AttachedToPrevious) == 0 ||
+      !lectern0_reader_view_text_is(note_row->primary, "Smoke note") ||
+      !lectern0_reader_view_text_is(bookmark_row->secondary,
+                                    expected_bookmark_secondary) ||
+      !lectern0_reader_view_text_is(note_row->secondary,
+                                    expected_note_secondary))
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=projection\n");
     free(pixels);
     lectern0_app_release(&app);
     return 1;
   }
+  app.reader_view_state.right_filter = ReaderViewRightFilter_Notes;
+  lectern0_prepare_reader_view_projection(&app);
+  const ReaderViewRightRow *notes_only_row =
+    app.reader_view_projection.right.row_count == 1 ?
+      app.reader_view_projection.right.rows : 0;
+  if (!notes_only_row || notes_only_row->kind != ReaderViewRightRow_Note ||
+      notes_only_row->color_key != 5002 ||
+      !lectern0_reader_view_text_is(notes_only_row->primary, "Smoke note") ||
+      (notes_only_row->flags & ReaderViewRow_AttachedToPrevious) != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_note_filter_attachment\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.reader_view_state.right_filter = ReaderViewRightFilter_All;
+  lectern0_prepare_reader_view_projection(&app);
+  attached_highlight_row = 0;
+  note_row = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Highlight)
+      attached_highlight_row = row;
+    else if (row->kind == ReaderViewRightRow_Note)
+      note_row = row;
+  }
+  if (!attached_highlight_row || !note_row)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_attachment_restore\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  ReaderViewKey bookmark_row_key = bookmark_row->key;
+  ReaderViewKey highlight_row_key = attached_highlight_row->key;
+  ReaderViewKey note_row_key = note_row->key;
+  const Lectern0ReaderViewRightSource *highlight_source =
+    lectern0_reader_view_right_source(
+      &app, highlight_row_key, ReaderViewRightRow_Highlight);
+  const Lectern0ReaderViewRightSource *note_source =
+    lectern0_reader_view_right_source(
+      &app, note_row_key, ReaderViewRightRow_Note);
+  if (!highlight_source || !note_source ||
+      highlight_source->record_id != app.highlights[0].id ||
+      note_source->record_id != app.highlights[0].id)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_source_mapping\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  if (!lectern0_reader_view_annotation_interaction_regression(
+        &app, &buffer, note_row_key))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=annotation_interactions\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  if (!lectern0_reader_view_annotation_pointer_regression(
+        &app, &buffer, note_row_key))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=annotation_pointer_interactions\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  {
+    char rollback_path[Lectern0PathCap] = {0};
+    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+                       app.annotations_path);
+    B32 rollback_persistence = app.persistence_enabled;
+    U64 rollback_revision = app.annotation_revision;
+    U64 rollback_bookmark_id = app.bookmarks[0].id;
+    B32 rollback_highlight_star = app.highlights[0].starred;
+    B32 rollback_note_star = app.highlights[0].note_starred;
+    app.persistence_enabled = 1;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path),
+                       "?:\\lectern0_reader_view_row_star_failure.annotations");
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = bookmark_row_key,
+      .right_row_kind = ReaderViewRightRow_Bookmark,
+    });
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = highlight_row_key,
+      .right_row_kind = ReaderViewRightRow_Highlight,
+    });
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_ToggleRightRowStar,
+      .key = note_row_key,
+      .right_row_kind = ReaderViewRightRow_Note,
+    });
+    app.persistence_enabled = rollback_persistence;
+    lectern0_copy_cstr(app.annotations_path,
+                       ARRAY_COUNT(app.annotations_path), rollback_path);
+    if (app.bookmark_count != 1 ||
+        app.bookmarks[0].id != rollback_bookmark_id ||
+        app.highlights[0].starred != rollback_highlight_star ||
+        app.highlights[0].note_starred != rollback_note_star ||
+        app.annotation_revision != rollback_revision)
+    {
+      fprintf(stderr,
+              "lectern0_reader_view_smoke result=fail reason=right_star_rollback\n");
+      free(pixels);
+      lectern0_app_release(&app);
+      return 1;
+    }
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleRightRowStar,
+    .key = highlight_row_key,
+    .right_row_kind = ReaderViewRightRow_Highlight,
+  });
+  B32 highlight_star_only = app.highlights[0].starred &&
+                            !app.highlights[0].note_starred;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleRightRowStar,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  B32 distinct_stars = highlight_star_only && app.highlights[0].starred &&
+                       app.highlights[0].note_starred;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleRightRowStar,
+    .key = highlight_row_key,
+    .right_row_kind = ReaderViewRightRow_Highlight,
+  });
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ToggleRightRowStar,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  if (!distinct_stars || app.highlights[0].starred ||
+      app.highlights[0].note_starred)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_star_mapping\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateTocRow,
+    .key = 2,
+  });
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateRightRow,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  if (app.reader.active_spine_index != app.highlights[0].spine_index)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_activate_mapping\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  DocSelection unrelated_note_selection = {0};
+  B32 unrelated_note_selection_found = 0;
+  for (U64 cursor = 0; cursor < app.frame.visible_text.size;)
+  {
+    U64 next = base_unicode_utf8_next_grapheme_boundary(
+      app.frame.visible_text, cursor);
+    if (next <= cursor) break;
+    U64 start = app.frame.view_byte_offset + cursor;
+    U64 end = app.frame.view_byte_offset + next;
+    if (app.frame.visible_text.str[cursor] > ' ' &&
+        (end <= app.highlights[0].start_byte ||
+         start >= app.highlights[0].end_byte))
+    {
+      unrelated_note_selection = (DocSelection){
+        .spine_index = app.reader.active_spine_index,
+        .text_byte_start = start,
+        .text_byte_end = end,
+      };
+      unrelated_note_selection_found = 1;
+      break;
+    }
+    cursor = next;
+  }
+  B32 unrelated_note_selection_set = unrelated_note_selection_found &&
+    epub_reader_set_selection(&app.reader, unrelated_note_selection) ==
+      EpubReaderResult_Ok;
+  app.selection_anchor_rect = ui0_rect(377, 211, 5, 23);
+  if (unrelated_note_selection_set) lectern0_prepare_selected_text(&app);
+  char unrelated_note_selected_text[Lectern0SelectionTextCap] = {0};
+  lectern0_copy_cstr(unrelated_note_selected_text,
+                     ARRAY_COUNT(unrelated_note_selected_text),
+                     app.selected_text);
+  UI0Rect unrelated_note_anchor = app.selection_anchor_rect;
+  U32 note_edit_spine = app.reader.active_spine_index;
+  U64 note_edit_byte = app.reader.view_byte_offset;
+  U32 note_edit_back_count = app.reader.back_stack_count;
+  U32 note_edit_forward_count = app.reader.forward_stack_count;
   lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_EditRightRowNote,
-    .key = app.highlights[0].id,
+    .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
   if (app.reader_view_state.popup != ReaderViewPopup_NoteEditor ||
       !lectern0_reader_view_text_is(reader_view_note_draft(&app.reader_view_state),
-                                    "Smoke note"))
+                                    "Smoke note") ||
+      !unrelated_note_selection_set ||
+      unrelated_note_selected_text[0] == 0 ||
+      !lectern0_reader_view_document_selection_is(
+        &app, unrelated_note_selection, unrelated_note_selected_text,
+        unrelated_note_anchor) ||
+      app.reader.active_spine_index != note_edit_spine ||
+      app.reader.view_byte_offset != note_edit_byte ||
+      app.reader.back_stack_count != note_edit_back_count ||
+      app.reader.forward_stack_count != note_edit_forward_count)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=direct_note_edit\n");
     free(pixels);
     lectern0_app_release(&app);
     return 1;
   }
-  app.reader_view_state.popup = ReaderViewPopup_None;
-  app.reader_view_state.note_dirty = 0;
-  app.reader_view_state.restore_focus_id = 0;
+  U64 note_lifecycle_revision = app.annotation_revision;
+  app.reader_view_state.note_dirty = 1;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SaveNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = note_lifecycle_revision + 1,
+    .text = {.data = "Stale note", .size = 10},
+  });
+  B32 stale_save_guarded =
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app.reader_view_state.note_dirty &&
+    strcmp(app.highlights[0].note, "Smoke note") == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SaveNote,
+    .key = app.reader_view_state.note_selection_key + 1,
+    .value = note_lifecycle_revision,
+    .text = {.data = "Wrong target", .size = 12},
+  });
+  B32 stale_identity_guarded =
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app.reader_view_state.note_dirty &&
+    strcmp(app.highlights[0].note, "Smoke note") == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor);
+  app.annotation_revision += 1;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SaveNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = app.annotation_revision,
+    .text = {.data = "Rebased stale", .size = 13},
+  });
+  B32 source_revision_guarded =
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app.reader_view_state.note_dirty &&
+    strcmp(app.highlights[0].note, "Smoke note") == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor);
+  app.annotation_revision = note_lifecycle_revision;
+  char saved_annotations_path[Lectern0PathCap] = {0};
+  lectern0_copy_cstr(saved_annotations_path,
+                     ARRAY_COUNT(saved_annotations_path),
+                     app.annotations_path);
+  B32 saved_persistence_enabled = app.persistence_enabled;
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.annotations_path,
+                     ARRAY_COUNT(app.annotations_path),
+                     "?:\\lectern0_reader_view_forced_failure.annotations");
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SaveNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = note_lifecycle_revision,
+    .text = {.data = "Failed save", .size = 11},
+  });
+  B32 failed_save_rolled_back =
+    app.annotation_revision == note_lifecycle_revision &&
+    strcmp(app.highlights[0].note, "Smoke note") == 0 &&
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app.reader_view_state.note_dirty &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = note_lifecycle_revision,
+  });
+  B32 failed_delete_rolled_back =
+    app.annotation_revision == note_lifecycle_revision &&
+    strcmp(app.highlights[0].note, "Smoke note") == 0 &&
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
+    app.reader_view_state.note_dirty &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor);
+  app.persistence_enabled = saved_persistence_enabled;
+  lectern0_copy_cstr(app.annotations_path,
+                     ARRAY_COUNT(app.annotations_path),
+                     saved_annotations_path);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SaveNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = note_lifecycle_revision,
+    .text = {.data = "Updated note", .size = 12},
+  });
+  B32 save_acknowledged =
+    strcmp(app.highlights[0].note, "Updated note") == 0 &&
+    app.reader_view_state.popup == ReaderViewPopup_None &&
+    !app.reader_view_state.note_dirty &&
+    app.annotation_note_selection_key == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor) &&
+    app.reader.active_spine_index == note_edit_spine &&
+    app.reader.view_byte_offset == note_edit_byte &&
+    app.reader.back_stack_count == note_edit_back_count &&
+    app.reader.forward_stack_count == note_edit_forward_count;
+  B32 restored_after_save = lectern0_save_note_at_index(
+    &app, 0, (ReaderViewText){"Smoke note", 10});
+  lectern0_prepare_reader_view_projection(&app);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_EditRightRowNote,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  U64 delete_revision = app.annotation_revision;
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = delete_revision,
+  });
+  B32 delete_acknowledged = app.highlights[0].note[0] == 0 &&
+    app.reader_view_state.popup == ReaderViewPopup_None &&
+    app.annotation_note_selection_key == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor) &&
+    app.reader.active_spine_index == note_edit_spine &&
+    app.reader.view_byte_offset == note_edit_byte &&
+    app.reader.back_stack_count == note_edit_back_count &&
+    app.reader.forward_stack_count == note_edit_forward_count;
+  B32 restored_after_delete = lectern0_save_note_at_index(
+    &app, 0, (ReaderViewText){"Smoke note", 10});
+  B32 cancel_selection_set = lectern0_reader_view_document_selection_is(
+    &app, unrelated_note_selection, unrelated_note_selected_text,
+    unrelated_note_anchor);
+  lectern0_prepare_reader_view_projection(&app);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_EditRightRowNote,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  B32 cancel_opened =
+    app.reader_view_state.popup == ReaderViewPopup_NoteEditor;
+  B32 shared_cancel_closed =
+    reader_view_close_note_editor(&app.reader_view_state);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_CancelNote,
+    .key = app.reader_view_state.note_selection_key,
+    .value = app.annotation_revision,
+  });
+  B32 cancel_acknowledged =
+    app.reader_view_state.popup == ReaderViewPopup_None &&
+    app.annotation_note_selection_key == 0 &&
+    lectern0_reader_view_document_selection_is(
+      &app, unrelated_note_selection, unrelated_note_selected_text,
+      unrelated_note_anchor) &&
+    app.reader.active_spine_index == note_edit_spine &&
+    app.reader.view_byte_offset == note_edit_byte &&
+    app.reader.back_stack_count == note_edit_back_count &&
+    app.reader.forward_stack_count == note_edit_forward_count;
+  lectern0_prepare_reader_view_projection(&app);
+  B32 selection_origin_opened = reader_view_open_note_editor(
+    &app.reader_view_state, &app.reader_view_projection.selection);
+  B32 selection_origin_shared_closed = selection_origin_opened &&
+    reader_view_close_note_editor(&app.reader_view_state);
+  if (selection_origin_shared_closed)
+  {
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_CancelNote,
+      .key = app.reader_view_state.note_selection_key,
+      .value = app.reader_view_state.note_source_revision,
+    });
+  }
+  B32 selection_origin_released = selection_origin_shared_closed &&
+    !app.reader.has_active_selection && app.selected_text[0] == 0 &&
+    app.selection_anchor_rect.x == 0 && app.selection_anchor_rect.y == 0 &&
+    app.selection_anchor_rect.w == 0 && app.selection_anchor_rect.h == 0 &&
+    app.reader.active_spine_index == note_edit_spine &&
+    app.reader.view_byte_offset == note_edit_byte &&
+    app.reader.back_stack_count == note_edit_back_count &&
+    app.reader.forward_stack_count == note_edit_forward_count;
+  if (!stale_save_guarded || !stale_identity_guarded ||
+      !source_revision_guarded ||
+      !failed_save_rolled_back || !failed_delete_rolled_back ||
+      !save_acknowledged || !restored_after_save ||
+      !delete_acknowledged || !restored_after_delete ||
+      !cancel_selection_set || !cancel_opened || !shared_cancel_closed ||
+      !cancel_acknowledged || !selection_origin_opened ||
+      !selection_origin_shared_closed || !selection_origin_released)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=note_lifecycle stale=%d identity=%d source_revision=%d failed_save=%d failed_delete=%d save=%d restore_save=%d delete=%d restore_delete=%d selection=%d open=%d shared_close=%d cancel=%d selection_origin=%d/%d/%d\n",
+            stale_save_guarded,
+            stale_identity_guarded,
+            source_revision_guarded,
+            failed_save_rolled_back,
+            failed_delete_rolled_back,
+            save_acknowledged,
+            restored_after_save,
+            delete_acknowledged,
+            restored_after_delete,
+            cancel_selection_set,
+            cancel_opened,
+            shared_cancel_closed,
+            cancel_acknowledged,
+            selection_origin_opened,
+            selection_origin_shared_closed,
+            selection_origin_released);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteRightRow,
+    .key = note_row_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  if (app.highlight_count != 1 || app.highlights[0].note[0] != 0 ||
+      !lectern0_save_note_at_index(&app, 0,
+                                   (ReaderViewText){"Smoke note", 10}))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_note_delete_mapping\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_prepare_reader_view_projection(&app);
+  const ReaderViewRightRow *restored_highlight_row = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Highlight)
+    {
+      restored_highlight_row = row;
+      break;
+    }
+  }
+  if (!restored_highlight_row)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_highlight_restore\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  Lectern0Highlight saved_highlight = app.highlights[0];
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteRightRow,
+    .key = restored_highlight_row->key,
+    .right_row_kind = ReaderViewRightRow_Highlight,
+  });
+  lectern0_prepare_reader_view_projection(&app);
+  ReaderViewKey demoted_note_key = 0;
+  U32 demoted_highlight_rows = 0;
+  U32 demoted_note_rows = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Highlight)
+      demoted_highlight_rows += 1;
+    else if (row->kind == ReaderViewRightRow_Note)
+    {
+      demoted_note_rows += 1;
+      demoted_note_key = row->key;
+    }
+  }
+  DocSelection demoted_selection = {
+    .spine_index = saved_highlight.spine_index,
+    .text_byte_start = saved_highlight.start_byte,
+    .text_byte_end = saved_highlight.end_byte,
+  };
+  B32 demoted_selection_set =
+    epub_reader_set_selection(&app.reader, demoted_selection) ==
+      EpubReaderResult_Ok;
+  lectern0_prepare_reader_view_projection(&app);
+  B32 demoted_selection_identity = demoted_selection_set &&
+    app.reader_view_projection.selection.current_color_key == 0 &&
+    (app.reader_view_projection.selection.flags &
+       ReaderViewSelection_CanRemoveHighlight) == 0 &&
+    (app.reader_view_projection.selection.flags &
+       (ReaderViewSelection_CanEditNote |
+        ReaderViewSelection_CanDeleteNote)) ==
+      (ReaderViewSelection_CanEditNote |
+       ReaderViewSelection_CanDeleteNote);
   epub_reader_clear_selection(&app.reader);
+  if (app.highlight_count != 1 || app.bookmark_count != 1 ||
+      app.highlights[0].is_highlight ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0 ||
+      app.reader_view_projection.right.highlight_count != 0 ||
+      app.reader_view_projection.right.note_count != 1 ||
+      demoted_highlight_rows != 0 || demoted_note_rows != 1 ||
+      demoted_note_key == 0 || !demoted_selection_identity)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=right_highlight_demotion count=%u identity=%d highlight_rows=%u note_rows=%u note_key=%llu selection=%d\n",
+            app.highlight_count,
+            app.highlight_count ? app.highlights[0].is_highlight : -1,
+            demoted_highlight_rows,
+            demoted_note_rows,
+            (unsigned long long)demoted_note_key,
+            demoted_selection_identity);
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
 
   app.persistence_enabled = 1;
   lectern0_copy_cstr(app.export_path, ARRAY_COUNT(app.export_path), export_path);
@@ -5735,6 +11911,209 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
                     "%s.settings", export_path);
   (void)cstr_format(app.annotations_path, ARRAY_COUNT(app.annotations_path),
                     "%s.annotations", export_path);
+  if (!lectern0_save_annotations(&app))
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=demoted_persistence\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_load_annotations(&app);
+  if (app.bookmark_count != 1 || app.highlight_count != 1 ||
+      app.highlights[0].is_highlight ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=demoted_reload\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_prepare_reader_view_projection(&app);
+  ReaderViewKey reloaded_note_key = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Note)
+      reloaded_note_key = row->key;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteRightRow,
+    .key = reloaded_note_key,
+    .right_row_kind = ReaderViewRightRow_Note,
+  });
+  lectern0_load_annotations(&app);
+  if (reloaded_note_key == 0 || app.bookmark_count != 1 ||
+      app.highlight_count != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=note_only_final_delete_reload\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  Lectern0AnnotationFileV1 *legacy_v1 =
+    (Lectern0AnnotationFileV1 *)calloc(1, sizeof(*legacy_v1));
+  if (!legacy_v1)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v1_allocate\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  legacy_v1->magic = LECTERN0_ANNOTATION_MAGIC;
+  legacy_v1->version = 1;
+  legacy_v1->bookmark_count = 1;
+  legacy_v1->highlight_count = 1;
+  legacy_v1->path_hash = u64_hash_str8(str8_from_cstr(app.current_path));
+  legacy_v1->next_record_id = app.next_record_id;
+  legacy_v1->bookmarks[0] = (Lectern0BookmarkV1){
+    .id = app.bookmarks[0].id,
+    .spine_index = app.bookmarks[0].spine_index,
+    .byte_offset = app.bookmarks[0].byte_offset,
+    .starred = 1,
+  };
+  lectern0_copy_cstr(legacy_v1->bookmarks[0].label,
+                     ARRAY_COUNT(legacy_v1->bookmarks[0].label),
+                     app.bookmarks[0].label);
+  legacy_v1->highlights[0] = (Lectern0HighlightV2){
+    .id = saved_highlight.id,
+    .spine_index = saved_highlight.spine_index,
+    .start_byte = saved_highlight.start_byte,
+    .end_byte = saved_highlight.end_byte,
+    .color_index = saved_highlight.color_index,
+    .starred = 1,
+    .note_starred = 1,
+  };
+  lectern0_copy_cstr(legacy_v1->highlights[0].section,
+                     ARRAY_COUNT(legacy_v1->highlights[0].section),
+                     saved_highlight.section);
+  lectern0_copy_cstr(legacy_v1->highlights[0].text,
+                     ARRAY_COUNT(legacy_v1->highlights[0].text),
+                     saved_highlight.text);
+  lectern0_copy_cstr(legacy_v1->highlights[0].note,
+                     ARRAY_COUNT(legacy_v1->highlights[0].note),
+                     saved_highlight.note);
+  B32 wrote_legacy_v1 = os_write_entire_file_atomic(
+    app.annotations_path, legacy_v1, sizeof(*legacy_v1));
+  free(legacy_v1);
+  if (!wrote_legacy_v1)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v1_write\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_load_annotations(&app);
+  if (app.bookmark_count != 1 || app.highlight_count != 1 ||
+      !app.bookmarks[0].starred ||
+      strcmp(app.bookmarks[0].excerpt, "Bookmark") != 0 ||
+      !app.highlights[0].is_highlight || !app.highlights[0].starred ||
+      !app.highlights[0].note_starred ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v1_migration\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+
+  Lectern0AnnotationFileV2 *legacy_v2 =
+    (Lectern0AnnotationFileV2 *)calloc(1, sizeof(*legacy_v2));
+  if (!legacy_v2)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v2_allocate\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  legacy_v2->magic = LECTERN0_ANNOTATION_MAGIC;
+  legacy_v2->version = 2;
+  legacy_v2->bookmark_count = 1;
+  legacy_v2->highlight_count = 1;
+  legacy_v2->path_hash = u64_hash_str8(str8_from_cstr(app.current_path));
+  legacy_v2->next_record_id = app.next_record_id;
+  legacy_v2->bookmarks[0] = app.bookmarks[0];
+  legacy_v2->highlights[0] = (Lectern0HighlightV2){
+    .id = saved_highlight.id,
+    .spine_index = saved_highlight.spine_index,
+    .start_byte = saved_highlight.start_byte,
+    .end_byte = saved_highlight.end_byte,
+    .color_index = saved_highlight.color_index,
+    .starred = 1,
+    .note_starred = 0,
+  };
+  lectern0_copy_cstr(legacy_v2->highlights[0].section,
+                     ARRAY_COUNT(legacy_v2->highlights[0].section),
+                     saved_highlight.section);
+  lectern0_copy_cstr(legacy_v2->highlights[0].text,
+                     ARRAY_COUNT(legacy_v2->highlights[0].text),
+                     saved_highlight.text);
+  lectern0_copy_cstr(legacy_v2->highlights[0].note,
+                     ARRAY_COUNT(legacy_v2->highlights[0].note),
+                     saved_highlight.note);
+  B32 wrote_legacy_v2 = os_write_entire_file_atomic(
+    app.annotations_path, legacy_v2, sizeof(*legacy_v2));
+  free(legacy_v2);
+  if (!wrote_legacy_v2)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v2_write\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_load_annotations(&app);
+  if (app.bookmark_count != 1 || app.highlight_count != 1 ||
+      !app.highlights[0].is_highlight ||
+      !app.highlights[0].starred || app.highlights[0].note_starred ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_v2_migration\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  lectern0_prepare_reader_view_projection(&app);
+  ReaderViewKey migrated_highlight_key = 0;
+  for (UI0S32 index = 0;
+       index < app.reader_view_projection.right.row_count;
+       index += 1)
+  {
+    const ReaderViewRightRow *row =
+      app.reader_view_projection.right.rows + index;
+    if (row->kind == ReaderViewRightRow_Highlight)
+      migrated_highlight_key = row->key;
+  }
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_DeleteRightRow,
+    .key = migrated_highlight_key,
+    .right_row_kind = ReaderViewRightRow_Highlight,
+  });
+  lectern0_load_annotations(&app);
+  if (migrated_highlight_key == 0 || app.bookmark_count != 1 ||
+      app.highlight_count != 1 || app.highlights[0].is_highlight ||
+      strcmp(app.highlights[0].note, "Smoke note") != 0)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_smoke result=fail reason=legacy_demotion_reload\n");
+    free(pixels);
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.highlights[0] = saved_highlight;
+  app.highlight_count = 1;
+  app.annotation_revision += 1;
   if (!lectern0_save_settings(&app) || !lectern0_save_annotations(&app) ||
       !lectern0_export_annotations(&app))
   {
@@ -5743,11 +12122,9 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     lectern0_app_release(&app);
     return 1;
   }
-  app.bookmark_count = 0;
-  app.highlight_count = 0;
   lectern0_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
-      !app.bookmarks[0].excerpt[0] ||
+      !app.bookmarks[0].excerpt[0] || !app.highlights[0].is_highlight ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=reload\n");
@@ -5801,7 +12178,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   }
   U64 hash = lectern0_reader_view_contract_hash(&app.reader_view_frame);
   fprintf(stdout,
-          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact hash=%016llx export=%s\n",
+          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
           READERVIEW0_API_VERSION,
           app.reader_view_projection.toc.row_count,
           app.reader.search_match_count,
@@ -5866,6 +12243,9 @@ lectern0_run_accessibility_smoke(const char *path)
                                                        (void **)&accessible);
   long child_count = 0;
   UI0S32 contents_index = -1;
+  UI0S32 find_index = -1;
+  UI0S32 fullscreen_index = -1;
+  UI0S32 previous_index = -1;
   for (UI0S32 index = 0;
        index < win32.app.reader_view_frame.semantic_node_count;
        index += 1)
@@ -5875,30 +12255,55 @@ lectern0_run_accessibility_smoke(const char *path)
           "Contents"))
     {
       contents_index = index;
-      break;
     }
+    if (win32.app.reader_view_frame.semantic_nodes[index].control ==
+        ReaderViewSemanticControl_PreviousPage)
+      previous_index = index;
+    if (win32.app.reader_view_frame.semantic_nodes[index].control ==
+        ReaderViewSemanticControl_Find)
+      find_index = index;
+    if (win32.app.reader_view_frame.semantic_nodes[index].control ==
+        ReaderViewSemanticControl_Fullscreen)
+      fullscreen_index = index;
   }
 
   VARIANT contents_child;
   VariantInit(&contents_child);
   contents_child.vt = VT_I4;
-  contents_child.lVal = contents_index + 1;
+  contents_child.lVal = lectern0_accessibility_shared_child_id(
+    win32.app.accessibility, contents_index);
+  long contents_child_id = contents_child.lVal;
+  long previous_child_id = 0;
+  long progress_child_id = 0;
   BSTR root_name = 0;
   BSTR contents_name = 0;
+  BSTR exit_name = 0;
   VARIANT root_child;
   VariantInit(&root_child);
   root_child.vt = VT_I4;
   root_child.lVal = CHILDID_SELF;
   VARIANT role;
   VariantInit(&role);
+  VARIANT exit_role;
+  VariantInit(&exit_role);
+  VARIANT exit_state;
+  VariantInit(&exit_state);
+  VARIANT exit_focus;
+  VariantInit(&exit_focus);
+  VARIANT previous_focus;
+  VariantInit(&previous_focus);
   long left = 0;
   long top = 0;
   long width = 0;
   long height = 0;
+  U32 accessibility_checkpoint = 0;
 
   B32 valid = SUCCEEDED(access_result) && accessible && contents_index >= 0 &&
+    find_index >= 0 && fullscreen_index >= 0 && previous_index >= 0 &&
+    contents_child.lVal > 0 &&
     SUCCEEDED(accessible->lpVtbl->get_accChildCount(accessible, &child_count)) &&
-    child_count == win32.app.reader_view_frame.semantic_node_count &&
+    child_count == win32.app.reader_view_frame.semantic_node_count +
+                   (long)win32.app.host_control_count &&
     SUCCEEDED(accessible->lpVtbl->get_accName(accessible, root_child, &root_name)) &&
     root_name && wcscmp(root_name, L"lectern0 EPUB reader") == 0 &&
     SUCCEEDED(accessible->lpVtbl->get_accName(accessible, contents_child,
@@ -5910,17 +12315,56 @@ lectern0_run_accessibility_smoke(const char *path)
     SUCCEEDED(accessible->lpVtbl->accLocation(accessible,
                                               &left, &top, &width, &height,
                                               contents_child)) &&
-    width > 0 && height > 0 &&
-    SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
-                                            SELFLAG_TAKEFOCUS,
-                                            contents_child)) &&
-    SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
-                                                     contents_child));
+    width > 0 && height > 0;
+  if (valid) accessibility_checkpoint = 1;
+  if (valid)
+  {
+    VARIANT previous_child;
+    VariantInit(&previous_child);
+    previous_child.vt = VT_I4;
+    previous_child.lVal = lectern0_accessibility_shared_child_id(
+      win32.app.accessibility, previous_index);
+    previous_child_id = previous_child.lVal;
+    const ReaderViewSemanticNode *previous =
+      win32.app.reader_view_frame.semantic_nodes + previous_index;
+    U32 before_spine = win32.app.reader.active_spine_index;
+    U64 before_byte = win32.app.reader.view_byte_offset;
+    valid = (previous->flags & ReaderViewSemantic_Focusable) != 0 &&
+      (previous->flags & ReaderViewSemantic_Enabled) == 0 &&
+      SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
+                                               SELFLAG_TAKEFOCUS,
+                                               previous_child));
+    if (valid)
+    {
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      valid = SUCCEEDED(accessible->lpVtbl->get_accFocus(accessible,
+                                                         &previous_focus)) &&
+              previous_focus.vt == VT_I4 &&
+              previous_focus.lVal == previous_child.lVal &&
+              FAILED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                              previous_child)) &&
+              win32.app.reader.active_spine_index == before_spine &&
+              win32.app.reader.view_byte_offset == before_byte;
+    }
+  }
+  if (valid) accessibility_checkpoint = 2;
+  if (valid)
+  {
+    valid = SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
+                                                    SELFLAG_TAKEFOCUS,
+                                                    contents_child)) &&
+            SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                             contents_child));
+  }
+  if (valid) accessibility_checkpoint = 3;
   if (valid)
   {
     lectern0_render_to_buffer(&win32.app, &buffer);
     valid = win32.app.reader_view_state.left_panel == ReaderViewLeftPanel_Contents;
+    if (valid)
+      lectern0_render_to_buffer(&win32.app, &buffer);
   }
+  if (valid) accessibility_checkpoint = 4;
 
   UI0S32 slider_index = -1;
   for (UI0S32 index = 0;
@@ -5939,7 +12383,9 @@ lectern0_run_accessibility_smoke(const char *path)
     VARIANT slider_child;
     VariantInit(&slider_child);
     slider_child.vt = VT_I4;
-    slider_child.lVal = slider_index + 1;
+    slider_child.lVal = lectern0_accessibility_shared_child_id(
+      win32.app.accessibility, slider_index);
+    progress_child_id = slider_child.lVal;
     U64 before_offset = win32.app.reader.view_byte_offset;
     valid = SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
                                                              slider_child));
@@ -5949,6 +12395,7 @@ lectern0_run_accessibility_smoke(const char *path)
       valid = lectern0_reader_view_focus_is(&win32.app,
                                             ReaderViewSemantic_Slider);
     }
+    if (valid) accessibility_checkpoint = 5;
     if (valid)
     {
       win32.app.input.move_delta = 10;
@@ -5958,6 +12405,7 @@ lectern0_run_accessibility_smoke(const char *path)
       lectern0_apply_reader_view_actions(&win32.app);
       valid = valid && win32.app.reader.view_byte_offset != before_offset;
     }
+    if (valid) accessibility_checkpoint = 6;
   }
   else
   {
@@ -5969,6 +12417,7 @@ lectern0_run_accessibility_smoke(const char *path)
     valid = !lectern0_reader_view_has_semantic(&win32.app.reader_view_frame,
                                                 "Focus");
   }
+  if (valid) accessibility_checkpoint = 7;
   if (valid)
   {
     lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
@@ -5980,12 +12429,145 @@ lectern0_run_accessibility_smoke(const char *path)
     });
     valid = valid && !win32.app.fullscreen.active;
   }
+  if (valid) accessibility_checkpoint = 8;
+
+  long exit_child_id = 0;
+  if (valid)
+  {
+    long current_child_count = 0;
+    find_index = -1;
+    fullscreen_index = -1;
+    for (UI0S32 index = 0;
+         index < win32.app.reader_view_frame.semantic_node_count;
+         index += 1)
+    {
+      ReaderViewSemanticControl control =
+        win32.app.reader_view_frame.semantic_nodes[index].control;
+      if (control == ReaderViewSemanticControl_Find) find_index = index;
+      else if (control == ReaderViewSemanticControl_Fullscreen)
+        fullscreen_index = index;
+    }
+    VARIANT find_child;
+    VariantInit(&find_child);
+    find_child.vt = VT_I4;
+    find_child.lVal = lectern0_accessibility_shared_child_id(
+      win32.app.accessibility, find_index);
+    VARIANT fullscreen_child;
+    VariantInit(&fullscreen_child);
+    fullscreen_child.vt = VT_I4;
+    fullscreen_child.lVal = lectern0_accessibility_shared_child_id(
+      win32.app.accessibility, fullscreen_index);
+    VARIANT exit_child;
+    VariantInit(&exit_child);
+    exit_child.vt = VT_I4;
+    exit_child.lVal = lectern0_accessibility_host_child_id(
+      win32.app.accessibility, 0);
+    exit_child_id = exit_child.lVal;
+    VARIANT next_from_find;
+    VariantInit(&next_from_find);
+    VARIANT next_from_exit;
+    VariantInit(&next_from_exit);
+    VARIANT previous_from_exit;
+    VariantInit(&previous_from_exit);
+    VARIANT previous_from_fullscreen;
+    VariantInit(&previous_from_fullscreen);
+    valid = find_index >= 0 && fullscreen_index >= 0 &&
+      win32.app.host_control_count == 1 &&
+      SUCCEEDED(accessible->lpVtbl->get_accChildCount(accessible,
+                                                       &current_child_count)) &&
+      current_child_count == win32.app.reader_view_frame.semantic_node_count + 1 &&
+      SUCCEEDED(accessible->lpVtbl->get_accName(accessible,
+                                                 exit_child,
+                                                 &exit_name)) &&
+      exit_name && wcscmp(exit_name, L"Exit Reader") == 0 &&
+      SUCCEEDED(accessible->lpVtbl->get_accRole(accessible,
+                                                 exit_child,
+                                                 &exit_role)) &&
+      exit_role.vt == VT_I4 && exit_role.lVal == ROLE_SYSTEM_PUSHBUTTON &&
+      SUCCEEDED(accessible->lpVtbl->get_accState(accessible,
+                                                  exit_child,
+                                                  &exit_state)) &&
+      exit_state.vt == VT_I4 &&
+      (exit_state.lVal & STATE_SYSTEM_FOCUSABLE) != 0 &&
+      SUCCEEDED(accessible->lpVtbl->accNavigate(
+        accessible, NAVDIR_NEXT, find_child, &next_from_find)) &&
+      next_from_find.vt == VT_I4 &&
+      next_from_find.lVal == exit_child.lVal &&
+      SUCCEEDED(accessible->lpVtbl->accNavigate(
+        accessible, NAVDIR_PREVIOUS, exit_child, &previous_from_exit)) &&
+      previous_from_exit.vt == VT_I4 &&
+      previous_from_exit.lVal == find_child.lVal &&
+      SUCCEEDED(accessible->lpVtbl->accNavigate(
+        accessible, NAVDIR_NEXT, exit_child, &next_from_exit)) &&
+      next_from_exit.vt == VT_I4 &&
+      next_from_exit.lVal == fullscreen_child.lVal &&
+      SUCCEEDED(accessible->lpVtbl->accNavigate(
+        accessible, NAVDIR_PREVIOUS, fullscreen_child,
+        &previous_from_fullscreen)) &&
+      previous_from_fullscreen.vt == VT_I4 &&
+      previous_from_fullscreen.lVal == exit_child.lVal &&
+      SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
+                                               SELFLAG_TAKEFOCUS,
+                                               exit_child));
+    if (valid)
+    {
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      valid = SUCCEEDED(accessible->lpVtbl->get_accFocus(accessible,
+                                                         &exit_focus)) &&
+              exit_focus.vt == VT_I4 &&
+              exit_focus.lVal == exit_child.lVal &&
+              win32.app.host_focus_control == Lectern0HostControl_ExitReader;
+    }
+    if (valid)
+    {
+      valid = SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                               contents_child));
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      const ReaderViewSemanticNode *shared_contents =
+        lectern0_reader_view_semantic_control(
+          &win32.app.reader_view_frame, ReaderViewSemanticControl_Contents);
+      valid = valid &&
+              shared_contents &&
+              win32.app.host_focus_control == Lectern0HostControl_None &&
+              win32.app.reader_view_state.focus_id == shared_contents->id &&
+              SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
+                                                       SELFLAG_TAKEFOCUS,
+                                                       exit_child));
+    }
+    if (valid)
+    {
+      lectern0_render_to_buffer(&win32.app, &buffer);
+      /* Closing Contents republishes a shorter shared tree. Recompute the
+         logical native child ID while the host identity/order remains stable. */
+      exit_child.lVal = lectern0_accessibility_host_child_id(
+        win32.app.accessibility, 0);
+      exit_child_id = exit_child.lVal;
+      VariantClear(&exit_focus);
+      valid = SUCCEEDED(accessible->lpVtbl->get_accFocus(accessible,
+                                                         &exit_focus)) &&
+              exit_focus.vt == VT_I4 &&
+              exit_focus.lVal == exit_child.lVal &&
+              win32.app.host_focus_control == Lectern0HostControl_ExitReader &&
+              SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                                exit_child)) &&
+              win32.app.host_exit_requested;
+    }
+    VariantClear(&next_from_find);
+    VariantClear(&next_from_exit);
+    VariantClear(&previous_from_exit);
+    VariantClear(&previous_from_fullscreen);
+  }
 
   long role_value = role.vt == VT_I4 ? role.lVal : 0;
 
   if (root_name) SysFreeString(root_name);
   if (contents_name) SysFreeString(contents_name);
+  if (exit_name) SysFreeString(exit_name);
   VariantClear(&role);
+  VariantClear(&exit_role);
+  VariantClear(&exit_state);
+  VariantClear(&exit_focus);
+  VariantClear(&previous_focus);
   if (accessible) (void)accessible->lpVtbl->Release(accessible);
   (void)DestroyWindow(win32.window);
   (void)UnregisterClassW(ClassName, instance);
@@ -5993,11 +12575,14 @@ lectern0_run_accessibility_smoke(const char *path)
   if (!valid)
   {
     fprintf(stderr,
-            "lectern0_accessibility_smoke result=fail reason=contract hr=%08lx nodes=%ld contents=%d slider=%d role=%ld rect=%ldx%ld\n",
+            "lectern0_accessibility_smoke result=fail reason=contract checkpoint=%u hr=%08lx nodes=%ld contents=%d previous=%d slider=%d exit=%ld role=%ld rect=%ldx%ld\n",
+            accessibility_checkpoint,
             (unsigned long)access_result,
             child_count,
             contents_index,
+            previous_index,
             slider_index,
+            exit_child_id,
             role_value,
             width,
             height);
@@ -6007,10 +12592,12 @@ lectern0_run_accessibility_smoke(const char *path)
   }
 
   fprintf(stdout,
-          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%d progress_child=%d role=%ld focus=shared action=shared progress=keyboard fullscreen=native distraction=dormant\n",
+          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%ld previous_child=%ld progress_child=%ld exit_child=%ld role=%ld order=find_exit_fullscreen focus=shared_disabled_host action=disabled_guard_shared_host progress=keyboard fullscreen=native distraction=dormant\n",
           child_count,
-          contents_index + 1,
-          slider_index + 1,
+          contents_child_id,
+          previous_child_id,
+          progress_child_id,
+          exit_child_id,
           role_value);
   free(pixels);
   lectern0_app_release(&win32.app);
@@ -6114,12 +12701,13 @@ main(int argc, char **argv)
   {
     result = lectern0_run_reader_view_startup_interaction_smoke();
   }
-  else if (argc == 12 &&
+  else if ((argc == 12 || argc == 13 || argc == 14) &&
            strcmp(argv[1], "--reader-view-parity-capture") == 0)
   {
     result = lectern0_run_reader_view_parity_capture(
       argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8],
-      argv[9], argv[10], argv[11]);
+      argv[9], argv[10], argv[11], argc >= 13 ? argv[12] : "none",
+      argc == 14 ? argv[13] : "none");
   }
   else if (argc == 3 && strcmp(argv[1], "--accessibility-smoke") == 0)
   {
@@ -6141,7 +12729,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

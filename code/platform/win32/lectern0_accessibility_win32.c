@@ -16,6 +16,103 @@ lectern0_accessibility_from_iface(IAccessible *iface)
   return CONTAINING_RECORD(iface, Lectern0Accessibility, iface);
 }
 
+FUNCTION long
+lectern0_accessibility_child_count(const Lectern0Accessibility *accessibility)
+{
+  if (!accessibility || !accessibility->app) return 0;
+  return (long)accessibility->app->reader_view_frame.semantic_node_count +
+         (long)accessibility->app->host_control_count;
+}
+
+FUNCTION long
+lectern0_accessibility_host_insertion_shared_count(
+  const Lectern0Accessibility *accessibility)
+{
+  if (!accessibility || !accessibility->app) return 0;
+  const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
+  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+    if (frame->semantic_nodes[index].control == ReaderViewSemanticControl_Find)
+      return (long)index + 1;
+  return (long)frame->semantic_node_count;
+}
+
+FUNCTION B32
+lectern0_accessibility_resolve_child(
+  const Lectern0Accessibility *accessibility,
+  long child_id,
+  long *out_shared_index,
+  long *out_host_index)
+{
+  if (out_shared_index) *out_shared_index = -1;
+  if (out_host_index) *out_host_index = -1;
+  if (!accessibility || !accessibility->app || child_id <= CHILDID_SELF)
+    return 0;
+  long logical_index = child_id - 1;
+  long shared_count =
+    (long)accessibility->app->reader_view_frame.semantic_node_count;
+  long host_count = (long)accessibility->app->host_control_count;
+  long insertion =
+    lectern0_accessibility_host_insertion_shared_count(accessibility);
+  if (logical_index < insertion)
+  {
+    if (logical_index >= shared_count) return 0;
+    if (out_shared_index) *out_shared_index = logical_index;
+    return 1;
+  }
+  if (logical_index < insertion + host_count)
+  {
+    if (out_host_index) *out_host_index = logical_index - insertion;
+    return 1;
+  }
+  long shared_index = logical_index - host_count;
+  if (shared_index < 0 || shared_index >= shared_count) return 0;
+  if (out_shared_index) *out_shared_index = shared_index;
+  return 1;
+}
+
+long
+lectern0_accessibility_shared_child_id(
+  const Lectern0Accessibility *accessibility,
+  long shared_index)
+{
+  if (!accessibility || !accessibility->app || shared_index < 0 ||
+      shared_index >=
+        (long)accessibility->app->reader_view_frame.semantic_node_count)
+    return 0;
+  long insertion =
+    lectern0_accessibility_host_insertion_shared_count(accessibility);
+  long host_count = (long)accessibility->app->host_control_count;
+  return shared_index + (shared_index < insertion ? 1 : host_count + 1);
+}
+
+long
+lectern0_accessibility_host_child_id(
+  const Lectern0Accessibility *accessibility,
+  long host_index)
+{
+  if (!accessibility || !accessibility->app || host_index < 0 ||
+      host_index >= (long)accessibility->app->host_control_count)
+    return 0;
+  return lectern0_accessibility_host_insertion_shared_count(accessibility) +
+         host_index + 1;
+}
+
+FUNCTION Lectern0HostControlIdentity
+lectern0_accessibility_host_identity(const Lectern0Accessibility *accessibility,
+                                     VARIANT child)
+{
+  if (!accessibility || !accessibility->app || child.vt != VT_I4 ||
+      child.lVal <= CHILDID_SELF)
+    return Lectern0HostControl_None;
+  long host_index = -1;
+  if (!lectern0_accessibility_resolve_child(accessibility, child.lVal,
+                                             0, &host_index))
+    return Lectern0HostControl_None;
+  if (host_index < 0 || host_index >= (long)accessibility->app->host_control_count)
+    return Lectern0HostControl_None;
+  return accessibility->app->host_controls[host_index].identity;
+}
+
 FUNCTION const ReaderViewSemanticNode *
 lectern0_accessibility_node(const Lectern0Accessibility *accessibility,
                             VARIANT child,
@@ -25,11 +122,22 @@ lectern0_accessibility_node(const Lectern0Accessibility *accessibility,
       child.lVal <= CHILDID_SELF)
     return 0;
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
-  long index = child.lVal - 1;
-  if (!frame->semantic_nodes || index < 0 || index >= frame->semantic_node_count)
+  long shared_index = -1;
+  long host_index = -1;
+  if (!lectern0_accessibility_resolve_child(accessibility, child.lVal,
+                                             &shared_index, &host_index))
+    return 0;
+  if (shared_index >= 0)
+  {
+    if (!frame->semantic_nodes) return 0;
+    if (out_child_id) *out_child_id = child.lVal;
+    return frame->semantic_nodes + shared_index;
+  }
+  if (host_index < 0 ||
+      host_index >= (long)accessibility->app->host_control_count)
     return 0;
   if (out_child_id) *out_child_id = child.lVal;
-  return frame->semantic_nodes + index;
+  return &accessibility->app->host_controls[host_index].semantic;
 }
 
 FUNCTION BSTR
@@ -186,8 +294,7 @@ lectern0_accessibility_get_child_count(IAccessible *iface, long *out_count)
 {
   if (!out_count) return E_POINTER;
   Lectern0Accessibility *accessibility = lectern0_accessibility_from_iface(iface);
-  *out_count = accessibility->app ?
-    accessibility->app->reader_view_frame.semantic_node_count : 0;
+  *out_count = lectern0_accessibility_child_count(accessibility);
   return S_OK;
 }
 
@@ -307,12 +414,24 @@ lectern0_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
   Lectern0Accessibility *accessibility = lectern0_accessibility_from_iface(iface);
   if (!accessibility->app) return S_FALSE;
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
+  for (U32 index = 0; index < accessibility->app->host_control_count; index += 1)
+  {
+    if (accessibility->app->host_controls[index].semantic.flags &
+        ReaderViewSemantic_Focused)
+    {
+      out_child->vt = VT_I4;
+      out_child->lVal =
+        lectern0_accessibility_host_child_id(accessibility, (long)index);
+      return S_OK;
+    }
+  }
   for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
   {
     if (frame->semantic_nodes[index].flags & ReaderViewSemantic_Focused)
     {
       out_child->vt = VT_I4;
-      out_child->lVal = index + 1;
+      out_child->lVal =
+        lectern0_accessibility_shared_child_id(accessibility, (long)index);
       return S_OK;
     }
   }
@@ -332,7 +451,8 @@ lectern0_accessibility_get_selection(IAccessible *iface, VARIANT *out_child)
     if (frame->semantic_nodes[index].flags & ReaderViewSemantic_Selected)
     {
       out_child->vt = VT_I4;
-      out_child->lVal = index + 1;
+      out_child->lVal =
+        lectern0_accessibility_shared_child_id(accessibility, (long)index);
       return S_OK;
     }
   }
@@ -363,11 +483,23 @@ lectern0_accessibility_select(IAccessible *iface, long flags, VARIANT child)
   Lectern0Accessibility *accessibility = lectern0_accessibility_from_iface(iface);
   const ReaderViewSemanticNode *node = lectern0_accessibility_node(
     accessibility, child, 0);
-  if (!node || !(node->flags & ReaderViewSemantic_Enabled) ||
-      !(node->flags & ReaderViewSemantic_Focusable)) return E_INVALIDARG;
+  if (!node || !(node->flags & ReaderViewSemantic_Focusable))
+    return E_INVALIDARG;
   if (flags & (SELFLAG_TAKEFOCUS | SELFLAG_TAKESELECTION))
   {
     (void)SetFocus(accessibility->window);
+    Lectern0HostControlIdentity host_identity =
+      lectern0_accessibility_host_identity(accessibility, child);
+    if (host_identity != Lectern0HostControl_None)
+    {
+      if (!lectern0_host_focus_set(accessibility->app, host_identity, 1))
+        return E_FAIL;
+      (void)InvalidateRect(accessibility->window, 0, FALSE);
+      return S_OK;
+    }
+    (void)lectern0_host_focus_set(accessibility->app,
+                                  Lectern0HostControl_None,
+                                  0);
     if (!reader_view_accessibility_focus(&accessibility->app->reader_view_state,
                                          node->id))
       return E_FAIL;
@@ -416,22 +548,50 @@ lectern0_accessibility_navigate(IAccessible *iface, long direction,
   if (!out_destination) return E_POINTER;
   VariantInit(out_destination);
   Lectern0Accessibility *accessibility = lectern0_accessibility_from_iface(iface);
-  long count = accessibility->app ?
-    accessibility->app->reader_view_frame.semantic_node_count : 0;
-  long destination = 0;
+  long count = lectern0_accessibility_child_count(accessibility);
+  long candidate = 0;
+  long step = 0;
   if (start.vt != VT_I4) return E_INVALIDARG;
   if (start.lVal == CHILDID_SELF && direction == NAVDIR_FIRSTCHILD && count > 0)
-    destination = 1;
+  {
+    candidate = 1;
+    step = 1;
+  }
   else if (start.lVal == CHILDID_SELF && direction == NAVDIR_LASTCHILD && count > 0)
-    destination = count;
+  {
+    candidate = count;
+    step = -1;
+  }
   else if (start.lVal > 0 && start.lVal < count && direction == NAVDIR_NEXT)
-    destination = start.lVal + 1;
+  {
+    candidate = start.lVal + 1;
+    step = 1;
+  }
   else if (start.lVal > 1 && start.lVal <= count && direction == NAVDIR_PREVIOUS)
-    destination = start.lVal - 1;
-  if (!destination) return S_FALSE;
-  out_destination->vt = VT_I4;
-  out_destination->lVal = destination;
-  return S_OK;
+  {
+    candidate = start.lVal - 1;
+    step = -1;
+  }
+  while (candidate > 0 && candidate <= count)
+  {
+    VARIANT child;
+    VariantInit(&child);
+    child.vt = VT_I4;
+    child.lVal = candidate;
+    const ReaderViewSemanticNode *node =
+      lectern0_accessibility_node(accessibility, child, 0);
+    if (node &&
+        (node->flags & (ReaderViewSemantic_Enabled |
+                        ReaderViewSemantic_Focusable)) ==
+          (ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable))
+    {
+      out_destination->vt = VT_I4;
+      out_destination->lVal = candidate;
+      return S_OK;
+    }
+    candidate += step;
+  }
+  return S_FALSE;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
@@ -444,10 +604,17 @@ lectern0_accessibility_hit_test(IAccessible *iface, long screen_x,
   if (!accessibility->app) return S_FALSE;
   POINT point = {screen_x, screen_y};
   if (!ScreenToClient(accessibility->window, &point)) return E_FAIL;
-  const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
-  for (UI0S32 index = frame->semantic_node_count - 1; index >= 0; index -= 1)
+  long count = lectern0_accessibility_child_count(accessibility);
+  for (long index = count - 1; index >= 0; index -= 1)
   {
-    const UI0Rect rect = frame->semantic_nodes[index].rect;
+    VARIANT child;
+    VariantInit(&child);
+    child.vt = VT_I4;
+    child.lVal = index + 1;
+    const ReaderViewSemanticNode *node =
+      lectern0_accessibility_node(accessibility, child, 0);
+    if (!node) continue;
+    const UI0Rect rect = node->rect;
     if (point.x >= rect.x && point.y >= rect.y &&
         point.x < rect.x + rect.w && point.y < rect.y + rect.h)
     {
@@ -470,6 +637,20 @@ lectern0_accessibility_do_default_action(IAccessible *iface, VARIANT child)
   if (!node || !(node->flags & ReaderViewSemantic_Enabled) ||
       !(node->flags & ReaderViewSemantic_Focusable))
     return E_INVALIDARG;
+  Lectern0HostControlIdentity host_identity =
+    lectern0_accessibility_host_identity(accessibility, child);
+  if (host_identity != Lectern0HostControl_None)
+  {
+    if (!lectern0_host_focus_set(accessibility->app, host_identity, 1) ||
+        !lectern0_host_control_invoke(accessibility->app, host_identity) ||
+        !PostMessageW(accessibility->window, WM_CLOSE, 0, 0))
+      return E_FAIL;
+    (void)InvalidateRect(accessibility->window, 0, FALSE);
+    return S_OK;
+  }
+  (void)lectern0_host_focus_set(accessibility->app,
+                                Lectern0HostControl_None,
+                                0);
   if (node->role == ReaderViewSemantic_Slider)
   {
     if (!reader_view_accessibility_focus(&accessibility->app->reader_view_state,
@@ -572,9 +753,16 @@ lectern0_accessibility_publish_frame(Lectern0Accessibility *accessibility,
   U64 hash = 1469598103934665603ull;
   UI0ID focused_id = 0;
   long focused_child = 0;
-  for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
+  long count = lectern0_accessibility_child_count(accessibility);
+  for (long index = 0; index < count; index += 1)
   {
-    const ReaderViewSemanticNode *node = frame->semantic_nodes + index;
+    VARIANT child;
+    VariantInit(&child);
+    child.vt = VT_I4;
+    child.lVal = index + 1;
+    const ReaderViewSemanticNode *node =
+      lectern0_accessibility_node(accessibility, child, 0);
+    if (!node) continue;
     hash ^= node->id; hash *= 1099511628211ull;
     hash ^= node->parent_id; hash *= 1099511628211ull;
     hash ^= (U64)node->role; hash *= 1099511628211ull;
@@ -591,10 +779,13 @@ lectern0_accessibility_publish_frame(Lectern0Accessibility *accessibility,
     NotifyWinEvent(EVENT_OBJECT_REORDER, accessibility->window,
                    OBJID_CLIENT, CHILDID_SELF);
   }
-  if (focused_id && focused_id != accessibility->focused_id)
+  if (focused_id != accessibility->focused_id)
   {
     accessibility->focused_id = focused_id;
-    NotifyWinEvent(EVENT_OBJECT_FOCUS, accessibility->window,
-                   OBJID_CLIENT, focused_child);
+    if (focused_id)
+    {
+      NotifyWinEvent(EVENT_OBJECT_FOCUS, accessibility->window,
+                     OBJID_CLIENT, focused_child);
+    }
   }
 }

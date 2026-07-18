@@ -23,10 +23,15 @@ projection/action/geometry API does not name reader0 types and has no reader0
 or direct zero_foundation dependency.
 
 Reader View text bindings carry one finite portable style identity. Lectern0
-maps `ChromeTitle` to the accepted system-UI box raster at scale 2 and maps
-`MenuItem` and `ChromeMetadata` to that raster at scale 1; `Default` continues
-through generic UI0 typography. The record conveys semantic presentation only:
-no font pointer, callback, provider table, or allocation crosses the boundary.
+maps `ChromeTitle` through the accepted system-UI box raster at scale 2 and
+`MenuItem`, `ChromeMetadata`, and `Default` at scale 1. `NoteEditor` draft rows
+instead carry explicit Body typography metadata and use zero_foundation's
+`TextEngineEditableRow` shaped painter at its 18-pixel height; the visible
+caret x is derived from that same shaped row. The TextArea's 25-pixel line
+advance remains layout geometry, not a font size. Find excerpts
+retain their dedicated measured match path. The record conveys semantic
+presentation only: no font pointer, callback, provider table, or allocation
+crosses the boundary.
 
 Lectern0 owns the projected TOC/search/selection meaning, settings choices,
 stable bookmark/highlight/note IDs, 128-record bookmark and highlight
@@ -36,11 +41,85 @@ host records. Projection strings and rows are borrowed for one build;
 `ReaderViewState` and `ReaderViewFrameStorage` are caller-owned. The application
 never treats an emitted action as a completed persistent mutation.
 
+TOC identities are the concrete reader0 `nav_index + 1`, never a dense visible
+row index. Find text editing lives in caller-owned Reader View state; a
+non-empty edit does not execute reader0 search or navigation. Commit executes
+the borrowed query once, Clear immediately clears the committed engine search,
+and result keys map to their exact bounded reader0 match indices.
+
+Each projected annotation row carries its source heading, primary content, and
+the accepted `<kind> - re10 loc <N>` metadata. Bookmark and Highlight primary
+content is the captured excerpt; Note primary content is its persistent note
+body, matching the frozen reader. Lectern0 derives `N` from the concrete
+reader0 extracted-text spine sizes as
+`1 + global_text_byte_offset / 128`. The wording is a compatibility label, not
+a re10 source dependency. Persistent note text stays in lectern0; Reader View
+borrows it for that row frame and returns only a bounded edit-note action.
+Projection-only stable keys distinguish the Highlight row from its attached
+Note while routing both back to the same persistent host record. The version-3
+annotation schema stores an explicit `is_highlight` identity; version-1 and
+version-2 records migrate with that identity active. Deleting a Highlight with
+an attached Note clears its Highlight identity and star while retaining the
+Note-only record. Deleting a Highlight without a Note removes the record;
+deleting a Note clears it while a Highlight remains and removes a Note-only
+record.
+Bookmarks always project `ReaderViewRow_Starred`: the bookmark is itself the
+frozen starred state, so its inline star removes that record through the
+canonical host persistence helper exactly once.
+The color rail is an explicit resolved `rail_color` while `color_key` retains
+the host color identity, and
+`ReaderViewRow_AttachedToPrevious` is set only when that Highlight is the
+immediately preceding visible row.
+Before projection, a fixed 384-entry host array deterministically orders the
+maximum 128 bookmarks plus 128 Highlight/Note pairs by spine, byte, kind, and
+stable ID. This is transient presentation ordering: persisted arrays and IDs
+are not rewritten, and action keys map back to their original records.
+
+Find-row bindings preserve reader0's byte-accurate match range. Lectern0 uses
+actual system-UI font measurement at scale 1 to fill a caller-owned 256-entry
+codepoint-advance table consumed by readerview0 as portable values. Basic Latin
+is pinned; the current edit/transfer text, placeholder, committed query, and
+history have explicit priorities; stale dynamic values are evicted before
+lower-priority same-frame values; and generation wrap ages all dynamic entries.
+The same measurement path fits the accepted single line, positions the
+reader-highlight background from the measured prefix and match, then draws the
+complete excerpt in primary text. No fixed-width estimate, split/recolored text
+run, callback, provider table, or allocation crosses the package boundary.
+
+While the Note editor is open, Lectern0 rebuilds a separate caller-owned
+256-entry values table from the current draft, same-frame typed text, transfer
+text, and localized empty-editor placeholder. Each unique scalar is measured
+with the same system-UI face at 18 pixels used by the draw adapter; the portable
+record also carries the measured fallback advance and 25-pixel line advance.
+Readerview0 borrows those values for one build to wrap, hit-test, select, and
+place the caret. Missing scalars use the explicit fallback when the bounded
+table is full. No provider, callback, allocation, or retained borrowed pointer
+crosses the package boundary.
+
+An Annotations Note action binds a fixed host tuple of document, highlight,
+spine, and byte range to the shared draft. It neither navigates nor changes the
+reader selection or history. The projection revalidates that tuple each frame;
+stale revisions cannot Save or Delete. New-selection Note creation writes its
+provisional Highlight and Note in one host transaction. Save, Delete, and every
+Bookmark/Highlight/Note star or row mutation change the live state only when
+the atomic annotation write succeeds; failure restores the exact record array,
+counts, next ID, stars, and revision. A failed editor mutation leaves its draft
+open. After a successful host mutation, lectern0 calls
+`reader_view_close_note_editor` and then releases the editor's retained target.
+Annotation-origin Save/Delete preserve any unrelated concrete document
+selection, selected text, anchor, location, and history; selection-origin
+completion releases its owned selection. Explicit Cancel applies the same
+origin-sensitive host cleanup without a persistent mutation.
+
 UI0 owns generic signal, control, token, layout, draw, text-edit records, and
 the six shared reader-chrome profiles. A narrow lectern0 adapter converts every
 UI0 draw operation into clipped zero_foundation draw commands and binds semantic
-typography roles to host font metrics. UI0 does not render EPUB content and is
-not a reader0 dependency.
+typography roles to host font metrics. The generic `Filter` icon intent is
+adapted only at this Reader View boundary to the frozen re10 SlidersVertical
+24 by 24 geometry; an exact 18 by 18 raster hash prevents a portable-sprite
+substitution from silently changing the accepted Annotations toolbar. All
+other shared icons use UI0's canonical caller-rasterized pixels. UI0 does not
+render EPUB content and is not a reader0 dependency.
 
 Zero_foundation owns arenas, file/atomic-write facilities, font providers,
 Presentation Engine API 1 block-flow geometry, draw commands, software
@@ -102,9 +181,31 @@ transitions.
 Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
 states, and pointer/keyboard/accessibility convergence. Lectern0 translates
 Win32 input and implements a host-owned MSAA `IAccessible` object over the
-current semantic records. `WM_GETOBJECT`, native object lifetime, screen-reader
-events, coordinate translation, and execution of returned reader actions stay
-in lectern0.
+current semantic records plus one explicit bounded host record for Exit Reader.
+The host inserts that native action between shared Find and Fullscreen and
+preserves the frozen reference's focusable disabled Previous gutter seam; all
+other shared order remains driven by Reader View semantic identities. Exit
+pointer activation requires press origin and release inside the host slot and
+is cancelled on leave or capture loss. `WM_GETOBJECT`, native object lifetime,
+screen-reader events, coordinate translation, Exit invocation, and execution
+of returned reader actions stay in lectern0.
+The host Exit's bounded draw path retains the focused IconButton's fill, border,
+text, outer focus ring, and explicit Close icon. It clips those commands to the
+38-pixel host reservation rather than the smaller control rect; startup evidence
+requires both the adapted Close sprite and exact expanded rounded focus stroke.
+Native MSAA `NEXT` and `PREVIOUS` navigation scan for enabled focusable logical
+children, so disabled Back/Forward controls are skipped without changing their
+semantic records. This preserves the required Find, host Exit, Fullscreen
+adjacency while shared keyboard traversal retains the frozen disabled-Previous
+gutter focus stop and rejects its action.
+The host order never forms a closed toolbar island: with Contents, Find, or
+Annotations open, forward traversal after Progress and reverse traversal before
+Contents delegate to Reader View's published panel tail. A bounded regression
+checks both boundaries for all three panels, visible focus, and zero actions.
+The draw bridge uses UI0's 32 by 32 public raster bound and passes its caller-
+owned 32-pixel stride to zero_foundation sprites. Focused host regressions hash
+the frozen 18 by 32 page-caret pixels and exercise both keyboard and pointer
+gutter navigation; no host line-art fallback is permitted.
 
 ## Current exclusions
 

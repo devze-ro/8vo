@@ -14,5 +14,11 @@ LRESULT lectern0_accessibility_get_object(Lectern0Accessibility *accessibility,
                                           LPARAM l_param);
 void lectern0_accessibility_publish_frame(Lectern0Accessibility *accessibility,
                                           const ReaderViewFrame *frame);
+long lectern0_accessibility_shared_child_id(
+  const Lectern0Accessibility *accessibility,
+  long shared_index);
+long lectern0_accessibility_host_child_id(
+  const Lectern0Accessibility *accessibility,
+  long host_index);
 
 #endif /* LECTERN0_ACCESSIBILITY_WIN32_H */

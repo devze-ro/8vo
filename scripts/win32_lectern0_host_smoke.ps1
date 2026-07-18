@@ -88,6 +88,10 @@ if (!$line) {
   $output | Write-Host
   throw "lectern0 headless host smoke did not report pass"
 }
+if ($line -notmatch 'carets=frozen18x32') {
+  $output | Write-Host
+  throw "lectern0 headless host smoke did not lock the frozen page-caret bridge"
+}
 
 $missing = Join-Path $Out "missing.epub"
 $previousPreference = $ErrorActionPreference

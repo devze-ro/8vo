@@ -9,7 +9,8 @@ param(
   [string]$Re10VcpkgRoot = "",
   [string]$OutDir = "local\stage2b0_reader_view_parity",
   [int]$AutoExitMs = 24000,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [switch]$AllowDirty
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +39,23 @@ $Artifacts = Join-Path $OutputRoot "artifacts"
 $Generated = Join-Path $OutputRoot "generated"
 $Vaults = Join-Path $OutputRoot "vaults"
 $Logs = Join-Path $OutputRoot "logs"
-New-Item -ItemType Directory -Force -Path $Artifacts, $Generated, $Vaults, $Logs | Out-Null
+
+if ($SkipBuild -and !$AllowDirty) {
+  throw "-SkipBuild is diagnostic-only and requires -AllowDirty; acceptance evidence must rebuild both hosts"
+}
+
+$outputRootDrive = [System.IO.Path]::GetPathRoot($OutputRoot)
+$trimmedOutput = $OutputRoot.TrimEnd('\')
+$trimmedDrive = $outputRootDrive.TrimEnd('\')
+if ([string]::IsNullOrWhiteSpace($trimmedOutput) -or
+    $trimmedOutput -eq $trimmedDrive -or
+    $trimmedOutput -eq $LecternRoot.TrimEnd('\') -or
+    $trimmedOutput -eq $Re10Root.TrimEnd('\')) {
+  throw "unsafe parity output root: $OutputRoot"
+}
+if (Test-Path -LiteralPath $OutputRoot) {
+  throw "parity output root already exists; choose a fresh OutDir so stale captures or vault state cannot be reused: $OutputRoot"
+}
 
 function Get-Head([string]$Root) {
   return (& git -C $Root rev-parse HEAD).Trim()
@@ -48,6 +65,16 @@ function Require-ExactCommit([string]$Name, [string]$Root, [string]$Expected) {
   $actual = Get-Head $Root
   if ($actual -ne $Expected.Trim()) {
     throw "$Name revision mismatch: required=$Expected actual=$actual"
+  }
+}
+
+function Require-CleanTree([string]$Name, [string]$Root) {
+  $dirty = @(& git -C $Root status --porcelain --untracked-files=all)
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Name clean-state check failed"
+  }
+  if ($dirty.Count -ne 0) {
+    throw "$Name working tree is dirty; final acceptance requires clean trees (use -AllowDirty only for diagnostic captures)"
   }
 }
 
@@ -61,12 +88,23 @@ $CrossRevisionConformance =
   $Re10ReaderviewCommit.Trim() -ne $LecternReaderviewCommit.Trim() -or
   $Re10UI0Commit.Trim() -ne $LecternUI0Commit.Trim()
 $StageLabel = if ($CrossRevisionConformance) { "Stage 2B-2" } else { "Stage 2B-0" }
+if (!$AllowDirty) {
+  Require-CleanTree "re10" $Re10Root
+  Require-CleanTree "lectern0" $LecternRoot
+  Require-CleanTree "reader0" $Reader0Root
+  Require-CleanTree "re10 ui0" $Re10UI0Root
+  Require-CleanTree "lectern0 ui0" $LecternUI0Root
+  Require-CleanTree "zero_foundation" $ZeroFoundationRoot
+  Require-CleanTree "re10 readerview0" $Re10Readerview0Root
+  Require-CleanTree "lectern0 readerview0" $LecternReaderview0Root
+}
 Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
 Require-ExactCommit "lectern0 readerview0" $LecternReaderview0Root $LecternReaderviewCommit
 Require-ExactCommit "zero_foundation" $ZeroFoundationRoot $ZeroCommit
 Require-ExactCommit "reader0" $Reader0Root $Reader0Commit
 Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
 Require-ExactCommit "lectern0 ui0" $LecternUI0Root $LecternUI0Commit
+New-Item -ItemType Directory -Force -Path $Artifacts, $Generated, $Vaults, $Logs | Out-Null
 
 if (!$SkipBuild) {
   $env:RE10_READER0_DIR = $Reader0Root
@@ -260,14 +298,29 @@ function Get-DecodedPixelHash([string]$Path) {
 
 $Fixture = Join-Path $Generated "reader_view_stage2b0.epub"
 New-Stage2B0Epub $Fixture
+$ExpectedFixtureSha256 =
+  "F7D9F95A174E0CA776E2BA808A6798D2DAF8B178CFF5D77270D225EC5DDA14D8"
+$FixtureSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture).Hash
+if ($FixtureSha256 -ne $ExpectedFixtureSha256) {
+  throw "Reader View parity fixture identity mismatch: expected=$ExpectedFixtureSha256 actual=$FixtureSha256"
+}
 
 $Cases = @(
-  [pscustomobject]@{ name="wide_light_default"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; re10=@() },
-  [pscustomobject]@{ name="narrow_light_default"; width=940; height=520; theme="light"; left="none"; right="closed"; popup="none"; query="-"; re10=@() },
-  [pscustomobject]@{ name="wide_dark_contents"; width=1400; height=780; theme="dark"; left="contents"; right="closed"; popup="none"; query="-"; re10=@("click reader.contents", "wait_frames 3") },
-  [pscustomobject]@{ name="wide_light_find_alpha"; width=1400; height=780; theme="light"; left="find"; right="closed"; popup="none"; query="alpha"; re10=@("click reader.search", "wait_frames 2", "click reader.nav.search_input", "type_reader_search alpha", "reader_search_submit", "wait_frames 6") },
-  [pscustomobject]@{ name="wide_light_bookmark_right"; width=1400; height=780; theme="light"; left="none"; right="bookmark"; popup="none"; query="-"; re10=@("click reader.bookmark", "wait_frames 3", "click reader.context", "wait_frames 3") },
-  [pscustomobject]@{ name="wide_light_font_menu"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="font"; query="-"; re10=@("click reader.font", "wait_frames 3") }
+  [pscustomobject]@{ name="wide_light_default"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="none"; re10=@() },
+  [pscustomobject]@{ name="narrow_light_default"; width=940; height=520; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="none"; re10=@() },
+  [pscustomobject]@{ name="wide_dark_contents"; width=1400; height=780; theme="dark"; left="contents"; right="closed"; popup="none"; query="-"; focus="none"; re10=@("click reader.contents", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_contents_panel"; width=1400; height=780; theme="light"; left="contents"; right="closed"; popup="none"; query="-"; focus="none"; re10=@("click reader.contents", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_find_alpha"; width=1400; height=780; theme="light"; left="find"; right="closed"; popup="none"; query="alpha"; focus="none"; re10=@("click reader.search", "wait_frames 2", "click reader.nav.search_input", "type_reader_search alpha", "reader_search_submit", "wait_frames 6") },
+  [pscustomobject]@{ name="wide_light_bookmark_right"; width=1400; height=780; theme="light"; left="none"; right="bookmark"; popup="none"; query="-"; focus="none"; re10=@("click reader.bookmark", "wait_frames 3", "click reader.context", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_annotations_filter_popup"; width=1400; height=780; theme="light"; left="none"; right="bookmark"; popup="annotations-filter"; query="-"; focus="none"; re10=@("click reader.bookmark", "wait_frames 2", "click reader.context", "wait_frames 3", "click reader.annotations.filter", "wait_frames 3", "expect_reader_focus annotation_filter_option 0 0") },
+  [pscustomobject]@{ name="wide_light_annotations_highlight_note"; width=1400; height=780; theme="light"; left="none"; right="open"; popup="none"; query="-"; focus="none"; annotation="highlight-note"; re10=@("command :reader select-only 0 82 110", "wait_frames 2", "expect_reader_selection 82 110", "command :reader capture blue", "wait_frames 3", "expect_reader_capture_count 1", "expect_reader_last_highlight_range 82 110", "expect_reader_visible_highlight_count 1", "expect_reader_highlight_color 2", "command :reader highlight-note 1 Attached parity note", "wait_frames 3", "expect_reader_visible_note_marker_count 1", "click reader.context", "wait_frames 3", "expect_annotations_panel open", "expect_annotation_count 2", "click reader.annotations.star.0", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_annotations_row_actions"; width=1400; height=780; theme="light"; left="none"; right="open"; popup="row-actions"; query="-"; focus="none"; annotation="row-actions"; re10=@("command :reader select-only 0 82 110", "wait_frames 2", "expect_reader_selection 82 110", "command :reader capture blue", "wait_frames 3", "expect_reader_capture_count 1", "expect_reader_last_highlight_range 82 110", "expect_reader_highlight_color 2", "command :reader highlight-note 1 Attached parity note", "wait_frames 3", "click reader.context", "wait_frames 3", "expect_annotations_panel open", "expect_annotation_count 2", "click reader.annotations.menu.0", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_annotations_note_editor"; width=1400; height=780; theme="light"; left="none"; right="open"; popup="note-editor"; query="-"; focus="none"; annotation="note-editor"; re10=@("command :reader select-only 0 82 110", "wait_frames 2", "expect_reader_selection 82 110", "command :reader capture blue", "wait_frames 3", "expect_reader_capture_count 1", "expect_reader_last_highlight_range 82 110", "expect_reader_highlight_color 2", "command :reader highlight-note 1 Attached parity note", "wait_frames 3", "click reader.context", "wait_frames 3", "expect_annotations_panel open", "expect_annotation_count 2", "click reader.annotations.menu.1", "wait_frames 2", "click reader.annotations.action.edit_note", "wait_frames 3", "expect_inline_note_editor open", "expect_inline_note_text Attached parity note") },
+  [pscustomobject]@{ name="wide_light_font_menu"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="font"; query="-"; focus="none"; re10=@("click reader.font", "wait_frames 3") },
+  [pscustomobject]@{ name="wide_light_exit_keyboard_focus"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="exit"; re10=@("reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "expect_reader_focus toolbar_control 1 1", "wait_frames 2") },
+  [pscustomobject]@{ name="wide_light_previous_gutter_keyboard_focus"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="previous"; re10=@("reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "expect_reader_focus page_gutter 4 1", "wait_frames 2") },
+  [pscustomobject]@{ name="wide_light_previous_enabled_gutter_keyboard_focus"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="previous-enabled"; re10=@("reader_key Right", "wait_frames 4", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "expect_reader_focus page_gutter 4 1", "wait_frames 2") },
+  [pscustomobject]@{ name="wide_light_next_gutter_keyboard_focus"; width=1400; height=780; theme="light"; left="none"; right="closed"; popup="none"; query="-"; focus="next"; re10=@("reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "reader_focus_key Tab", "expect_reader_focus page_gutter 5 1", "wait_frames 2") }
 )
 
 function Invoke-Re10Capture([object]$Case, [int]$Run) {
@@ -318,8 +371,14 @@ function Invoke-LecternCapture([object]$Case, [int]$Run) {
   $evidence = Join-Path $caseDir "lectern0.$Run.evidence.txt"
   $bmp = Join-Path $caseDir "lectern0.$Run.reader.bmp"
   $log = Join-Path $Logs "$($Case.name).lectern0.$Run.log"
+  $focus = if ($Case.focus) { [string]$Case.focus } else { "none" }
+  $annotation = if ($Case.PSObject.Properties.Name -contains "annotation") {
+    [string]$Case.annotation
+  } else {
+    "none"
+  }
   [void][ReaderViewParityCursor]::SetCursorPos(0, 0)
-  & $LecternExe --reader-view-parity-capture $Fixture ([string]$Case.width) ([string]$Case.height) $Case.theme $Case.left $Case.right $Case.popup $Case.query $evidence $bmp *> $log
+  & $LecternExe --reader-view-parity-capture $Fixture ([string]$Case.width) ([string]$Case.height) $Case.theme $Case.left $Case.right $Case.popup $Case.query $evidence $bmp $focus $annotation *> $log
   if ($LASTEXITCODE -ne 0 -or !(Test-Path $evidence) -or !(Test-Path $bmp)) {
     throw "lectern0 capture failed: case=$($Case.name) run=$Run exit=$LASTEXITCODE log=$log"
   }
@@ -369,6 +428,12 @@ foreach ($case in $Cases) {
     right = $case.right
     popup = $case.popup
     query = $case.query
+    focus = if ($case.focus) { [string]$case.focus } else { "none" }
+    annotation = if ($case.PSObject.Properties.Name -contains "annotation") {
+      [string]$case.annotation
+    } else {
+      "none"
+    }
     re10_repeatable = $re10Stable
     lectern0_repeatable = $lecternStable
     component_matches = $componentMatches
@@ -393,6 +458,10 @@ $Manifest = [pscustomobject]@{
     "failed_nondeterministic"
   } elseif (!$AllPixelExact) {
     "failed_visual_mismatch"
+  } elseif ($SkipBuild) {
+    "diagnostic_skip_build_visual_parity"
+  } elseif ($AllowDirty) {
+    "diagnostic_dirty_visual_parity"
   } elseif ($CrossRevisionConformance) {
     "conformance_recorded"
   } else {
@@ -401,8 +470,11 @@ $Manifest = [pscustomobject]@{
   exact_parity = $AllExact
   exact_visual_parity = $AllPixelExact
   deterministic = $Deterministic
+  allow_dirty_diagnostic = [bool]$AllowDirty
+  skip_build_diagnostic = [bool]$SkipBuild
+  acceptance_eligible = !$AllowDirty -and !$SkipBuild
   fixture = $Fixture
-  fixture_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture).Hash
+  fixture_sha256 = $FixtureSha256
   fixed_reader_client_pixels = $true
   re10_outer_shell_inset = 10
   re10_head = Get-Head $Re10Root

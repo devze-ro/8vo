@@ -16,9 +16,13 @@ $line = $output | Where-Object {
 if (!$line -or
     $line -notmatch 'document=empty' -or
     $line -notmatch 'lifecycle=press_release' -or
+    $line -notmatch 'capture=cancel_and_release' -or
     $line -notmatch 'action=open' -or
     $line -notmatch 'dialog=not_invoked' -or
-    $line -notmatch 'status_owner=reader_view') {
+    $line -notmatch 'status_owner=reader_view' -or
+    $line -notmatch 'exit_pointer=armed_release' -or
+    $line -notmatch 'exit_keyboard=tab_activate' -or
+    $line -notmatch 'exit_focus=icon_ring') {
   $output | Write-Host
   throw "lectern0 startup interaction smoke did not report the required contract"
 }

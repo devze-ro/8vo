@@ -34,7 +34,34 @@ function Invoke-Lectern0ReaderViewSmoke {
   }
   $line = $output | Where-Object { $_ -match '^lectern0_reader_view_smoke result=pass ' } |
     Select-Object -Last 1
-  if (!$line -or $line -notmatch ' hash=([0-9a-fA-F]{16}) ') {
+  if (!$line -or
+      $line -notmatch 'focus=reference13' -or
+      $line -notmatch 'panel_focus=toc_find_annotations_progress_boundary' -or
+      $line -notmatch 'keyboard_routing=focused_edit_or_activate' -or
+      $line -notmatch 'find_shortcut=focused_input' -or
+      $line -notmatch 'navigation_panels=space_toc_find' -or
+      $line -notmatch 'gutters=boundary_roundtrip' -or
+      $line -notmatch 'gutter_input=keyboard_pointer' -or
+      $line -notmatch 'carets=frozen18x32' -or
+      $line -notmatch 'toc_identity=noncontiguous' -or
+      $line -notmatch 'find_execution=commit_only' -or
+      $line -notmatch 'find_clear=immediate' -or
+      $line -notmatch 'find_metrics=bounded_values' -or
+      $line -notmatch 'find_match=measured' -or
+      $line -notmatch 'note_metrics=bounded_values_18px' -or
+      $line -notmatch 'note_raster=text_engine_editable_row_caret' -or
+      $line -notmatch 'annotations=reference_metadata' -or
+      $line -notmatch 'bookmark_star=projected_remove_once' -or
+      $line -notmatch 'annotations_interaction=close_filter_edit_menu' -or
+      $line -notmatch 'annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close' -or
+      $line -notmatch 'note_lifecycle=acknowledged' -or
+      $line -notmatch 'annotation_note_selection=preserved_unrelated' -or
+      $line -notmatch 'selection_note_selection=released_owned' -or
+      $line -notmatch 'annotation_identity=v3_migrate_demote_restart' -or
+      $line -notmatch 'note_persistence=atomic_rollback_open' -or
+      $line -notmatch 'bookmark_persistence=rollback' -or
+      $line -notmatch 'star_persistence=rollback' -or
+      $line -notmatch ' hash=([0-9a-fA-F]{16}) ') {
     $output | Write-Host
     throw "lectern0 Reader View smoke did not report deterministic evidence"
   }

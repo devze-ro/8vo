@@ -29,7 +29,12 @@ for ($run = 0; $run -lt 2; $run += 1) {
   $line = $output | Where-Object {
     $_ -match '^lectern0_accessibility_smoke result=pass '
   } | Select-Object -Last 1
-  if (!$line) {
+  if (!$line -or
+      $line -notmatch 'exit_child=[0-9]+' -or
+      $line -notmatch 'previous_child=[0-9]+' -or
+      $line -notmatch 'order=find_exit_fullscreen' -or
+      $line -notmatch 'focus=shared_disabled_host' -or
+      $line -notmatch 'action=disabled_guard_shared_host') {
     $output | Write-Host
     throw "lectern0 accessibility smoke did not report native adapter evidence"
   }

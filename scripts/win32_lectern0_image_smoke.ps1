@@ -144,7 +144,7 @@ function Invoke-ImageSmoke {
     Select-Object -Last 1
   if (!$line -or
       $line -notmatch 'cover_loaded=([1-9][0-9]*) inline_loaded=([1-9][0-9]*)' -or
-      $line -notmatch 'entries=2 lookups=5 hits=3 misses=2' -or
+      $line -notmatch 'entries=2 lookups=4 hits=2 misses=2' -or
       $line -notmatch 'cover_hash=([0-9a-fA-F]{16}) inline_hash=([0-9a-fA-F]{16})') {
     $output | Write-Host
     throw "lectern0 image smoke did not report loaded cover/inline evidence"

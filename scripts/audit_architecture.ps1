@@ -8,16 +8,21 @@ $failures = [System.Collections.Generic.List[string]]::new()
 $buildPath = Join-Path $RepoRoot "code\build.c"
 $appPath = Join-Path $RepoRoot "code\lectern0.c"
 $accessibilityPath = Join-Path $RepoRoot "code\platform\win32\lectern0_accessibility_win32.c"
+$parityPath = Join-Path $RepoRoot "scripts\win32_reader_view_stage2b0_parity.ps1"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/lectern0.c") }
 if (!(Test-Path -LiteralPath $accessibilityPath)) {
   $failures.Add("missing host-owned Win32 accessibility adapter")
+}
+if (!(Test-Path -LiteralPath $parityPath)) {
+  $failures.Add("missing two-host Reader View parity runner")
 }
 
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
   $app = [System.IO.File]::ReadAllText($appPath)
   $accessibility = [System.IO.File]::ReadAllText($accessibilityPath)
+  $parity = [System.IO.File]::ReadAllText($parityPath)
   if ([regex]::Matches($build, '#include\s+"reader0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile reader0.c exactly once")
   }
@@ -72,8 +77,13 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('ReaderViewTextStyle_ChromeTitle') -lt 0 -or
       $app.IndexOf('ReaderViewTextStyle_ChromeMetadata') -lt 0 -or
       $app.IndexOf('ReaderViewTextStyle_MenuItem') -lt 0 -or
+      $app.IndexOf('binding->style == ReaderViewTextStyle_ChromeTitle ? 2 : 1') -lt 0 -or
       $app.IndexOf('draw_push_text_box') -lt 0) {
-    $failures.Add("lectern0 must map finite Reader View reference text styles through its host text-box raster")
+    $failures.Add("lectern0 must map every finite Reader View text binding through its frozen host text-box raster")
+  }
+  if ($app.IndexOf('lectern0_reader_filter_rasterize_rgb32') -lt 0 -or
+      $app.IndexOf('768785035519145851ull') -lt 0) {
+    $failures.Add("lectern0 must preserve the frozen re10 SlidersVertical raster for the Reader View Filter intent")
   }
   if ($app.IndexOf('"%llu%%   Location %llu of %llu"') -lt 0 -or
       $app.IndexOf('"Page %llu of %llu"') -lt 0) {
@@ -85,6 +95,124 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('UI0Control_Quiet') -ge 0) {
     $failures.Add("lectern0 Exit Reader must retain host interaction with the nonquiet UI0 IconButton shell and canonical Close icon")
   }
+  if ($app.IndexOf('Lectern0HostControl_ExitReader') -lt 0 -or
+      $app.IndexOf('host_exit_pointer_armed') -lt 0 -or
+      $app.IndexOf('lectern0_host_keyboard_tab') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_Find') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_Fullscreen') -lt 0 -or
+      $app.IndexOf('exit_pointer=armed_release') -lt 0 -or
+      $accessibility.IndexOf('lectern0_accessibility_host_identity') -lt 0 -or
+      $accessibility.IndexOf('lectern0_accessibility_host_insertion_shared_count') -lt 0 -or
+      $app.IndexOf('order=find_exit_fullscreen') -lt 0 -or
+      $app.IndexOf('UI0DrawCommand commands[5]') -lt 0 -or
+      $app.IndexOf('.clip_rect = app->reader_view_layout.host_toolbar_trailing_rect') -lt 0 -or
+      $app.IndexOf('exit_focus=icon_ring') -lt 0 -or
+      $accessibility.IndexOf('lectern0_host_control_invoke') -lt 0) {
+    $failures.Add("lectern0 must expose and fully draw one host Exit record between Find and Fullscreen for pointer, keyboard, focus-visible chrome, and native accessibility routing")
+  }
+  if ($app.IndexOf('focus=reference13') -lt 0 -or
+      $app.IndexOf('panel_focus=toc_find_annotations_progress_boundary') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_panel_focus_regression') -lt 0 -or
+      $app.IndexOf('keyboard_routing=focused_edit_or_activate') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_keyboard_input_routing_regression') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_text_editing') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_space_activates_focus') -lt 0 -or
+      $app.IndexOf('find_shortcut=focused_input') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_open_find_from_shortcut') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_find_shortcut_focus_regression') -lt 0 -or
+      $app.IndexOf('navigation_panels=space_toc_find') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_navigation_panel_interaction_regression') -lt 0 -or
+      $app.IndexOf('gutters=boundary_roundtrip') -lt 0 -or
+      $app.IndexOf('gutter_input=keyboard_pointer') -lt 0 -or
+      $app.IndexOf('carets=frozen18x32') -lt 0 -or
+      $app.IndexOf('UI0IconKind_PageCaretLeft') -lt 0 -or
+      $app.IndexOf('UI0IconKind_PageCaretRight') -lt 0 -or
+      $app.IndexOf('Lectern0UI0IconRasterMaxWidth = UI0_ICON_RASTER_MAX_WIDTH') -lt 0 -or
+      $app.IndexOf('UI0DrawOp_FocusRing') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_PreviousPage') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_NextPage') -lt 0) {
+    $failures.Add("lectern0 must lock the a6b combined focus order and exact keyboard/pointer page-gutter behavior")
+  }
+  if ($app.IndexOf('toc_identity=noncontiguous') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_covers_noncontiguous_toc_identity') -lt 0 -or
+      $app.IndexOf('find_execution=commit_only') -lt 0 -or
+      $app.IndexOf('find_clear=immediate') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_set_find_query') -lt 0 -or
+      $app.IndexOf('find_edit_executed') -lt 0 -or
+      $app.IndexOf('find_result_action') -lt 0) {
+    $failures.Add("lectern0 must preserve source TOC identity and frozen edit/commit/clear/result Find behavior")
+  }
+  if ($app.IndexOf('"%s - re10 loc %llu"') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_right_secondary') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_register_right_source') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_sort_right_candidates') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_covers_mixed_right_order') -lt 0 -or
+      $app.IndexOf('ReaderViewRow_AttachedToPrevious') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_find_text_metrics') -lt 0 -or
+      $app.IndexOf('find_metrics=bounded_values') -lt 0 -or
+      $app.IndexOf('find_match=measured') -lt 0 -or
+      $app.IndexOf('lectern0_draw_adapter_covers_measured_find_match') -lt 0 -or
+      $app.IndexOf('lectern0_draw_adapter_covers_find_status_and_metadata') -lt 0 -or
+      $app.IndexOf('font_text_baseline_y_in_rect') -lt 0 -or
+      $app.IndexOf('ReaderViewNoteTextMetrics') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_note_text_metrics') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_covers_note_text_metrics') -lt 0 -or
+      $app.IndexOf('ReaderViewTextStyle_NoteEditor') -lt 0 -or
+      $app.IndexOf('Lectern0ReaderViewNotePixelHeight = 18') -lt 0 -or
+      $app.IndexOf('command->typography_line_height') -lt 0 -or
+      $app.IndexOf('note_metrics=bounded_values_18px') -lt 0 -or
+      $app.IndexOf('annotations=reference_metadata') -lt 0 -or
+      $app.IndexOf('bookmark_star=projected_remove_once') -lt 0 -or
+      $app.IndexOf('note ? highlight->note : highlight->text') -lt 0 -or
+      $app.IndexOf('.secondary = lectern0_reader_view_text(highlight->note)') -ge 0) {
+    $failures.Add("lectern0 must project frozen Highlight excerpts, Note bodies, kind/location metadata, and caller-measured 18px Note TextArea values while retaining host ownership")
+  }
+  if ($app.IndexOf('ReaderViewSemanticControl_RightFilter') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_RightFilterOption') -lt 0 -or
+      $app.IndexOf('annotations-filter') -lt 0 -or
+      $app.IndexOf('annotations_interaction=close_filter_edit_menu') -lt 0 -or
+      $app.IndexOf('annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close') -lt 0 -or
+      $app.IndexOf('reader_view_close_note_editor') -lt 0 -or
+      $app.IndexOf('ReaderViewAction_CancelNote') -lt 0 -or
+      $app.IndexOf('note_lifecycle=acknowledged') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_annotation_interaction_regression') -lt 0 -or
+      $app.IndexOf('lectern0_reader_view_annotation_pointer_regression') -lt 0) {
+    $failures.Add("lectern0 must retain semantic annotation close/filter/row-menu parity evidence")
+  }
+  if ($app.IndexOf('B32 is_highlight;') -lt 0 -or
+      $app.IndexOf('Lectern0AnnotationFileV2') -lt 0 -or
+      $app.IndexOf('lectern0_migrate_highlight_v2') -lt 0 -or
+      $app.IndexOf('file.version = 3') -lt 0 -or
+      $app.IndexOf('lectern0_commit_annotations') -lt 0 -or
+      $app.IndexOf('lectern0_remove_highlight_identity_at') -lt 0 -or
+      $app.IndexOf('lectern0_delete_note_at_index') -lt 0 -or
+      $app.IndexOf('lectern0_save_selection_note') -lt 0 -or
+      $app.IndexOf('lectern0_toggle_highlight_star_at') -lt 0 -or
+      $app.IndexOf('annotation_identity=v3_migrate_demote_restart') -lt 0 -or
+      $app.IndexOf('note_persistence=atomic_rollback_open') -lt 0 -or
+      $app.IndexOf('bookmark_persistence=rollback') -lt 0 -or
+      $app.IndexOf('star_persistence=rollback') -lt 0) {
+    $failures.Add("lectern0 must retain V1/V2-to-V3 annotation identity migration, Note-only demotion, atomic mutation rollback, and restart evidence")
+  }
+  if ($parity.IndexOf('wide_light_contents_panel') -lt 0 -or
+      $parity.IndexOf('wide_light_annotations_highlight_note') -lt 0 -or
+      $parity.IndexOf('wide_light_annotations_row_actions') -lt 0 -or
+      $parity.IndexOf('wide_light_annotations_note_editor') -lt 0 -or
+      $parity.IndexOf('wide_light_exit_keyboard_focus') -lt 0 -or
+      $parity.IndexOf('wide_light_previous_gutter_keyboard_focus') -lt 0 -or
+      $parity.IndexOf('wide_light_previous_enabled_gutter_keyboard_focus') -lt 0 -or
+      $parity.IndexOf('wide_light_next_gutter_keyboard_focus') -lt 0) {
+    $failures.Add("the two-host matrix must retain same-theme Contents, real Annotations list/menu/editor, and focused Exit plus disabled/enabled Previous and enabled Next gutter cases")
+  }
+  if ($parity.IndexOf('F7D9F95A174E0CA776E2BA808A6798D2DAF8B178CFF5D77270D225EC5DDA14D8') -lt 0 -or
+      $parity.IndexOf('Require-CleanTree') -lt 0 -or
+      $parity.IndexOf('[switch]$AllowDirty') -lt 0 -or
+      $parity.IndexOf('-SkipBuild is diagnostic-only') -lt 0 -or
+      $parity.IndexOf('parity output root already exists') -lt 0 -or
+      $parity.IndexOf('diagnostic_dirty_visual_parity') -lt 0 -or
+      $parity.IndexOf('acceptance_eligible = !$AllowDirty -and !$SkipBuild') -lt 0) {
+    $failures.Add("final two-host evidence must lock the canonical fixture, require a fresh output root and in-run builds, and reject dirty trees unless an explicit diagnostic-only override is supplied")
+  }
   if ($app.IndexOf('ui0_theme_profile_for_kind') -lt 0 -or
       $app.IndexOf('Lectern0Theme_Count == 6') -lt 0 -or
       $app.IndexOf('file.version == 1') -lt 0 -or
@@ -92,6 +220,7 @@ if ($failures.Count -eq 0) {
     $failures.Add("lectern0 must expose all six shared themes with explicit legacy settings migration")
   }
   if ($app.IndexOf('lectern0_draw_adapter_covers_all_ops') -lt 0 -or
+      $app.IndexOf('lectern0_draw_adapter_covers_reference_edges') -lt 0 -or
       $app.IndexOf('unsupported_count') -lt 0 -or
       $app.IndexOf('lectern0_draw_ui0_icon') -lt 0 -or
       $app.IndexOf('lectern0_draw_ui0_text') -lt 0) {
@@ -152,7 +281,9 @@ if ($failures.Count -eq 0) {
   if ($app -match 'IWIC|CLSID_WIC|wincodec\.h') {
     $failures.Add("lectern0 must not duplicate the zero_foundation WIC backend")
   }
-  if ($build -match '(?i)re10' -or $app -match '(?i)re10') {
+  if ($build -match '(?i)re10' -or
+      $app -match '(?im)^\s*#\s*include[^\r\n]*re10' -or
+      $app -match '(?i)\bre10_[A-Za-z0-9_]+\b') {
     $failures.Add("lectern0 source closure must not depend on re10")
   }
 }

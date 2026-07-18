@@ -16,16 +16,108 @@ concrete host state into that package and executes
 its bounded action records; readerview0 does not own the EPUB engine or durable
 records.
 
+Annotation rows preserve the accepted reference information hierarchy:
+section heading, primary content, then `Bookmark`, `Highlight`, or `Note`
+metadata in the exact `<kind> - re10 loc <N>` format. Bookmark and Highlight
+primary content is the captured excerpt; Note primary content is its persisted
+note body, matching frozen re10. The displayed location is the stable one-based
+128-byte global extracted-text location used by the reference. Note bodies
+remain lectern0-owned and are also supplied to note-edit actions; they are not
+repurposed as metadata.
+Highlights and their notes are separate stable rows over the same host record:
+each keeps its own star/delete meaning, an attached Note inherits the
+highlight rail, and only a Note immediately following its visible Highlight
+suppresses the inter-row gap. Find excerpts retain reader0's exact byte match;
+the host supplies a fixed-cap values-only table of system-UI codepoint advances
+and paints the accepted measured match background before the full one-line
+excerpt. Basic Latin is pinned, current text outranks placeholder, committed,
+and history text, stale dynamic values are evicted first, and generation wrap
+ages every dynamic entry without callbacks or allocations.
+The bounded host candidate array orders mixed annotations by spine, byte,
+Bookmark/Highlight/Note kind, and stable record ID before projecting the
+shared rows; it allocates nothing and does not alter persistence order.
+Every Bookmark row projects as starred because the durable bookmark is itself
+the frozen reference's starred state. Invoking that inline star removes the
+bookmark through the normal persistence helper with one revision increment.
+The version-3 annotation file stores Highlight identity separately from an
+attached Note. Version-1 and version-2 records migrate as active Highlights.
+Deleting a Highlight with a Note demotes the record to Note-only; deleting the
+final Note removes it. Bookmark add/remove, Highlight and Note stars, row
+deletes, and note mutations commit transactionally: a failed atomic write
+restores the exact records, IDs, stars, counts, and annotation revision.
+
+Opening an existing Note from Annotations retains its exact host record identity
+without navigating, selecting text, or changing history. A successful Save or
+Delete is acknowledged through `reader_view_close_note_editor`; stale revisions
+or failed persistence leave the draft open and the host record unchanged.
+Annotation-origin Save, Delete, and Cancel release only the retained annotation
+target and preserve an unrelated concrete document selection, anchor, location,
+and history; selection-origin completion still releases the selection owned by
+that flow. Creating a Note from a new selection persists its provisional
+Highlight and Note in one atomic mutation and rolls both back on failure.
+Persistent note text and all mutations remain host-owned.
+
 Recovery Slice 2 pins UI0 API 91 and readerview0 API 3. Lectern0 selects all six
 shared chrome profiles, maps its legacy three-theme settings file explicitly,
 reserves and renders the host-owned exit slot, and uses the shared page/content
 geometry for pagination and EPUB presentation. Its draw adapter consumes every
 UI0 operation with resolved typography, canonical reader icon pixels, and
-clipped native draw commands. Finite Reader View text-style records select the
-accepted title, menu-row, and metadata raster scales without callbacks or font
-providers crossing the package boundary. The host-owned Exit Reader action is
+clipped native draw commands. Chrome titles, ordinary panel labels, and
+metadata use the accepted system-UI text-box placement path at their frozen
+scales. Note-editor draft rows instead use zero_foundation's
+`TextEngineEditableRow` shaped painter at the explicit 18-pixel Body carrier,
+and the visible caret x comes from that same shaped row. A separate bounded
+values table measures the current draft, incoming/transfer text, and
+localized placeholder for proportional wrap, hit, selection, and caret
+geometry while keeping its 25-pixel line advance distinct from font size. The
+dedicated measured Find excerpt remains separate. UI0's generic
+Filter intent is the sole icon adaptation: lectern0 maps it to the frozen re10
+SlidersVertical raster and locks the exact 18 by 18 pixels. No callback or font
+provider crosses the package boundary. The host-owned Exit Reader action is
 painted as the same nonquiet UI0 IconButton shell and canonical Close icon used
-by the reference; the former host-specific icon substitutions are gone.
+by the reference; the former host-specific icon substitutions are gone. One
+explicit host record inserts that native-window action between Find and
+Fullscreen for the frozen reference's complete semantic keyboard order and
+MSAA. The disabled first-page Previous gutter remains a focus stop with its
+reference caret/ring but cannot invoke navigation. The bounded host raster
+bridge preserves UI0's exact frozen 18 by 32 left/right caret pixels, and the
+Reader View smoke locks both keyboard and pointer Next/Previous round-trips.
+Native `NEXT`/`PREVIOUS` traversal scans enabled focusable children, so disabled
+Back/Forward controls do not displace the required Find, host Exit, Fullscreen
+sequence; the disabled Previous gutter remains represented by its shared
+semantic identity and keyboard focus contract.
+When Contents, Find, or Annotations is open, the combined host/shared Tab seam
+delegates at Progress so panel controls remain reachable in both directions;
+the frozen 13-stop wrap applies only when no panel tail is present.
+Pointer activation is armed only by a press inside the Exit slot and is
+cancelled by leave/capture loss, so a drag into the control cannot close the
+reader. Its focused nonquiet UI0 shell retains all five bounded fill, border,
+text, focus-ring, and Close-icon records; the host reservation clips the outer
+ring without clipping it to the 30 by 28 control. Startup evidence inspects the
+actual adapted sprite and rounded focus-stroke geometry.
+
+TOC keys retain reader0's source `nav_index` even when projected indices are
+non-contiguous. Find edits remain transient until Commit (while Clear is
+immediate), and result keys route to exact reader0 match indices. The host
+smoke opens Contents and Find through the native routed Space-key path, executes a real
+TOC navigation/history return and a real Find-row activation, then closes the
+panel. It also exercises Annotations open/close focus restoration, filter
+Escape/selection, row activation, star/menu interaction, real note
+Save/Cancel/Delete buttons, and final panel close before restoring the original
+host-owned annotation record.
+The two-host parity runner carries both dark Contents coverage and a wide-light
+Contents case that completes the same-theme a6b-to-re10-to-Lectern visual chain.
+It also carries real seeded Highlight+Note cases for the
+Annotations list, row-action popup, and Note editor in addition to the
+filter-popup case, and retains focused Exit plus disabled Previous, enabled
+Previous, and enabled Next gutter cases.
+It locks fixture SHA-256
+`F7D9F95A174E0CA776E2BA808A6798D2DAF8B178CFF5D77270D225EC5DDA14D8`
+and rejects dirty host or dependency trees for final evidence. Final evidence
+must use a fresh output root and rebuild both hosts in-run; `-AllowDirty` and
+`-SkipBuild` exist only for diagnosis and cannot produce acceptance evidence. These captures
+prove decoded-pixel parity and repeatability; the per-host Reader View, host,
+startup, and accessibility smokes prove action execution and native behavior.
 
 Slice 5A's lectern0-owned document/resource image cache remains over
 zero_foundation's caller-owned decoder, so EPUB cover and inline PNG, JPEG, BMP,
@@ -36,9 +128,9 @@ The Presentation Engine API 1 adoption routes canonical EPUB row and image-box
 vertical geometry through zero_foundation's callback-free block-flow builder.
 Lectern0 still resolves reader/host metrics, owns caller storage, draws the
 returned records, and retains every cache, persistence, and product decision.
-Its native MSAA adapter exposes readerview0's portable semantic records while
-keeping platform objects, screen-reader events, and action execution in the
-application.
+Its native MSAA adapter exposes readerview0's portable semantic records plus
+the bounded host Exit record while keeping platform objects, screen-reader
+events, native Exit invocation, and shared-action execution in the application.
 
 ## Build and validate
 
