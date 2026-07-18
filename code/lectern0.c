@@ -139,6 +139,7 @@ typedef struct Lectern0ReaderContentTheme
   U32 ink_muted;
   U32 link;
   U32 selection;
+  U32 search_hit;
   U32 search_match;
   U32 user_highlight;
   U32 note_marker;
@@ -1842,44 +1843,44 @@ lectern0_reader_content_theme(Lectern0Theme theme)
     case Lectern0Theme_Light:
       result = (Lectern0ReaderContentTheme){
         0x00FFFDF9U, 0x001B1A18U, 0x0047423BU, 0x007A7368U,
-        0x00D95618U, 0x00FFE7D4U, 0x00FFD166U, 0x00FFF2A6U,
-        0x00D95618U,
+        0x00D95618U, 0x00FFE7D4U, 0x00D8D7D4U, 0x00F6B36FU,
+        0x00FFF2A6U, 0x00D95618U,
       };
       break;
     case Lectern0Theme_CoralDark:
       result = (Lectern0ReaderContentTheme){
         0x00464644U, 0x00F5EBDDU, 0x00DED4C8U, 0x00C2B6ACU,
-        0x00E85D56U, 0x0063423EU, 0x00705E18U, 0x00524A25U,
-        0x00E85D56U,
+        0x00E85D56U, 0x0063423EU, 0x0062605EU, 0x009A3034U,
+        0x00524A25U, 0x00E85D56U,
       };
       break;
     case Lectern0Theme_CoralLight:
       result = (Lectern0ReaderContentTheme){
         0x00F3E8DBU, 0x00333230U, 0x0053514FU, 0x006F6D68U,
-        0x00E85D56U, 0x00F3C2B9U, 0x00FFD166U, 0x00F4DFA3U,
-        0x00E85D56U,
+        0x00E85D56U, 0x00F3C2B9U, 0x00D4D0CCU, 0x00EE9B94U,
+        0x00F4DFA3U, 0x00E85D56U,
       };
       break;
     case Lectern0Theme_BlueDark:
       result = (Lectern0ReaderContentTheme){
         0x000D1824U, 0x00EAF0F7U, 0x00B8C7D8U, 0x007E8FA3U,
-        0x007C93FFU, 0x00345F91U, 0x00705E18U, 0x004D4A16U,
-        0x007C93FFU,
+        0x007C93FFU, 0x00345F91U, 0x003D454EU, 0x004F64BFU,
+        0x004D4A16U, 0x007C93FFU,
       };
       break;
     case Lectern0Theme_BlueLight:
       result = (Lectern0ReaderContentTheme){
         0x00FFFDF9U, 0x00121A22U, 0x00334252U, 0x006E7680U,
-        0x00365CE7U, 0x00E6EEFFU, 0x00FFD166U, 0x00FFF2A6U,
-        0x00365CE7U,
+        0x00365CE7U, 0x00E6EEFFU, 0x00D6DADFU, 0x008BAEFFU,
+        0x00FFF2A6U, 0x00365CE7U,
       };
       break;
     case Lectern0Theme_Dark:
     default:
       result = (Lectern0ReaderContentTheme){
         0x00181716U, 0x00F2F0EAU, 0x00C9C4BAU, 0x008D877BU,
-        0x00F26A1BU, 0x004D3424U, 0x00705E18U, 0x004D4A16U,
-        0x00F26A1BU,
+        0x00F26A1BU, 0x004D3424U, 0x004A4947U, 0x008F430FU,
+        0x004D4A16U, 0x00F26A1BU,
       };
       break;
   }
@@ -6254,7 +6255,7 @@ lectern0_draw_row_highlights(Lectern0App *app,
         S32 x1 = lectern0_reader_row_x_for_local_byte(
           app, row, &row_measure, overlap_end);
         U32 color = draw_active ? app->reader_content_theme.search_match :
-                                  app->reader_content_theme.selection;
+                                  app->reader_content_theme.search_hit;
         (void)draw_push_rect(&app->draw_commands,
                              DrawLayer_World,
                              x0,
@@ -10910,10 +10911,14 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
     "dark", "light", "coral-dark", "coral-light", "blue-dark", "blue-light",
   };
   static const U32 expected_active[] = {
-    0x00705E18U, 0x00FFD166U, 0x00705E18U,
-    0x00FFD166U, 0x00705E18U, 0x00FFD166U,
+    0x008F430FU, 0x00F6B36FU, 0x009A3034U,
+    0x00EE9B94U, 0x004F64BFU, 0x008BAEFFU,
   };
   static const U32 expected_inactive[] = {
+    0x004A4947U, 0x00D8D7D4U, 0x0062605EU,
+    0x00D4D0CCU, 0x003D454EU, 0x00D6DADFU,
+  };
+  static const U32 expected_selection[] = {
     0x004D3424U, 0x00FFE7D4U, 0x0063423EU,
     0x00F3C2B9U, 0x00345F91U, 0x00E6EEFFU,
   };
@@ -10983,12 +10988,15 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
     lectern0_render_to_buffer(&app, &buffer);
     Lectern0ReaderContentTheme content = app.reader_content_theme;
     if (content.search_match != expected_active[theme_index] ||
-        content.selection != expected_inactive[theme_index] ||
-        content.search_match == content.selection)
+        content.search_hit != expected_inactive[theme_index] ||
+        content.selection != expected_selection[theme_index] ||
+        content.search_hit == content.selection ||
+        content.search_match == content.search_hit)
       goto cleanup;
 
     U32 active_draws = 0;
     U32 inactive_draws = 0;
+    U32 selection_draws = 0;
     S32 first_active = -1;
     S32 first_inactive = -1;
     for (U32 command_index = 0;
@@ -11003,24 +11011,27 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
         if (first_active < 0) first_active = (S32)command_index;
         active_draws += 1;
       }
-      if (command->v.rect.color == content.selection)
+      if (command->v.rect.color == content.search_hit)
       {
         if (first_inactive < 0) first_inactive = (S32)command_index;
         inactive_draws += 1;
       }
+      if (command->v.rect.color == content.selection) selection_draws += 1;
     }
 
     U64 active_pixels = 0;
     U64 inactive_pixels = 0;
+    U64 selection_pixels = 0;
     for (U64 pixel_index = 0; pixel_index < pixel_count; pixel_index += 1)
     {
       U32 color = pixels[pixel_index] & 0x00FFFFFFU;
       if (color == content.search_match) active_pixels += 1;
-      if (color == content.selection) inactive_pixels += 1;
+      if (color == content.search_hit) inactive_pixels += 1;
+      if (color == content.selection) selection_pixels += 1;
     }
     if (active_draws == 0 || inactive_draws == 0 ||
         first_active <= first_inactive || active_pixels == 0 ||
-        inactive_pixels == 0)
+        inactive_pixels == 0 || selection_draws != 0 || selection_pixels != 0)
       goto cleanup;
 
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
@@ -11029,7 +11040,7 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
     fprintf(stdout,
             "lectern0_reader_view_find_active_contrast theme=%s active=%06X inactive=%06X active_ranges=%u inactive_ranges=%u active_draws=%u inactive_draws=%u active_pixels=%llu inactive_pixels=%llu bmp=%s\n",
             theme_names[theme_index],
-            content.search_match, content.selection,
+            content.search_match, content.search_hit,
             active_ranges, inactive_ranges, active_draws, inactive_draws,
             (unsigned long long)active_pixels,
             (unsigned long long)inactive_pixels,

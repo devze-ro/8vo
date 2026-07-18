@@ -79,6 +79,23 @@ function Get-OklabDistance {
     [Math]::Pow($A[2]-$B[2], 2))
 }
 
+function Get-OklabChroma {
+  param([string]$Hex)
+  $Lab = Get-Oklab $Hex
+  return [Math]::Sqrt($Lab[1]*$Lab[1] + $Lab[2]*$Lab[2])
+}
+
+function Get-OklabHueDistance {
+  param([string]$First, [string]$Second)
+  $A = Get-Oklab $First
+  $B = Get-Oklab $Second
+  $FirstHue = [Math]::Atan2($A[2], $A[1]) * 180.0 / [Math]::PI
+  $SecondHue = [Math]::Atan2($B[2], $B[1]) * 180.0 / [Math]::PI
+  $Distance = [Math]::Abs($FirstHue - $SecondHue)
+  if ($Distance -gt 180.0) { $Distance = 360.0 - $Distance }
+  return $Distance
+}
+
 function Get-RelativeLuminance {
   param([string]$Hex)
   $Rgb = Convert-HexRgb $Hex
@@ -114,6 +131,21 @@ $Ink = @{
   "coral-dark"="F5EBDD"; "coral-light"="333230";
   "blue-dark"="EAF0F7"; "blue-light"="121A22"
 }
+$Primary = @{
+  "dark"="F26A1B"; "light"="D95618";
+  "coral-dark"="E85D56"; "coral-light"="E85D56";
+  "blue-dark"="7C93FF"; "blue-light"="365CE7"
+}
+$Selection = @{
+  "dark"="4D3424"; "light"="FFE7D4";
+  "coral-dark"="63423E"; "coral-light"="F3C2B9";
+  "blue-dark"="345F91"; "blue-light"="E6EEFF"
+}
+$Page = @{
+  "dark"="181716"; "light"="FFFDF9";
+  "coral-dark"="464644"; "coral-light"="F3E8DB";
+  "blue-dark"="0D1824"; "blue-light"="FFFDF9"
+}
 $Results = @()
 $Lines = Get-Content -LiteralPath $LogPath | Where-Object {
   $_ -match '^lectern0_reader_view_find_active_contrast theme='
@@ -129,12 +161,34 @@ foreach ($Line in $Lines) {
   $Active = $Match.Groups[2].Value
   $Inactive = $Match.Groups[3].Value
   $Distance = Get-OklabDistance $Active $Inactive
+  $ActiveSelectionDistance = Get-OklabDistance $Active $Selection[$Name]
+  $InactiveSelectionDistance = Get-OklabDistance $Inactive $Selection[$Name]
+  $InactivePageDistance = Get-OklabDistance $Inactive $Page[$Name]
+  $PrimaryHueDistance = Get-OklabHueDistance $Active $Primary[$Name]
+  $ActiveChroma = Get-OklabChroma $Active
+  $InactiveChroma = Get-OklabChroma $Inactive
   $TextContrast = Get-ContrastRatio $Active $Ink[$Name]
-  if ($Distance -lt 0.10) {
-    throw "active/inactive OKLab distance below 0.10 for theme ${Name}: $Distance"
+  $InactiveTextContrast = Get-ContrastRatio $Inactive $Ink[$Name]
+  if ($Distance -lt 0.12) {
+    throw "active/inactive OKLab distance below 0.12 for theme ${Name}: $Distance"
+  }
+  if ($ActiveSelectionDistance -lt 0.08 -or $InactiveSelectionDistance -lt 0.05) {
+    throw "Find fills are not distinct from selection for theme ${Name}: active=$ActiveSelectionDistance inactive=$InactiveSelectionDistance"
+  }
+  if ($InactivePageDistance -lt 0.075) {
+    throw "inactive Find fill is not visible against the page for theme ${Name}: $InactivePageDistance"
+  }
+  if ($PrimaryHueDistance -gt 25.0) {
+    throw "active Find fill is outside the primary hue family for theme ${Name}: $PrimaryHueDistance degrees"
+  }
+  if ($ActiveChroma -lt 0.10 -or $InactiveChroma -gt 0.02) {
+    throw "active/dormant chroma contract failed for theme ${Name}: active=$ActiveChroma inactive=$InactiveChroma"
   }
   if ($TextContrast -lt 4.5) {
     throw "active-fill text contrast below 4.5 for theme ${Name}: $TextContrast"
+  }
+  if ($InactiveTextContrast -lt 4.5) {
+    throw "inactive-fill text contrast below 4.5 for theme ${Name}: $InactiveTextContrast"
   }
   $Bmp = $Match.Groups[10].Value
   if (!(Test-Path -LiteralPath $Bmp -PathType Leaf) -or
@@ -147,7 +201,14 @@ foreach ($Line in $Lines) {
   finally { $Image.Dispose() }
   $Results += [pscustomobject]@{
     theme=$Name; active=$Active; inactive=$Inactive
-    oklab_distance=$Distance; text_contrast=$TextContrast
+    selection=$Selection[$Name]; primary=$Primary[$Name]; page=$Page[$Name]
+    oklab_distance=$Distance
+    active_selection_distance=$ActiveSelectionDistance
+    inactive_selection_distance=$InactiveSelectionDistance
+    inactive_page_distance=$InactivePageDistance
+    primary_hue_distance_degrees=$PrimaryHueDistance
+    active_chroma=$ActiveChroma; inactive_chroma=$InactiveChroma
+    text_contrast=$TextContrast; inactive_text_contrast=$InactiveTextContrast
     active_ranges=[int]$Match.Groups[4].Value
     inactive_ranges=[int]$Match.Groups[5].Value
     active_draws=[int]$Match.Groups[6].Value
@@ -165,7 +226,16 @@ $Summary = [pscustomobject]@{
   executable=@{ path=$Exe; sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash }
   book=@{ path=$Book; sha256=$BookHash; size=(Get-Item -LiteralPath $Book).Length }
   viewport=@{ width=1400; height=780 }; query="Paran"; active_index=2
-  acceptance=@{ minimum_oklab_distance=0.10; minimum_text_contrast=4.5 }
+  acceptance=@{
+    minimum_oklab_distance=0.12
+    minimum_active_selection_distance=0.08
+    minimum_inactive_selection_distance=0.05
+    minimum_inactive_page_distance=0.075
+    maximum_primary_hue_distance_degrees=25.0
+    minimum_active_chroma=0.10
+    maximum_inactive_chroma=0.02
+    minimum_text_contrast=4.5
+  }
   result_line=[string]$PassLine; themes=$Results; log=$LogPath
 }
 $SummaryPath = Join-Path $Out "summary.json"

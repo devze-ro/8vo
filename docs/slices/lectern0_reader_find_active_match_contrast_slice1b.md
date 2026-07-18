@@ -23,6 +23,10 @@ theme profiles also exclude product/domain Reader colors. Lectern0 therefore
 retains its explicit host Reader-content theme and applies the same bounded
 palette policy as re10 without adding a shared callback or provider boundary.
 
+The final candidate adds a distinct `search_hit` field to that host content
+theme. Inactive Find rendering no longer reuses `selection`; the existing text
+selection value and draw path remain unchanged.
+
 No callback, provider table, vtable, event bus, dependency injection, generic
 document interface, hidden allocation, or process-global mutable state is
 introduced.
@@ -47,15 +51,20 @@ and writes a BMP.
 
 ## Palette and acceptance
 
-Inactive fills remain unchanged. The active fill is `#FFD166` for light,
-coral-light, and blue-light, and `#705E18` for dark, coral-dark, and blue-dark.
-The wrapper requires active/inactive OKLab distance of at least 0.10 and Reader
-text contrast on the active fill of at least 4.5:1.
+Direct review of the first candidate led to a user-directed semantic model:
+active uses a theme-primary shade, inactive uses a neutral dormant shade, and
+selection remains separate. The exact six-theme values are recorded in re10's
+paired Slice 1B record and are identical here.
 
-The six measured distances range from 0.109 to 0.181 and text contrast ranges
-from 5.39:1 to 12.17:1. This corrects the technically different but
-imperceptible pairs inherited from the frozen palette without changing the
-inactive-match appearance.
+The wrapper requires active/inactive OKLab distance of at least 0.12,
+active/selection distance 0.08, inactive/selection distance 0.05,
+inactive/page distance 0.075, active hue within 25 degrees of primary, active
+chroma at least 0.10, inactive chroma at most 0.02, and text contrast on both
+Find fills of at least 4.5:1.
+
+Measured active/inactive distance is 0.128 to 0.194, active hue distance is
+0.97 to 23.99 degrees, active chroma is 0.101 to 0.144, inactive chroma is
+0.004 to 0.019, and text contrast is 4.68:1 to 12.50:1.
 
 ## Rendered evidence
 
@@ -64,13 +73,19 @@ runs the strict dependency/build gate, invokes the real workflow, checks the
 quantitative thresholds, converts all six captures to PNG, and writes a JSON
 summary.
 
-The initial green summary is
+The historical first-pass amber/olive summary is
 `local/validation/reader-find-active-contrast-slice1b/summary.json`, SHA-256
 `E8A0EDFA8CF55DACE6C771216BB08132043B8665846FAA14F5D9019211B41440`.
-Every theme reports one active and one inactive range and draw, with exact
-rendered pixels for both fills. All six Lectern0 captures and all six matching
-re10 captures were inspected directly; the active match is clearly visible in
-every light and dark profile.
+It is superseded by the primary/neutral model.
+
+The final pre-commit local summary is
+`local/validation/reader-find-primary-neutral-slice1b-final-local/summary.json`,
+SHA-256
+`263D322C25F0A9526033A1EB8C528FF4CFD68C012B19C1DDE325223F77491C29`.
+Every theme reports one active and one inactive range/draw with exact rendered
+pixels. The CLI regression additionally requires zero selection-colored page
+draws and pixels while Find is active. All six Lectern0 and six re10 captures
+were inspected directly.
 
 ## Why prior gates missed it
 
@@ -162,5 +177,18 @@ progress-control draw, outside this slice and absent on the fresh full retry.
 The Find case was deterministic and pixel-exact in both attempts. Both
 manifests are retained in the re10 record for transparency.
 
-This closes the Lectern0 side of Slice 1B as a validated, unpromoted local-only
-candidate. Lectern0 still has no remote, and nothing was pushed or promoted.
+This evidence closes the superseded amber/olive checkpoint. The final
+primary/neutral refinement is recorded below.
+
+## User-directed primary/neutral refinement
+
+The refinement adds one explicit host-owned inactive Find value, keeps all
+selection values unchanged, and uses theme-primary active values. Reader0
+continues to publish active identity and Readerview0 continues to own bounded
+Find actions; neither dependency changes.
+
+Strict compilation, dependency and architecture gates, the exact-book
+six-theme workflow, generated host smoke, deterministic Reader View smoke, and
+direct twelve-image review pass at the pre-commit checkpoint. Clean post-commit
+cross-host evidence remains required before this becomes the final unpromoted
+local-only candidate. Lectern0 still has no remote.
