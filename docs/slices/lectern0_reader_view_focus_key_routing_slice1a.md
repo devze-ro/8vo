@@ -117,6 +117,60 @@ records or synthetic captures.
 - zero_foundation at `eee57edc1b0c7af5bef7afca26f3c27a32fb6e7c`,
   Presentation Engine API 1.
 
-The clean-tree 15-case re10/Lectern0 matrix remains the final integration gate
-after the implementation commit. Nothing in this record authorizes promotion,
-push, history rewriting, or creation of a Lectern0 remote.
+## Clean candidate closeout
+
+The implementation, app-level gate, and initial record were committed without
+history rewriting as:
+
+- commit: `7bbdcec3e2db3abaa454120a3667b82144a280af`;
+- subject: `Restore Lectern arrow routing after actions`;
+- author and committer: `devze-ro <devze_ro@outlook.com>`; and
+- ancestry: one commit directly ahead of local-only main `501a0071`.
+
+The post-commit exact-book run rebuilt the candidate with strict warnings as
+errors from a clean tree and completed twice:
+
+- summary:
+  `local/validation/rv-focus1a-final/summary.json`;
+- summary SHA-256:
+  `D17C274C3553E4C66B684948C5EB95AC887123D25274943C711145BB414924F1`;
+- executable SHA-256:
+  `9C41AD0FCE29C1EB2610C3B42AB927ED941F07F1D1F30C0FBBC15BE0E881DCF0`;
+- ten rendered BMPs repeated exactly across both runs; and
+- each Bookmark, Note, and Font before-frame hash equals its after-Left hash,
+  while each after-Right hash is distinct.
+
+The full focused validation also passed:
+
+- exact dependency guard and architecture audit;
+- strict MSVC C11 `/W4 /WX` build;
+- concrete EPUB host smoke, hash `cd460506f219d652`;
+- deterministic Reader View smoke twice, hash `bbc068e6c290fee1`;
+- startup press/release, host Exit, and empty-state interaction smoke;
+- native MSAA accessibility smoke twice over 18 nodes;
+- canonical-frame visual smoke twice, pixel hash `df02d5d2dd061128`
+  and Presentation Engine hash `3a3cf46f0444a1bd`; and
+- cover/inline image smoke twice, hashes `c2cca908e35dd8d1` and
+  `17989905b776b21d`.
+
+The final clean-tree re10/Lectern0 matrix completed with both hosts rebuilt
+inside the run:
+
+- manifest:
+  `C:\Temp\re10_lectern_lecternfocus1a_15_20260718\manifest.json`;
+- manifest SHA-256:
+  `698FA58018FF472713255EBD97CB633F6B63B68F5A77E8D9FE2FE77B0F87FC4D`;
+- re10 head: `3e475cfaeb90f8a6c02ae7a8a887952fb1a48f2c`;
+- Lectern0 head: `7bbdcec3e2db3abaa454120a3667b82144a280af`;
+- 15/15 cases repeatable with exact decoded-pixel equality;
+- acceptance eligibility: true; and
+- no dirty-tree or skip-build diagnostic allowance.
+
+The six pixel-exact record-difference cases are unchanged: dark Contents,
+light Contents, Find, Bookmark/right panel, Annotations filter, and Note
+editor. They remain legitimate host-record distinctions and are not affected
+by this native key-routing correction.
+
+This closes the slice as a validated local-only candidate. Nothing in this
+record authorizes promotion, push, history rewriting, or creation of a
+Lectern0 remote.
