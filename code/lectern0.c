@@ -11071,6 +11071,170 @@ cleanup:
 }
 
 FUNCTION int
+lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
+                                                     const char *bmp_path)
+{
+  enum { Width = 1400, Height = 780 };
+  static const char expected_excerpt[] =
+    "IMPERIAL COMMAND Ganoes Stabro Paran, a noble-born officer in the "
+    "Malazan Empire";
+  Lectern0App app = {0};
+  U64 pixel_count = (U64)Width * Height;
+  U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  RenderBuffer buffer = {0};
+  const ReaderViewSemanticNode *active_row = 0;
+  const ReaderViewTextBinding *excerpt_binding = 0;
+  U32 checkpoint = 0;
+  U32 highlight_draws = 0;
+  U64 highlight_pixels = 0;
+  int result = 1;
+
+  if (!pixels || !path || !path[0] || !bmp_path || !bmp_path[0] ||
+      !lectern0_app_init(&app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&app, path))
+    goto cleanup;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  checkpoint = 1;
+
+  const ReaderViewSemanticNode *find =
+    lectern0_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_Find);
+  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+      app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
+      !lectern0_reader_view_parity_click(
+        &app, &buffer, ReaderViewSemantic_SearchBox, 0))
+    goto cleanup;
+
+  MemoryCopy(app.input.text, "Paran", 5);
+  app.input.text[5] = 0;
+  app.input.text_length = 5;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  app.input.commit_pressed = 1;
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_apply_reader_view_actions(&app);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (app.reader.search_match_count == 0 ||
+      app.reader_view_projection.find.row_count == 0 ||
+      !lectern0_reader_view_text_is(
+        app.reader_view_projection.find.rows[0].excerpt, expected_excerpt))
+    goto cleanup;
+  checkpoint = 2;
+
+  ReaderViewKey first_key = app.reader_view_projection.find.rows[0].key;
+  active_row = lectern0_reader_view_semantic_control_source(
+    &app.reader_view_frame, ReaderViewSemanticControl_FindRow, first_key);
+  if (!active_row ||
+      !lectern0_reader_view_text_is(active_row->name, expected_excerpt) ||
+      !lectern0_reader_view_parity_space_node(&app, &buffer, active_row) ||
+      !app.reader.search_has_active || app.reader.search_active_index != 0 ||
+      app.reader_view_state.left_panel != ReaderViewLeftPanel_Find)
+    goto cleanup;
+  checkpoint = 3;
+
+  active_row = lectern0_reader_view_semantic_control_source(
+    &app.reader_view_frame, ReaderViewSemanticControl_FindRow, first_key);
+  if (!active_row || !lectern0_reader_view_text_is(active_row->name,
+                                                    expected_excerpt))
+    goto cleanup;
+  for (UI0S32 index = 0;
+       index < app.reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *candidate =
+      app.reader_view_frame.semantic_nodes + index;
+    if (candidate->parent_id != active_row->id) continue;
+    const ReaderViewTextBinding *binding =
+      lectern0_reader_view_binding(&app, candidate->id);
+    if (binding && binding->match_size > 0)
+    {
+      excerpt_binding = binding;
+      break;
+    }
+  }
+  ReaderViewText source_excerpt =
+    app.reader_view_projection.find.rows[0].excerpt;
+  if (!excerpt_binding || excerpt_binding->text.size <= 5 ||
+      excerpt_binding->text.data <= source_excerpt.data ||
+      excerpt_binding->text.data + excerpt_binding->text.size >
+        source_excerpt.data + source_excerpt.size ||
+      excerpt_binding->text.data[-1] != ' ' ||
+      (((unsigned char)excerpt_binding->text.data[0] & 0xc0u) == 0x80u) ||
+      excerpt_binding->match_size != 5 ||
+      excerpt_binding->match_start + excerpt_binding->match_size >
+        (UI0U32)excerpt_binding->text.size ||
+      memcmp(excerpt_binding->text.data + excerpt_binding->match_start,
+             "Paran", 5) != 0)
+    goto cleanup;
+  checkpoint = 4;
+
+  Lectern0ReaderContentTheme theme =
+    lectern0_reader_content_theme(app.theme);
+  for (U32 index = 0;
+       index < app.draw_commands.command_count[DrawLayer_UI];
+       index += 1)
+  {
+    const DrawCommand *command =
+      app.draw_commands.commands[DrawLayer_UI] + index;
+    if (command->type == DrawCommandType_Rect &&
+        command->v.rect.color == theme.user_highlight &&
+        command->v.rect.x >= active_row->rect.x &&
+        command->v.rect.x + command->v.rect.w <=
+          active_row->rect.x + active_row->rect.w &&
+        command->v.rect.y >= active_row->rect.y &&
+        command->v.rect.y + command->v.rect.h <=
+          active_row->rect.y + active_row->rect.h)
+      highlight_draws += 1;
+  }
+  for (S32 y = active_row->rect.y;
+       y < active_row->rect.y + active_row->rect.h;
+       y += 1)
+  {
+    for (S32 x = active_row->rect.x;
+         x < active_row->rect.x + active_row->rect.w;
+         x += 1)
+    {
+      U32 color = pixels[(U64)y * Width + (U64)x] & 0x00FFFFFFU;
+      if (color == theme.user_highlight) highlight_pixels += 1;
+    }
+  }
+  if (highlight_draws == 0 || highlight_pixels == 0 ||
+      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    goto cleanup;
+  checkpoint = 5;
+  result = 0;
+
+cleanup:
+  if (result == 0)
+  {
+    fprintf(stdout,
+            "lectern0_reader_view_find_snippet_context result=pass checkpoint=%u query=Paran active_index=0 visible_bytes=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
+            checkpoint,
+            excerpt_binding ? excerpt_binding->text.size : 0,
+            excerpt_binding ? excerpt_binding->match_start : 0,
+            excerpt_binding ? excerpt_binding->match_size : 0,
+            highlight_draws, (unsigned long long)highlight_pixels, bmp_path);
+  }
+  else
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_find_snippet_context result=fail checkpoint=%u matches=%u rows=%d active=%u index=%u visible=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
+            checkpoint, app.reader.search_match_count,
+            app.reader_view_projection.find.row_count,
+            app.reader.search_has_active, app.reader.search_active_index,
+            excerpt_binding ? excerpt_binding->text.size : 0,
+            excerpt_binding ? excerpt_binding->match_start : 0,
+            excerpt_binding ? excerpt_binding->match_size : 0,
+            highlight_draws, (unsigned long long)highlight_pixels,
+            bmp_path ? bmp_path : "-");
+  }
+  free(pixels);
+  lectern0_app_release(&app);
+  return result;
+}
+
+FUNCTION int
 lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
                                                   const char *output_prefix)
 {
@@ -13286,6 +13450,12 @@ main(int argc, char **argv)
     result = lectern0_run_reader_view_find_active_contrast_smoke(
       argv[2], argv[3]);
   }
+  else if (argc == 4 &&
+           strcmp(argv[1], "--reader-view-find-snippet-context-smoke") == 0)
+  {
+    result = lectern0_run_reader_view_find_snippet_context_smoke(
+      argv[2], argv[3]);
+  }
   else if (argc == 2 &&
            strcmp(argv[1], "--reader-view-startup-interaction-smoke") == 0)
   {
@@ -13319,7 +13489,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

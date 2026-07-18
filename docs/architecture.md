@@ -28,10 +28,13 @@ maps `ChromeTitle` through the accepted system-UI box raster at scale 2 and
 instead carry explicit Body typography metadata and use zero_foundation's
 `TextEngineEditableRow` shaped painter at its 18-pixel height; the visible
 caret x is derived from that same shaped row. The TextArea's 25-pixel line
-advance remains layout geometry, not a font size. Find excerpts
-retain their dedicated measured match path. The record conveys semantic
-presentation only: no font pointer, callback, provider table, or allocation
-crosses the boundary.
+advance remains layout geometry, not a font size. Find-result parent semantics
+retain Reader0's full excerpt. When its first fitted line would omit a valid
+match, the child text binding can borrow Readerview0's one-line natural-word
+window and remapped match bytes; Lectern0 still performs the concrete
+full-string measurement, rasterization, highlight paint, and clipping. The
+record conveys semantic presentation only: no font pointer, callback, provider
+table, or allocation crosses the boundary.
 
 Lectern0 owns the projected TOC/search/selection meaning, settings choices,
 stable bookmark/highlight/note IDs, 128-record bookmark and highlight
