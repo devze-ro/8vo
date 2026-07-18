@@ -2,7 +2,7 @@
 
 Date: 2026-07-18
 
-Status: implementation candidate; local-only, unpromoted, and unpushed
+Status: promoted to local-only `main`; no remote exists
 
 ## Scope and ownership
 
@@ -171,6 +171,14 @@ light Contents, Find, Bookmark/right panel, Annotations filter, and Note
 editor. They remain legitimate host-record distinctions and are not affected
 by this native key-routing correction.
 
-This closes the slice as a validated local-only candidate. Nothing in this
-record authorizes promotion, push, history rewriting, or creation of a
-Lectern0 remote.
+## Promotion
+
+After explicit user authorization on 2026-07-18, local-only Lectern0 `main`
+was fast-forwarded from `501a007143508fabd73a4a540f49b3fdbef78b3d` to the
+validated candidate `d4e3f4e0dfe058c4fe1dd3f5037a0b1cf82469ca`. This
+promotion record is the only post-validation change and is itself applied by a
+second fast-forward. No merge commit, rebase, reset, amendment, replay, or
+history rewrite was used.
+
+Lectern0 still has no remote, so nothing was pushed and no GitHub repository
+was created. This closes the slice as promoted local-only work.
