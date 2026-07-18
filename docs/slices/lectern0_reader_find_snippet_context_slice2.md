@@ -2,7 +2,8 @@
 
 Date: 2026-07-19
 
-Status: implementation candidate; local-only, unpromoted, and unpushed
+Status: implementation and acceptance candidate; local-only, unpromoted, and
+unpushed
 
 ## Outcome and ownership
 
@@ -71,6 +72,37 @@ Pre-commit candidate evidence:
 
 The Re10 companion gate shows the same first-row text and the same 586 exact
 highlight pixels from the same shared dependency.
+
+## Final clean acceptance
+
+The committed implementation candidate is
+`fe8cfcae68835d2c4dd4d298115e689965609003`. Its clean-tree exact-book run is:
+
+- summary:
+  `local/validation/reader-find-snippet-context-slice2-final-clean/summary.json`;
+- summary SHA-256:
+  `F6C3AD48C88087E76C3504BA12537E080F1E321A9C6B4044753AFFDDCCFCA753`;
+- screenshot SHA-256:
+  `9C90E15155FBA8D22EE7239ADC948156DCEDC50B40C2C03A45F839198043BA7E`;
+- visible binding: 30 bytes with `Paran` at remapped bytes 22..27;
+- highlight evidence: one UI draw and 586 decoded pixels; and
+- manifest-recorded Git status: empty.
+
+The clean cross-host manifest is
+`C:\Temp\re10_lectern_find_snippet_final_clean_20260719_0300\manifest.json`,
+SHA-256
+`25B5131BBEC10153543F655302E44B55DBA9ADEDFD2878F47FA3310A09B60E4F`.
+All 15/15 Re10/Lectern0 cases are deterministic and decoded-pixel exact; 9
+also have exact shared records and 6 retain accepted legitimate host-record
+differences. The harness enforced clean trees, exact pins, and in-run strict
+builds against Readerview0
+`6ff78cf47258ff21f79fa3473973a85066fea899`.
+
+The canonical zero_foundation checkout gained one clean local-only commit while
+validation was running. It was neither absorbed nor modified. Final acceptance
+used the dedicated exact-pin validation worktree at
+`eee57edc1b0c7af5bef7afca26f3c27a32fb6e7c`, matching this host's dependency
+metadata and unchanged `origin/master`.
 
 ## Why earlier gates missed it
 
