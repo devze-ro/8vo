@@ -148,6 +148,16 @@ retention, media-type exclusions, cache reset on successful document open, and
 final aspect-fit sprite/fallback presentation. Neither reader0 nor
 zero_foundation owns product cache policy.
 
+Image-only canonical rows are a distinct host-presentation case. Reader0 owns
+their classification and `visual_units`; Lectern0 allocates the full content
+width and exactly `visual_units * line_height` pixels of vertical media space,
+then aspect-fits the decoded image inside that box. The 18-unit fallback is
+used only when the canonical row omits a value, matching the frozen Re10
+adapter. Loaded image-only media has no synthetic card background. Lectern0
+selects explicit nearest sampling for this path to preserve the frozen Re10
+benchmark; zero_foundation owns the sampling mechanism, not that product
+policy. Publisher in-flow images retain their separately bounded box policy.
+
 Vertical placement follows the canonical row metadata through Presentation
 Engine API 1: block top margins apply only to `line_row == 0`, while resolved
 line/image height and bottom margins advance each row. The engine owns only

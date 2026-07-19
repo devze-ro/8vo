@@ -272,6 +272,13 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('draw_push_sprite_clipped') -lt 0) {
     $failures.Add("lectern0 must own cache policy while using shared decode and sprite presentation")
   }
+  if ($app.IndexOf('--reader-image-fit-smoke') -lt 0 -or
+      $app.IndexOf('row->visual_units ? row->visual_units : 18') -lt 0 -or
+      $app.IndexOf('SourceReaderLayoutImagePlacement_ImageOnly') -lt 0 -or
+      $app.IndexOf('draw_push_sprite_clipped_sampled') -lt 0 -or
+      $app.IndexOf('DrawSpriteSampleKind_Nearest') -lt 0) {
+    $failures.Add("lectern0 image-only pages must consume reader0 visual units and retain explicit frozen-nearest sampling evidence")
+  }
   if ($app.IndexOf('#include "presentation_engine/presentation_engine.h"') -lt 0 -or
       $app.IndexOf('PRESENTATION_ENGINE_API_VERSION != 1') -lt 0 -or
       $app.IndexOf('lectern0_build_reader_presentation') -lt 0 -or

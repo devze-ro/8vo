@@ -6180,15 +6180,35 @@ lectern0_presentation_media_status(EpubReaderFrameImageStatus status)
 }
 
 FUNCTION B32
-lectern0_resolve_presentation_image_box(const EpubReaderFrameImage *image,
+lectern0_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
+                                        const EpubReaderFrameImage *image,
                                         S32 body_width_px,
+                                        S32 body_height_px,
+                                        S32 line_height_px,
                                         S32 content_left_px,
                                         Lectern0PresentationImageBox *out_box)
 {
   if (out_box) { MemoryZeroStruct(out_box); }
-  if (!image || !out_box || body_width_px <= 0 || content_left_px < 0)
+  if (!row || !image || !out_box || body_width_px <= 0 ||
+      body_height_px <= 0 || line_height_px <= 0 || content_left_px < 0)
   {
     return 0;
+  }
+
+  if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
+  {
+    U32 visual_units = row->visual_units ? row->visual_units : 18;
+    S64 canonical_height = (S64)visual_units * (S64)line_height_px;
+    if (canonical_height <= 0 || canonical_height > body_height_px)
+    {
+      return 0;
+    }
+    *out_box = (Lectern0PresentationImageBox){
+      .x_offset_px = 0,
+      .width_px = body_width_px,
+      .height_px = (S32)canonical_height,
+    };
+    return 1;
   }
 
   S64 available_width = (S64)body_width_px -
@@ -6208,13 +6228,8 @@ lectern0_resolve_presentation_image_box(const EpubReaderFrameImage *image,
   }
   desired_height = MIN(MAX(desired_height, 72), 320);
 
-  S32 x_offset = content_left_px;
-  if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
-  {
-    x_offset = MAX((body_width_px - image_width) / 2, 0);
-  }
   *out_box = (Lectern0PresentationImageBox){
-    .x_offset_px = x_offset,
+    .x_offset_px = content_left_px,
     .width_px = image_width,
     .height_px = (S32)desired_height,
   };
@@ -6302,14 +6317,19 @@ lectern0_build_reader_presentation(Lectern0App *app,
       Lectern0PresentationImageBox box = {0};
       if (media_count >= Lectern0PresentationMediaCap ||
           image->text_byte_end < image->text_byte_start ||
-          !lectern0_resolve_presentation_image_box(image,
+          !lectern0_resolve_presentation_image_box(row,
+                                                   image,
                                                    body_w,
+                                                   body_h,
+                                                   app->layout_key.line_height,
                                                    metrics.content_left_px,
                                                    &box))
       {
         return 0;
       }
-      row_height_px = box.height_px + 8;
+      row_height_px = box.height_px +
+        (image->image_placement ==
+           SourceReaderLayoutImagePlacement_ImageOnly ? 0 : 8);
       role = PresentationEngineBlockRole_Media;
       app->presentation_media_specs[media_count] =
         (PresentationEngineBlockFlowMediaSpec){
@@ -7020,15 +7040,23 @@ lectern0_draw_reader_page(Lectern0App *app)
         app->presentation_complete = 0;
         break;
       }
-      (void)draw_push_rounded_rect(&app->draw_commands,
-                                   DrawLayer_World,
-                                   image_x,
-                                   image_y,
-                                   image_w,
-                                   image_h,
-                                   6,
-                                   0x00F1EEE8U,
-                                   0x00B8B1A6U);
+      B32 loaded_image_only =
+        image->image_placement ==
+          SourceReaderLayoutImagePlacement_ImageOnly &&
+        image->status == EpubReaderFrameImageStatus_Loaded &&
+        image->pixels;
+      if (!loaded_image_only)
+      {
+        (void)draw_push_rounded_rect(&app->draw_commands,
+                                     DrawLayer_World,
+                                     image_x,
+                                     image_y,
+                                     image_w,
+                                     image_h,
+                                     6,
+                                     0x00F1EEE8U,
+                                     0x00B8B1A6U);
+      }
       if (image->status == EpubReaderFrameImageStatus_Loaded && image->pixels)
       {
         S32 fit_x = 0;
@@ -7045,20 +7073,37 @@ lectern0_draw_reader_page(Lectern0App *app)
                                      &fit_y,
                                      &fit_w,
                                      &fit_h) ||
-            !draw_push_sprite_clipped(&app->draw_commands,
-                                      DrawLayer_World,
-                                      image->pixels,
-                                      image->src_w,
-                                      image->src_h,
-                                      image->src_stride_pixels,
-                                      fit_x,
-                                      fit_y,
-                                      fit_w,
-                                      fit_h,
-                                      body_x,
-                                      body_y,
-                                      body_w,
-                                      body_h))
+            !(loaded_image_only ?
+                draw_push_sprite_clipped_sampled(
+                  &app->draw_commands,
+                  DrawLayer_World,
+                  image->pixels,
+                  image->src_w,
+                  image->src_h,
+                  image->src_stride_pixels,
+                  DrawSpriteSampleKind_Nearest,
+                  fit_x,
+                  fit_y,
+                  fit_w,
+                  fit_h,
+                  body_x,
+                  body_y,
+                  body_w,
+                  body_h) :
+                draw_push_sprite_clipped(&app->draw_commands,
+                                         DrawLayer_World,
+                                         image->pixels,
+                                         image->src_w,
+                                         image->src_h,
+                                         image->src_stride_pixels,
+                                         fit_x,
+                                         fit_y,
+                                         fit_w,
+                                         fit_h,
+                                         body_x,
+                                         body_y,
+                                         body_w,
+                                         body_h)))
         {
           app->presentation_complete = 0;
         }
@@ -8382,6 +8427,313 @@ lectern0_run_image_smoke(const char *path,
           (unsigned long long)inline_hash);
   lectern0_app_release(&app);
   return 0;
+}
+
+typedef struct Lectern0ReaderImageFitEvidence
+{
+  U32 spine_index;
+  U64 page_index;
+  U32 visual_units;
+  S32 line_height_px;
+  S32 body_width_px;
+  S32 body_height_px;
+  S32 media_width_px;
+  S32 media_height_px;
+  S32 fit_width_px;
+  S32 fit_height_px;
+  S32 source_width_px;
+  S32 source_height_px;
+  U64 pixel_hash;
+  U64 presentation_hash;
+} Lectern0ReaderImageFitEvidence;
+
+FUNCTION B32
+lectern0_capture_reader_image_fit_evidence(
+  Lectern0App *app,
+  RenderBuffer *buffer,
+  const char *case_name,
+  const char *bmp_path,
+  Lectern0ReaderImageFitEvidence *out_evidence)
+{
+  if (out_evidence) { MemoryZeroStruct(out_evidence); }
+  if (!app || !buffer || !buffer->pixels || !case_name || !bmp_path ||
+      !out_evidence)
+  {
+    return 0;
+  }
+
+  lectern0_render_to_buffer(app, buffer);
+  U64 pixel_count = (U64)buffer->width * (U64)buffer->height;
+  U64 pixel_hash = u64_hash_bytes(buffer->pixels,
+                                  pixel_count * sizeof(U32));
+  if (!lectern0_write_bmp(bmp_path,
+                          buffer->pixels,
+                          buffer->width,
+                          buffer->height) ||
+      !app->presentation_complete ||
+      !app->presentation_frame.valid ||
+      app->frame.style_row_count != 1 ||
+      app->presentation_frame.row_count != 1 ||
+      app->presentation_frame.media_count != 1)
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit_case result=fail case=%s reason=frame rows=%u presentation_rows=%u media=%u complete=%d bmp=%s\n",
+            case_name,
+            app->frame.style_row_count,
+            app->presentation_frame.row_count,
+            app->presentation_frame.media_count,
+            app->presentation_complete,
+            bmp_path);
+    return 0;
+  }
+
+  const EpubReaderFrameStyleRow *row = app->frame.style_rows;
+  EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
+  const PresentationEngineBlockFlowRow *presentation_row =
+    app->presentation_frame.rows;
+  if (!image ||
+      image->image_placement != SourceReaderLayoutImagePlacement_ImageOnly ||
+      image->status != EpubReaderFrameImageStatus_Loaded ||
+      !image->pixels || image->src_w <= 0 || image->src_h <= 0 ||
+      presentation_row->media_count != 1 ||
+      presentation_row->first_media_index >=
+        app->presentation_frame.media_count)
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit_case result=fail case=%s reason=image placement=%u status=%u src=%dx%d bmp=%s\n",
+            case_name,
+            image ? image->image_placement : 0,
+            image ? image->status : 0,
+            image ? image->src_w : 0,
+            image ? image->src_h : 0,
+            bmp_path);
+    return 0;
+  }
+
+  UI0Rect body = app->reader_content_geometry.content_rect;
+  const PresentationEngineBlockFlowMedia *media =
+    app->presentation_frame.media + presentation_row->first_media_index;
+  U32 visual_units = row->visual_units ? row->visual_units : 18;
+  S64 canonical_height = (S64)visual_units * (S64)app->layout_key.line_height;
+  S32 fit_x = 0;
+  S32 fit_y = 0;
+  S32 fit_w = 0;
+  S32 fit_h = 0;
+  if (canonical_height <= 0 || canonical_height > INT32_MAX ||
+      !lectern0_fit_image_rect(image->src_w,
+                               image->src_h,
+                               media->rect.x,
+                               media->rect.y,
+                               media->rect.w,
+                               media->rect.h,
+                               &fit_x,
+                               &fit_y,
+                               &fit_w,
+                               &fit_h))
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit_case result=fail case=%s reason=fit units=%u line_height=%d media=%dx%d bmp=%s\n",
+            case_name, visual_units, app->layout_key.line_height,
+            media->rect.w, media->rect.h, bmp_path);
+    return 0;
+  }
+
+  U32 matching_sprites = 0;
+  U32 matching_media_backgrounds = 0;
+  B32 nearest_sampling = 0;
+  for (U16 command_index = 0;
+       command_index < app->draw_commands.command_count[DrawLayer_World];
+       command_index += 1)
+  {
+    const DrawCommand *command =
+      app->draw_commands.commands[DrawLayer_World] + command_index;
+    if (command->type == DrawCommandType_Sprite &&
+        command->v.sprite.pixels == image->pixels)
+    {
+      matching_sprites += 1;
+      nearest_sampling = command->v.sprite.sample_kind ==
+        DrawSpriteSampleKind_Nearest;
+      if (command->v.sprite.dst_x != fit_x ||
+          command->v.sprite.dst_y != fit_y ||
+          command->v.sprite.dst_w != fit_w ||
+          command->v.sprite.dst_h != fit_h)
+      {
+        nearest_sampling = 0;
+      }
+    }
+    if (command->type == DrawCommandType_RoundedRect &&
+        command->v.rounded_rect.x == media->rect.x &&
+        command->v.rounded_rect.y == media->rect.y &&
+        command->v.rounded_rect.w == media->rect.w &&
+        command->v.rounded_rect.h == media->rect.h)
+    {
+      matching_media_backgrounds += 1;
+    }
+  }
+
+  B32 canonical_geometry =
+    media->rect.x == body.x &&
+    media->rect.y == body.y &&
+    media->rect.w == body.w &&
+    media->rect.h == (S32)canonical_height &&
+    presentation_row->row_rect.h == (S32)canonical_height &&
+    media->rect.h <= body.h &&
+    media->rect.h > 320;
+  S64 aspect_delta = (S64)fit_w * (S64)image->src_h -
+                     (S64)fit_h * (S64)image->src_w;
+  if (aspect_delta < 0) { aspect_delta = -aspect_delta; }
+  B32 aspect_preserved =
+    aspect_delta <= MAX(image->src_w, image->src_h);
+  if (!canonical_geometry || !aspect_preserved ||
+      matching_sprites != 1 || matching_media_backgrounds != 0 ||
+      !nearest_sampling)
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit_case result=fail case=%s reason=contract spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d canonical=%lld sprites=%u backgrounds=%u nearest=%d aspect=%d bmp=%s\n",
+            case_name,
+            app->frame.spine_index,
+            (unsigned long long)app->frame.page_index,
+            visual_units,
+            app->layout_key.line_height,
+            body.w, body.h,
+            media->rect.w, media->rect.h,
+            fit_w, fit_h,
+            image->src_w, image->src_h,
+            (long long)canonical_height,
+            matching_sprites,
+            matching_media_backgrounds,
+            nearest_sampling,
+            aspect_preserved,
+            bmp_path);
+    return 0;
+  }
+
+  *out_evidence = (Lectern0ReaderImageFitEvidence){
+    .spine_index = app->frame.spine_index,
+    .page_index = app->frame.page_index,
+    .visual_units = visual_units,
+    .line_height_px = app->layout_key.line_height,
+    .body_width_px = body.w,
+    .body_height_px = body.h,
+    .media_width_px = media->rect.w,
+    .media_height_px = media->rect.h,
+    .fit_width_px = fit_w,
+    .fit_height_px = fit_h,
+    .source_width_px = image->src_w,
+    .source_height_px = image->src_h,
+    .pixel_hash = pixel_hash,
+    .presentation_hash = app->presentation_hash,
+  };
+  fprintf(stdout,
+          "lectern0_reader_image_fit_case result=pass case=%s spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d sampling=nearest pixel=%016llx presentation=%016llx bmp=%s\n",
+          case_name,
+          out_evidence->spine_index,
+          (unsigned long long)out_evidence->page_index,
+          out_evidence->visual_units,
+          out_evidence->line_height_px,
+          out_evidence->body_width_px,
+          out_evidence->body_height_px,
+          out_evidence->media_width_px,
+          out_evidence->media_height_px,
+          out_evidence->fit_width_px,
+          out_evidence->fit_height_px,
+          out_evidence->source_width_px,
+          out_evidence->source_height_px,
+          (unsigned long long)out_evidence->pixel_hash,
+          (unsigned long long)out_evidence->presentation_hash,
+          bmp_path);
+  return 1;
+}
+
+FUNCTION int
+lectern0_run_reader_image_fit_smoke(const char *epub_path,
+                                    const char *output_prefix)
+{
+  enum { Width = 1182, Height = 713, CaseCount = 4 };
+  static const char *case_names[CaseCount] = {
+    "cover", "maps_1", "maps_2", "maps_3",
+  };
+  Lectern0App app = {0};
+  U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
+  Lectern0ReaderImageFitEvidence evidence[CaseCount] = {0};
+  RenderBuffer buffer = {0};
+  char bmp_path[Lectern0PathCap] = {0};
+  int result = 1;
+  if (!pixels || !epub_path || !epub_path[0] ||
+      !output_prefix || !output_prefix[0] ||
+      !lectern0_app_init(&app, Width, Height, 1, 0))
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit result=fail reason=setup\n");
+    goto cleanup;
+  }
+  app.theme = Lectern0Theme_Dark;
+  if (!lectern0_open_path(&app, epub_path))
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit result=fail reason=open\n");
+    goto cleanup;
+  }
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+
+  (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                    "%s_%s.bmp", output_prefix, case_names[0]);
+  if (!lectern0_capture_reader_image_fit_evidence(
+        &app, &buffer, case_names[0], bmp_path, evidence + 0))
+  {
+    goto cleanup;
+  }
+
+  U32 nav_count = 0;
+  EpubReaderNavPointResult navigation = {0};
+  if (doc_engine_get_nav_point_count(epub_reader_engine(&app.reader),
+                                     epub_reader_document_id(&app.reader),
+                                     &nav_count) != DocError_Ok ||
+      nav_count == 0 ||
+      lectern0_navigate_to_nav_point(&app, 0, &navigation) !=
+        EpubReaderResult_Ok ||
+      app.reader.active_spine_index != 9)
+  {
+    fprintf(stderr,
+            "lectern0_reader_image_fit result=fail reason=maps_navigation nav_count=%u spine=%u\n",
+            nav_count, app.reader.active_spine_index);
+    goto cleanup;
+  }
+
+  for (U32 case_index = 1; case_index < CaseCount; case_index += 1)
+  {
+    if (case_index > 1 &&
+        lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+    {
+      fprintf(stderr,
+              "lectern0_reader_image_fit result=fail reason=maps_page case=%u\n",
+              case_index);
+      goto cleanup;
+    }
+    (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                      "%s_%s.bmp", output_prefix, case_names[case_index]);
+    if (!lectern0_capture_reader_image_fit_evidence(
+          &app, &buffer, case_names[case_index], bmp_path,
+          evidence + case_index))
+    {
+      goto cleanup;
+    }
+  }
+
+  fprintf(stdout,
+          "lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=%dx%d image_only=4 canonical_units=reader0 cap320=absent sampling=nearest hashes=%016llx,%016llx,%016llx,%016llx output=%s\n",
+          Width, Height,
+          (unsigned long long)evidence[0].pixel_hash,
+          (unsigned long long)evidence[1].pixel_hash,
+          (unsigned long long)evidence[2].pixel_hash,
+          (unsigned long long)evidence[3].pixel_hash,
+          output_prefix);
+  result = 0;
+
+cleanup:
+  if (pixels) { free(pixels); }
+  lectern0_app_release(&app);
+  return result;
 }
 
 FUNCTION U64
@@ -14486,6 +14838,10 @@ main(int argc, char **argv)
   {
     result = lectern0_run_image_smoke(argv[2], argv[3], argv[4]);
   }
+  else if (argc == 4 && strcmp(argv[1], "--reader-image-fit-smoke") == 0)
+  {
+    result = lectern0_run_reader_image_fit_smoke(argv[2], argv[3]);
+  }
   else if (argc == 4 && strcmp(argv[1], "--reader-view-smoke") == 0)
   {
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
@@ -14553,7 +14909,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 
