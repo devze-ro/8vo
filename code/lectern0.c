@@ -17,6 +17,7 @@
 #include "presentation_engine/presentation_engine.h"
 #include "render/render.h"
 #include "text_engine/text_engine_display_row.h"
+#include "text_engine/text_engine_display_span_row.h"
 
 #if !defined(PRESENTATION_ENGINE_API_VERSION)
 #  error "zero_foundation presentation_engine.h must define PRESENTATION_ENGINE_API_VERSION"
@@ -74,6 +75,7 @@ enum
   Lectern0ReaderViewNoteAdvanceFallback = 9,
   Lectern0ReaderViewNoteTerminalCaretGap = 1,
   Lectern0DisplayRowStopCap = 1024,
+  Lectern0DisplaySpanCap = EPUB_READER_FRAME_STYLE_FRAGMENT_CAP * 2 + 1,
 };
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
@@ -146,6 +148,31 @@ typedef struct Lectern0ReaderContentTheme
   U32 user_highlight;
   U32 note_marker;
 } Lectern0ReaderContentTheme;
+
+typedef struct Lectern0ReaderSpanStyle
+{
+  DocTextStyleFlags flags;
+  U32 scale_permille;
+  S32 scale_px;
+  U32 font_family_hint;
+  U32 font_face_index;
+  U32 color;
+  TextEngineResolvedStyle resolved;
+} Lectern0ReaderSpanStyle;
+
+typedef struct Lectern0ReaderStyledRow
+{
+  TextEngineDisplaySpanRow display;
+  U32 local_start;
+  U32 local_end;
+  U32 span_count;
+  U32 stop_count;
+  U32 justify_space_count;
+  S32 justify_extra_px;
+  U32 justify_extra_remainder;
+  S32 natural_width;
+  S32 fill_h;
+} Lectern0ReaderStyledRow;
 
 typedef struct Lectern0DrawAdapterStats
 {
@@ -447,6 +474,8 @@ typedef struct Lectern0App
   Lectern0Theme theme;
   B32 distraction_free;
   Lectern0Fullscreen fullscreen;
+  TextEngineDisplaySpan reader_display_spans[Lectern0DisplaySpanCap];
+  Lectern0ReaderSpanStyle reader_span_styles[Lectern0DisplaySpanCap];
   TextEngineDisplayRowStop reader_display_stops[Lectern0DisplayRowStopCap];
   B32 selection_dragging;
   U64 selection_anchor_byte;
@@ -5422,10 +5451,119 @@ lectern0_reader_block_style_flags(const EpubReaderFrameStyleRow *row)
   return result;
 }
 
+FUNCTION DocTextStyleFlags
+lectern0_reader_apply_text_style_flags(DocTextStyleFlags base,
+                                       DocTextStyleFlags incoming)
+{
+  DocTextStyleFlags result =
+    base | (incoming & ~(DocTextStyleFlag_Underline |
+                         DocTextStyleFlag_NoUnderline |
+                         DocTextStyleFlag_SmallCaps |
+                         DocTextStyleFlag_NormalCaps));
+  if (incoming & DocTextStyleFlag_NoUnderline)
+  {
+    result &= ~DocTextStyleFlag_Underline;
+    result |= DocTextStyleFlag_NoUnderline;
+  }
+  if (incoming & DocTextStyleFlag_Underline)
+  {
+    result &= ~DocTextStyleFlag_NoUnderline;
+    result |= DocTextStyleFlag_Underline;
+  }
+  if (incoming & DocTextStyleFlag_NormalCaps)
+  {
+    result &= ~DocTextStyleFlag_SmallCaps;
+    result |= DocTextStyleFlag_NormalCaps;
+  }
+  if (incoming & DocTextStyleFlag_SmallCaps)
+  {
+    result &= ~DocTextStyleFlag_NormalCaps;
+    result |= DocTextStyleFlag_SmallCaps;
+  }
+  return result;
+}
+
+FUNCTION void
+lectern0_reader_segment_style(const Lectern0App *app,
+                              const EpubReaderFrameStyleRow *row,
+                              U32 row_size,
+                              U32 segment_start,
+                              U32 *out_segment_end,
+                              DocTextStyleFlags *out_flags,
+                              U32 *out_font_scale_permille,
+                              U32 *out_font_family_hint,
+                              U32 *out_font_face_index,
+                              U32 *out_text_color_rgb,
+                              B32 *out_has_text_color)
+{
+  U32 segment_end = row_size;
+  DocTextStyleFlags flags = lectern0_reader_block_style_flags(row);
+  U32 font_scale_permille = 1000;
+  U32 font_family_hint = row ? row->font_family_hint : 0;
+  U32 font_face_index = row ? row->font_face_index :
+    DOC_EMBEDDED_FONT_FACE_INDEX_NONE;
+  U32 text_color_rgb = row ? row->text_color_rgb : 0;
+  B32 has_text_color = row ? row->has_text_color : 0;
+
+  if (app && row && row->style_fragment_count > 0 &&
+      row->first_style_fragment_index < app->frame.style_fragment_count)
+  {
+    U32 first = row->first_style_fragment_index;
+    U32 end = MIN(first + row->style_fragment_count,
+                  app->frame.style_fragment_count);
+    for (U32 index = first; index < end; index += 1)
+    {
+      const EpubReaderFrameStyleFragment *fragment =
+        app->frame.style_fragments + index;
+      if (fragment->row != row->row ||
+          fragment->byte_end <= fragment->byte_start)
+      {
+        continue;
+      }
+      U32 fragment_start = MIN(fragment->byte_start, row_size);
+      U32 fragment_end = MIN(fragment->byte_end, row_size);
+      if (fragment_end <= fragment_start) { continue; }
+
+      if (fragment_start <= segment_start && segment_start < fragment_end)
+      {
+        flags = lectern0_reader_apply_text_style_flags(flags, fragment->flags);
+        if (fragment->font_scale_permille != 0)
+          font_scale_permille = fragment->font_scale_permille;
+        if (fragment->font_family_hint != 0)
+          font_family_hint = fragment->font_family_hint;
+        if (fragment->font_face_index != DOC_EMBEDDED_FONT_FACE_INDEX_NONE)
+          font_face_index = fragment->font_face_index;
+        if (fragment->has_text_color)
+        {
+          text_color_rgb = fragment->text_color_rgb;
+          has_text_color = 1;
+        }
+        segment_end = MIN(segment_end, fragment_end);
+      }
+      else if (fragment_start > segment_start)
+      {
+        segment_end = MIN(segment_end, fragment_start);
+      }
+    }
+  }
+  if (segment_end <= segment_start)
+    segment_end = MIN(segment_start + 1, row_size);
+
+  if (out_segment_end) *out_segment_end = segment_end;
+  if (out_flags) *out_flags = flags;
+  if (out_font_scale_permille) *out_font_scale_permille = font_scale_permille;
+  if (out_font_family_hint) *out_font_family_hint = font_family_hint;
+  if (out_font_face_index) *out_font_face_index = font_face_index;
+  if (out_text_color_rgb) *out_text_color_rgb = text_color_rgb;
+  if (out_has_text_color) *out_has_text_color = has_text_color;
+}
+
 FUNCTION B32
 lectern0_push_reader_text_chunks(Lectern0App *app,
                                  String8 text,
-                                 const EpubReaderFrameStyleRow *row,
+                                 DocTextStyleFlags style_flags,
+                                 U32 font_family_hint,
+                                 U32 font_face_index,
                                  const TextEngineResolvedStyle *style,
                                  S32 x,
                                  S32 top_y,
@@ -5436,14 +5574,13 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
                                  S32 clip_w,
                                  S32 clip_h)
 {
-  if (!app || !row || !style || !text.str) { return 0; }
+  if (!app || !style || !text.str) { return 0; }
   U32 measure_scale_permille = (U32)MAX(
     ((S64)scale * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
       MAX(app->layout_key.text_scale, 1),
     1);
   FontTag render_tag =
     font_cache_tag_from_provider(&app->render_state.text_cache, style->provider);
-  DocTextStyleFlags block_style_flags = lectern0_reader_block_style_flags(row);
   U64 at = 0;
   while (at < text.size)
   {
@@ -5477,10 +5614,10 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
     }
     x += epub_reader_typography_measure_text(&app->reader.typography,
                                              chunk,
-                                             block_style_flags,
+                                             style_flags,
                                              measure_scale_permille,
-                                             row->font_family_hint,
-                                             row->font_face_index);
+                                             font_family_hint,
+                                             font_face_index);
     at = end;
   }
   return 1;
@@ -5626,6 +5763,373 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
   }
 
   *out_metrics = metrics;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_reader_row_has_safe_justification_styles(
+  const Lectern0App *app,
+  const EpubReaderFrameStyleRow *row)
+{
+  if (!app || !row) { return 0; }
+  DocTextStyleFlags safe = DocTextStyleFlag_Italic |
+                           DocTextStyleFlag_Bold |
+                           DocTextStyleFlag_Underline |
+                           DocTextStyleFlag_SmallCaps |
+                           DocTextStyleFlag_NormalCaps |
+                           DocTextStyleFlag_NoUnderline;
+  if ((lectern0_reader_block_style_flags(row) & ~safe) != 0) { return 0; }
+  U32 first = row->first_style_fragment_index;
+  if (row->style_fragment_count > 0 &&
+      (first >= app->frame.style_fragment_count ||
+       row->style_fragment_count > app->frame.style_fragment_count - first))
+  {
+    return 0;
+  }
+  U32 end = first + row->style_fragment_count;
+  for (U32 index = first; index < end; index += 1)
+  {
+    const EpubReaderFrameStyleFragment *fragment =
+      app->frame.style_fragments + index;
+    if (fragment->row == row->row && (fragment->flags & ~safe) != 0)
+      return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
+lectern0_reader_row_is_soft_wrapped(const Lectern0App *app,
+                                    const EpubReaderFrameStyleRow *row)
+{
+  if (!app || !row) { return 0; }
+  U32 end = MIN(row->byte_end, (U32)app->frame.visible_text.size);
+  return ((end < app->frame.visible_text.size &&
+           app->frame.visible_text.str[end] == ' ') ||
+          (end > row->byte_start && app->frame.visible_text.str[end - 1] == ' '));
+}
+
+FUNCTION B32
+lectern0_reader_row_allows_justification(const Lectern0App *app,
+                                         const EpubReaderFrameStyleRow *row,
+                                         U32 row_size)
+{
+  B32 kind_allows = row && row->text_align == DocTextAlign_Justify &&
+    (row->block_kind == DocTextBlockKind_Paragraph ||
+     (row->block_kind == DocTextBlockKind_Blockquote &&
+      lectern0_reader_row_is_soft_wrapped(app, row)));
+  B32 margin_allows = row &&
+    (row->margin_left_cols == 0 ||
+     (row->block_kind == DocTextBlockKind_Blockquote &&
+      row->margin_left_cols <= 8));
+  return (kind_allows && !row->block_last_row && row->heading_level == 0 &&
+          row_size >= 8 && margin_allows &&
+          lectern0_reader_row_has_safe_justification_styles(app, row));
+}
+
+FUNCTION S32
+lectern0_reader_justification_extra_cap_per_space(U32 space_count,
+                                                  S32 natural_space_w)
+{
+  if (space_count == 0) { return 0; }
+  natural_space_w = MAX(natural_space_w, 1);
+  S32 ratio_cap = 4;
+  S32 absolute_cap = 4;
+  if (space_count >= 7)
+  {
+    ratio_cap = natural_space_w * 2;
+    absolute_cap = 12;
+  }
+  else if (space_count >= 5)
+  {
+    ratio_cap = natural_space_w * 3;
+    absolute_cap = 14;
+  }
+  else if (space_count >= 3)
+  {
+    ratio_cap = natural_space_w;
+    absolute_cap = 6;
+  }
+  return MAX(MIN(ratio_cap, absolute_cap), 0);
+}
+
+FUNCTION S32
+lectern0_reader_row_justification_extra_cap_per_space(
+  const EpubReaderFrameStyleRow *row,
+  U32 space_count,
+  S32 natural_space_w,
+  S32 natural_w,
+  S32 available_w)
+{
+  S32 result = lectern0_reader_justification_extra_cap_per_space(
+    space_count, natural_space_w);
+  if (row && row->block_kind == DocTextBlockKind_Paragraph &&
+      row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
+      row->margin_left_cols == 0 && row->text_indent_cols <= 4 &&
+      (row->text_indent_cols <= 2 || row->line_row > 0 || space_count <= 4) &&
+      space_count >= 3 && natural_w > 0 && available_w > 0 &&
+      natural_w * 10 >= available_w * 7)
+  {
+    S32 ratio_cap = natural_space_w *
+      ((row->text_indent_cols > 0 && space_count <= 4) ? 6 : 5);
+    S32 absolute_cap = row->text_indent_cols == 0 ? 24 :
+      (space_count <= 4 ? 34 : 28);
+    result = MAX(result, MIN(ratio_cap, absolute_cap));
+  }
+  if (row && row->block_kind == DocTextBlockKind_Blockquote)
+  {
+    S32 ratio_cap = natural_space_w * (space_count <= 4 ? 6 : 5);
+    S32 absolute_cap = space_count <= 4 ? 28 : 24;
+    result = MAX(result, MIN(ratio_cap, absolute_cap));
+  }
+  if (row && row->line_row == 0 && row->text_indent_cols > 0 &&
+      space_count >= 4)
+  {
+    result = MAX(result, MIN(natural_space_w * 4, 20));
+  }
+  B32 low_indent_fill = row &&
+    row->block_kind == DocTextBlockKind_Paragraph &&
+    row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
+    row->margin_left_cols == 0 && row->text_indent_cols <= 4 &&
+    (row->text_indent_cols <= 2 || row->line_row == 0) &&
+    space_count >= 5 && natural_w > 0 && available_w > natural_w &&
+    natural_w * 20 >= available_w * 13;
+  B32 indented_fill = row &&
+    row->block_kind == DocTextBlockKind_Paragraph &&
+    row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
+    row->margin_left_cols == 0 && row->text_indent_cols > 4 &&
+    row->text_indent_cols <= 8 && row->line_row > 0 && space_count >= 5 &&
+    natural_w > 0 && available_w > natural_w &&
+    natural_w * 4 >= available_w * 3;
+  if (low_indent_fill || indented_fill)
+  {
+    S32 slack = available_w - natural_w;
+    S32 needed = (slack + (S32)space_count - 1) / (S32)space_count;
+    S32 fill_cap = MAX(natural_space_w * 8, 40);
+    if (indented_fill) { fill_cap = MIN(natural_space_w * 4, 24); }
+    if (needed <= fill_cap) { result = MAX(result, needed); }
+  }
+  return MAX(result, 0);
+}
+
+FUNCTION S32
+lectern0_reader_justification_remainder_for_space(U32 space_index,
+                                                  U32 space_count,
+                                                  U32 remainder)
+{
+  if (space_count == 0 || remainder == 0 || space_index >= space_count)
+    return 0;
+  U32 before = (space_index * remainder) / space_count;
+  U32 after = ((space_index + 1) * remainder) / space_count;
+  return after > before ? 1 : 0;
+}
+
+FUNCTION B32
+lectern0_reader_styled_row_build(
+  Lectern0App *app,
+  const EpubReaderFrameStyleRow *row,
+  const PresentationEngineBlockFlowRow *presentation_row,
+  U32 local_start,
+  U32 local_end,
+  Lectern0ReaderStyledRow *out_row)
+{
+  if (out_row) { MemoryZeroStruct(out_row); }
+  if (!app || !row || !presentation_row || !out_row ||
+      local_end <= local_start || local_start < row->byte_start)
+  {
+    return 0;
+  }
+  Lectern0PresentationRowMetrics metrics = {0};
+  if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics))
+    return 0;
+
+  U32 row_size = local_end - local_start;
+  U32 span_count = 0;
+  U32 segment_start = 0;
+  S32 natural_width = 0;
+  S32 fill_h = 1;
+  B32 dark = lectern0_theme_profile(app->theme).appearance ==
+             UI0AppearanceMode_Dark;
+  while (segment_start < row_size)
+  {
+    if (span_count >= Lectern0DisplaySpanCap) { return 0; }
+    U32 segment_end = row_size;
+    DocTextStyleFlags flags = 0;
+    U32 inline_scale_permille = 1000;
+    U32 family = row->font_family_hint;
+    U32 face = row->font_face_index;
+    U32 text_color_rgb = row->text_color_rgb;
+    B32 has_text_color = row->has_text_color;
+    lectern0_reader_segment_style(app, row, row_size, segment_start,
+                                  &segment_end, &flags,
+                                  &inline_scale_permille, &family, &face,
+                                  &text_color_rgb, &has_text_color);
+    if (segment_end <= segment_start) { return 0; }
+    S32 scale = (S32)MAX(
+      ((S64)metrics.scale_px * (S64)MAX(inline_scale_permille, 1U) + 500) /
+        1000,
+      8);
+    U32 scale_permille = (U32)MAX(
+      ((S64)scale * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
+        MAX(app->layout_key.text_scale, 1),
+      1);
+    U32 color = dark ? app->reader_content_theme.ink :
+      (has_text_color ? text_color_rgb : app->reader_content_theme.ink);
+    String8 segment_text = str8(app->frame.visible_text.str + local_start +
+                                segment_start,
+                                segment_end - segment_start);
+    S32 segment_width = epub_reader_typography_measure_text(
+      &app->reader.typography, segment_text, flags, scale_permille,
+      family, face);
+    Lectern0ReaderSpanStyle *span_style =
+      app->reader_span_styles + span_count;
+    *span_style = (Lectern0ReaderSpanStyle){
+      .flags = flags,
+      .scale_permille = scale_permille,
+      .scale_px = scale,
+      .font_family_hint = family,
+      .font_face_index = face,
+      .color = color,
+      .resolved = epub_reader_typography_style_for_doc_style(
+        &app->reader.typography, scale, color, family, face, flags, 0),
+    };
+    FontTextMetrics font_metrics = font_metrics_for_size(
+      span_style->resolved.provider, scale);
+    fill_h = MAX(fill_h, MAX(font_metrics.ascent_px + font_metrics.descent_px,
+                             MAX(font_metrics.glyph_height_px, 1)));
+    app->reader_display_spans[span_count] = (TextEngineDisplaySpan){
+      .source_range = {
+        .byte_start = app->frame.view_byte_offset + local_start + segment_start,
+        .byte_end = app->frame.view_byte_offset + local_start + segment_end,
+      },
+      .x = natural_width,
+      .w = MAX(segment_width, 0),
+      .style_index = span_count,
+    };
+    natural_width += MAX(segment_width, 0);
+    span_count += 1;
+    segment_start = segment_end;
+  }
+  if (span_count == 0) { return 0; }
+
+  U32 space_count = 0;
+  for (U32 index = 1; index + 1 < row_size; index += 1)
+  {
+    if (app->frame.visible_text.str[local_start + index] == ' ')
+      space_count += 1;
+  }
+  S32 extra_px = 0;
+  U32 extra_remainder = 0;
+  if (space_count > 0 &&
+      lectern0_reader_row_allows_justification(app, row, row_size) &&
+      presentation_row->content_rect.w > natural_width)
+  {
+    Lectern0ReaderSpanStyle base_style = app->reader_span_styles[0];
+    S32 natural_space_w = epub_reader_typography_measure_text(
+      &app->reader.typography, str8_from_cstr(" "), base_style.flags,
+      base_style.scale_permille, base_style.font_family_hint,
+      base_style.font_face_index);
+    S32 slack = presentation_row->content_rect.w - natural_width;
+    S32 max_slack = (S32)space_count *
+      lectern0_reader_row_justification_extra_cap_per_space(
+        row, space_count, natural_space_w, natural_width,
+        presentation_row->content_rect.w);
+    S32 applied = MIN(slack, max_slack);
+    if (applied > 0)
+    {
+      extra_px = applied / (S32)space_count;
+      extra_remainder = (U32)(applied % (S32)space_count);
+    }
+  }
+
+  U32 stop_count = 0;
+  U32 space_index = 0;
+  S32 visual_x = 0;
+  for (U32 span_index = 0; span_index < span_count; span_index += 1)
+  {
+    TextEngineDisplaySpan *span = app->reader_display_spans + span_index;
+    Lectern0ReaderSpanStyle *style = app->reader_span_styles + span_index;
+    U32 span_local_start = (U32)(span->source_range.byte_start -
+                                 app->frame.view_byte_offset);
+    U32 span_local_end = (U32)(span->source_range.byte_end -
+                               app->frame.view_byte_offset);
+    U32 first_stop = stop_count;
+    if (stop_count >= Lectern0DisplayRowStopCap) { return 0; }
+    app->reader_display_stops[stop_count++] = (TextEngineDisplayRowStop){
+      .source_byte = span->source_range.byte_start,
+      .x = 0,
+    };
+    S32 span_extra = 0;
+    U64 at = span_local_start;
+    while (at < span_local_end)
+    {
+      if (stop_count >= Lectern0DisplayRowStopCap) { return 0; }
+      U64 next = base_unicode_utf8_next_grapheme_boundary(
+        app->frame.visible_text, at);
+      if (next <= at || next > span_local_end) { return 0; }
+      if (next == at + 1 && app->frame.visible_text.str[at] == ' ' &&
+          at > local_start && at + 1 < local_end &&
+          space_index < space_count)
+      {
+        span_extra += extra_px +
+          lectern0_reader_justification_remainder_for_space(
+            space_index, space_count, extra_remainder);
+        space_index += 1;
+      }
+      String8 prefix = str8(app->frame.visible_text.str + span_local_start,
+                            next - span_local_start);
+      S32 prefix_width = epub_reader_typography_measure_text(
+        &app->reader.typography, prefix, style->flags,
+        style->scale_permille, style->font_family_hint,
+        style->font_face_index) + span_extra;
+      prefix_width = MAX(prefix_width,
+                         app->reader_display_stops[stop_count - 1].x);
+      app->reader_display_stops[stop_count++] = (TextEngineDisplayRowStop){
+        .source_byte = app->frame.view_byte_offset + next,
+        .x = prefix_width,
+      };
+      at = next;
+    }
+    span->stops = app->reader_display_stops + first_stop;
+    span->stop_count = stop_count - first_stop;
+    span->x = visual_x;
+    span->w = app->reader_display_stops[stop_count - 1].x;
+    visual_x += span->w;
+  }
+
+  S32 text_x = presentation_row->content_rect.x;
+  if (row->block_kind == DocTextBlockKind_Heading ||
+      row->text_align == DocTextAlign_Center)
+  {
+    text_x += MAX((presentation_row->content_rect.w - visual_x) / 2, 0);
+  }
+  else if (row->text_align == DocTextAlign_Right)
+  {
+    text_x += MAX(presentation_row->content_rect.w - visual_x, 0);
+  }
+  fill_h = MIN(fill_h, presentation_row->row_rect.h);
+  if (!text_engine_display_span_row_make(
+        &out_row->display,
+        app->reader_display_spans,
+        span_count,
+        (TextEngineSourceRange){
+          .byte_start = app->frame.view_byte_offset + local_start,
+          .byte_end = app->frame.view_byte_offset + local_end,
+        },
+        text_x,
+        presentation_row->row_rect.y,
+        fill_h))
+  {
+    return 0;
+  }
+  out_row->local_start = local_start;
+  out_row->local_end = local_end;
+  out_row->span_count = span_count;
+  out_row->stop_count = stop_count;
+  out_row->justify_space_count = space_count;
+  out_row->justify_extra_px = extra_px;
+  out_row->justify_extra_remainder = extra_remainder;
+  out_row->natural_width = natural_width;
+  out_row->fill_h = fill_h;
   return 1;
 }
 
@@ -5891,10 +6395,11 @@ lectern0_build_reader_presentation(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_display_row(Lectern0App *app,
-                            const EpubReaderFrameStyleRow *row,
-                            const PresentationEngineBlockFlowRow *presentation_row,
-                            TextEngineDisplayRow *out_display_row);
+lectern0_reader_display_span_row(
+  Lectern0App *app,
+  const EpubReaderFrameStyleRow *row,
+  const PresentationEngineBlockFlowRow *presentation_row,
+  TextEngineDisplaySpanRow *out_display_row);
 
 FUNCTION B32
 lectern0_reader_point_to_byte(Lectern0App *app,
@@ -5928,14 +6433,15 @@ lectern0_reader_point_to_byte(Lectern0App *app,
       continue;
     if (index >= app->frame.style_row_count) return 0;
     const EpubReaderFrameStyleRow *style_row = app->frame.style_rows + index;
-    TextEngineDisplayRow display_row = {0};
+    TextEngineDisplaySpanRow display_row = {0};
     U64 source_byte = 0;
     S32 caret_x = 0;
-    if (!lectern0_reader_display_row(app, style_row, row, &display_row) ||
-        !text_engine_display_row_source_byte_at_x(&display_row, x,
-                                                  &source_byte) ||
-        !text_engine_display_row_x_for_source_byte(&display_row, source_byte,
-                                                   &caret_x))
+    if (!lectern0_reader_display_span_row(app, style_row, row, &display_row) ||
+        !text_engine_display_span_row_source_byte_at_x(&display_row, x,
+                                                       &source_byte) ||
+        !text_engine_display_span_row_x_for_source_byte(&display_row,
+                                                        source_byte,
+                                                        &caret_x))
       return 0;
     *out_byte = source_byte;
     *out_anchor_rect = ui0_rect(caret_x - 2, rect.y, 4, rect.h);
@@ -6074,12 +6580,7 @@ lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
 typedef struct Lectern0ReaderRowMeasure
 {
   B32 valid;
-  U32 local_start;
-  U32 local_end;
-  DocTextStyleFlags style_flags;
-  U32 scale_permille;
-  S32 text_x;
-  S32 fill_h;
+  Lectern0ReaderStyledRow styled;
 } Lectern0ReaderRowMeasure;
 
 FUNCTION B32
@@ -6095,56 +6596,10 @@ lectern0_reader_row_measure(Lectern0App *app,
       local_end <= local_start)
     return 0;
 
-  Lectern0PresentationRowMetrics metrics = {0};
-  if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics))
-    return 0;
-
-  DocTextStyleFlags style_flags = lectern0_reader_block_style_flags(row);
-  U32 scale_permille = (U32)MAX(
-    ((S64)metrics.scale_px * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
-      MAX(app->layout_key.text_scale, 1),
-    1);
-  String8 row_text = str8(app->frame.visible_text.str + local_start,
-                          local_end - local_start);
-  S32 row_text_width = epub_reader_typography_measure_text(
-    &app->reader.typography,
-    row_text,
-    style_flags,
-    scale_permille,
-    row->font_family_hint,
-    row->font_face_index);
-  S32 text_x = presentation_row->content_rect.x;
-  if (row->block_kind == DocTextBlockKind_Heading ||
-      row->text_align == DocTextAlign_Center)
-  {
-    text_x += MAX((presentation_row->content_rect.w - row_text_width) / 2, 0);
-  }
-  else if (row->text_align == DocTextAlign_Right)
-  {
-    text_x += MAX(presentation_row->content_rect.w - row_text_width, 0);
-  }
-  TextEngineResolvedStyle style =
-    epub_reader_typography_style_for_doc_style(&app->reader.typography,
-                                                metrics.scale_px,
-                                                lectern0_reader_ink_color(app),
-                                                row->font_family_hint,
-                                                row->font_face_index,
-                                                style_flags,
-                                                0);
-  FontTextMetrics font_metrics = font_metrics_for_size(style.provider,
-                                                       metrics.scale_px);
-  S32 fill_h = MAX(font_metrics.ascent_px + font_metrics.descent_px,
-                   MAX(font_metrics.glyph_height_px, 1));
-  *out_measure = (Lectern0ReaderRowMeasure){
-    .valid = 1,
-    .local_start = local_start,
-    .local_end = local_end,
-    .style_flags = style_flags,
-    .scale_permille = scale_permille,
-    .text_x = text_x,
-    .fill_h = MIN(fill_h, presentation_row->row_rect.h),
-  };
-  return 1;
+  out_measure->valid = lectern0_reader_styled_row_build(
+    app, row, presentation_row, local_start, local_end,
+    &out_measure->styled);
+  return out_measure->valid;
 }
 
 FUNCTION S32
@@ -6156,25 +6611,24 @@ lectern0_reader_row_x_for_local_byte(
 {
   if (!app || !row || !measure || !measure->valid)
     return 0;
-  local_byte = MIN(MAX(local_byte, measure->local_start), measure->local_end);
-  String8 prefix = str8(app->frame.visible_text.str + measure->local_start,
-                        local_byte - measure->local_start);
-  return measure->text_x + epub_reader_typography_measure_text(
-    &app->reader.typography,
-    prefix,
-    measure->style_flags,
-    measure->scale_permille,
-    row->font_family_hint,
-    row->font_face_index);
+  local_byte = MIN(MAX(local_byte, measure->styled.local_start),
+                   measure->styled.local_end);
+  S32 result = measure->styled.display.x;
+  (void)text_engine_display_span_row_x_for_source_byte(
+    &measure->styled.display,
+    app->frame.view_byte_offset + local_byte,
+    &result);
+  return result;
 }
 
 FUNCTION B32
-lectern0_reader_display_row(Lectern0App *app,
-                            const EpubReaderFrameStyleRow *row,
-                            const PresentationEngineBlockFlowRow *presentation_row,
-                            TextEngineDisplayRow *out_display_row)
+lectern0_reader_display_span_row(
+  Lectern0App *app,
+  const EpubReaderFrameStyleRow *row,
+  const PresentationEngineBlockFlowRow *presentation_row,
+  TextEngineDisplaySpanRow *out_display_row)
 {
-  if (out_display_row) *out_display_row = (TextEngineDisplayRow){0};
+  if (out_display_row) *out_display_row = (TextEngineDisplaySpanRow){0};
   if (!app || !row || !presentation_row || !out_display_row)
     return 0;
 
@@ -6188,54 +6642,12 @@ lectern0_reader_display_row(Lectern0App *app,
   }
   if (local_end <= local_start) return 0;
 
-  Lectern0ReaderRowMeasure measure = {0};
-  if (!lectern0_reader_row_measure(app, row, presentation_row,
-                                   local_start, local_end, &measure))
+  Lectern0ReaderStyledRow styled = {0};
+  if (!lectern0_reader_styled_row_build(app, row, presentation_row,
+                                        local_start, local_end, &styled))
     return 0;
-
-  U64 source_base = app->frame.view_byte_offset;
-  U64 stop_count = 1;
-  app->reader_display_stops[0] = (TextEngineDisplayRowStop){
-    .source_byte = source_base + local_start,
-    .x = 0,
-  };
-  U64 local_byte = local_start;
-  while (local_byte < local_end)
-  {
-    if (stop_count >= ARRAY_COUNT(app->reader_display_stops)) return 0;
-    U64 next = base_unicode_utf8_next_grapheme_boundary(
-      app->frame.visible_text, local_byte);
-    if (next <= local_byte) return 0;
-    next = MIN(next, local_end);
-    String8 prefix = str8(app->frame.visible_text.str + local_start,
-                          next - local_start);
-    S32 prefix_width = epub_reader_typography_measure_text(
-      &app->reader.typography,
-      prefix,
-      measure.style_flags,
-      measure.scale_permille,
-      row->font_family_hint,
-      row->font_face_index);
-    prefix_width = MAX(prefix_width,
-                       app->reader_display_stops[stop_count - 1].x);
-    app->reader_display_stops[stop_count++] = (TextEngineDisplayRowStop){
-      .source_byte = source_base + next,
-      .x = prefix_width,
-    };
-    local_byte = next;
-  }
-
-  return text_engine_display_row_make(
-    out_display_row,
-    app->reader_display_stops,
-    stop_count,
-    (TextEngineSourceRange){
-      .byte_start = source_base + local_start,
-      .byte_end = source_base + local_end,
-    },
-    measure.text_x,
-    presentation_row->row_rect.y,
-    measure.fill_h);
+  *out_display_row = styled.display;
+  return 1;
 }
 
 FUNCTION void
@@ -6250,17 +6662,18 @@ lectern0_reader_row_range_x(Lectern0App *app,
                             S32 *out_x1)
 {
   if (!out_x0 || !out_x1) return;
-  TextEngineDisplayRow display_row = {0};
+  TextEngineDisplaySpanRow display_row = {0};
   TextEngineRowRect range_rect = {0};
   U64 source_base = app ? app->frame.view_byte_offset : 0;
   U64 source_start = source_base + (U64)row->byte_start + start;
   U64 source_end = source_base + (U64)row->byte_start + end;
-  if (lectern0_reader_display_row(app, row, presentation_row, &display_row))
+  if (lectern0_reader_display_span_row(app, row, presentation_row,
+                                       &display_row))
   {
     if (source_start == source_end)
     {
       S32 caret_x = 0;
-      if (text_engine_display_row_x_for_source_byte(
+      if (text_engine_display_span_row_x_for_source_byte(
             &display_row, source_start, &caret_x))
       {
         *out_x0 = caret_x;
@@ -6268,7 +6681,7 @@ lectern0_reader_row_range_x(Lectern0App *app,
         return;
       }
     }
-    else if (text_engine_display_row_range_rect_from_source_range(
+    else if (text_engine_display_span_row_range_rect_from_source_range(
                &display_row, source_start, source_end, &range_rect))
     {
       *out_x0 = range_rect.x;
@@ -6394,7 +6807,7 @@ lectern0_draw_row_highlights(Lectern0App *app,
                              x0,
                              presentation_row->row_rect.y,
                              MAX(x1 - x0, 1),
-                             MAX(row_measure.fill_h, 1),
+                             MAX(row_measure.styled.fill_h, 1),
                              color);
       }
     }
@@ -6416,6 +6829,95 @@ lectern0_draw_row_highlights(Lectern0App *app,
                                  MAX(x1 - x0, 3), presentation_row->row_rect.h,
                                  2, color, color);
   }
+}
+
+FUNCTION B32
+lectern0_draw_reader_styled_row(
+  Lectern0App *app,
+  const EpubReaderFrameStyleRow *row,
+  const PresentationEngineBlockFlowRow *presentation_row,
+  U32 local_start,
+  U32 local_end,
+  S32 clip_x,
+  S32 clip_y,
+  S32 clip_w,
+  S32 clip_h)
+{
+  if (!app || !row || !presentation_row || local_end <= local_start)
+    return 0;
+  Lectern0ReaderStyledRow styled = {0};
+  if (!lectern0_reader_styled_row_build(app, row, presentation_row,
+                                        local_start, local_end, &styled))
+    return 0;
+
+  for (U32 span_index = 0; span_index < styled.span_count; span_index += 1)
+  {
+    const TextEngineDisplaySpan *span = styled.display.spans + span_index;
+    if (span->style_index >= styled.span_count) { return 0; }
+    const Lectern0ReaderSpanStyle *style =
+      app->reader_span_styles + span->style_index;
+    if (styled.justify_extra_px == 0 &&
+        styled.justify_extra_remainder == 0)
+    {
+      U64 local_span_start =
+        span->source_range.byte_start - app->frame.view_byte_offset;
+      String8 span_text = str8(
+        app->frame.visible_text.str + local_span_start,
+        span->source_range.byte_end - span->source_range.byte_start);
+      if (!lectern0_push_reader_text_chunks(
+            app, span_text, style->flags, style->font_family_hint,
+            style->font_face_index, &style->resolved,
+            styled.display.x + span->x,
+            presentation_row->row_rect.y, style->scale_px, style->color,
+            clip_x, clip_y, clip_w, clip_h))
+      {
+        return 0;
+      }
+      continue;
+    }
+    U64 source_at = span->source_range.byte_start;
+    while (source_at < span->source_range.byte_end)
+    {
+      U64 run_end = source_at;
+      while (run_end < span->source_range.byte_end)
+      {
+        U64 local_at = run_end - app->frame.view_byte_offset;
+        U64 next = base_unicode_utf8_next_grapheme_boundary(
+          app->frame.visible_text, local_at);
+        if (next <= local_at ||
+            app->frame.view_byte_offset + next > span->source_range.byte_end)
+        {
+          return 0;
+        }
+        run_end = app->frame.view_byte_offset + next;
+        if (next == local_at + 1 &&
+            app->frame.visible_text.str[local_at] == ' ')
+        {
+          break;
+        }
+      }
+      if (run_end <= source_at) { return 0; }
+      S32 run_x = styled.display.x;
+      if (!text_engine_display_span_row_x_for_source_byte(
+            &styled.display, source_at, &run_x))
+      {
+        return 0;
+      }
+      U64 local_run_start = source_at - app->frame.view_byte_offset;
+      String8 text = str8(app->frame.visible_text.str + local_run_start,
+                          run_end - source_at);
+      if (!lectern0_push_reader_text_chunks(
+            app, text, style->flags, style->font_family_hint,
+            style->font_face_index, &style->resolved, run_x,
+            presentation_row->row_rect.y, style->scale_px, style->color,
+            clip_x, clip_y, clip_w, clip_h))
+      {
+        return 0;
+      }
+      source_at = run_end;
+    }
+  }
+  return 1;
 }
 
 FUNCTION void
@@ -6493,9 +6995,6 @@ lectern0_draw_reader_page(Lectern0App *app)
       app->presentation_complete = 0;
       break;
     }
-    S32 x = presentation_row->content_rect.x;
-    S32 y = presentation_row->row_rect.y;
-
     EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
     if (image)
     {
@@ -6598,55 +7097,15 @@ lectern0_draw_reader_page(Lectern0App *app)
     if (end > start)
     {
       lectern0_draw_row_highlights(app, row, presentation_row);
-      String8 text = str8(app->frame.visible_text.str + start, end - start);
-      U32 color = lectern0_theme_profile(app->theme).appearance ==
-                    UI0AppearanceMode_Dark ?
-        lectern0_reader_ink_color(app) :
-        (row->has_text_color ? row->text_color_rgb : lectern0_reader_ink_color(app));
-      DocTextStyleFlags block_style_flags =
-        lectern0_reader_block_style_flags(row);
-      TextEngineResolvedStyle style =
-        epub_reader_typography_style_for_doc_style(&app->reader.typography,
-                                                    metrics.scale_px,
-                                                    color,
-                                                    row->font_family_hint,
-                                                    row->font_face_index,
-                                                    block_style_flags,
-                                                    0);
-      U32 measure_scale_permille = (U32)MAX(
-        ((S64)metrics.scale_px * 1000 + MAX(app->layout_key.text_scale, 1) / 2) /
-          MAX(app->layout_key.text_scale, 1),
-        1);
-      S32 measured_width = epub_reader_typography_measure_text(
-        &app->reader.typography,
-        text,
-        block_style_flags,
-        measure_scale_permille,
-        row->font_family_hint,
-        row->font_face_index);
-      if (row->block_kind == DocTextBlockKind_Heading ||
-          row->text_align == DocTextAlign_Center)
-      {
-        x = presentation_row->content_rect.x +
-          MAX((presentation_row->content_rect.w - measured_width) / 2, 0);
-      }
-      else if (row->text_align == DocTextAlign_Right)
-      {
-        x = presentation_row->content_rect.x +
-          MAX(presentation_row->content_rect.w - measured_width, 0);
-      }
-      if (!lectern0_push_reader_text_chunks(app,
-                                            text,
-                                            row,
-                                            &style,
-                                            x,
-                                            y,
-                                            metrics.scale_px,
-                                            color,
-                                            body_x,
-                                            body_y,
-                                            body_w,
-                                            body_h))
+      if (!lectern0_draw_reader_styled_row(app,
+                                           row,
+                                           presentation_row,
+                                           start,
+                                           end,
+                                           body_x,
+                                           body_y,
+                                           body_w,
+                                           body_h))
       {
         app->presentation_complete = 0;
       }
@@ -9650,12 +10109,12 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
        index < app.frame.style_row_count;
        index += 1)
   {
-    TextEngineDisplayRow display_row = {0};
-    if (!lectern0_reader_display_row(&app,
-                                     app.frame.style_rows + index,
-                                     app.presentation_frame.rows + index,
-                                     &display_row) ||
-        display_row.stop_count < 4)
+    TextEngineDisplaySpanRow display_row = {0};
+    if (!lectern0_reader_display_span_row(&app,
+                                          app.frame.style_rows + index,
+                                          app.presentation_frame.rows + index,
+                                          &display_row) ||
+        display_row.span_count == 0 || display_row.w <= 0)
       continue;
     if (selection_row_count < 2)
       selection_rows[selection_row_count++] = index;
@@ -9673,29 +10132,34 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
     goto cleanup;
   }
 
-  TextEngineDisplayRow start_row = {0};
-  if (!lectern0_reader_display_row(
+  TextEngineDisplaySpanRow start_row = {0};
+  if (!lectern0_reader_display_span_row(
         &app,
         app.frame.style_rows + selection_rows[0],
         app.presentation_frame.rows + selection_rows[0],
-        &start_row))
+        &start_row) || start_row.span_count == 0 ||
+      start_row.spans[0].stop_count < 2)
     goto cleanup;
-  U64 start_stop = MIN((U64)1, start_row.stop_count - 1);
-  expected_start = start_row.stops[start_stop].source_byte;
-  S32 start_x = start_row.x + start_row.stops[start_stop].x;
+  TextEngineDisplayRowStop start_stop = start_row.spans[0].stops[1];
+  expected_start = start_stop.source_byte;
+  S32 start_x = start_row.x + start_row.spans[0].x + start_stop.x;
   S32 start_y = app.presentation_frame.rows[selection_rows[0]].row_rect.y +
                 app.presentation_frame.rows[selection_rows[0]].row_rect.h / 2;
 
-  TextEngineDisplayRow end_row = {0};
-  if (!lectern0_reader_display_row(
+  TextEngineDisplaySpanRow end_row = {0};
+  if (!lectern0_reader_display_span_row(
         &app,
         app.frame.style_rows + selection_rows[1],
         app.presentation_frame.rows + selection_rows[1],
-        &end_row))
+        &end_row) || end_row.span_count == 0)
     goto cleanup;
-  U64 end_stop = end_row.stop_count - 2;
-  expected_end = end_row.stops[end_stop].source_byte;
-  S32 end_x = end_row.x + end_row.stops[end_stop].x;
+  const TextEngineDisplaySpan *last_end_span =
+    end_row.spans + end_row.span_count - 1;
+  if (last_end_span->stop_count < 2) goto cleanup;
+  TextEngineDisplayRowStop end_stop =
+    last_end_span->stops[last_end_span->stop_count - 2];
+  expected_end = end_stop.source_byte;
+  S32 end_x = end_row.x + last_end_span->x + end_stop.x;
   S32 end_y = app.presentation_frame.rows[selection_rows[1]].row_rect.y +
               app.presentation_frame.rows[selection_rows[1]].row_rect.h / 2;
   if (expected_end <= expected_start)
@@ -9732,11 +10196,11 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
       app.frame.style_rows + row_index;
     const PresentationEngineBlockFlowRow *presentation_row =
       app.presentation_frame.rows + row_index;
-    TextEngineDisplayRow display_row = {0};
+    TextEngineDisplaySpanRow display_row = {0};
     TextEngineRowRect expected_rect = {0};
-    if (!lectern0_reader_display_row(&app, style_row, presentation_row,
-                                     &display_row) ||
-        !text_engine_display_row_range_rect_from_source_range(
+    if (!lectern0_reader_display_span_row(&app, style_row, presentation_row,
+                                          &display_row) ||
+        !text_engine_display_span_row_range_rect_from_source_range(
           &display_row, expected_start, expected_end, &expected_rect))
       goto cleanup;
     for (U16 command_index = 0;
@@ -11982,6 +12446,214 @@ cleanup:
 }
 
 FUNCTION int
+lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
+                                                const char *output_prefix)
+{
+  enum { Width = 1536, Height = 912 };
+  Lectern0App app = {0};
+  Lectern0App reload = {0};
+  U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
+  U32 line_heights[3] = {0};
+  U64 presentation_hashes[3] = {0};
+  char bmp_path[Lectern0PathCap] = {0};
+  char settings_path[Lectern0PathCap] = {0};
+  U32 italic_options = 0;
+  U32 justified_options = 0;
+  int result = 1;
+  if (!pixels || !epub_path || !epub_path[0] ||
+      !output_prefix || !output_prefix[0] ||
+      !lectern0_app_init(&app, Width, Height, 1, 0) ||
+      !lectern0_open_path(&app, epub_path))
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=setup\n");
+    goto cleanup;
+  }
+
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  for (U32 spacing_index = 0; spacing_index < 3; spacing_index += 1)
+  {
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_SelectSetting,
+      .setting_kind = ReaderViewSetting_LineSpacing,
+      .key = 3000 + spacing_index,
+    });
+    if (app.line_spacing_index != spacing_index ||
+        !epub_reader_rebuild_search(&app.reader,
+                                    str8_from_cstr("1154th Year")) ||
+        app.reader.search_match_count == 0 ||
+        lectern0_navigate_to_search_match(
+          &app, 0, &(EpubReaderSearchNavigationResult){0}) !=
+            EpubReaderResult_Ok)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=setting_or_navigation index=%u\n",
+              spacing_index);
+      goto cleanup;
+    }
+    lectern0_render_to_buffer(&app, &buffer);
+    if (!app.presentation_complete || !app.presentation_frame.valid ||
+        app.presentation_frame.row_count != app.frame.style_row_count)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=presentation index=%u\n",
+              spacing_index);
+      goto cleanup;
+    }
+
+    B32 found_date = 0;
+    B32 date_italic = 0;
+    U32 justified_rows = 0;
+    for (U32 row_index = 0;
+         row_index < app.frame.style_row_count &&
+         row_index < app.presentation_frame.row_count;
+         row_index += 1)
+    {
+      const EpubReaderFrameStyleRow *row = app.frame.style_rows + row_index;
+      const PresentationEngineBlockFlowRow *presentation_row =
+        app.presentation_frame.rows + row_index;
+      U32 start = MIN(row->byte_start, (U32)app.frame.visible_text.size);
+      U32 end = MIN(row->byte_end, (U32)app.frame.visible_text.size);
+      while (end > start &&
+             (app.frame.visible_text.str[end - 1] == '\n' ||
+              app.frame.visible_text.str[end - 1] == '\r'))
+      {
+        end -= 1;
+      }
+      if (end <= start) { continue; }
+      String8 text = str8(app.frame.visible_text.str + start, end - start);
+      const char date_prefix[] = "1154th Year";
+      B32 contains_date = 0;
+      for (U64 at = 0;
+           at + sizeof(date_prefix) - 1 <= text.size && !contains_date;
+           at += 1)
+      {
+        contains_date = memcmp(text.str + at,
+                               date_prefix,
+                               sizeof(date_prefix) - 1) == 0;
+      }
+      Lectern0ReaderStyledRow styled = {0};
+      if (!lectern0_reader_styled_row_build(&app, row, presentation_row,
+                                            start, end, &styled))
+      {
+        fprintf(stderr,
+                "lectern0_publisher_typography_spacing result=fail reason=styled_row index=%u row=%u\n",
+                spacing_index, row_index);
+        goto cleanup;
+      }
+      if (contains_date)
+      {
+        found_date = 1;
+        for (U32 span_index = 0;
+             span_index < styled.span_count;
+             span_index += 1)
+        {
+          if (app.reader_span_styles[span_index].flags &
+              DocTextStyleFlag_Italic)
+          {
+            date_italic = 1;
+          }
+        }
+      }
+      if (styled.justify_space_count > 0 &&
+          (styled.justify_extra_px > 0 ||
+           styled.justify_extra_remainder > 0) &&
+          styled.display.w > styled.natural_width)
+      {
+        justified_rows += 1;
+      }
+    }
+    if (!found_date || !date_italic || justified_rows < 4)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=typography index=%u date=%d italic=%d justified=%u\n",
+              spacing_index, found_date, date_italic, justified_rows);
+      goto cleanup;
+    }
+    italic_options += 1;
+    justified_options += justified_rows >= 4;
+    line_heights[spacing_index] = (U32)app.layout_key.line_height;
+    presentation_hashes[spacing_index] = app.presentation_hash;
+    (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                      "%s_spacing_%u.bmp", output_prefix, spacing_index);
+    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=evidence index=%u\n",
+              spacing_index);
+      goto cleanup;
+    }
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_NextPage,
+    });
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_PreviousPage,
+    });
+    if (app.line_spacing_index != spacing_index)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=navigation_persistence index=%u\n",
+              spacing_index);
+      goto cleanup;
+    }
+  }
+  if (line_heights[1] != line_heights[0] + 5 ||
+      line_heights[2] != line_heights[1] + 5 ||
+      presentation_hashes[0] == presentation_hashes[1] ||
+      presentation_hashes[1] == presentation_hashes[2])
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=geometry heights=%u,%u,%u hashes=%016llx,%016llx,%016llx\n",
+            line_heights[0], line_heights[1], line_heights[2],
+            (unsigned long long)presentation_hashes[0],
+            (unsigned long long)presentation_hashes[1],
+            (unsigned long long)presentation_hashes[2]);
+    goto cleanup;
+  }
+
+  (void)cstr_format(settings_path, ARRAY_COUNT(settings_path),
+                    "%s_settings.bin", output_prefix);
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+                     settings_path);
+  if (!lectern0_save_settings(&app) ||
+      !lectern0_app_init(&reload, Width, Height, 1, 0))
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=persistence_write\n");
+    goto cleanup;
+  }
+  reload.persistence_enabled = 1;
+  lectern0_copy_cstr(reload.settings_path, ARRAY_COUNT(reload.settings_path),
+                     settings_path);
+  lectern0_load_settings(&reload);
+  if (reload.line_spacing_index != 2)
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=restart_persistence spacing=%u\n",
+            reload.line_spacing_index);
+    goto cleanup;
+  }
+
+  fprintf(stdout,
+          "lectern0_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting italics=%u justification=%u line_heights=%u,%u,%u navigation=persistent restart=persistent hashes=%016llx,%016llx,%016llx output=%s\n",
+          italic_options, justified_options,
+          line_heights[0], line_heights[1], line_heights[2],
+          (unsigned long long)presentation_hashes[0],
+          (unsigned long long)presentation_hashes[1],
+          (unsigned long long)presentation_hashes[2],
+          output_prefix);
+  result = 0;
+
+cleanup:
+  if (pixels) { free(pixels); }
+  lectern0_app_release(&reload);
+  lectern0_app_release(&app);
+  return result;
+}
+
+FUNCTION int
 lectern0_run_reader_view_smoke(const char *path, const char *export_path)
 {
   enum { Width = 1100, Height = 760 };
@@ -13819,6 +14491,12 @@ main(int argc, char **argv)
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
   }
   else if (argc == 4 &&
+           strcmp(argv[1], "--publisher-typography-spacing-smoke") == 0)
+  {
+    result = lectern0_run_publisher_typography_spacing_smoke(
+      argv[2], argv[3]);
+  }
+  else if (argc == 4 &&
            strcmp(argv[1], "--reader-view-post-action-arrow-smoke") == 0)
   {
     result = lectern0_run_reader_view_post_action_arrow_smoke(
@@ -13875,7 +14553,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 
