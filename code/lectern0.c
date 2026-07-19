@@ -6255,13 +6255,26 @@ lectern0_reader_row_range_x(Lectern0App *app,
   U64 source_base = app ? app->frame.view_byte_offset : 0;
   U64 source_start = source_base + (U64)row->byte_start + start;
   U64 source_end = source_base + (U64)row->byte_start + end;
-  if (lectern0_reader_display_row(app, row, presentation_row, &display_row) &&
-      text_engine_display_row_range_rect_from_source_range(
-        &display_row, source_start, source_end, &range_rect))
+  if (lectern0_reader_display_row(app, row, presentation_row, &display_row))
   {
-    *out_x0 = range_rect.x;
-    *out_x1 = range_rect.x + range_rect.w;
-    return;
+    if (source_start == source_end)
+    {
+      S32 caret_x = 0;
+      if (text_engine_display_row_x_for_source_byte(
+            &display_row, source_start, &caret_x))
+      {
+        *out_x0 = caret_x;
+        *out_x1 = caret_x;
+        return;
+      }
+    }
+    else if (text_engine_display_row_range_rect_from_source_range(
+               &display_row, source_start, source_end, &range_rect))
+    {
+      *out_x0 = range_rect.x;
+      *out_x1 = range_rect.x + range_rect.w;
+      return;
+    }
   }
   if (measure && measure->valid)
   {
