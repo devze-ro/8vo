@@ -156,8 +156,17 @@ publisher images, fit image-only content to the available page while
 preserving aspect ratio, choose an explicit sampling mode where scaling needs
 it, and compare the cover and every map page directly with Re10.
 
-## Promotion state
+## Promotion
 
-This slice is committed only on the dedicated local branch. Lectern0 `main`
-has not been advanced, no remote exists, and no repository or push was created.
-Promotion remains subject to explicit user authorization.
+The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
+`main` was fast-forwarded from
+`92af52220007a76a5db46e25abdce7c5258b612b` through the validated
+implementation and evidence commits. The canonical no-override command
+`.\build\win32_build.bat no_run` then passed the exact dependency guards,
+architecture audit, and strict compile against the sibling repositories. This
+promotion record is documentation only and is fast-forwarded on top of the
+approved tip.
+
+Lectern0 remains local-only with no remote configured. No repository was
+created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
+history rewrite was performed.
