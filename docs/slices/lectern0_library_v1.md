@@ -210,6 +210,20 @@ Clean cross-host manifest:
 
 ## Promotion state
 
-Nothing has been pushed or promoted. Lectern0 still has no remote. The
-Reader0 API 4 prerequisite and Lectern0 library commits require explicit
-promotion approval and fast-forward-only handling in dependency order.
+Promotion was explicitly approved and completed on 2026-07-20 in dependency
+order using fast-forward-only updates:
+
+- Reader0 `main` and `origin/main` advanced from
+  `3d7a81a9bd5e2a90d9221f434cc9485f46a633bd` to
+  `c7b63d9cb38829219f41795ae2c89bf80707b2cf` (API 4,
+  version `0.4.0-dev`); and
+- local-only Lectern0 `main` advanced from
+  `97d5211af7bc648e7e1048c9fc3c7b6bfe4911c2` through the library
+  implementation and evidence commit
+  `b385543836897b651458dfa9563aa1891a51113e`, followed by this
+  documentation-only promotion record.
+
+Lectern0 still has no remote. Re10, UI0, zero_foundation, and readerview0 were
+not advanced. The protected reader-core extraction worktree and the retired
+image-fit worktree were verified clean at their locked commits before
+promotion and were not modified.
