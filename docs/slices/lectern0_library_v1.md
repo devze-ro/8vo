@@ -1,7 +1,8 @@
 # Lectern0 library v1
 
 Status: implemented and validated on the dedicated
-`codex/lectern0-library-v1` branch. This slice has not been promoted.
+`codex/lectern0-library-v1` branch, then promoted fast-forward-only to the
+local-only `main` branch on 2026-07-20.
 
 ## Exact inputs
 
