@@ -214,8 +214,23 @@ closes each of those coverage gaps.
 
 ## Promotion state and next work
 
-This slice is committed but not promoted. Promotion requires new explicit
-authorization. The next previously planned ownership slice is Lectern0-only
-empty-document landing composition, followed by the expanded real-book
-acceptance matrix. No Kindle-gap, PDF, reader0 Slice 4, shared-cache, or
-architecture expansion belongs to this slice.
+The next previously planned ownership slice was Lectern0-only empty-document
+landing composition, followed by the expanded real-book acceptance matrix.
+The proposed library landing direction now requires a separate product and
+ownership definition before implementation. No Kindle-gap, PDF, reader0 Slice
+4, shared-cache, or unrelated architecture expansion belongs to this slice.
+
+## Promotion
+
+The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
+`main` was clean at
+`128ff1a6f471566b1eb31051de8ef8ebcdf0282b` and was fast-forwarded through the
+validated implementation and evidence tip
+`d4b6b5e057d3373c81e0195741e3391e9490a180`. The canonical no-override
+`\.\build\win32_build.bat no_run` command then passed exact sibling dependency
+guards, the architecture audit, and strict MSVC C11 `/W4 /WX`. This
+documentation-only promotion record was fast-forwarded on top.
+
+Lectern0 remains local-only with no remote configured. No repository was
+created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
+history rewrite was performed.
