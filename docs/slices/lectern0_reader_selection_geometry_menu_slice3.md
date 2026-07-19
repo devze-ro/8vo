@@ -2,7 +2,7 @@
 
 Date: 2026-07-19
 
-Status: validated local-only implementation candidate; unpromoted
+Status: validated local-only reconciliation; promotion authorized
 
 ## Scope and ownership
 
@@ -183,5 +183,36 @@ The final commits pass:
 - direct rendered-image and Computer Use inspection; and
 - the final 15-case clean cross-host matrix.
 
-Nothing in this record authorizes promotion. A Lectern0 GitHub repository must
-not be created without new explicit authorization.
+## Reconciliation with Re10 Reader lifecycle
+
+Before this slice was promoted, canonical Re10 intentionally replaced its
+host-owned Exit Reader/presentation action with the explicit Close Book action.
+The cross-host visual harness still expected enum value 1
+(`TogglePresentationMode`) at that root slot, so it stopped before capturing
+the final four cases even though neither host's shared layout had changed.
+
+The dedicated branch
+`codex/selection-menu-lifecycle-harness-reconcile-slice3` keeps all production
+code at `cab1d5bb3dce178946442683593b9c0fa339578e` and changes only the Re10
+focus expectation in `scripts/win32_reader_view_stage2b0_parity.ps1`:
+
+- harness commit: `e4a0aa48ba9383c162a1b7367c160b0463389a99`;
+- Re10 uses `UISourceReaderControlAction_CloseDocument` value 37;
+- Lectern0 retains its product-specific Exit Reader focus request; and
+- the visual root position and focus ring remain exact across hosts.
+
+The clean reconciled matrix rebuilt both applications and passed all 15 cases:
+
+- manifest:
+  `C:\Users\ankur\Documents\Codex\acc_cross_s3_reconcile_retry1_20260719\manifest.json`;
+- manifest SHA-256:
+  `111252B8F71A232D42557FFC77060BC8E423B763EF6276FD5DF52E992E7482A0`;
+- Re10: `606c1d5274943e19458543a80be30b09662c88cb`;
+- Lectern0: `e4a0aa48ba9383c162a1b7367c160b0463389a99`;
+- Readerview0: `26d836390fce2de64198430fa82d6f660fc7fc07`;
+- deterministic exact decoded-pixel parity: 15/15; and
+- clean-tree, in-run builds, exact dependencies, and acceptance eligibility:
+  true.
+
+Promotion is authorized for this local-only repository. No Lectern0 remote was
+created or configured.
