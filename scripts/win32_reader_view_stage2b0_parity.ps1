@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$Re10Root,
   [Parameter(Mandatory = $true)][string]$Reader0Root,
+  [string]$Re10Reader0Root = "",
   [Parameter(Mandatory = $true)][string]$UI0Root,
   [string]$LecternUI0Root = "",
   [Parameter(Mandatory = $true)][string]$ZeroFoundationRoot,
@@ -17,6 +18,11 @@ $ErrorActionPreference = "Stop"
 $LecternRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $Re10Root = (Resolve-Path -LiteralPath $Re10Root).Path
 $Reader0Root = (Resolve-Path -LiteralPath $Reader0Root).Path
+$Re10Reader0Root = if ([string]::IsNullOrWhiteSpace($Re10Reader0Root)) {
+  $Reader0Root
+} else {
+  (Resolve-Path -LiteralPath $Re10Reader0Root).Path
+}
 $Re10UI0Root = (Resolve-Path -LiteralPath $UI0Root).Path
 $LecternUI0Root = if ([string]::IsNullOrWhiteSpace($LecternUI0Root)) {
   $Re10UI0Root
@@ -81,17 +87,20 @@ function Require-CleanTree([string]$Name, [string]$Root) {
 $LecternReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\readerview0_dependency\COMMIT")
 $ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\zero_foundation_dependency\COMMIT")
 $Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\reader0_dependency\COMMIT")
+$Re10Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\reader0_dependency\COMMIT")
 $LecternUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $LecternRoot "vendor\ui0_dependency\COMMIT")
 $Re10ReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\readerview0_dependency\COMMIT")
 $Re10UI0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\ui0_dependency\COMMIT")
 $CrossRevisionConformance =
+  $Re10Reader0Commit.Trim() -ne $Reader0Commit.Trim() -or
   $Re10ReaderviewCommit.Trim() -ne $LecternReaderviewCommit.Trim() -or
   $Re10UI0Commit.Trim() -ne $LecternUI0Commit.Trim()
 $StageLabel = if ($CrossRevisionConformance) { "Stage 2B-2" } else { "Stage 2B-0" }
 if (!$AllowDirty) {
   Require-CleanTree "re10" $Re10Root
   Require-CleanTree "lectern0" $LecternRoot
-  Require-CleanTree "reader0" $Reader0Root
+  Require-CleanTree "lectern0 reader0" $Reader0Root
+  Require-CleanTree "re10 reader0" $Re10Reader0Root
   Require-CleanTree "re10 ui0" $Re10UI0Root
   Require-CleanTree "lectern0 ui0" $LecternUI0Root
   Require-CleanTree "zero_foundation" $ZeroFoundationRoot
@@ -101,13 +110,14 @@ if (!$AllowDirty) {
 Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
 Require-ExactCommit "lectern0 readerview0" $LecternReaderview0Root $LecternReaderviewCommit
 Require-ExactCommit "zero_foundation" $ZeroFoundationRoot $ZeroCommit
-Require-ExactCommit "reader0" $Reader0Root $Reader0Commit
+Require-ExactCommit "lectern0 reader0" $Reader0Root $Reader0Commit
+Require-ExactCommit "re10 reader0" $Re10Reader0Root $Re10Reader0Commit
 Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
 Require-ExactCommit "lectern0 ui0" $LecternUI0Root $LecternUI0Commit
 New-Item -ItemType Directory -Force -Path $Artifacts, $Generated, $Vaults, $Logs | Out-Null
 
 if (!$SkipBuild) {
-  $env:RE10_READER0_DIR = $Reader0Root
+  $env:RE10_READER0_DIR = $Re10Reader0Root
   $env:RE10_UI0_DIR = $Re10UI0Root
   $env:RE10_READERVIEW0_DIR = $Re10Readerview0Root
   $env:ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
@@ -484,7 +494,8 @@ $Manifest = [pscustomobject]@{
   lectern0_head = Get-Head $LecternRoot
   re10_readerview0_head = Get-Head $Re10Readerview0Root
   lectern0_readerview0_head = Get-Head $LecternReaderview0Root
-  reader0_head = Get-Head $Reader0Root
+  lectern0_reader0_head = Get-Head $Reader0Root
+  re10_reader0_head = Get-Head $Re10Reader0Root
   re10_ui0_head = Get-Head $Re10UI0Root
   lectern0_ui0_head = Get-Head $LecternUI0Root
   zero_foundation_head = Get-Head $ZeroFoundationRoot

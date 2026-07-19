@@ -221,6 +221,8 @@ if ($failures.Count -eq 0) {
     $failures.Add("the two-host matrix must retain same-theme Contents, real Annotations list/menu/editor, and focused Exit plus disabled/enabled Previous and enabled Next gutter cases")
   }
   if ($parity.IndexOf('F7D9F95A174E0CA776E2BA808A6798D2DAF8B178CFF5D77270D225EC5DDA14D8') -lt 0 -or
+      $parity.IndexOf('[string]$Re10Reader0Root') -lt 0 -or
+      $parity.IndexOf('re10_reader0_head') -lt 0 -or
       $parity.IndexOf('Require-CleanTree') -lt 0 -or
       $parity.IndexOf('[switch]$AllowDirty') -lt 0 -or
       $parity.IndexOf('-SkipBuild is diagnostic-only') -lt 0 -or
