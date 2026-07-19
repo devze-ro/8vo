@@ -1,4 +1,5 @@
 #include "lectern0_version.h"
+#include "lectern0_library.h"
 #include "reader0.h"
 #include "ui0.h"
 #include "readerview0.h"
@@ -24,6 +25,9 @@
 #endif
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "lectern0 requires Presentation Engine API 1"
+#endif
+#if READER0_API_VERSION != 4
+#  error "lectern0 requires Reader0 API 4"
 #endif
 #if UI0_API_VERSION != 91
 #  error "lectern0 requires UI0 API 91"
@@ -76,10 +80,17 @@ enum
   Lectern0ReaderViewNoteTerminalCaretGap = 1,
   Lectern0DisplayRowStopCap = 1024,
   Lectern0DisplaySpanCap = EPUB_READER_FRAME_STYLE_FRAGMENT_CAP * 2 + 1,
+  Lectern0LibraryVisibleCardCap = 64,
+  Lectern0LibraryHostControlCap = 1 + Lectern0LibraryVisibleCardCap * 3,
+  Lectern0LibraryThumbnailCap = 48,
+  Lectern0LibraryThumbnailWidth = 256,
+  Lectern0LibraryThumbnailHeight = 384,
+  Lectern0LibraryThumbnailBudget = 24 * 1024 * 1024,
 };
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
 #define LECTERN0_ANNOTATION_MAGIC 0x4C30414E4E4F5431ull
+#define LECTERN0_LIBRARY_THUMBNAIL_MAGIC 0x4C305448554D4231ull
 
 typedef struct Lectern0ImageCacheEntry
 {
@@ -104,6 +115,37 @@ typedef struct Lectern0ImageCache
   U64 cache_full_count;
   B32 decoder_ready;
 } Lectern0ImageCache;
+
+typedef struct Lectern0LibraryThumbnailFile
+{
+  U64 magic;
+  U32 version;
+  U32 width;
+  U32 height;
+  U32 reserved;
+  U64 entry_id;
+  U64 file_size;
+  U64 file_modified_time;
+} Lectern0LibraryThumbnailFile;
+
+typedef struct Lectern0LibraryThumbnail
+{
+  U64 entry_id;
+  U64 file_size;
+  U64 file_modified_time;
+  U32 *pixels;
+  S32 width;
+  S32 height;
+  S32 stride_pixels;
+} Lectern0LibraryThumbnail;
+
+typedef struct Lectern0LibraryThumbnailCache
+{
+  Arena *arena;
+  Lectern0LibraryThumbnail entries[Lectern0LibraryThumbnailCap];
+  U32 entry_count;
+  U64 pixel_bytes;
+} Lectern0LibraryThumbnailCache;
 
 typedef struct Lectern0SavedState
 {
@@ -343,13 +385,43 @@ typedef struct Lectern0UI0IconRasterCacheEntry
 typedef enum Lectern0HostControlIdentity
 {
   Lectern0HostControl_None,
-  Lectern0HostControl_ExitReader,
-  Lectern0HostControl_Count,
+  Lectern0HostControl_CloseBook,
+  Lectern0HostControl_ExitReader = Lectern0HostControl_CloseBook,
+  Lectern0HostControl_LibraryAdd,
+  Lectern0HostControl_LibraryBookBase = 1024,
+  Lectern0HostControl_LibraryLocateBase =
+    Lectern0HostControl_LibraryBookBase + Lectern0LibraryVisibleCardCap,
+  Lectern0HostControl_LibraryRemoveBase =
+    Lectern0HostControl_LibraryLocateBase + Lectern0LibraryVisibleCardCap,
+  Lectern0HostControl_LibraryLimit =
+    Lectern0HostControl_LibraryRemoveBase + Lectern0LibraryVisibleCardCap,
 } Lectern0HostControlIdentity;
+
+typedef enum Lectern0HostControlAction
+{
+  Lectern0HostControlAction_None,
+  Lectern0HostControlAction_CloseBook,
+  Lectern0HostControlAction_AddEpubs,
+  Lectern0HostControlAction_OpenBook,
+  Lectern0HostControlAction_LocateBook,
+  Lectern0HostControlAction_RemoveBook,
+} Lectern0HostControlAction;
+
+typedef struct Lectern0LibraryCardLayout
+{
+  U64 entry_id;
+  UI0Rect card_rect;
+  UI0Rect cover_rect;
+  UI0Rect locate_rect;
+  UI0Rect remove_rect;
+  char accessibility_name[Lectern0LibraryMetadataCap * 2];
+} Lectern0LibraryCardLayout;
 
 typedef struct Lectern0HostControlRecord
 {
   Lectern0HostControlIdentity identity;
+  Lectern0HostControlAction action;
+  U64 entry_id;
   ReaderViewSemanticNode semantic;
 } Lectern0HostControlRecord;
 
@@ -378,6 +450,7 @@ typedef struct Lectern0App
   EpubReaderLayoutKey layout_key;
   SourceReaderLayoutConfig layout_config;
   Lectern0ImageCache image_cache;
+  Lectern0LibraryThumbnailCache library_thumbnail_cache;
   PresentationEngineBlockFlowRowSpec presentation_row_specs[Lectern0PresentationRowCap];
   PresentationEngineBlockFlowMediaSpec presentation_media_specs[Lectern0PresentationMediaCap];
   PresentationEngineBlockFlowRow presentation_rows[Lectern0PresentationRowCap];
@@ -455,12 +528,24 @@ typedef struct Lectern0App
   S32 pagination_viewport_width;
   S32 pagination_viewport_height;
   Lectern0HostControlRecord
-    host_controls[Lectern0HostControl_Count - 1];
+    host_controls[Lectern0LibraryHostControlCap];
   U32 host_control_count;
   Lectern0HostControlIdentity host_focus_control;
   B32 host_focus_visible;
   B32 host_exit_pointer_armed;
-  B32 host_exit_requested;
+  Lectern0HostControlIdentity host_pointer_armed;
+
+  Lectern0LibraryCatalog library;
+  Lectern0LibraryCardLayout library_cards[Lectern0LibraryVisibleCardCap];
+  U32 library_card_count;
+  U64 library_selected_entry_id;
+  U64 library_locate_entry_id;
+  S32 library_scroll_y;
+  S32 library_scroll_max;
+  S32 library_column_count;
+  B32 library_import_in_progress;
+  B32 suppress_native_picker;
+  U32 native_picker_request_count;
 
   Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
   U32 bookmark_count;
@@ -490,6 +575,7 @@ typedef struct Lectern0App
   Lectern0SavedState saved;
   char app_directory[Lectern0PathCap];
   char state_path[Lectern0PathCap];
+  char catalog_path[Lectern0PathCap];
   char settings_path[Lectern0PathCap];
   char annotations_path[Lectern0PathCap];
   char export_path[Lectern0PathCap];
@@ -502,6 +588,16 @@ typedef struct Lectern0Win32
   Lectern0App app;
   HWND window;
 } Lectern0Win32;
+
+FUNCTION void lectern0_library_update_progress(Lectern0App *app);
+FUNCTION B32 lectern0_close_book(Lectern0App *app);
+FUNCTION B32 lectern0_pick_epub(Lectern0App *app);
+FUNCTION B32 lectern0_locate_library_entry(Lectern0App *app, U64 entry_id);
+FUNCTION B32 lectern0_fit_image_rect(S32 src_w, S32 src_h,
+                                     S32 rect_x, S32 rect_y,
+                                     S32 rect_w, S32 rect_h,
+                                     S32 *out_x, S32 *out_y,
+                                     S32 *out_w, S32 *out_h);
 
 FUNCTION void
 lectern0_copy_cstr(char *dst, U64 cap, const char *src)
@@ -546,6 +642,10 @@ lectern0_state_paths(Lectern0App *app)
                     ARRAY_COUNT(app->state_path),
                     "%s\\state.v1",
                     app->app_directory);
+  (void)cstr_format(app->catalog_path,
+                    ARRAY_COUNT(app->catalog_path),
+                    "%s\\library.v1",
+                    app->app_directory);
   (void)cstr_format(app->settings_path,
                     ARRAY_COUNT(app->settings_path),
                     "%s\\settings.v1",
@@ -555,6 +655,81 @@ lectern0_state_paths(Lectern0App *app)
                     "%s\\reader_annotations.txt",
                     app->app_directory);
   return os_make_directory_chain(app->app_directory);
+}
+
+FUNCTION B32
+lectern0_save_library(Lectern0App *app)
+{
+  return app && (!app->persistence_enabled ||
+                 (app->catalog_path[0] &&
+                  lectern0_library_catalog_save(&app->library,
+                                                app->catalog_path)));
+}
+
+FUNCTION void
+lectern0_library_set_summary_status(Lectern0App *app)
+{
+  if (!app) return;
+  if (app->library.entry_count == 0)
+  {
+    lectern0_set_statusf(app, "Your library is empty | Add EPUBs");
+    return;
+  }
+  U32 missing_count = 0;
+  for (U32 index = 0; index < app->library.entry_count; index += 1)
+    missing_count += app->library.entries[index].runtime_missing ? 1u : 0u;
+  if (missing_count > 0)
+  {
+    lectern0_set_statusf(app, "%u book%s | %u source file%s missing",
+                         app->library.entry_count,
+                         app->library.entry_count == 1 ? "" : "s",
+                         missing_count, missing_count == 1 ? "" : "s");
+  }
+  else
+  {
+    lectern0_set_statusf(app, "%u book%s | most recently opened first",
+                         app->library.entry_count,
+                         app->library.entry_count == 1 ? "" : "s");
+  }
+}
+
+FUNCTION void
+lectern0_migrate_saved_state_to_library(Lectern0App *app)
+{
+  if (!app || app->library.entry_count != 0 || !app->saved.valid ||
+      !app->saved.path[0])
+    return;
+  char normalized[Lectern0LibraryPathCap] = {0};
+  if (!lectern0_library_normalize_path(app->saved.path,
+                                       normalized,
+                                       ARRAY_COUNT(normalized)))
+    return;
+  Lectern0LibraryEntry *entry = app->library.entries;
+  MemoryZeroStruct(entry);
+  entry->entry_id = 1;
+  entry->added_time = lectern0_library_now();
+  entry->last_opened_time = entry->added_time;
+  entry->progress_spine_index = app->saved.spine_index;
+  entry->progress_byte_offset = app->saved.byte_offset;
+  entry->cover_resource_index = DOC_RESOURCE_INDEX_NONE;
+  lectern0_copy_cstr(entry->source_path,
+                     ARRAY_COUNT(entry->source_path),
+                     normalized);
+  lectern0_library_fallback_title(normalized,
+                                  entry->title,
+                                  ARRAY_COUNT(entry->title));
+  OS_FileProperties properties = os_file_properties(normalized);
+  entry->runtime_missing = !properties.exists || properties.is_directory;
+  if (!entry->runtime_missing)
+  {
+    entry->file_size = properties.size;
+    entry->file_modified_time = properties.modified_time;
+  }
+  app->library.entry_count = 1;
+  app->library.next_entry_id = 2;
+  app->library.revision += 1;
+  app->library_selected_entry_id = entry->entry_id;
+  (void)lectern0_save_library(app);
 }
 
 FUNCTION void
@@ -806,6 +981,7 @@ lectern0_save_state(Lectern0App *app)
   {
     return 0;
   }
+  lectern0_library_update_progress(app);
   char data[Lectern0StateFileCap] = {0};
   U64 size = cstr_format(data,
                          ARRAY_COUNT(data),
@@ -814,7 +990,9 @@ lectern0_save_state(Lectern0App *app)
                          (unsigned long long)app->reader.view_byte_offset,
                          app->current_path);
   if (size == 0 || size >= ARRAY_COUNT(data)) { return 0; }
-  return os_write_entire_file_atomic(app->state_path, data, size);
+  B32 state_saved = os_write_entire_file_atomic(app->state_path, data, size);
+  B32 library_saved = lectern0_save_library(app);
+  return state_saved && library_saved;
 }
 
 FUNCTION B32
@@ -973,6 +1151,324 @@ lectern0_image_cache_get(Lectern0ImageCache *cache,
   }
   arena_release(encoded_arena);
   return entry;
+}
+
+FUNCTION B32
+lectern0_library_thumbnail_cache_init(Lectern0LibraryThumbnailCache *cache)
+{
+  if (!cache) return 0;
+  MemoryZeroStruct(cache);
+  ArenaParams params = {
+    .reserve_size = MEGABYTES(32),
+    .commit_size = KILOBYTES(64),
+  };
+  cache->arena = arena_alloc(&params);
+  return cache->arena != 0;
+}
+
+FUNCTION void
+lectern0_library_thumbnail_cache_reset(Lectern0LibraryThumbnailCache *cache)
+{
+  if (!cache || !cache->arena) return;
+  arena_clear(cache->arena);
+  MemoryZeroArray(cache->entries);
+  cache->entry_count = 0;
+  cache->pixel_bytes = 0;
+}
+
+FUNCTION void
+lectern0_library_thumbnail_cache_release(Lectern0LibraryThumbnailCache *cache)
+{
+  if (!cache) return;
+  if (cache->arena) arena_release(cache->arena);
+  MemoryZeroStruct(cache);
+}
+
+FUNCTION B32
+lectern0_library_thumbnail_path(const Lectern0App *app,
+                                U64 entry_id,
+                                char *out_path,
+                                U64 out_path_cap)
+{
+  return app && app->app_directory[0] && entry_id != 0 && out_path &&
+    cstr_format(out_path, out_path_cap, "%s\\thumbnail_%016llx.v1",
+                app->app_directory, (unsigned long long)entry_id) > 0;
+}
+
+FUNCTION Lectern0LibraryThumbnail *
+lectern0_library_thumbnail_find(Lectern0LibraryThumbnailCache *cache,
+                                U64 entry_id,
+                                U64 file_size,
+                                U64 file_modified_time)
+{
+  if (!cache) return 0;
+  for (U32 index = 0; index < cache->entry_count; index += 1)
+  {
+    Lectern0LibraryThumbnail *entry = cache->entries + index;
+    if (entry->entry_id == entry_id && entry->file_size == file_size &&
+        entry->file_modified_time == file_modified_time)
+      return entry;
+  }
+  return 0;
+}
+
+FUNCTION Lectern0LibraryThumbnail *
+lectern0_library_thumbnail_load(Lectern0App *app,
+                                const Lectern0LibraryEntry *book)
+{
+  if (!app || !book ||
+      !(book->metadata_flags & Lectern0LibraryMetadata_Cover))
+    return 0;
+  Lectern0LibraryThumbnail *cached = lectern0_library_thumbnail_find(
+    &app->library_thumbnail_cache, book->entry_id, book->file_size,
+    book->file_modified_time);
+  if (cached) return cached;
+  Lectern0LibraryThumbnailCache *cache = &app->library_thumbnail_cache;
+  if (!cache->arena || cache->entry_count >= ARRAY_COUNT(cache->entries))
+    return 0;
+
+  char path[Lectern0PathCap] = {0};
+  if (!lectern0_library_thumbnail_path(app, book->entry_id,
+                                       path, ARRAY_COUNT(path)))
+    return 0;
+  OS_FileProperties properties = os_file_properties(path);
+  if (!properties.exists || properties.is_directory ||
+      properties.size < sizeof(Lectern0LibraryThumbnailFile) ||
+      properties.size > sizeof(Lectern0LibraryThumbnailFile) +
+        (U64)Lectern0LibraryThumbnailWidth *
+        (U64)Lectern0LibraryThumbnailHeight * sizeof(U32))
+    return 0;
+  Arena *temp = arena_alloc(0);
+  U8 *file_data = temp ? PUSH_ARRAY(temp, U8, properties.size) : 0;
+  U64 size = 0;
+  if (!file_data ||
+      !os_read_entire_file(path, file_data, properties.size, &size) ||
+      size != properties.size)
+  {
+    if (temp) arena_release(temp);
+    return 0;
+  }
+  Lectern0LibraryThumbnailFile *header =
+    (Lectern0LibraryThumbnailFile *)file_data;
+  if (header->magic != LECTERN0_LIBRARY_THUMBNAIL_MAGIC ||
+      header->version != 1 || header->entry_id != book->entry_id ||
+      header->file_size != book->file_size ||
+      header->file_modified_time != book->file_modified_time ||
+      header->width == 0 || header->height == 0 ||
+      header->width > Lectern0LibraryThumbnailWidth ||
+      header->height > Lectern0LibraryThumbnailHeight)
+  {
+    arena_release(temp);
+    return 0;
+  }
+  U64 pixel_count = (U64)header->width * (U64)header->height;
+  U64 pixel_bytes = pixel_count * sizeof(U32);
+  if (sizeof(*header) + pixel_bytes != size ||
+      cache->pixel_bytes + pixel_bytes > Lectern0LibraryThumbnailBudget)
+  {
+    arena_release(temp);
+    return 0;
+  }
+  U32 *pixels = PUSH_ARRAY(cache->arena, U32, pixel_count);
+  if (!pixels)
+  {
+    arena_release(temp);
+    return 0;
+  }
+  MemoryCopy(pixels, header + 1, pixel_bytes);
+  Lectern0LibraryThumbnail *result = cache->entries + cache->entry_count;
+  *result = (Lectern0LibraryThumbnail){
+    .entry_id = book->entry_id,
+    .file_size = book->file_size,
+    .file_modified_time = book->file_modified_time,
+    .pixels = pixels,
+    .width = (S32)header->width,
+    .height = (S32)header->height,
+    .stride_pixels = (S32)header->width,
+  };
+  cache->entry_count += 1;
+  cache->pixel_bytes += pixel_bytes;
+  arena_release(temp);
+  return result;
+}
+
+FUNCTION B32
+lectern0_library_thumbnail_write(Lectern0App *app,
+                                 const Lectern0LibraryEntry *book,
+                                 const Lectern0ImageCacheEntry *source)
+{
+  if (!app || !book || !source || !source->pixels || source->width <= 0 ||
+      source->height <= 0 || source->stride_pixels < source->width)
+    return 0;
+  S32 width = source->width;
+  S32 height = source->height;
+  if (width > Lectern0LibraryThumbnailWidth)
+  {
+    height = MAX(1, (S32)(((S64)height * Lectern0LibraryThumbnailWidth) / width));
+    width = Lectern0LibraryThumbnailWidth;
+  }
+  if (height > Lectern0LibraryThumbnailHeight)
+  {
+    width = MAX(1, (S32)(((S64)width * Lectern0LibraryThumbnailHeight) / height));
+    height = Lectern0LibraryThumbnailHeight;
+  }
+  U64 pixel_count = (U64)width * (U64)height;
+  U64 size = sizeof(Lectern0LibraryThumbnailFile) + pixel_count * sizeof(U32);
+  Arena *arena = arena_alloc(0);
+  U8 *data = arena ? PUSH_ARRAY(arena, U8, size) : 0;
+  if (!data)
+  {
+    if (arena) arena_release(arena);
+    return 0;
+  }
+  Lectern0LibraryThumbnailFile *file = (Lectern0LibraryThumbnailFile *)data;
+  *file = (Lectern0LibraryThumbnailFile){
+    .magic = LECTERN0_LIBRARY_THUMBNAIL_MAGIC,
+    .version = 1,
+    .width = (U32)width,
+    .height = (U32)height,
+    .entry_id = book->entry_id,
+    .file_size = book->file_size,
+    .file_modified_time = book->file_modified_time,
+  };
+  U32 *pixels = (U32 *)(file + 1);
+  for (S32 y = 0; y < height; y += 1)
+  {
+    S32 source_y = (S32)(((S64)y * source->height) / height);
+    for (S32 x = 0; x < width; x += 1)
+    {
+      S32 source_x = (S32)(((S64)x * source->width) / width);
+      pixels[(U64)y * (U64)width + (U64)x] =
+        source->pixels[(U64)source_y * (U64)source->stride_pixels +
+                       (U64)source_x];
+    }
+  }
+  char path[Lectern0PathCap] = {0};
+  B32 result = lectern0_library_thumbnail_path(app, book->entry_id,
+                                               path, ARRAY_COUNT(path)) &&
+    os_write_entire_file_atomic(path, data, size);
+  arena_release(arena);
+  if (result) lectern0_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
+  return result;
+}
+
+FUNCTION void
+lectern0_library_copy_string8(char *dst, U64 cap, String8 source)
+{
+  if (!dst || cap == 0) return;
+  U64 size = MIN(source.size, cap - 1);
+  if (size > 0 && source.str) MemoryCopy(dst, source.str, size);
+  dst[size] = 0;
+}
+
+FUNCTION void
+lectern0_library_update_progress(Lectern0App *app)
+{
+  if (!app || !epub_reader_is_open(&app->reader) || !app->current_path[0])
+    return;
+  Lectern0LibraryEntry *entry =
+    lectern0_library_catalog_find_path(&app->library, app->current_path);
+  if (!entry) return;
+  entry->progress_spine_index = app->reader.active_spine_index;
+  entry->progress_byte_offset = app->reader.view_byte_offset;
+  entry->progress_spine_href[0] = 0;
+  String8 href = {0};
+  if (doc_engine_get_spine_item(epub_reader_engine(&app->reader),
+                                epub_reader_document_id(&app->reader),
+                                entry->progress_spine_index,
+                                &href) == DocError_Ok)
+    lectern0_library_copy_string8(entry->progress_spine_href,
+                                  ARRAY_COUNT(entry->progress_spine_href), href);
+  EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
+  entry->progress_percent = location.available ? (U32)MIN(location.percent, 100ull) : 0;
+  app->library.revision += 1;
+}
+
+FUNCTION Lectern0LibraryEntry *
+lectern0_library_record_open_document(Lectern0App *app,
+                                      const char *normalized_path)
+{
+  if (!app || !normalized_path || !normalized_path[0] ||
+      !epub_reader_is_open(&app->reader))
+    return 0;
+  OS_FileProperties properties = os_file_properties(normalized_path);
+  B32 created = 0;
+  Lectern0LibraryEntry *entry = lectern0_library_catalog_upsert(
+    &app->library, normalized_path, properties, lectern0_library_now(),
+    app->library_locate_entry_id, &created);
+  app->library_locate_entry_id = 0;
+  if (!entry) return 0;
+
+  String8 title = {0};
+  String8 author = {0};
+  entry->metadata_flags = 0;
+  if (doc_engine_get_title(epub_reader_engine(&app->reader),
+                           epub_reader_document_id(&app->reader),
+                           &title) == DocError_Ok && title.size > 0)
+  {
+    lectern0_library_copy_string8(entry->title, ARRAY_COUNT(entry->title), title);
+    entry->metadata_flags |= Lectern0LibraryMetadata_Title;
+  }
+  else
+  {
+    lectern0_library_fallback_title(normalized_path,
+                                    entry->title,
+                                    ARRAY_COUNT(entry->title));
+  }
+  if (doc_engine_get_author(epub_reader_engine(&app->reader),
+                            epub_reader_document_id(&app->reader),
+                            &author) == DocError_Ok && author.size > 0)
+  {
+    lectern0_library_copy_string8(entry->author, ARRAY_COUNT(entry->author), author);
+    entry->metadata_flags |= Lectern0LibraryMetadata_Author;
+  }
+  else
+  {
+    entry->author[0] = 0;
+  }
+
+  entry->cover_resource_index = DOC_RESOURCE_INDEX_NONE;
+  U32 resource_count = 0;
+  DocEngine *engine = epub_reader_engine(&app->reader);
+  DocDocumentId document_id = epub_reader_document_id(&app->reader);
+  if (doc_engine_get_resource_count(engine, document_id,
+                                    &resource_count) == DocError_Ok)
+  {
+    for (U32 index = 0; index < resource_count; index += 1)
+    {
+      DocResource resource = {0};
+      if (doc_engine_get_resource(engine, document_id, index, &resource) == DocError_Ok &&
+          resource.kind == DocResourceKind_Image &&
+          (resource.flags & DocResourceFlag_Cover))
+      {
+        char media_type[64] = {0};
+        lectern0_library_copy_string8(media_type, ARRAY_COUNT(media_type),
+                                      resource.media_type);
+        Lectern0ImageCacheEntry *decoded = lectern0_image_cache_get(
+          &app->image_cache, engine, document_id, resource.resource_index,
+          media_type);
+        if (decoded && decoded->status == EpubReaderFrameImageStatus_Loaded &&
+            lectern0_library_thumbnail_write(app, entry, decoded))
+        {
+          entry->cover_resource_index = resource.resource_index;
+          entry->metadata_flags |= Lectern0LibraryMetadata_Cover;
+        }
+        break;
+      }
+    }
+  }
+  if (!(entry->metadata_flags & Lectern0LibraryMetadata_Cover) && !created)
+  {
+    char thumbnail_path[Lectern0PathCap] = {0};
+    if (lectern0_library_thumbnail_path(app, entry->entry_id, thumbnail_path,
+                                        ARRAY_COUNT(thumbnail_path)))
+      (void)os_file_delete(thumbnail_path);
+  }
+  app->library_selected_entry_id = entry->entry_id;
+  lectern0_library_catalog_sort(&app->library);
+  (void)lectern0_save_library(app);
+  return lectern0_library_catalog_find_id(&app->library,
+                                          app->library_selected_entry_id);
 }
 
 FUNCTION void
@@ -1207,13 +1703,33 @@ FUNCTION B32
 lectern0_open_path(Lectern0App *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
+  char normalized_path[Lectern0LibraryPathCap] = {0};
+  if (!lectern0_library_normalize_path(path,
+                                       normalized_path,
+                                       ARRAY_COUNT(normalized_path)))
+  {
+    lectern0_set_statusf(app, "Open failed: path encoding");
+    app->library_locate_entry_id = 0;
+    return 0;
+  }
+  Lectern0LibraryEntry *restore_entry = app->library_locate_entry_id ?
+    lectern0_library_catalog_find_id(&app->library,
+                                     app->library_locate_entry_id) :
+    lectern0_library_catalog_find_path(&app->library, normalized_path);
+  U32 restore_spine = restore_entry ? restore_entry->progress_spine_index : 0;
+  U64 restore_byte = restore_entry ? restore_entry->progress_byte_offset : 0;
+  B32 has_catalog_position = restore_entry != 0;
   app->document_state = ReaderViewLoad_Loading;
   lectern0_set_statusf(app, "Opening EPUB...");
-  if (app->current_path[0]) { (void)lectern0_save_annotations(app); }
+  if (app->current_path[0])
+  {
+    (void)lectern0_save_state(app);
+    (void)lectern0_save_annotations(app);
+  }
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result =
     epub_reader_open(&app->reader,
-                     str8_from_cstr(path),
+                     str8_from_cstr(normalized_path),
                      DocSourceKind_EPUB,
                      &transition);
   if (open_result != EpubReaderResult_Ok ||
@@ -1222,16 +1738,28 @@ lectern0_open_path(Lectern0App *app, const char *path)
   {
     lectern0_set_statusf(app, "Open failed: %s", epub_reader_result_code(open_result));
     app->document_state = ReaderViewLoad_Error;
+    app->library_locate_entry_id = 0;
     return 0;
   }
 
-  lectern0_copy_cstr(app->current_path, ARRAY_COUNT(app->current_path), path);
-  lectern0_set_annotations_path(app, path);
+  lectern0_image_cache_reset(&app->image_cache);
+  lectern0_copy_cstr(app->current_path,
+                     ARRAY_COUNT(app->current_path),
+                     normalized_path);
+  lectern0_set_annotations_path(app, normalized_path);
   lectern0_load_annotations(app);
   reader_view_state_reset_document(&app->reader_view_state,
                                    (UI0U64)epub_reader_document_id(&app->reader));
   B32 restored = 0;
-  if (app->saved.valid && strcmp(app->saved.path, path) == 0)
+  if (has_catalog_position)
+  {
+    restored = epub_reader_set_page_containing_byte(&app->reader,
+                                                    restore_spine,
+                                                    restore_byte,
+                                                    app->layout_key,
+                                                    app->layout_config);
+  }
+  else if (app->saved.valid && _stricmp(app->saved.path, normalized_path) == 0)
   {
     restored = epub_reader_set_page_containing_byte(&app->reader,
                                                     app->saved.spine_index,
@@ -1249,16 +1777,19 @@ lectern0_open_path(Lectern0App *app, const char *path)
     {
       lectern0_set_statusf(app, "Open failed: pagination");
       app->document_state = ReaderViewLoad_Error;
+      app->library_locate_entry_id = 0;
       return 0;
     }
   }
-  lectern0_image_cache_reset(&app->image_cache);
   if (!lectern0_capture_frame(app))
   {
     lectern0_set_statusf(app, "Open failed: frame");
     app->document_state = ReaderViewLoad_Error;
+    app->library_locate_entry_id = 0;
     return 0;
   }
+  Lectern0LibraryEntry *catalog_entry =
+    lectern0_library_record_open_document(app, normalized_path);
   lectern0_set_statusf(app,
                        "%s | page %llu/%llu | section %u/%u",
                        restored ? "Restored" : "Opened",
@@ -1268,7 +1799,43 @@ lectern0_open_path(Lectern0App *app, const char *path)
                        (unsigned)app->frame.section_count);
   (void)transition;
   app->document_state = ReaderViewLoad_Ready;
+  if (!catalog_entry)
+    lectern0_set_statusf(app, "Opened, but the library is full");
   (void)lectern0_save_state(app);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_close_book(Lectern0App *app)
+{
+  if (!app || !epub_reader_is_open(&app->reader)) return 0;
+  (void)lectern0_save_state(app);
+  (void)lectern0_save_annotations(app);
+  B32 changed = 0;
+  if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok || !changed)
+    return 0;
+  app->current_path[0] = 0;
+  app->annotations_path[0] = 0;
+  app->document_state = ReaderViewLoad_Empty;
+  lectern0_library_catalog_refresh_missing(&app->library);
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  lectern0_image_cache_reset(&app->image_cache);
+  lectern0_clear_annotations(app);
+  reader_view_state_init(&app->reader_view_state);
+  app->reader_view_ready = 0;
+  app->host_focus_control = app->library.entry_count > 0 ?
+    (Lectern0HostControlIdentity)Lectern0HostControl_LibraryBookBase :
+    Lectern0HostControl_LibraryAdd;
+  app->host_focus_visible = 1;
+  app->host_pointer_armed = Lectern0HostControl_None;
+  lectern0_library_set_summary_status(app);
+  (void)lectern0_save_library(app);
   return 1;
 }
 
@@ -3310,7 +3877,11 @@ lectern0_app_init(Lectern0App *app,
   {
     lectern0_load_state(app);
     lectern0_load_settings(app);
+    (void)lectern0_library_catalog_load(&app->library, app->catalog_path);
+    lectern0_migrate_saved_state_to_library(app);
   }
+  if (app->library.entry_count > 0)
+    app->library_selected_entry_id = app->library.entries[0].entry_id;
   String8 private_font_directory = app->app_directory[0] ?
     str8_from_cstr(app->app_directory) : str8_from_cstr(".");
   EpubReaderConfig config = {
@@ -3332,13 +3903,21 @@ lectern0_app_init(Lectern0App *app,
     app->arena = 0;
     return 0;
   }
+  if (!lectern0_library_thumbnail_cache_init(&app->library_thumbnail_cache))
+  {
+    lectern0_image_cache_release(&app->image_cache);
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
 
   if (graphical)
   {
     render_state_init(&app->render_state, 0);
     app->render_ready = 1;
   }
-  lectern0_set_statusf(app, "Open an EPUB | Ctrl+O");
+  lectern0_library_set_summary_status(app);
   return 1;
 }
 
@@ -3348,10 +3927,12 @@ lectern0_app_release(Lectern0App *app)
   if (!app) { return; }
   if (app->accessibility) lectern0_accessibility_destroy(app->accessibility);
   (void)lectern0_save_state(app);
+  (void)lectern0_save_library(app);
   (void)lectern0_save_settings(app);
   (void)lectern0_save_annotations(app);
   if (app->gfx_ready) { os_gfx_release(&app->gfx); }
   if (app->render_ready) { render_state_release(&app->render_state); }
+  lectern0_library_thumbnail_cache_release(&app->library_thumbnail_cache);
   lectern0_image_cache_release(&app->image_cache);
   epub_reader_release(&app->reader);
   if (app->arena) { arena_release(app->arena); }
@@ -4340,6 +4921,332 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
   }
 }
 
+FUNCTION B32
+lectern0_library_active(const Lectern0App *app)
+{
+  return app && !epub_reader_is_open(&app->reader);
+}
+
+FUNCTION UI0Rect
+lectern0_library_add_rect(const Lectern0App *app)
+{
+  if (!app || app->width <= 0) return (UI0Rect){0};
+  S32 width = app->width < 520 ? 132 : 148;
+  return ui0_rect(MAX(app->width - width - 32, 16), 22, width, 40);
+}
+
+FUNCTION UI0Rect
+lectern0_library_empty_add_rect(const Lectern0App *app)
+{
+  if (!app) return (UI0Rect){0};
+  S32 panel_width = MIN(MAX(app->width - 48, 260), 560);
+  S32 panel_height = 260;
+  S32 x = (app->width - panel_width) / 2;
+  S32 y = MAX(112, (app->height - panel_height) / 2);
+  return ui0_rect(x + (panel_width - 168) / 2, y + 184, 168, 42);
+}
+
+FUNCTION void
+lectern0_library_resolve_layout(Lectern0App *app)
+{
+  if (!app) return;
+  app->library_card_count = 0;
+  S32 margin = app->width < 620 ? 20 : 32;
+  S32 gap = app->width < 620 ? 16 : 24;
+  S32 available = MAX(app->width - margin * 2, 120);
+  S32 desired = app->width < 620 ? 148 : 180;
+  S32 columns = MAX(1, (available + gap) / (desired + gap));
+  columns = MIN(columns, 8);
+  S32 card_width = MAX(120, (available - gap * (columns - 1)) / columns);
+  card_width = MIN(card_width, 208);
+  S32 grid_width = card_width * columns + gap * (columns - 1);
+  S32 grid_x = margin + MAX((available - grid_width) / 2, 0);
+  S32 cover_height = MIN((card_width * 3) / 2, 264);
+  S32 card_height = cover_height + 112;
+  S32 row_gap = 28;
+  S32 row_count = app->library.entry_count == 0 ? 0 :
+    (S32)((app->library.entry_count + (U32)columns - 1) / (U32)columns);
+  S32 content_height = row_count > 0 ?
+    row_count * card_height + (row_count - 1) * row_gap : 0;
+  S32 viewport_top = 104;
+  S32 viewport_height = MAX(app->height - viewport_top - 24, 0);
+  app->library_scroll_max = MAX(content_height - viewport_height, 0);
+  if (app->input.wheel_delta_y != 0)
+    app->library_scroll_y -= app->input.wheel_delta_y * 56;
+  app->library_scroll_y = MAX(0, MIN(app->library_scroll_y,
+                                     app->library_scroll_max));
+  app->library_column_count = columns;
+
+  for (U32 index = 0; index < app->library.entry_count; index += 1)
+  {
+    S32 column = (S32)(index % (U32)columns);
+    S32 row = (S32)(index / (U32)columns);
+    S32 x = grid_x + column * (card_width + gap);
+    S32 y = viewport_top + row * (card_height + row_gap) -
+            app->library_scroll_y;
+    if (y + card_height < viewport_top || y > app->height) continue;
+    if (app->library_card_count >= ARRAY_COUNT(app->library_cards)) break;
+    Lectern0LibraryEntry *entry = app->library.entries + index;
+    Lectern0LibraryCardLayout *card =
+      app->library_cards + app->library_card_count;
+    *card = (Lectern0LibraryCardLayout){
+      .entry_id = entry->entry_id,
+      .card_rect = ui0_rect(x, y, card_width, card_height),
+      .cover_rect = ui0_rect(x, y, card_width, cover_height),
+    };
+    if (entry->runtime_missing)
+    {
+      S32 action_y = y + card_height - 32;
+      S32 action_width = (card_width - 8) / 2;
+      card->locate_rect = ui0_rect(x, action_y, action_width, 30);
+      card->remove_rect = ui0_rect(x + action_width + 8,
+                                   action_y,
+                                   card_width - action_width - 8,
+                                   30);
+    }
+    const char *author = entry->author[0] ? entry->author : "Unknown author";
+    char last_opened[64] = {0};
+    (void)lectern0_library_format_last_opened(entry->last_opened_time,
+                                              last_opened,
+                                              ARRAY_COUNT(last_opened));
+    (void)cstr_format(card->accessibility_name,
+                      ARRAY_COUNT(card->accessibility_name),
+                      "%s, %s, %u percent, %s%s",
+                      entry->title, author, entry->progress_percent,
+                      last_opened,
+                      entry->runtime_missing ? ", file missing" : "");
+    app->library_card_count += 1;
+  }
+}
+
+FUNCTION Lectern0LibraryCardLayout *
+lectern0_library_card_for_entry(Lectern0App *app, U64 entry_id)
+{
+  if (!app || entry_id == 0) return 0;
+  for (U32 index = 0; index < app->library_card_count; index += 1)
+    if (app->library_cards[index].entry_id == entry_id)
+      return app->library_cards + index;
+  return 0;
+}
+
+FUNCTION void
+lectern0_library_draw_button(Lectern0App *app,
+                             UI0Rect rect,
+                             const char *label,
+                             B32 primary,
+                             B32 focused)
+{
+  if (!app || rect.w <= 0 || rect.h <= 0) return;
+  B32 dark = lectern0_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
+  U32 accent = dark ? 0x00D9B98CU : 0x006F4B2EU;
+  U32 fill = primary ? accent : (dark ? 0x00312E2AU : 0x00FFFDF9U);
+  U32 border = primary ? accent : (dark ? 0x006A6258U : 0x00B8AFA4U);
+  U32 ink = primary ? 0x00FFFFFFU : (dark ? 0x00F4EEE5U : 0x00241D18U);
+  (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_UI,
+                               rect.x, rect.y, rect.w, rect.h, 8, fill, border);
+  (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                               app->render_state.text_provider, label,
+                               rect.x, rect.y, rect.w, rect.h,
+                               8, 14, DrawTextHAlign_Center,
+                               DrawTextVAlign_Center, ink);
+  if (focused)
+    (void)draw_push_rounded_rect_stroke(&app->draw_commands, DrawLayer_UI,
+                                        rect.x - 3, rect.y - 3,
+                                        rect.w + 6, rect.h + 6,
+                                        10, 2, accent);
+}
+
+FUNCTION void
+lectern0_draw_library(Lectern0App *app)
+{
+  if (!app) return;
+  B32 dark = lectern0_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
+  U32 background = dark ? 0x001A1917U : 0x00F7F3EDU;
+  U32 surface = dark ? 0x00252220U : 0x00FFFDF9U;
+  U32 ink = dark ? 0x00F4EEE5U : 0x00241D18U;
+  U32 secondary = dark ? 0x00BEB4A8U : 0x006C6258U;
+  U32 muted = dark ? 0x008D847AU : 0x00908478U;
+  U32 accent = dark ? 0x00D9B98CU : 0x006F4B2EU;
+  U32 danger = dark ? 0x00E39B91U : 0x0097332AU;
+  (void)draw_push_rect(&app->draw_commands, DrawLayer_World,
+                       0, 0, app->width, app->height, background);
+  (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                               app->render_state.text_provider, "Library",
+                               app->width < 620 ? 20 : 32, 14,
+                               MAX(app->width - 240, 100), 56,
+                               0, 30, DrawTextHAlign_Left,
+                               DrawTextVAlign_Center, ink);
+  UI0Rect add_rect = lectern0_library_add_rect(app);
+  lectern0_library_draw_button(app, add_rect, "+  Add EPUBs", 1,
+                               app->host_focus_control ==
+                                 Lectern0HostControl_LibraryAdd &&
+                               app->host_focus_visible);
+
+  if (app->library_import_in_progress)
+  {
+    (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                 app->render_state.text_provider,
+                                 "Adding EPUBs...", 0, 74,
+                                 app->width, 32, 0, 14,
+                                 DrawTextHAlign_Center,
+                                 DrawTextVAlign_Center, secondary);
+  }
+  else if (app->status[0])
+  {
+    (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                 app->render_state.text_provider,
+                                 app->status, 24, 72,
+                                 MAX(app->width - 48, 1), 28, 0, 13,
+                                 DrawTextHAlign_Left,
+                                 DrawTextVAlign_Center, secondary);
+  }
+  if (app->library.entry_count == 0)
+  {
+    S32 panel_width = MIN(MAX(app->width - 48, 260), 560);
+    S32 panel_height = 260;
+    S32 x = (app->width - panel_width) / 2;
+    S32 y = MAX(112, (app->height - panel_height) / 2);
+    (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
+                                 x, y, panel_width, panel_height,
+                                 16, surface, dark ? 0x00433E38U : 0x00DED6CBU);
+    (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                 app->render_state.text_provider,
+                                 "Your library is empty", x + 24, y + 38,
+                                 panel_width - 48, 44, 0, 24,
+                                 DrawTextHAlign_Center,
+                                 DrawTextVAlign_Center, ink);
+    (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                 app->render_state.text_provider,
+                                 "Add one or more EPUB files to start reading.\nBooks stay in their current folders.",
+                                 x + 36, y + 88, panel_width - 72, 72,
+                                 4, 15, DrawTextHAlign_Center,
+                                 DrawTextVAlign_Center, secondary);
+    UI0Rect empty_add = lectern0_library_empty_add_rect(app);
+    lectern0_library_draw_button(app, empty_add, "Add EPUBs", 1, 0);
+    return;
+  }
+
+  for (U32 card_index = 0; card_index < app->library_card_count; card_index += 1)
+  {
+    Lectern0LibraryCardLayout *card = app->library_cards + card_index;
+    Lectern0LibraryEntry *entry =
+      lectern0_library_catalog_find_id(&app->library, card->entry_id);
+    if (!entry) continue;
+    B32 selected = app->library_selected_entry_id == entry->entry_id;
+    B32 focused = app->host_focus_control ==
+      (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+                                     card_index) &&
+      app->host_focus_visible;
+    (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
+                                 card->card_rect.x, card->card_rect.y,
+                                 card->card_rect.w, card->card_rect.h,
+                                 10, surface,
+                                 selected ? accent :
+                                   (dark ? 0x00433E38U : 0x00DED6CBU));
+    Lectern0LibraryThumbnail *thumbnail =
+      lectern0_library_thumbnail_load(app, entry);
+    if (thumbnail)
+    {
+      S32 fit_x = 0;
+      S32 fit_y = 0;
+      S32 fit_w = 0;
+      S32 fit_h = 0;
+      if (lectern0_fit_image_rect(thumbnail->width, thumbnail->height,
+                                  card->cover_rect.x + 8,
+                                  card->cover_rect.y + 8,
+                                  card->cover_rect.w - 16,
+                                  card->cover_rect.h - 16,
+                                  &fit_x, &fit_y, &fit_w, &fit_h))
+        (void)draw_push_sprite_clipped(&app->draw_commands, DrawLayer_World,
+                                       thumbnail->pixels,
+                                       thumbnail->width, thumbnail->height,
+                                       thumbnail->stride_pixels,
+                                       fit_x, fit_y, fit_w, fit_h,
+                                       card->cover_rect.x, card->cover_rect.y,
+                                       card->cover_rect.w, card->cover_rect.h);
+    }
+    else
+    {
+      (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
+                                   card->cover_rect.x + 8,
+                                   card->cover_rect.y + 8,
+                                   card->cover_rect.w - 16,
+                                   card->cover_rect.h - 16,
+                                   7, dark ? 0x00312E2AU : 0x00E9E1D6U,
+                                   dark ? 0x00534D45U : 0x00D2C7BAU);
+      (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                   app->render_state.text_provider,
+                                   entry->runtime_missing ? "File missing" :
+                                     "Cover unavailable",
+                                   card->cover_rect.x + 16,
+                                   card->cover_rect.y + 16,
+                                   card->cover_rect.w - 32,
+                                   card->cover_rect.h - 32,
+                                   4, 15, DrawTextHAlign_Center,
+                                   DrawTextVAlign_Center,
+                                   entry->runtime_missing ? danger : muted);
+    }
+    S32 text_y = card->cover_rect.y + card->cover_rect.h + 8;
+    (void)draw_push_text_box(&app->draw_commands, DrawLayer_UI,
+                             app->render_state.text_provider,
+                             entry->title, card->card_rect.x + 8, text_y,
+                             card->card_rect.w - 16, 24, 0, 0, 16, 1,
+                             DrawTextHAlign_Left, DrawTextVAlign_Center,
+                             DrawTextBoxOverflow_Truncate, ink, 0);
+    (void)draw_push_text_box(&app->draw_commands, DrawLayer_UI,
+                             app->render_state.text_provider,
+                             entry->author[0] ? entry->author : "Unknown author",
+                             card->card_rect.x + 8, text_y + 23,
+                             card->card_rect.w - 16, 20, 0, 0, 13, 1,
+                             DrawTextHAlign_Left, DrawTextVAlign_Center,
+                             DrawTextBoxOverflow_Truncate, secondary, 0);
+    char info[96] = {0};
+    if (entry->runtime_missing)
+      lectern0_copy_cstr(info, ARRAY_COUNT(info), "Source file missing");
+    else
+      (void)cstr_format(info, ARRAY_COUNT(info), "%u%% read",
+                        entry->progress_percent);
+    (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                 app->render_state.text_provider, info,
+                                 card->card_rect.x + 8, text_y + 45,
+                                 card->card_rect.w - 16, 20, 0, 12,
+                                 DrawTextHAlign_Left, DrawTextVAlign_Center,
+                                 entry->runtime_missing ? danger : muted);
+    if (!entry->runtime_missing)
+    {
+      char last_opened[64] = {0};
+      if (lectern0_library_format_last_opened(entry->last_opened_time,
+                                              last_opened,
+                                              ARRAY_COUNT(last_opened)))
+        (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
+                                     app->render_state.text_provider,
+                                     last_opened,
+                                     card->card_rect.x + 8, text_y + 65,
+                                     card->card_rect.w - 16, 20, 0, 12,
+                                     DrawTextHAlign_Left,
+                                     DrawTextVAlign_Center, muted);
+    }
+    if (entry->runtime_missing)
+    {
+      lectern0_library_draw_button(app, card->locate_rect, "Locate", 0,
+        app->host_focus_control ==
+          (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryLocateBase +
+                                         card_index) && app->host_focus_visible);
+      lectern0_library_draw_button(app, card->remove_rect, "Remove", 0,
+        app->host_focus_control ==
+          (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryRemoveBase +
+                                         card_index) && app->host_focus_visible);
+    }
+    if (focused)
+      (void)draw_push_rounded_rect_stroke(&app->draw_commands, DrawLayer_UI,
+                                          card->card_rect.x - 3,
+                                          card->card_rect.y - 3,
+                                          card->card_rect.w + 6,
+                                          card->card_rect.h + 6,
+                                          12, 2, accent);
+  }
+}
+
 FUNCTION UI0Rect
 lectern0_host_exit_rect(const Lectern0App *app)
 {
@@ -4355,8 +5262,7 @@ FUNCTION Lectern0HostControlRecord *
 lectern0_host_control_record(Lectern0App *app,
                              Lectern0HostControlIdentity identity)
 {
-  if (!app || identity <= Lectern0HostControl_None ||
-      identity >= Lectern0HostControl_Count)
+  if (!app || identity <= Lectern0HostControl_None)
     return 0;
   for (U32 index = 0; index < app->host_control_count; index += 1)
     if (app->host_controls[index].identity == identity)
@@ -4369,6 +5275,109 @@ lectern0_update_host_control_records(Lectern0App *app)
 {
   if (!app) return;
   app->host_control_count = 0;
+  if (lectern0_library_active(app))
+  {
+    UI0Rect add_rect = lectern0_library_add_rect(app);
+    ReaderViewSemanticFlags add_flags =
+      ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
+    if (app->host_focus_control == Lectern0HostControl_LibraryAdd)
+      add_flags |= ReaderViewSemantic_Focused;
+    app->host_controls[app->host_control_count++] = (Lectern0HostControlRecord){
+      .identity = Lectern0HostControl_LibraryAdd,
+      .action = Lectern0HostControlAction_AddEpubs,
+      .semantic = {
+        .id = ui0_id_from_string("lectern0.library.add"),
+        .role = ReaderViewSemantic_Button,
+        .flags = add_flags,
+        .rect = add_rect,
+        .name = {.data = "Add EPUBs", .size = 9},
+        .source_key = Lectern0HostControl_LibraryAdd,
+      },
+    };
+    for (U32 card_index = 0;
+         card_index < app->library_card_count &&
+           app->host_control_count < ARRAY_COUNT(app->host_controls);
+         card_index += 1)
+    {
+      Lectern0LibraryCardLayout *card = app->library_cards + card_index;
+      Lectern0LibraryEntry *entry =
+        lectern0_library_catalog_find_id(&app->library, card->entry_id);
+      if (!entry) continue;
+      Lectern0HostControlIdentity book_identity =
+        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+                                       card_index);
+      ReaderViewSemanticFlags book_flags =
+        ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
+      if (app->host_focus_control == book_identity)
+        book_flags |= ReaderViewSemantic_Focused;
+      app->host_controls[app->host_control_count++] =
+        (Lectern0HostControlRecord){
+          .identity = book_identity,
+          .action = Lectern0HostControlAction_OpenBook,
+          .entry_id = entry->entry_id,
+          .semantic = {
+            .id = ui0_id_from_u64(entry->entry_id),
+            .role = ReaderViewSemantic_Button,
+            .flags = book_flags,
+            .rect = card->card_rect,
+            .name = {.data = card->accessibility_name,
+                     .size = (S32)strlen(card->accessibility_name)},
+            .source_key = entry->entry_id,
+          },
+        };
+      if (!entry->runtime_missing) continue;
+      Lectern0HostControlIdentity locate_identity =
+        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryLocateBase +
+                                       card_index);
+      Lectern0HostControlIdentity remove_identity =
+        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryRemoveBase +
+                                       card_index);
+      ReaderViewSemanticFlags locate_flags =
+        ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
+      ReaderViewSemanticFlags remove_flags = locate_flags;
+      if (app->host_focus_control == locate_identity)
+        locate_flags |= ReaderViewSemantic_Focused;
+      if (app->host_focus_control == remove_identity)
+        remove_flags |= ReaderViewSemantic_Focused;
+      app->host_controls[app->host_control_count++] =
+        (Lectern0HostControlRecord){
+          .identity = locate_identity,
+          .action = Lectern0HostControlAction_LocateBook,
+          .entry_id = entry->entry_id,
+          .semantic = {
+            .id = ui0_id_from_u64(entry->entry_id ^ 0x4C4F43415445ull),
+            .role = ReaderViewSemantic_Button,
+            .flags = locate_flags,
+            .rect = card->locate_rect,
+            .name = {.data = "Locate missing EPUB", .size = 19},
+            .source_key = entry->entry_id,
+          },
+        };
+      app->host_controls[app->host_control_count++] =
+        (Lectern0HostControlRecord){
+          .identity = remove_identity,
+          .action = Lectern0HostControlAction_RemoveBook,
+          .entry_id = entry->entry_id,
+          .semantic = {
+            .id = ui0_id_from_u64(entry->entry_id ^ 0x52454D4F5645ull),
+            .role = ReaderViewSemantic_Button,
+            .flags = remove_flags,
+            .rect = card->remove_rect,
+            .name = {.data = "Remove from library", .size = 19},
+            .source_key = entry->entry_id,
+          },
+        };
+    }
+    if (app->host_focus_control != Lectern0HostControl_None &&
+        !lectern0_host_control_record(app, app->host_focus_control))
+    {
+      app->host_focus_control = app->library_card_count > 0 ?
+        Lectern0HostControl_LibraryBookBase : Lectern0HostControl_LibraryAdd;
+      app->host_focus_visible = 1;
+      lectern0_update_host_control_records(app);
+    }
+    return;
+  }
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
   if (exit_rect.w <= 0 || exit_rect.h <= 0)
   {
@@ -4397,13 +5406,14 @@ lectern0_update_host_control_records(Lectern0App *app)
     flags |= ReaderViewSemantic_Focused;
   app->host_controls[0] = (Lectern0HostControlRecord){
     .identity = Lectern0HostControl_ExitReader,
+    .action = Lectern0HostControlAction_CloseBook,
     .semantic = {
-      .id = ui0_id_from_string("lectern0.reader.exit"),
+      .id = ui0_id_from_string("lectern0.reader.close_book"),
       .parent_id = toolbar_id,
       .role = ReaderViewSemantic_Button,
       .flags = flags,
       .rect = exit_rect,
-      .name = {.data = "Exit Reader", .size = 11},
+      .name = {.data = "Close Book", .size = 10},
       .control = ReaderViewSemanticControl_None,
       .source_key = Lectern0HostControl_ExitReader,
     },
@@ -4416,8 +5426,7 @@ lectern0_host_focus_set(Lectern0App *app,
                         Lectern0HostControlIdentity identity,
                         B32 visible)
 {
-  if (!app || identity >= Lectern0HostControl_Count)
-    return 0;
+  if (!app) return 0;
   if (identity != Lectern0HostControl_None &&
       !lectern0_host_control_record(app, identity))
     return 0;
@@ -4434,14 +5443,58 @@ lectern0_host_focus_set(Lectern0App *app,
 }
 
 FUNCTION B32
+lectern0_library_remove_entry(Lectern0App *app, U64 entry_id)
+{
+  if (!app || entry_id == 0) return 0;
+  char thumbnail_path[Lectern0PathCap] = {0};
+  if (lectern0_library_thumbnail_path(app, entry_id, thumbnail_path,
+                                      ARRAY_COUNT(thumbnail_path)))
+    (void)os_file_delete(thumbnail_path);
+  if (!lectern0_library_catalog_remove(&app->library, entry_id)) return 0;
+  lectern0_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
+  app->library_selected_entry_id = app->library.entry_count > 0 ?
+    app->library.entries[0].entry_id : 0;
+  app->host_focus_control = app->library.entry_count > 0 ?
+    Lectern0HostControl_LibraryBookBase : Lectern0HostControl_LibraryAdd;
+  app->host_focus_visible = 1;
+  lectern0_set_statusf(app, "Removed from library; source file was not deleted");
+  return lectern0_save_library(app);
+}
+
+FUNCTION B32
 lectern0_host_control_invoke(Lectern0App *app,
                              Lectern0HostControlIdentity identity)
 {
-  if (!app || identity != Lectern0HostControl_ExitReader ||
-      !lectern0_host_control_record(app, identity))
-    return 0;
-  app->host_exit_requested = 1;
-  return 1;
+  Lectern0HostControlRecord *record =
+    lectern0_host_control_record(app, identity);
+  if (!app || !record) return 0;
+  switch (record->action)
+  {
+    case Lectern0HostControlAction_CloseBook:
+      return lectern0_close_book(app);
+    case Lectern0HostControlAction_AddEpubs:
+      return lectern0_pick_epub(app);
+    case Lectern0HostControlAction_OpenBook:
+    {
+      Lectern0LibraryEntry *entry =
+        lectern0_library_catalog_find_id(&app->library, record->entry_id);
+      if (!entry) return 0;
+      app->library_selected_entry_id = entry->entry_id;
+      if (entry->runtime_missing)
+      {
+        lectern0_set_statusf(app, "Source file missing; use Locate or Remove");
+        return 1;
+      }
+      return lectern0_open_path(app, entry->source_path);
+    }
+    case Lectern0HostControlAction_LocateBook:
+      return lectern0_locate_library_entry(app, record->entry_id);
+    case Lectern0HostControlAction_RemoveBook:
+      return lectern0_library_remove_entry(app, record->entry_id);
+    case Lectern0HostControlAction_None:
+    default:
+      return 0;
+  }
 }
 
 FUNCTION B32
@@ -4506,6 +5559,22 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
       ReaderViewSemanticControl_Progress,
     };
   if (!app || app->reader_view_state.popup != ReaderViewPopup_None) return 0;
+  if (lectern0_library_active(app))
+  {
+    if (app->host_control_count == 0) return 0;
+    S32 current = -1;
+    for (U32 index = 0; index < app->host_control_count; index += 1)
+      if (app->host_controls[index].identity == app->host_focus_control)
+        current = (S32)index;
+    S32 target = current < 0 ? (reverse ? (S32)app->host_control_count - 1 : 0) :
+      (reverse ? current - 1 : current + 1);
+    while (target < 0) target += (S32)app->host_control_count;
+    target %= (S32)app->host_control_count;
+    Lectern0HostControlRecord *record = app->host_controls + target;
+    app->library_selected_entry_id = record->entry_id ?
+      record->entry_id : app->library_selected_entry_id;
+    return lectern0_host_focus_set(app, record->identity, 1);
+  }
 
   ReaderViewSemanticControl current_shared = ReaderViewSemanticControl_None;
   B32 open_present = 0;
@@ -4578,9 +5647,8 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
 FUNCTION B32
 lectern0_host_keyboard_activate(Lectern0App *app)
 {
-  if (!app || app->host_focus_control != Lectern0HostControl_ExitReader)
-    return 0;
-  return lectern0_host_control_invoke(app, Lectern0HostControl_ExitReader);
+  if (!app || app->host_focus_control == Lectern0HostControl_None) return 0;
+  return lectern0_host_control_invoke(app, app->host_focus_control);
 }
 
 FUNCTION void
@@ -4589,6 +5657,22 @@ lectern0_host_pointer_move(Lectern0App *app, S32 x, S32 y)
   if (!app) return;
   app->input.pointer_x = x;
   app->input.pointer_y = y;
+  if (lectern0_library_active(app) &&
+      app->host_pointer_armed != Lectern0HostControl_None)
+  {
+    Lectern0HostControlRecord *record =
+      lectern0_host_control_record(app, app->host_pointer_armed);
+    UI0Rect rect = record ? record->semantic.rect : (UI0Rect){0};
+    if (app->library.entry_count == 0 &&
+        app->host_pointer_armed == Lectern0HostControl_LibraryAdd)
+    {
+      UI0Rect empty = lectern0_library_empty_add_rect(app);
+      if (ui0_rect_contains_point(empty, x, y)) return;
+    }
+    if (!record || !ui0_rect_contains_point(rect, x, y))
+      app->host_pointer_armed = Lectern0HostControl_None;
+    return;
+  }
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
   if (app->host_exit_pointer_armed &&
       (exit_rect.w <= 0 || !ui0_rect_contains_point(exit_rect, x, y)))
@@ -4600,9 +5684,11 @@ lectern0_host_pointer_cancel(Lectern0App *app)
 {
   if (!app) return;
   B32 cancel_active = app->input.pointer_down ||
+                      app->host_pointer_armed != Lectern0HostControl_None ||
                       app->host_exit_pointer_armed ||
                       app->selection_dragging;
   app->host_exit_pointer_armed = 0;
+  app->host_pointer_armed = Lectern0HostControl_None;
   app->input.pointer_down = 0;
   app->input.pointer_pressed = 0;
   app->input.pointer_selection_release = 0;
@@ -4631,15 +5717,15 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
     if (app->host_focus_visible) state |= UI0ControlState_FocusVisible;
   }
   UI0ControlRecord control = {
-    .id = ui0_id_from_string("lectern0.reader.exit"),
+    .id = ui0_id_from_string("lectern0.reader.close_book"),
     .kind = UI0ControlKind_IconButton,
     .root = UI0RootKind_Normal,
     .state = state,
     .rect = rect,
     .clip_rect = app->reader_view_layout.host_toolbar_trailing_rect,
     .text_rect = rect,
-    .label_hash = ui0_id_from_string("Exit Reader"),
-    .label_len = 11,
+    .label_hash = ui0_id_from_string("Close Book"),
+    .label_len = 10,
   };
   /*
   A focused labeled IconButton emits fill, border, text, and focus-ring
@@ -4691,32 +5777,121 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_pick_epub(Lectern0App *app)
+lectern0_pick_epub_paths(Lectern0App *app,
+                         B32 allow_multiple,
+                         char paths[Lectern0LibraryImportPathCap]
+                                   [Lectern0LibraryPathCap],
+                         U32 *out_count)
 {
-  if (!app || !app->window) { return 0; }
-  wchar_t path[Lectern0PathCap] = {0};
+  if (out_count) *out_count = 0;
+  if (!app || !app->window || !paths || !out_count) return 0;
+  wchar_t selection[65536] = {0};
   OPENFILENAMEW dialog = {0};
   dialog.lStructSize = sizeof(dialog);
   dialog.hwndOwner = app->window;
   dialog.lpstrFilter = L"EPUB Books\0*.epub\0All Files\0*.*\0";
-  dialog.lpstrFile = path;
-  dialog.nMaxFile = ARRAY_COUNT(path);
-  dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+  dialog.lpstrFile = selection;
+  dialog.nMaxFile = ARRAY_COUNT(selection);
+  dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER |
+                 (allow_multiple ? OFN_ALLOWMULTISELECT : 0);
   if (!GetOpenFileNameW(&dialog)) { return 0; }
-  char utf8_path[Lectern0PathCap] = {0};
-  if (WideCharToMultiByte(CP_UTF8,
-                          0,
-                          path,
-                          -1,
-                          utf8_path,
-                          ARRAY_COUNT(utf8_path),
-                          0,
-                          0) <= 0)
+
+  const wchar_t *first = selection;
+  const wchar_t *next = first + wcslen(first) + 1;
+  if (!next[0])
   {
-    lectern0_set_statusf(app, "Open failed: path encoding");
+    if (WideCharToMultiByte(CP_UTF8, 0, first, -1, paths[0],
+                            Lectern0LibraryPathCap, 0, 0) <= 0)
+      return 0;
+    *out_count = 1;
+    return 1;
+  }
+  U32 count = 0;
+  while (next[0] && count < Lectern0LibraryImportPathCap)
+  {
+    wchar_t joined[Lectern0LibraryPathCap] = {0};
+    if (swprintf_s(joined, ARRAY_COUNT(joined), L"%ls\\%ls", first, next) <= 0 ||
+        WideCharToMultiByte(CP_UTF8, 0, joined, -1, paths[count],
+                            Lectern0LibraryPathCap, 0, 0) <= 0)
+      return 0;
+    count += 1;
+    next += wcslen(next) + 1;
+  }
+  *out_count = count;
+  return count > 0;
+}
+
+FUNCTION B32
+lectern0_pick_epub(Lectern0App *app)
+{
+  if (!app) return 0;
+  app->native_picker_request_count += 1;
+  if (app->suppress_native_picker)
+  {
+    lectern0_set_statusf(app, "Add EPUBs picker requested");
+    return 1;
+  }
+  if (!app->window) return 0;
+  char paths[Lectern0LibraryImportPathCap][Lectern0LibraryPathCap] = {0};
+  U32 path_count = 0;
+  B32 library_was_active = lectern0_library_active(app);
+  if (!lectern0_pick_epub_paths(app, 1, paths, &path_count)) return 0;
+  app->library_import_in_progress = 1;
+  if (app->window)
+  {
+    InvalidateRect(app->window, 0, FALSE);
+    UpdateWindow(app->window);
+  }
+  U32 imported = 0;
+  for (U32 index = 0; index < path_count; index += 1)
+    if (lectern0_open_path(app, paths[index])) imported += 1;
+  if (library_was_active && epub_reader_is_open(&app->reader))
+    (void)lectern0_close_book(app);
+  else if (!library_was_active && imported > 1)
+    (void)lectern0_open_path(app, paths[0]);
+  app->library_import_in_progress = 0;
+  lectern0_library_catalog_refresh_missing(&app->library);
+  if (library_was_active)
+    lectern0_set_statusf(app, imported == 1 ? "Added 1 EPUB" :
+                         "Added %u EPUBs", imported);
+  return imported > 0;
+}
+
+FUNCTION B32
+lectern0_locate_library_entry(Lectern0App *app, U64 entry_id)
+{
+  Lectern0LibraryEntry *entry =
+    lectern0_library_catalog_find_id(app ? &app->library : 0, entry_id);
+  if (!entry || !app->window) return 0;
+  char paths[Lectern0LibraryImportPathCap][Lectern0LibraryPathCap] = {0};
+  U32 count = 0;
+  if (!lectern0_pick_epub_paths(app, 0, paths, &count) || count != 1) return 0;
+  char normalized[Lectern0LibraryPathCap] = {0};
+  if (!lectern0_library_normalize_path(paths[0], normalized,
+                                       ARRAY_COUNT(normalized)))
+    return 0;
+  Lectern0LibraryEntry *duplicate =
+    lectern0_library_catalog_find_path(&app->library, normalized);
+  U64 duplicate_id = duplicate && duplicate->entry_id != entry_id ?
+    duplicate->entry_id : 0;
+  app->library_locate_entry_id = entry_id;
+  if (!lectern0_open_path(app, normalized))
+  {
+    app->library_locate_entry_id = 0;
     return 0;
   }
-  return lectern0_open_path(app, utf8_path);
+  if (duplicate_id)
+  {
+    char thumbnail_path[Lectern0PathCap] = {0};
+    if (lectern0_library_thumbnail_path(app, duplicate_id, thumbnail_path,
+                                        ARRAY_COUNT(thumbnail_path)))
+      (void)os_file_delete(thumbnail_path);
+    (void)lectern0_library_catalog_remove(&app->library, duplicate_id);
+  }
+  app->library_selected_entry_id = entry_id;
+  lectern0_library_catalog_sort(&app->library);
+  (void)lectern0_save_library(app);
+  return 1;
 }
 
 FUNCTION B32
@@ -6529,6 +7704,31 @@ lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_down = 1;
   app->input.pointer_pressed = 1;
   app->input.pointer_selection_release = 0;
+  if (lectern0_library_active(app))
+  {
+    app->host_pointer_armed = Lectern0HostControl_None;
+    if (app->library.entry_count == 0 &&
+        ui0_rect_contains_point(lectern0_library_empty_add_rect(app), x, y))
+    {
+      app->host_pointer_armed = Lectern0HostControl_LibraryAdd;
+    }
+    else
+    {
+      for (U32 index = app->host_control_count; index > 0; index -= 1)
+      {
+        Lectern0HostControlRecord *record = app->host_controls + index - 1;
+        if (ui0_rect_contains_point(record->semantic.rect, x, y))
+        {
+          app->host_pointer_armed = record->identity;
+          if (record->entry_id)
+            app->library_selected_entry_id = record->entry_id;
+          break;
+        }
+      }
+    }
+    (void)lectern0_host_focus_set(app, app->host_pointer_armed, 0);
+    return;
+  }
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
   app->host_exit_pointer_armed =
     exit_rect.w > 0 && ui0_rect_contains_point(exit_rect, x, y);
@@ -6552,6 +7752,21 @@ lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_down = 0;
   app->input.pointer_released = 1;
   app->input.pointer_selection_release = 0;
+  if (lectern0_library_active(app))
+  {
+    Lectern0HostControlIdentity armed = app->host_pointer_armed;
+    app->host_pointer_armed = Lectern0HostControl_None;
+    if (armed == Lectern0HostControl_None) return 0;
+    Lectern0HostControlRecord *record = lectern0_host_control_record(app, armed);
+    B32 inside = record && ui0_rect_contains_point(record->semantic.rect, x, y);
+    if (app->library.entry_count == 0 &&
+        armed == Lectern0HostControl_LibraryAdd)
+      inside = inside || ui0_rect_contains_point(
+        lectern0_library_empty_add_rect(app), x, y);
+    if (!inside) return 0;
+    app->input.pointer_released = 0;
+    return lectern0_host_control_invoke(app, armed);
+  }
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
   B32 activate_exit = app->host_exit_pointer_armed && exit_rect.w > 0 &&
                       ui0_rect_contains_point(exit_rect, x, y);
@@ -7200,6 +8415,20 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
   U32 canvas_color = lectern0_reader_content_theme(app->theme).page_background;
   render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
+  if (lectern0_library_active(app))
+  {
+    app->reader_view_ready = 0;
+    app->reader_view_frame.semantic_node_count = 0;
+    app->reader_view_frame.action_count = 0;
+    app->reader_view_frame.change_flags = ReaderViewFrameChange_None;
+    lectern0_library_resolve_layout(app);
+    lectern0_update_host_control_records(app);
+    lectern0_draw_library(app);
+    render_execute_draw_commands(&app->render_state, buffer,
+                                  &app->draw_commands);
+    lectern0_reset_input(app);
+    return;
+  }
   (void)lectern0_build_reader_view(app);
   lectern0_update_host_control_records(app);
   lectern0_draw_reader_page(app);
@@ -7266,6 +8495,260 @@ lectern0_write_bmp(const char *path, const U32 *pixels, S32 width, S32 height)
     fwrite(pixels, pixel_bytes, 1, file) == 1;
   fclose(file);
   return result;
+}
+
+FUNCTION int
+lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
+{
+  enum { Width = 1100, Height = 760, CompactWidth = 520, CompactHeight = 720 };
+  if (!epub_path || !epub_path[0] || !output_prefix || !output_prefix[0])
+    return 2;
+  char output_directory[Lectern0PathCap] = {0};
+  char catalog_path[Lectern0PathCap] = {0};
+  char state_path[Lectern0PathCap] = {0};
+  char settings_path[Lectern0PathCap] = {0};
+  char empty_bmp[Lectern0PathCap] = {0};
+  char populated_bmp[Lectern0PathCap] = {0};
+  char restart_bmp[Lectern0PathCap] = {0};
+  char restart_repeat_bmp[Lectern0PathCap] = {0};
+  char compact_bmp[Lectern0PathCap] = {0};
+  char missing_bmp[Lectern0PathCap] = {0};
+  char missing_path[Lectern0PathCap] = {0};
+  lectern0_copy_cstr(output_directory, ARRAY_COUNT(output_directory),
+                     output_prefix);
+  char *slash = strrchr(output_directory, '\\');
+  char *forward = strrchr(output_directory, '/');
+  if (!slash || (forward && forward > slash)) slash = forward;
+  if (slash) *slash = 0;
+  else lectern0_copy_cstr(output_directory,
+                          ARRAY_COUNT(output_directory), ".");
+  if (!os_make_directory_chain(output_directory) ||
+      cstr_format(catalog_path, ARRAY_COUNT(catalog_path),
+                  "%s_catalog.v1", output_prefix) == 0 ||
+      cstr_format(state_path, ARRAY_COUNT(state_path),
+                  "%s_state.v1", output_prefix) == 0 ||
+      cstr_format(settings_path, ARRAY_COUNT(settings_path),
+                  "%s_settings.v1", output_prefix) == 0 ||
+      cstr_format(empty_bmp, ARRAY_COUNT(empty_bmp),
+                  "%s_empty.bmp", output_prefix) == 0 ||
+      cstr_format(populated_bmp, ARRAY_COUNT(populated_bmp),
+                  "%s_populated.bmp", output_prefix) == 0 ||
+      cstr_format(restart_bmp, ARRAY_COUNT(restart_bmp),
+                  "%s_restart.bmp", output_prefix) == 0 ||
+      cstr_format(restart_repeat_bmp, ARRAY_COUNT(restart_repeat_bmp),
+                  "%s_restart_repeat.bmp", output_prefix) == 0 ||
+      cstr_format(compact_bmp, ARRAY_COUNT(compact_bmp),
+                  "%s_compact.bmp", output_prefix) == 0 ||
+      cstr_format(missing_bmp, ARRAY_COUNT(missing_bmp),
+                  "%s_missing.bmp", output_prefix) == 0 ||
+      cstr_format(missing_path, ARRAY_COUNT(missing_path),
+                  "%s_missing_source.epub", output_prefix) == 0)
+    return 2;
+  (void)os_file_delete(catalog_path);
+  (void)os_file_delete(state_path);
+  (void)os_file_delete(settings_path);
+
+  Lectern0LibraryCatalog *ordering =
+    (Lectern0LibraryCatalog *)calloc(1, sizeof(*ordering));
+  Lectern0App *migration = (Lectern0App *)calloc(1, sizeof(*migration));
+  if (!ordering || !migration)
+  {
+    free(ordering);
+    free(migration);
+    return 1;
+  }
+  ordering->entry_count = 2;
+  ordering->entries[0].entry_id = 1;
+  ordering->entries[0].last_opened_time = 10;
+  lectern0_copy_cstr(ordering->entries[0].title,
+                     ARRAY_COUNT(ordering->entries[0].title), "Older");
+  ordering->entries[1].entry_id = 2;
+  ordering->entries[1].last_opened_time = 20;
+  lectern0_copy_cstr(ordering->entries[1].title,
+                     ARRAY_COUNT(ordering->entries[1].title), "Newer");
+  lectern0_library_catalog_sort(ordering);
+  lectern0_library_catalog_init(&migration->library);
+  migration->saved.valid = 1;
+  migration->saved.spine_index = 3;
+  migration->saved.byte_offset = 47;
+  lectern0_copy_cstr(migration->saved.path,
+                     ARRAY_COUNT(migration->saved.path), epub_path);
+  lectern0_migrate_saved_state_to_library(migration);
+  B32 ordering_valid = ordering->entries[0].entry_id == 2 &&
+                       ordering->entries[1].entry_id == 1;
+  B32 migration_valid = migration->library.entry_count == 1 &&
+    migration->library.entries[0].progress_spine_index == 3 &&
+    migration->library.entries[0].progress_byte_offset == 47;
+  free(ordering);
+  free(migration);
+  if (!ordering_valid || !migration_valid) return 1;
+
+  U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
+  Lectern0App app = {0};
+  RenderBuffer buffer = {0};
+  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0))
+    goto fail;
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
+                     output_directory);
+  lectern0_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
+                     catalog_path);
+  lectern0_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
+  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+                     settings_path);
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!lectern0_library_active(&app) || app.library.entry_count != 0 ||
+      app.host_control_count != 1 ||
+      app.host_controls[0].action != Lectern0HostControlAction_AddEpubs ||
+      !lectern0_write_bmp(empty_bmp, pixels, Width, Height))
+    goto fail;
+
+  if (!lectern0_open_path(&app, epub_path) || app.library.entry_count != 1 ||
+      !epub_reader_is_open(&app.reader))
+    goto fail;
+  Lectern0LibraryEntry *opened = app.library.entries;
+  U64 entry_id = opened->entry_id;
+  if (!opened->title[0] || !opened->author[0] ||
+      !(opened->metadata_flags & Lectern0LibraryMetadata_Title) ||
+      !(opened->metadata_flags & Lectern0LibraryMetadata_Author) ||
+      !(opened->metadata_flags & Lectern0LibraryMetadata_Cover) ||
+      opened->digest_algorithm != Lectern0LibraryDigest_None)
+    goto fail;
+  (void)lectern0_move_page(&app, 1);
+  if (!lectern0_close_book(&app) || !lectern0_library_active(&app) ||
+      app.library.entry_count != 1)
+    goto fail;
+  if (buffer.pixels != pixels || buffer.width != Width ||
+      buffer.height != Height || buffer.stride_pixels != Width)
+    goto fail;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!lectern0_write_bmp(populated_bmp, pixels, Width, Height))
+    goto fail;
+  Lectern0LibraryEntry *closed =
+    lectern0_library_catalog_find_id(&app.library, entry_id);
+  Lectern0LibraryThumbnail *thumbnail = closed ?
+    lectern0_library_thumbnail_find(&app.library_thumbnail_cache,
+                                    closed->entry_id,
+                                    closed->file_size,
+                                    closed->file_modified_time) : 0;
+  if (!closed || !thumbnail || closed->runtime_missing ||
+      app.host_control_count < 2 ||
+      !lectern0_save_library(&app))
+    goto fail;
+  lectern0_app_release(&app);
+
+  if (!lectern0_app_init(&app, Width, Height, 1, 0)) goto fail;
+  app.persistence_enabled = 1;
+  lectern0_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
+                     output_directory);
+  lectern0_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
+                     catalog_path);
+  lectern0_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
+  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+                     settings_path);
+  if (!lectern0_library_catalog_load(&app.library, catalog_path) ||
+      app.library.entry_count != 1)
+    goto fail;
+  app.library_selected_entry_id = app.library.entries[0].entry_id;
+  lectern0_library_set_summary_status(&app);
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  U64 restart_hash = u64_hash_bytes(pixels,
+                                    (U64)Width * Height * sizeof(U32));
+  if (!lectern0_library_active(&app) || !app.library.entries[0].title[0] ||
+      !lectern0_write_bmp(restart_bmp, pixels, Width, Height))
+    goto fail;
+  lectern0_render_to_buffer(&app, &buffer);
+  U64 restart_repeat_hash = u64_hash_bytes(
+    pixels, (U64)Width * Height * sizeof(U32));
+  if (restart_repeat_hash != restart_hash ||
+      !lectern0_write_bmp(restart_repeat_bmp, pixels, Width, Height))
+    goto fail;
+
+  app.width = CompactWidth;
+  app.height = CompactHeight;
+  render_buffer_init(&buffer, pixels,
+                     CompactWidth, CompactHeight, CompactWidth);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (app.library_column_count != 3 || app.library_card_count != 1 ||
+      !lectern0_write_bmp(compact_bmp, pixels, CompactWidth, CompactHeight))
+    goto fail;
+  app.width = Width;
+  app.height = Height;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  Lectern0HostControlRecord *book_control =
+    lectern0_host_control_record(&app, Lectern0HostControl_LibraryBookBase);
+  if (!book_control) goto fail;
+  S32 book_x = book_control->semantic.rect.x + book_control->semantic.rect.w / 2;
+  S32 book_y = book_control->semantic.rect.y + book_control->semantic.rect.h / 2;
+  lectern0_host_pointer_press(&app, book_x, book_y);
+  lectern0_host_pointer_move(&app, Width - 1, Height - 1);
+  if (lectern0_host_pointer_release(&app, book_x, book_y) ||
+      !lectern0_library_active(&app))
+    goto fail;
+  lectern0_host_pointer_press(&app, book_x, book_y);
+  if (!lectern0_host_pointer_release(&app, book_x, book_y) ||
+      !epub_reader_is_open(&app.reader))
+    goto fail;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!lectern0_host_control_invoke(&app, Lectern0HostControl_CloseBook))
+    goto fail;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!lectern0_host_focus_set(&app, Lectern0HostControl_LibraryBookBase, 1) ||
+      !lectern0_host_keyboard_activate(&app) ||
+      !epub_reader_is_open(&app.reader))
+    goto fail;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (!lectern0_host_control_invoke(&app, Lectern0HostControl_CloseBook) ||
+      !lectern0_library_active(&app) || app.library.entry_count != 1)
+    goto fail;
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+
+  lectern0_copy_cstr(app.library.entries[0].source_path,
+                     ARRAY_COUNT(app.library.entries[0].source_path),
+                     missing_path);
+  lectern0_library_catalog_refresh_missing(&app.library);
+  lectern0_library_set_summary_status(&app);
+  lectern0_render_to_buffer(&app, &buffer);
+  B32 has_locate = 0;
+  B32 has_remove = 0;
+  for (U32 index = 0; index < app.host_control_count; index += 1)
+  {
+    has_locate |= app.host_controls[index].action ==
+                  Lectern0HostControlAction_LocateBook;
+    has_remove |= app.host_controls[index].action ==
+                  Lectern0HostControlAction_RemoveBook;
+  }
+  B32 source_before_remove = os_file_exists(epub_path);
+  if (!app.library.entries[0].runtime_missing || !has_locate || !has_remove ||
+      !lectern0_write_bmp(missing_bmp, pixels, Width, Height) ||
+      !lectern0_library_remove_entry(&app, entry_id) ||
+      app.library.entry_count != 0 || !source_before_remove ||
+      !os_file_exists(epub_path))
+    goto fail;
+
+  fprintf(stdout,
+          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=thumbnail_cache progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s\n",
+          (unsigned long long)restart_hash, empty_bmp, populated_bmp,
+          restart_bmp, restart_repeat_bmp, compact_bmp, missing_bmp);
+  lectern0_app_release(&app);
+  free(pixels);
+  return 0;
+
+fail:
+  fprintf(stderr,
+          "lectern0_library_smoke result=fail entries=%u open=%d library=%d status=%s\n",
+          app.library.entry_count, epub_reader_is_open(&app.reader),
+          lectern0_library_active(&app), app.status);
+  lectern0_app_release(&app);
+  free(pixels);
+  return 1;
 }
 
 FUNCTION B32
@@ -7888,6 +9371,96 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
   return 0;
 }
 
+FUNCTION void
+lectern0_library_focus_selected(Lectern0App *app)
+{
+  if (!app || app->library.entry_count == 0) return;
+  S32 selected = lectern0_library_catalog_index_for_id(
+    &app->library, app->library_selected_entry_id);
+  if (selected < 0)
+  {
+    selected = 0;
+    app->library_selected_entry_id = app->library.entries[0].entry_id;
+  }
+  lectern0_library_resolve_layout(app);
+  Lectern0LibraryCardLayout *card = lectern0_library_card_for_entry(
+    app, app->library_selected_entry_id);
+  if (!card)
+  {
+    S32 row = selected / MAX(app->library_column_count, 1);
+    app->library_scroll_y = MAX(0, row * 380);
+    lectern0_library_resolve_layout(app);
+    card = lectern0_library_card_for_entry(app,
+                                           app->library_selected_entry_id);
+  }
+  if (card)
+  {
+    if (card->card_rect.y < 104)
+      app->library_scroll_y = MAX(0, app->library_scroll_y -
+        (104 - card->card_rect.y));
+    else if (card->card_rect.y + card->card_rect.h > app->height - 16)
+      app->library_scroll_y = MIN(app->library_scroll_max,
+        app->library_scroll_y + card->card_rect.y + card->card_rect.h -
+          (app->height - 16));
+    lectern0_library_resolve_layout(app);
+  }
+  lectern0_update_host_control_records(app);
+  for (U32 card_index = 0; card_index < app->library_card_count; card_index += 1)
+  {
+    if (app->library_cards[card_index].entry_id ==
+        app->library_selected_entry_id)
+    {
+      app->host_focus_control =
+        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+                                       card_index);
+      app->host_focus_visible = 1;
+      lectern0_update_host_control_records(app);
+      break;
+    }
+  }
+}
+
+FUNCTION B32
+lectern0_library_route_keydown(Lectern0App *app, WPARAM key, B32 shift)
+{
+  if (!app || !lectern0_library_active(app)) return 0;
+  if (key == VK_TAB) return lectern0_host_keyboard_tab(app, shift);
+  if (key == VK_RETURN || key == VK_SPACE)
+    return lectern0_host_keyboard_activate(app);
+  if (app->library.entry_count == 0)
+  {
+    if (key == VK_HOME || key == VK_END)
+      return lectern0_host_focus_set(app, Lectern0HostControl_LibraryAdd, 1);
+    return 0;
+  }
+  S32 index = lectern0_library_catalog_index_for_id(
+    &app->library, app->library_selected_entry_id);
+  if (index < 0) index = 0;
+  S32 target = index;
+  S32 columns = MAX(app->library_column_count, 1);
+  if (key == VK_LEFT) target -= 1;
+  else if (key == VK_RIGHT) target += 1;
+  else if (key == VK_UP) target -= columns;
+  else if (key == VK_DOWN) target += columns;
+  else if (key == VK_HOME) target = 0;
+  else if (key == VK_END) target = (S32)app->library.entry_count - 1;
+  else if (key == VK_DELETE)
+    return lectern0_library_remove_entry(app,
+                                         app->library_selected_entry_id);
+  else if (key == 'L')
+  {
+    Lectern0LibraryEntry *entry = lectern0_library_catalog_find_id(
+      &app->library, app->library_selected_entry_id);
+    return entry && entry->runtime_missing ?
+      lectern0_locate_library_entry(app, entry->entry_id) : 0;
+  }
+  else return 0;
+  target = MAX(0, MIN(target, (S32)app->library.entry_count - 1));
+  app->library_selected_entry_id = app->library.entries[target].entry_id;
+  lectern0_library_focus_selected(app);
+  return 1;
+}
+
 FUNCTION LRESULT CALLBACK
 lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 {
@@ -7961,11 +9534,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         B32 exit_requested = lectern0_host_pointer_release(
           app, GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param));
         ReleaseCapture();
-        if (exit_requested)
-        {
-          PostMessageW(window, WM_CLOSE, 0, 0);
-          return 0;
-        }
+        (void)exit_requested;
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -8023,7 +9592,8 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)lectern0_pick_epub(app);
         }
-        else if (w_param == 'F' && control)
+        else if (w_param == 'F' && control &&
+                 epub_reader_is_open(&app->reader))
         {
           lectern0_reader_view_open_find_from_shortcut(app);
         }
@@ -8035,7 +9605,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
         }
-        else if (w_param == VK_ESCAPE)
+        else if (w_param == VK_ESCAPE && epub_reader_is_open(&app->reader))
         {
           lectern0_reader_view_escape(app);
         }
@@ -8061,13 +9631,17 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)lectern0_move_history(app, 1);
         }
+        else if (lectern0_library_active(app))
+        {
+          (void)lectern0_library_route_keydown(app, w_param, shift);
+        }
         else
         {
           Lectern0ReaderKeyRoute route =
             lectern0_reader_view_route_keydown(app, w_param, shift);
           if (route == Lectern0ReaderKeyRoute_CloseRequested)
           {
-            (void)PostMessageW(window, WM_CLOSE, 0, 0);
+            InvalidateRect(window, 0, FALSE);
             return 0;
           }
         }
@@ -10229,7 +11803,6 @@ FUNCTION int
 lectern0_run_reader_view_startup_interaction_smoke(void)
 {
   enum { Width = 1100, Height = 760 };
-  static const char *EmptyMessage = "Open an EPUB to begin reading.";
   Lectern0App app = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
   if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0))
@@ -10240,187 +11813,51 @@ lectern0_run_reader_view_startup_interaction_smoke(void)
     lectern0_app_release(&app);
     return 1;
   }
-
+  app.suppress_native_picker = 1;
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
   lectern0_render_to_buffer(&app, &buffer);
-  const ReaderViewSemanticNode *open =
-    lectern0_reader_view_parity_semantic(&app,
-                                         ReaderViewSemantic_Button,
-                                         "Open");
+  Lectern0HostControlRecord *add = lectern0_host_control_record(
+    &app, Lectern0HostControl_LibraryAdd);
   U32 empty_message_count =
-    lectern0_draw_text_command_count(&app, EmptyMessage);
-  B32 empty_state = app.document_state == ReaderViewLoad_Empty &&
-                    app.reader_view_projection.document_key == 0 &&
-                    app.reader_view_projection.content.state ==
-                      ReaderViewLoad_Empty;
-  if (!open || open->rect.w <= 0 || open->rect.h <= 0 || !empty_state ||
-      empty_message_count != 1)
-  {
-    fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=initial open=%d empty=%d status_text_count=%u\n",
-            open != 0,
-            empty_state,
-            empty_message_count);
-    free(pixels);
-    lectern0_app_release(&app);
-    return 1;
-  }
-
-  UI0ID open_id = open->id;
-  S32 x = open->rect.x + open->rect.w / 2;
-  S32 y = open->rect.y + open->rect.h / 2;
+    lectern0_draw_text_command_count(&app, "Your library is empty");
+  B32 initial = lectern0_library_active(&app) &&
+                app.library.entry_count == 0 && !app.reader_view_ready &&
+                add && add->semantic.rect.w > 0 &&
+                empty_message_count == 1;
+  UI0Rect cta = lectern0_library_empty_add_rect(&app);
+  S32 x = cta.x + cta.w / 2;
+  S32 y = cta.y + cta.h / 2;
   lectern0_host_pointer_press(&app, x, y);
-  lectern0_render_to_buffer(&app, &buffer);
-  UI0ID press_active_id = app.reader_view_state.active_id;
-  B32 press_active = press_active_id == open_id;
-  B32 press_emitted_open = lectern0_reader_view_has_action(
-    &app.reader_view_frame, ReaderViewAction_Open);
-
-  lectern0_host_pointer_cancel(&app);
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 cancel_suppressed_open = !lectern0_reader_view_has_action(
-    &app.reader_view_frame, ReaderViewAction_Open) &&
-    app.reader_view_state.active_id == 0;
-
-  lectern0_host_pointer_press(&app, x, y);
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 requested_exit = lectern0_host_pointer_release(&app, x, y);
-  lectern0_host_pointer_cancel(&app);
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 release_emitted_open = lectern0_reader_view_has_action(
-    &app.reader_view_frame, ReaderViewAction_Open);
-  B32 valid = press_active && !press_emitted_open && cancel_suppressed_open &&
-              !requested_exit && release_emitted_open &&
-              app.document_state == ReaderViewLoad_Empty;
-  if (!valid)
-  {
-    fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=lifecycle open_id=%llu active_id=%llu active_on_press=%d open_on_press=%d cancel_suppressed=%d exit=%d open_on_release=%d document_state=%d\n",
-            (unsigned long long)open_id,
-            (unsigned long long)press_active_id,
-            press_active,
-            press_emitted_open,
-            cancel_suppressed_open,
-            requested_exit,
-            release_emitted_open,
-            (int)app.document_state);
-    free(pixels);
-    lectern0_app_release(&app);
-    return 1;
-  }
-
-  UI0Rect exit_rect = lectern0_host_exit_rect(&app);
-  S32 exit_x = exit_rect.x + exit_rect.w / 2;
-  S32 exit_y = exit_rect.y + exit_rect.h / 2;
-  lectern0_host_pointer_press(&app, 0, Height - 1);
-  lectern0_host_pointer_move(&app, exit_x, exit_y);
-  B32 drag_in_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
-  lectern0_render_to_buffer(&app, &buffer);
-
-  lectern0_host_pointer_press(&app, exit_x, exit_y);
+  B32 armed = app.host_pointer_armed == Lectern0HostControl_LibraryAdd;
   lectern0_host_pointer_move(&app, 0, Height - 1);
-  lectern0_host_pointer_move(&app, exit_x, exit_y);
-  B32 leave_reenter_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
+  B32 cancel_suppressed =
+    !lectern0_host_pointer_release(&app, x, y) &&
+    app.native_picker_request_count == 0;
+  lectern0_host_pointer_press(&app, x, y);
+  B32 pointer_add = lectern0_host_pointer_release(&app, x, y) &&
+                    app.native_picker_request_count == 1;
   lectern0_render_to_buffer(&app, &buffer);
-
-  lectern0_host_pointer_press(&app, exit_x, exit_y);
-  B32 valid_exit_armed = app.host_exit_pointer_armed;
-  B32 valid_exit = lectern0_host_pointer_release(&app, exit_x, exit_y);
-  B32 valid_exit_requested = app.host_exit_requested;
-  app.host_exit_requested = 0;
-  lectern0_render_to_buffer(&app, &buffer);
-
-  UI0ID before_exit_id = 0;
-  UI0ID after_exit_id = 0;
-  B32 has_focus_neighbors = lectern0_host_focus_neighbors(
-    &app, &before_exit_id, &after_exit_id);
-  (void)lectern0_host_focus_set(&app, Lectern0HostControl_None, 0);
-  B32 prepared_keyboard_focus = has_focus_neighbors &&
-    reader_view_accessibility_focus(&app.reader_view_state, before_exit_id);
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 tab_reached_exit = prepared_keyboard_focus &&
-                         lectern0_host_keyboard_tab(&app, 0) &&
-                         app.host_focus_control ==
-                           Lectern0HostControl_ExitReader &&
-                         app.host_focus_visible;
-  Lectern0HostControlRecord *focused_exit =
-    lectern0_host_control_record(&app, Lectern0HostControl_ExitReader);
-  tab_reached_exit = tab_reached_exit && focused_exit &&
-                     (focused_exit->semantic.flags &
-                      ReaderViewSemantic_Focused) != 0;
-  lectern0_render_to_buffer(&app, &buffer);
-  UI0Rect exit_clip = app.reader_view_layout.host_toolbar_trailing_rect;
-  S32 exit_icon_size = MIN(18, MIN(exit_rect.w, exit_rect.h));
-  S32 exit_icon_x = exit_rect.x + (exit_rect.w - exit_icon_size) / 2;
-  S32 exit_icon_y = exit_rect.y + (exit_rect.h - exit_icon_size) / 2;
-  B32 focused_exit_icon_drawn = 0;
-  B32 focused_exit_ring_drawn = 0;
-  for (U16 index = 0;
-       index < app.draw_commands.command_count[DrawLayer_UI];
-       index += 1)
-  {
-    const DrawCommand *command =
-      app.draw_commands.commands[DrawLayer_UI] + index;
-    if (command->type == DrawCommandType_Sprite &&
-        command->v.sprite.dst_x == exit_icon_x &&
-        command->v.sprite.dst_y == exit_icon_y &&
-        command->v.sprite.dst_w == exit_icon_size &&
-        command->v.sprite.dst_h == exit_icon_size &&
-        command->v.sprite.clip.x == exit_clip.x &&
-        command->v.sprite.clip.y == exit_clip.y &&
-        command->v.sprite.clip.w == exit_clip.w &&
-        command->v.sprite.clip.h == exit_clip.h)
-      focused_exit_icon_drawn = 1;
-    else if (command->type == DrawCommandType_RoundedRectStroke &&
-             command->v.rounded_rect_stroke.x == exit_rect.x - 2 &&
-             command->v.rounded_rect_stroke.y == exit_rect.y - 2 &&
-             command->v.rounded_rect_stroke.w == exit_rect.w + 4 &&
-             command->v.rounded_rect_stroke.h == exit_rect.h + 4 &&
-             command->v.rounded_rect_stroke.stroke_width == 1 &&
-             command->v.rounded_rect_stroke.clip.x == exit_clip.x &&
-             command->v.rounded_rect_stroke.clip.y == exit_clip.y &&
-             command->v.rounded_rect_stroke.clip.w == exit_clip.w &&
-             command->v.rounded_rect_stroke.clip.h == exit_clip.h)
-      focused_exit_ring_drawn = 1;
-  }
-  B32 keyboard_exit = tab_reached_exit &&
-                       lectern0_host_keyboard_activate(&app) &&
-                       app.host_exit_requested;
-  app.host_exit_requested = 0;
-  B32 tab_left_exit = lectern0_host_keyboard_tab(&app, 0);
-  lectern0_render_to_buffer(&app, &buffer);
-  tab_left_exit = tab_left_exit &&
-                  app.host_focus_control == Lectern0HostControl_None &&
-                  app.reader_view_state.focus_id == after_exit_id;
-
-  if (exit_rect.w <= 0 || exit_rect.h <= 0 || drag_in_exit ||
-      leave_reenter_exit || !valid_exit_armed || !valid_exit ||
-      !valid_exit_requested || !tab_reached_exit || !keyboard_exit ||
-      !focused_exit_icon_drawn || !focused_exit_ring_drawn || !tab_left_exit)
+  B32 tab_focus = lectern0_host_focus_set(
+                    &app, Lectern0HostControl_LibraryAdd, 1) &&
+                  lectern0_host_keyboard_tab(&app, 0) &&
+                  app.host_focus_control == Lectern0HostControl_LibraryAdd &&
+                  app.host_focus_visible;
+  B32 keyboard_add = lectern0_host_keyboard_activate(&app) &&
+                     app.native_picker_request_count == 2;
+  if (!initial || !armed || !cancel_suppressed || !pointer_add ||
+      !tab_focus || !keyboard_add)
   {
     fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=host_exit rect=%dx%d drag_in=%d leave_reenter=%d armed=%d click=%d requested=%d neighbors=%d tab_in=%d icon=%d ring=%d keyboard=%d tab_out=%d\n",
-            exit_rect.w,
-            exit_rect.h,
-            drag_in_exit,
-            leave_reenter_exit,
-            valid_exit_armed,
-            valid_exit,
-            valid_exit_requested,
-            has_focus_neighbors,
-            tab_reached_exit,
-            focused_exit_icon_drawn,
-            focused_exit_ring_drawn,
-            keyboard_exit,
-            tab_left_exit);
+            "lectern0_reader_view_startup_interaction result=fail reason=library initial=%d armed=%d cancel=%d pointer=%d tab=%d keyboard=%d requests=%u\n",
+            initial, armed, cancel_suppressed, pointer_add, tab_focus,
+            keyboard_add, app.native_picker_request_count);
     free(pixels);
     lectern0_app_release(&app);
     return 1;
   }
-
   fprintf(stdout,
-          "lectern0_reader_view_startup_interaction result=pass document=empty lifecycle=press_release capture=cancel_and_release action=open dialog=not_invoked status_owner=reader_view exit_pointer=armed_release exit_keyboard=tab_activate exit_focus=icon_ring\n");
+          "lectern0_reader_view_startup_interaction result=pass surface=library catalog=empty lifecycle=press_release capture=cancel_and_release action=add_epubs picker=suppressed focus=pointer_keyboard accessibility=host_semantics\n");
   free(pixels);
   lectern0_app_release(&app);
   return 0;
@@ -14294,8 +15731,9 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     return 1;
   }
   lectern0_render_to_buffer(&failed_app, &buffer);
-  if (!failed_app.reader_view_ready ||
-      failed_app.reader_view_projection.content.state != ReaderViewLoad_Error)
+  if (!lectern0_library_active(&failed_app) ||
+      failed_app.reader_view_ready || failed_app.host_control_count == 0 ||
+      strstr(failed_app.status, "Open failed") == 0)
   {
     fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=error_state\n");
     lectern0_app_release(&failed_app);
@@ -14625,7 +16063,7 @@ lectern0_run_accessibility_smoke(const char *path)
       SUCCEEDED(accessible->lpVtbl->get_accName(accessible,
                                                  exit_child,
                                                  &exit_name)) &&
-      exit_name && wcscmp(exit_name, L"Exit Reader") == 0 &&
+      exit_name && wcscmp(exit_name, L"Close Book") == 0 &&
       SUCCEEDED(accessible->lpVtbl->get_accRole(accessible,
                                                  exit_child,
                                                  &exit_role)) &&
@@ -14696,7 +16134,7 @@ lectern0_run_accessibility_smoke(const char *path)
               win32.app.host_focus_control == Lectern0HostControl_ExitReader &&
               SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
                                                                 exit_child)) &&
-              win32.app.host_exit_requested;
+              lectern0_library_active(&win32.app);
     }
     VariantClear(&next_from_find);
     VariantClear(&next_from_exit);
@@ -14738,7 +16176,7 @@ lectern0_run_accessibility_smoke(const char *path)
   }
 
   fprintf(stdout,
-          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%ld previous_child=%ld progress_child=%ld exit_child=%ld role=%ld order=find_exit_fullscreen focus=shared_disabled_host action=disabled_guard_shared_host progress=keyboard fullscreen=native distraction=dormant\n",
+          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%ld previous_child=%ld progress_child=%ld close_child=%ld role=%ld order=find_close_fullscreen focus=shared_disabled_host action=disabled_guard_shared_host_close_to_library progress=keyboard fullscreen=native distraction=dormant\n",
           child_count,
           contents_child_id,
           previous_child_id,
@@ -14842,6 +16280,10 @@ main(int argc, char **argv)
   {
     result = lectern0_run_reader_image_fit_smoke(argv[2], argv[3]);
   }
+  else if (argc == 4 && strcmp(argv[1], "--library-smoke") == 0)
+  {
+    result = lectern0_run_library_smoke(argv[2], argv[3]);
+  }
   else if (argc == 4 && strcmp(argv[1], "--reader-view-smoke") == 0)
   {
     result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
@@ -14909,7 +16351,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

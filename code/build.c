@@ -24,6 +24,7 @@
 #include "ui0.c"
 #include "readerview0.c"
 #include "lectern0.c"
+#include "lectern0_library.c"
 #include "platform/win32/lectern0_accessibility_win32.c"
 
 #if OS_WINDOWS

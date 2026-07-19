@@ -5,8 +5,20 @@ It is a concrete Windows host for reader0, readerview0, UI0, and
 zero_foundation. It has no re10 source dependency and does not define a generic
 document-provider layer.
 
+Version 0.4 starts in a Lectern0-owned library rather than an empty Reader
+surface. Successfully opened EPUBs are added automatically and intentional
+multi-file import uses the native picker. The bounded, versioned catalog keeps
+normalized source paths, local entry IDs, optional algorithm-tagged digest
+space, metadata, cover-thumbnail identity, most-recently-opened ordering, and
+canonical progress. Missing files remain visible with Locate and Remove;
+Remove never deletes the source EPUB. Close Book returns to Library, while
+window Close and Alt+F4 exit the application. Catalog and bounded thumbnail
+cache files remain local host policy and are written atomically without a
+database. The reserved digest field is a future sync seam, not a cross-device
+book identity or a sync implementation.
+
 The integrated host provides a native window, an EPUB file picker and
-command-line open, canonical-frame rendering, concrete reader0 API 3 page and
+command-line open, canonical-frame rendering, concrete reader0 API 4 page and
 semantic navigation, resize repagination, and host-owned position, settings,
 bookmark, highlight, and note persistence. Reader View API 3 composes the
 accepted reference UI0 chrome shared with re10: top toolbar, page gutters, progress
@@ -73,7 +85,7 @@ geometry while keeping its 25-pixel line advance distinct from font size. The
 dedicated measured Find excerpt remains separate. UI0's generic
 Filter intent is the sole icon adaptation: lectern0 maps it to the frozen re10
 SlidersVertical raster and locks the exact 18 by 18 pixels. No callback or font
-provider crosses the package boundary. The host-owned Exit Reader action is
+provider crosses the package boundary. The host-owned Close Book action is
 painted as the same nonquiet UI0 IconButton shell and canonical Close icon used
 by the reference; the former host-specific icon substitutions are gone. One
 explicit host record inserts that native-window action between Find and
@@ -83,7 +95,7 @@ reference caret/ring but cannot invoke navigation. The bounded host raster
 bridge preserves UI0's exact frozen 18 by 32 left/right caret pixels, and the
 Reader View smoke locks both keyboard and pointer Next/Previous round-trips.
 Native `NEXT`/`PREVIOUS` traversal scans enabled focusable children, so disabled
-Back/Forward controls do not displace the required Find, host Exit, Fullscreen
+Back/Forward controls do not displace the required Find, host Close Book, Fullscreen
 sequence; the disabled Previous gutter remains represented by its shared
 semantic identity and keyboard focus contract.
 When Contents, Find, or Annotations is open, the combined host/shared Tab seam
@@ -129,8 +141,8 @@ vertical geometry through zero_foundation's callback-free block-flow builder.
 Lectern0 still resolves reader/host metrics, owns caller storage, draws the
 returned records, and retains every cache, persistence, and product decision.
 Its native MSAA adapter exposes readerview0's portable semantic records plus
-the bounded host Exit record while keeping platform objects, screen-reader
-events, native Exit invocation, and shared-action execution in the application.
+the bounded host Close Book record while keeping platform objects, screen-reader
+events, native Close Book invocation, and shared-action execution in the application.
 
 ## Build and validate
 
@@ -138,7 +150,7 @@ From a linked worktree, point the dependency variables at exact clean
 checkouts:
 
 ```powershell
-$env:LECTERN0_READER0_DIR = 'C:\path\to\reader0-api3-worktree'
+$env:LECTERN0_READER0_DIR = 'C:\path\to\reader0-api4-worktree'
 $env:LECTERN0_UI0_DIR = 'C:\path\to\ui0'
 $env:LECTERN0_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
 $env:LECTERN0_ZERO_FOUNDATION_DIR = 'C:\path\to\zero_foundation'
@@ -146,6 +158,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
 cmd /c build\win32_build.bat no_run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_host_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_library_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_startup_interaction_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_accessibility_smoke.ps1

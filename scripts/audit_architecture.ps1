@@ -7,10 +7,18 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $failures = [System.Collections.Generic.List[string]]::new()
 $buildPath = Join-Path $RepoRoot "code\build.c"
 $appPath = Join-Path $RepoRoot "code\lectern0.c"
+$libraryHeaderPath = Join-Path $RepoRoot "code\lectern0_library.h"
+$libraryPath = Join-Path $RepoRoot "code\lectern0_library.c"
 $accessibilityPath = Join-Path $RepoRoot "code\platform\win32\lectern0_accessibility_win32.c"
 $parityPath = Join-Path $RepoRoot "scripts\win32_reader_view_stage2b0_parity.ps1"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/lectern0.c") }
+if (!(Test-Path -LiteralPath $libraryHeaderPath)) {
+  $failures.Add("missing bounded Lectern0 library records")
+}
+if (!(Test-Path -LiteralPath $libraryPath)) {
+  $failures.Add("missing Lectern0 library persistence implementation")
+}
 if (!(Test-Path -LiteralPath $accessibilityPath)) {
   $failures.Add("missing host-owned Win32 accessibility adapter")
 }
@@ -21,6 +29,8 @@ if (!(Test-Path -LiteralPath $parityPath)) {
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
   $app = [System.IO.File]::ReadAllText($appPath)
+  $libraryHeader = [System.IO.File]::ReadAllText($libraryHeaderPath)
+  $library = [System.IO.File]::ReadAllText($libraryPath)
   $accessibility = [System.IO.File]::ReadAllText($accessibilityPath)
   $parity = [System.IO.File]::ReadAllText($parityPath)
   if ([regex]::Matches($build, '#include\s+"reader0\.c"').Count -ne 1) {
@@ -31,6 +41,9 @@ if ($failures.Count -eq 0) {
   }
   if ([regex]::Matches($build, '#include\s+"readerview0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile readerview0.c exactly once")
+  }
+  if ([regex]::Matches($build, '#include\s+"lectern0_library\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile the host library implementation exactly once")
   }
   if ([regex]::Matches(
         $build,
@@ -46,6 +59,10 @@ if ($failures.Count -eq 0) {
   }
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the reader0 umbrella")
+  }
+  if ($app.IndexOf('READER0_API_VERSION != 4') -lt 0 -or
+      $app.IndexOf('doc_engine_get_author') -lt 0) {
+    $failures.Add("lectern0 must consume Reader0 API 4 metadata")
   }
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
@@ -93,22 +110,21 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('ui0_draw_push_icon(&draw') -lt 0 -or
       $app.IndexOf('UI0IconKind_Close') -lt 0 -or
       $app.IndexOf('UI0Control_Quiet') -ge 0) {
-    $failures.Add("lectern0 Exit Reader must retain host interaction with the nonquiet UI0 IconButton shell and canonical Close icon")
+    $failures.Add("lectern0 Close Book must retain host interaction with the nonquiet UI0 IconButton shell and canonical Close icon")
   }
-  if ($app.IndexOf('Lectern0HostControl_ExitReader') -lt 0 -or
+  if ($app.IndexOf('Lectern0HostControl_CloseBook') -lt 0 -or
       $app.IndexOf('host_exit_pointer_armed') -lt 0 -or
       $app.IndexOf('lectern0_host_keyboard_tab') -lt 0 -or
       $app.IndexOf('ReaderViewSemanticControl_Find') -lt 0 -or
       $app.IndexOf('ReaderViewSemanticControl_Fullscreen') -lt 0 -or
-      $app.IndexOf('exit_pointer=armed_release') -lt 0 -or
+      $app.IndexOf('Close Book') -lt 0 -or
       $accessibility.IndexOf('lectern0_accessibility_host_identity') -lt 0 -or
       $accessibility.IndexOf('lectern0_accessibility_host_insertion_shared_count') -lt 0 -or
-      $app.IndexOf('order=find_exit_fullscreen') -lt 0 -or
+      $app.IndexOf('order=find_close_fullscreen') -lt 0 -or
       $app.IndexOf('UI0DrawCommand commands[5]') -lt 0 -or
       $app.IndexOf('.clip_rect = app->reader_view_layout.host_toolbar_trailing_rect') -lt 0 -or
-      $app.IndexOf('exit_focus=icon_ring') -lt 0 -or
       $accessibility.IndexOf('lectern0_host_control_invoke') -lt 0) {
-    $failures.Add("lectern0 must expose and fully draw one host Exit record between Find and Fullscreen for pointer, keyboard, focus-visible chrome, and native accessibility routing")
+    $failures.Add("lectern0 must expose and fully draw one host Close Book record between Find and Fullscreen for pointer, keyboard, focus-visible chrome, and native accessibility routing")
   }
   if ($app.IndexOf('focus=reference13') -lt 0 -or
       $app.IndexOf('panel_focus=toc_find_annotations_progress_boundary') -lt 0 -or
@@ -241,8 +257,9 @@ if ($failures.Count -eq 0) {
   }
   if ($app.IndexOf('--reader-view-startup-interaction-smoke') -lt 0 -or
       $app.IndexOf('lectern0_host_pointer_press') -lt 0 -or
-      $app.IndexOf('lectern0_host_pointer_release') -lt 0) {
-    $failures.Add("lectern0 must retain the empty-document native press/release action regression")
+      $app.IndexOf('lectern0_host_pointer_release') -lt 0 -or
+      $app.IndexOf('surface=library catalog=empty') -lt 0) {
+    $failures.Add("lectern0 must retain the empty-library native press/release Add EPUBs regression")
   }
   if ($app -match '(?s)draw_push_text_in_rect\([^;]+Open an EPUB to begin reading\.') {
     $failures.Add("Reader View must be the single owner of empty/loading/error status painting")
@@ -256,7 +273,7 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('epub_reader_move_page') -lt 0 -or
       $app.IndexOf('epub_reader_navigate_to_nav_point') -lt 0 -or
       $app.IndexOf('epub_reader_navigate_to_search_match') -lt 0) {
-    $failures.Add("lectern0 must consume the concrete reader0 API 3 page and semantic navigation surface")
+    $failures.Add("lectern0 must consume the concrete reader0 API 4 page, metadata, and semantic navigation surface")
   }
   if ($app.IndexOf('font_cache_tag_from_provider') -lt 0 -or
       $app.IndexOf('lectern0_push_reader_text_chunks') -lt 0 -or
@@ -285,6 +302,27 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('presentation_engine_block_flow_build') -lt 0) {
     $failures.Add("lectern0 must route canonical-row vertical geometry through Presentation Engine API 1")
   }
+  if ($libraryHeader.IndexOf('Lectern0LibraryEntryCap = 512') -lt 0 -or
+      $libraryHeader.IndexOf('Lectern0LibraryCatalogFileCap = 2 * 1024 * 1024') -lt 0 -or
+      $libraryHeader.IndexOf('Lectern0LibraryDigest_None') -lt 0 -or
+      $libraryHeader.IndexOf('Lectern0LibraryDigest_SHA256') -lt 0 -or
+      $library.IndexOf('os_write_entire_file_atomic') -lt 0 -or
+      $library.IndexOf('GetFullPathNameW') -lt 0 -or
+      $library.IndexOf('lectern0_library_catalog_sort') -lt 0) {
+    $failures.Add("Lectern0 must retain bounded atomic local catalog records, normalized paths, MRU ordering, and an algorithm-tagged future digest seam")
+  }
+  if ($app.IndexOf('lectern0_draw_library') -lt 0 -or
+      $app.IndexOf('OFN_ALLOWMULTISELECT') -lt 0 -or
+      $app.IndexOf('Lectern0HostControlAction_LocateBook') -lt 0 -or
+      $app.IndexOf('Removed from library; source file was not deleted') -lt 0 -or
+      $app.IndexOf('lectern0_close_book') -lt 0 -or
+      $app.IndexOf('--library-smoke') -lt 0 -or
+      $app.IndexOf('responsive=wide_and_compact') -lt 0) {
+    $failures.Add("Lectern0 must retain its library-first shell, native import, missing-file recovery, source-preserving removal, Close Book return, and bounded evidence")
+  }
+  if (($libraryHeader + $library) -match '(?i)sqlite|event\s*bus|vtable|provider\s*table|dependency\s*injection') {
+    $failures.Add("the local library core must not introduce a database or indirect provider/event architecture")
+  }
   if ($app -match 'IWIC|CLSID_WIC|wincodec\.h') {
     $failures.Add("lectern0 must not duplicate the zero_foundation WIC backend")
   }
@@ -301,4 +339,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "lectern0 architecture audit: pass"
-Write-Host "boundary: zero_foundation presentation/image/render + readerview0/UI0 chrome + reader0 concrete EPUB core"
+Write-Host "boundary: Lectern0 library shell/persistence + zero_foundation presentation/image/render + readerview0/UI0 open-book chrome + reader0 concrete EPUB core"

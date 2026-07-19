@@ -316,7 +316,12 @@ lectern0_accessibility_get_name(IAccessible *iface, VARIANT child,
   *out_name = 0;
   if (child.vt == VT_I4 && child.lVal == CHILDID_SELF)
   {
-    *out_name = SysAllocString(L"lectern0 EPUB reader");
+    Lectern0Accessibility *accessibility =
+      lectern0_accessibility_from_iface(iface);
+    *out_name = SysAllocString(accessibility->app &&
+                               lectern0_library_active(accessibility->app) ?
+                               L"lectern0 Library" :
+                               L"lectern0 EPUB reader");
     return *out_name ? S_OK : E_OUTOFMEMORY;
   }
   const ReaderViewSemanticNode *node = lectern0_accessibility_node(
@@ -642,8 +647,7 @@ lectern0_accessibility_do_default_action(IAccessible *iface, VARIANT child)
   if (host_identity != Lectern0HostControl_None)
   {
     if (!lectern0_host_focus_set(accessibility->app, host_identity, 1) ||
-        !lectern0_host_control_invoke(accessibility->app, host_identity) ||
-        !PostMessageW(accessibility->window, WM_CLOSE, 0, 0))
+        !lectern0_host_control_invoke(accessibility->app, host_identity))
       return E_FAIL;
     (void)InvalidateRect(accessibility->window, 0, FALSE);
     return S_OK;

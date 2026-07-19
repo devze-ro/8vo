@@ -7,10 +7,38 @@ Lectern0 is a Windows EPUB application. It owns one caller-allocated
 configuration, a Win32 window/backbuffer, readerview0/UI0 frame storage,
 zero_foundation draw/render state, and versioned host persistence records.
 
+The application shell is library-first: launch and Close Book resolve to a
+Lectern0-owned Library surface, while an open EPUB resolves to Readerview0's
+Reader surface. The library catalog is a bounded 512-entry, versioned binary
+record written through zero_foundation's atomic-file mechanism. Lectern0 owns
+normalized absolute paths, local entry IDs, file size/modified-time
+fingerprints, MRU ordering, import/remove/locate behavior, canonical-progress
+persistence, native picker use, responsive cover cards, and its bounded
+48-entry/24 MiB thumbnail cache. A missing source path is derived at runtime;
+it does not erase metadata or the cached cover, and Remove deletes only catalog
+and thumbnail state. Existing `state.v1` position data seeds the catalog once
+when no catalog exists.
+
+Reader0 supplies EPUB title, author, cover-resource access, and canonical
+spine/byte locations. zero_foundation supplies decoding, drawing, and atomic
+file replacement. UI0 and Readerview0 gain no library API in this slice: the
+grid and cards are concrete host composition, while Readerview0 remains the
+open-book experience. Re10 can later compose a Books destination using the
+same Reader0 metadata and location concepts while retaining its own shell,
+catalog policy, and persistence. No shared library package is extracted until
+two host integrations establish a real common contract.
+
+Each catalog entry reserves a bounded, algorithm-tagged digest field, initially
+`None`. This preserves room for a later explicit local-content fingerprint,
+but the local entry ID, normalized path, and file timestamps are deliberately
+not treated as cross-device identity. Kindle-like sync for Lectern0 and Re10
+will require a separately designed account, remote work identity, conflict,
+privacy, and reconciliation layer; none of that behavior is implemented here.
+
 Reader0 owns the EPUB document engine, source layout, typography, pagination,
 page transitions, semantic navigation, search/selection state, and canonical
 frame. Lectern0 passes its viewport-derived layout values directly to reader0
-API 3. No reader state is mirrored in application storage. Its narrow semantic
+API 4. No reader state is mirrored in application storage. Its narrow semantic
 adapters capture the resulting canonical frame, set host status, and persist
 the resulting reader-owned location.
 
@@ -183,8 +211,8 @@ and repaginates at the current reader-owned location.
 
 The accepted toolbar is a fixed right-aligned row of eleven shared 30 by 28 px
 icon slots followed by one host slot, with a 56 px top chrome and 38 px footer.
-A 38-pixel trailing reservation belongs to lectern0 and contains its Exit
-control. Lectern0 retains the action and native window transition, while UI0
+A 38-pixel trailing reservation belongs to lectern0 and contains its Close Book
+control. Lectern0 retains the action and return-to-Library transition, while UI0
 paints the control as a nonquiet `IconButton` with its canonical Close icon.
 Bounds too small for the fixed reference contract fail closed.
 Distraction-free behavior remains dormant rather than becoming mandatory
@@ -194,21 +222,21 @@ transitions.
 Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
 states, and pointer/keyboard/accessibility convergence. Lectern0 translates
 Win32 input and implements a host-owned MSAA `IAccessible` object over the
-current semantic records plus one explicit bounded host record for Exit Reader.
+current semantic records plus one explicit bounded host record for Close Book.
 The host inserts that native action between shared Find and Fullscreen and
 preserves the frozen reference's focusable disabled Previous gutter seam; all
-other shared order remains driven by Reader View semantic identities. Exit
+other shared order remains driven by Reader View semantic identities. Close Book
 pointer activation requires press origin and release inside the host slot and
 is cancelled on leave or capture loss. `WM_GETOBJECT`, native object lifetime,
-screen-reader events, coordinate translation, Exit invocation, and execution
+screen-reader events, coordinate translation, Close Book invocation, and execution
 of returned reader actions stay in lectern0.
-The host Exit's bounded draw path retains the focused IconButton's fill, border,
+The host Close Book path retains the focused IconButton's fill, border,
 text, outer focus ring, and explicit Close icon. It clips those commands to the
 38-pixel host reservation rather than the smaller control rect; startup evidence
 requires both the adapted Close sprite and exact expanded rounded focus stroke.
 Native MSAA `NEXT` and `PREVIOUS` navigation scan for enabled focusable logical
 children, so disabled Back/Forward controls are skipped without changing their
-semantic records. This preserves the required Find, host Exit, Fullscreen
+semantic records. This preserves the required Find, host Close Book, Fullscreen
 adjacency while shared keyboard traversal retains the frozen disabled-Previous
 gutter focus stop and rejects its action.
 The host order never forms a closed toolbar island: with Contents, Find, or
@@ -222,7 +250,8 @@ gutter navigation; no host line-art fallback is permitted.
 
 ## Current exclusions
 
-No PDF backend, generic document interface, library database, shared
+No PDF backend, generic document interface, library database, cloud sync,
+shared library framework, shared
 persistence, renderer, decoded-image cache, or native accessibility adapter is
 moved into readerview0. Features absent from the current re10 EPUB reader—such
 as later Kindle-gap reading controls—remain deferred until re10 and lectern0

@@ -14,15 +14,14 @@ $line = $output | Where-Object {
   $_ -match '^lectern0_reader_view_startup_interaction result=pass '
 } | Select-Object -Last 1
 if (!$line -or
-    $line -notmatch 'document=empty' -or
+    $line -notmatch 'surface=library' -or
+    $line -notmatch 'catalog=empty' -or
     $line -notmatch 'lifecycle=press_release' -or
     $line -notmatch 'capture=cancel_and_release' -or
-    $line -notmatch 'action=open' -or
-    $line -notmatch 'dialog=not_invoked' -or
-    $line -notmatch 'status_owner=reader_view' -or
-    $line -notmatch 'exit_pointer=armed_release' -or
-    $line -notmatch 'exit_keyboard=tab_activate' -or
-    $line -notmatch 'exit_focus=icon_ring') {
+    $line -notmatch 'action=add_epubs' -or
+    $line -notmatch 'picker=suppressed' -or
+    $line -notmatch 'focus=pointer_keyboard' -or
+    $line -notmatch 'accessibility=host_semantics') {
   $output | Write-Host
   throw "lectern0 startup interaction smoke did not report the required contract"
 }
