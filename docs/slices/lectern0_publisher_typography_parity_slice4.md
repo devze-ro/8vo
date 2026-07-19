@@ -208,8 +208,14 @@ cover and every map page side-by-side with Re10. The existing synthetic image
 smoke missed the defect because it proves decoding, cache behavior, and
 determinism, not real-book page-fit scale or cross-host rendered size.
 
-## Promotion state
+## Promotion
 
-The implementation and this record remain on the dedicated local branch. No
-Lectern0 `main` update, remote creation, push, merge, rebase, reset, amendment,
-or history rewrite is part of this slice without explicit authorization.
+The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
+`main` was fast-forwarded from
+`ea4679b8653f86b47c6f8652fd4246a475ce60de` through the validated
+implementation and evidence commits. This promotion record is documentation
+only and is fast-forwarded on top of that approved tip.
+
+Lectern0 remains local-only with no remote configured. No repository was
+created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
+history rewrite was performed.
