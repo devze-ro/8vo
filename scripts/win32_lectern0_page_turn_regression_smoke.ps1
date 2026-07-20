@@ -55,7 +55,9 @@ function Invoke-PageTurnSmoke {
   foreach ($Token in @(
     "forward=64", "backward=64", "pixel_exact=16/16",
     "warmed_cache_hits=16/16",
-    "repeat=initial24_interval3_coalesced", "repeat_moves=2",
+    "repeat=initial24_interval3_coalesced", "repeat_moves=4",
+    "held_repeat=directional_prepared_cache", "held_forward=2",
+    "held_backward=2", "held_cache_hits=4/4", "held_pixel_exact=4/4",
     "draw_overflow=0", "raster_overflow=0", "run_overflow=0")) {
     if (!$PassLine -or $PassLine -notmatch [regex]::Escape($Token)) {
       throw "page-turn result is incomplete: missing $Token in $PassLine"
@@ -67,9 +69,19 @@ function Invoke-PageTurnSmoke {
   $ColdMatch = [regex]::Match($PassLine, 'cold_render_avg_ms=([0-9.]+)')
   $PreparedMoveMatch = [regex]::Match(
     $PassLine, 'prepared_move_max_ms=([0-9.]+)')
+  $HeldMoveMatch = [regex]::Match(
+    $PassLine, 'held_move_max_ms=([0-9.]+)')
+  $HeldRenderMatch = [regex]::Match(
+    $PassLine, 'held_render_max_ms=([0-9.]+)')
+  $HeldWarmMatch = [regex]::Match(
+    $PassLine, 'held_warm_steps=(\d+)')
+  $HeldWarmMaxMatch = [regex]::Match(
+    $PassLine, 'held_warm_max_ms=([0-9.]+)')
   if (!$WarmMatch.Success -or !$WarmMaxMatch.Success -or
       !$ColdMatch.Success -or
-      !$PreparedMoveMatch.Success) {
+      !$PreparedMoveMatch.Success -or !$HeldMoveMatch.Success -or
+      !$HeldRenderMatch.Success -or !$HeldWarmMatch.Success -or
+      !$HeldWarmMaxMatch.Success) {
     throw "page-turn performance fields are missing: $PassLine"
   }
   $PreparedMatch = [regex]::Match(
@@ -87,18 +99,33 @@ function Invoke-PageTurnSmoke {
   $PreparedMoveMaxMs = [double]::Parse(
     $PreparedMoveMatch.Groups[1].Value,
     [Globalization.CultureInfo]::InvariantCulture)
+  $HeldMoveMaxMs = [double]::Parse(
+    $HeldMoveMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
+  $HeldRenderMaxMs = [double]::Parse(
+    $HeldRenderMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
+  $HeldWarmMaxMs = [double]::Parse(
+    $HeldWarmMaxMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
   if ($WarmMs -ge $ColdMs) {
     throw "prepared page render did not improve navigation: warm=$WarmMs cold=$ColdMs"
   }
   $WarmMaxMs = [double]::Parse(
     $WarmMaxMatch.Groups[1].Value,
     [Globalization.CultureInfo]::InvariantCulture)
-  if ($WarmMaxMs -ge 16.667 -or $PreparedMoveMaxMs -ge 16.667) {
-    throw "prepared page turn exceeded the 60 FPS budget: move_max=$PreparedMoveMaxMs render_max=$WarmMaxMs"
+  if ($WarmMaxMs -ge 16.667 -or $PreparedMoveMaxMs -ge 16.667 -or
+      $HeldWarmMaxMs -ge 16.667 -or $HeldMoveMaxMs -ge 16.667 -or
+      $HeldRenderMaxMs -ge 16.667) {
+    throw "prepared page turn exceeded the 60 FPS budget: move_max=$PreparedMoveMaxMs render_max=$WarmMaxMs held_warm_max=$HeldWarmMaxMs held_move_max=$HeldMoveMaxMs held_render_max=$HeldRenderMaxMs"
   }
   [pscustomobject]@{
     pass_line=[string]$PassLine
     prepared_move_max_ms=$PreparedMoveMaxMs
+    held_move_max_ms=$HeldMoveMaxMs
+    held_render_max_ms=$HeldRenderMaxMs
+    held_warm_steps=[int]$HeldWarmMatch.Groups[1].Value
+    held_warm_max_ms=$HeldWarmMaxMs
     warmed_render_avg_ms=$WarmMs
     warmed_render_max_ms=$WarmMaxMs
     cold_render_avg_ms=$ColdMs

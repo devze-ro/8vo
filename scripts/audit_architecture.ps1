@@ -283,10 +283,12 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_forward_page_range') -lt 0 -or
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('Lectern0AdjacentWarmPageCap = 4') -lt 0 -or
+      $app.IndexOf('Lectern0AdjacentWarmRepeatTextBudget = 64') -lt 0 -or
       $app.IndexOf('Lectern0PageRepeatInitialFrames = 24') -lt 0 -or
       $app.IndexOf('Lectern0PageRepeatIntervalFrames = 3') -lt 0 -or
-      $app.IndexOf('if (app->page_repeat_active)') -lt 0) {
-    $failures.Add("lectern0 must consume Reader0 API 5 preparation with four-page host warming, held-input deferral, and 24/3 coalesced repeat pacing")
+      $app.IndexOf('adjacent_warm_direction') -lt 0 -or
+      $app.IndexOf('app->page_repeat_active || crossed_spine') -lt 0) {
+    $failures.Add("lectern0 must consume Reader0 API 5 preparation with four-page idle warming, one-page directional held warming, and 24/3 coalesced repeat pacing")
   }
   if ($app.IndexOf('Lectern0AdjacentPagePixelCap = 4096 * 4096') -lt 0 -or
       $app.IndexOf('adjacent_page_pixels') -lt 0 -or

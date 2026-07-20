@@ -91,6 +91,7 @@ enum
   Lectern0AdjacentWarmTimerId = 2,
   Lectern0AdjacentWarmDelayMs = 16,
   Lectern0AdjacentWarmTextBudget = 4,
+  Lectern0AdjacentWarmRepeatTextBudget = 64,
   Lectern0AdjacentWarmPageCap = 4,
   Lectern0AdjacentPagePixelCap = 4096 * 4096,
   Lectern0AdjacentWarmIdleBudgetUs = 8000,
@@ -606,6 +607,7 @@ typedef struct Lectern0App
   U32 adjacent_warm_next_text_command;
   U32 adjacent_warm_distance;
   U32 adjacent_warm_completed_page_count;
+  S32 adjacent_warm_direction;
   U32 adjacent_warm_source_spine_index;
   U64 adjacent_warm_source_first_byte;
   U32 *adjacent_page_pixels;
@@ -6244,12 +6246,15 @@ FUNCTION void
 lectern0_stop_page_repeat(Lectern0App *app)
 {
   if (!app) return;
-  if (app->window && app->page_repeat_active)
+  B32 was_active = app->page_repeat_active;
+  if (app->window && was_active)
     (void)KillTimer(app->window, Lectern0PageRepeatTimerId);
   app->page_repeat_active = 0;
   app->page_repeat_direction = 0;
   app->page_repeat_key = 0;
   app->page_repeat_frame_count = 0;
+  if (was_active && app->adjacent_warm_pending)
+    lectern0_schedule_adjacent_warm(app);
 }
 
 FUNCTION void
@@ -6269,6 +6274,12 @@ lectern0_start_page_repeat(Lectern0App *app,
                0) == 0)
   {
     lectern0_stop_page_repeat(app);
+  }
+  else
+  {
+    /* The first physical keydown already moved the page. Prepare the next
+       canonical target during the accepted 24-frame hold delay. */
+    lectern0_schedule_adjacent_warm(app);
   }
 }
 
@@ -7105,13 +7116,16 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
       if (command->type != DrawCommandType_Text) { return 0; }
       command->v.text.flags |= DrawTextFlag_Shaped;
     }
-    x += epub_reader_typography_measure_text(&app->reader.typography,
-                                             chunk,
-                                             style_flags,
-                                             measure_scale_permille,
-                                             font_family_hint,
-                                             font_face_index);
     at = end;
+    if (at < text.size)
+    {
+      x += epub_reader_typography_measure_text(&app->reader.typography,
+                                               chunk,
+                                               style_flags,
+                                               measure_scale_permille,
+                                               font_family_hint,
+                                               font_face_index);
+    }
   }
   return 1;
 }
@@ -7553,14 +7567,50 @@ lectern0_reader_styled_row_build(
       .source_byte = span->source_range.byte_start,
       .x = 0,
     };
+    String8 span_text = str8(
+      app->frame.visible_text.str + span_local_start,
+      span_local_end - span_local_start);
+    Scratch shape_scratch = scratch_begin(0, 0);
+    TextEngineShapeResult span_shape = {0};
+    B32 small_caps =
+      (style->flags & DocTextStyleFlag_SmallCaps) != 0 &&
+      (style->flags & DocTextStyleFlag_NormalCaps) == 0;
+    B32 segmented_stops = extra_px != 0 || extra_remainder != 0;
+    B32 use_shaped_stops =
+      app->reader.typography.text_mode == EpubReaderTextMode_ShapedV1 &&
+      !small_caps;
+    if (use_shaped_stops && !segmented_stops)
+    {
+      use_shaped_stops =
+        text_engine_shape_s8(shape_scratch.arena,
+                             &style->resolved,
+                             span_text,
+                             &span_shape) &&
+        span_shape.direction == FontTextDirection_Ltr &&
+        span_shape.clusters && span_shape.cluster_count > 0;
+    }
+    TextEngineShapeResult token_shape = {0};
+    U64 token_start = span_local_start;
+    U64 token_end = span_local_start;
+    S32 token_base_width = 0;
+    U32 cluster_index = 0;
+    S32 cluster_advance = 0;
     S32 span_extra = 0;
     U64 at = span_local_start;
     while (at < span_local_end)
     {
-      if (stop_count >= Lectern0DisplayRowStopCap) { return 0; }
+      if (stop_count >= Lectern0DisplayRowStopCap)
+      {
+        scratch_end(shape_scratch);
+        return 0;
+      }
       U64 next = base_unicode_utf8_next_grapheme_boundary(
         app->frame.visible_text, at);
-      if (next <= at || next > span_local_end) { return 0; }
+      if (next <= at || next > span_local_end)
+      {
+        scratch_end(shape_scratch);
+        return 0;
+      }
       if (next == at + 1 && app->frame.visible_text.str[at] == ' ' &&
           at > local_start && at + 1 < local_end &&
           space_index < space_count)
@@ -7570,12 +7620,74 @@ lectern0_reader_styled_row_build(
             space_index, space_count, extra_remainder);
         space_index += 1;
       }
-      String8 prefix = str8(app->frame.visible_text.str + span_local_start,
-                            next - span_local_start);
-      S32 prefix_width = epub_reader_typography_measure_text(
-        &app->reader.typography, prefix, style->flags,
-        style->scale_permille, style->font_family_hint,
-        style->font_face_index) + span_extra;
+      if (use_shaped_stops && segmented_stops && at >= token_end)
+      {
+        token_start = at;
+        token_end = at;
+        B32 space_token = app->frame.visible_text.str[at] == ' ';
+        while (token_end < span_local_end)
+        {
+          U64 token_next = base_unicode_utf8_next_grapheme_boundary(
+            app->frame.visible_text, token_end);
+          if (token_next <= token_end || token_next > span_local_end)
+          {
+            use_shaped_stops = 0;
+            break;
+          }
+          token_end = token_next;
+          if (space_token || token_end >= span_local_end ||
+              app->frame.visible_text.str[token_end] == ' ')
+          {
+            break;
+          }
+        }
+        String8 token_text = str8(
+          app->frame.visible_text.str + token_start,
+          token_end - token_start);
+        token_shape = (TextEngineShapeResult){0};
+        use_shaped_stops = use_shaped_stops &&
+          text_engine_shape_s8(shape_scratch.arena,
+                               &style->resolved,
+                               token_text,
+                               &token_shape) &&
+          token_shape.direction == FontTextDirection_Ltr &&
+          token_shape.clusters && token_shape.cluster_count > 0;
+        cluster_index = 0;
+        cluster_advance = 0;
+      }
+      S32 prefix_width = 0;
+      if (use_shaped_stops)
+      {
+        TextEngineShapeResult *shape = segmented_stops ?
+          &token_shape : &span_shape;
+        U64 shape_start = segmented_stops ? token_start : span_local_start;
+        U64 relative_next = next - shape_start;
+        while (cluster_index < shape->cluster_count &&
+               shape->clusters[cluster_index].byte_end <= relative_next)
+        {
+          cluster_advance += MAX(
+            shape->clusters[cluster_index].advance_px, 0);
+          cluster_index += 1;
+        }
+        S32 shaped_width = (next == (segmented_stops ?
+          token_end : span_local_end)) ?
+          MAX(shape->width_px, cluster_advance) : cluster_advance;
+        prefix_width = token_base_width + shaped_width + span_extra;
+        if (segmented_stops && next == token_end)
+        {
+          token_base_width += MAX(shape->width_px, cluster_advance);
+        }
+      }
+      else
+      {
+        String8 prefix = str8(
+          app->frame.visible_text.str + span_local_start,
+          next - span_local_start);
+        prefix_width = epub_reader_typography_measure_text(
+          &app->reader.typography, prefix, style->flags,
+          style->scale_permille, style->font_family_hint,
+          style->font_face_index) + span_extra;
+      }
       prefix_width = MAX(prefix_width,
                          app->reader_display_stops[stop_count - 1].x);
       app->reader_display_stops[stop_count++] = (TextEngineDisplayRowStop){
@@ -7584,6 +7696,7 @@ lectern0_reader_styled_row_build(
       };
       at = next;
     }
+    scratch_end(shape_scratch);
     span->stops = app->reader_display_stops + first_stop;
     span->stop_count = stop_count - first_stop;
     span->x = visual_x;
@@ -8286,6 +8399,13 @@ lectern0_draw_row_highlights(Lectern0App *app,
 {
   if (!app || !row || !presentation_row || row->byte_end <= row->byte_start)
     return;
+  B32 find_overlay =
+    app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
+    app->frame.search_highlight_count > 0;
+  B32 selection_overlay = app->reader.has_active_selection &&
+    app->reader.active_selection.spine_index == app->frame.spine_index;
+  if (app->highlight_count == 0 && !find_overlay && !selection_overlay)
+    return;
   U64 row_start = app->frame.view_byte_offset + row->byte_start;
   U64 row_end = app->frame.view_byte_offset + row->byte_end;
   U64 row_size = row_end - row_start;
@@ -8890,6 +9010,7 @@ lectern0_cancel_adjacent_warm(Lectern0App *app)
   app->adjacent_warm_next_text_command = 0;
   app->adjacent_warm_distance = 0;
   app->adjacent_warm_completed_page_count = 0;
+  app->adjacent_warm_direction = 0;
   app->adjacent_warm_source_spine_index = 0;
   app->adjacent_warm_source_first_byte = 0;
   MemoryZeroStruct(&app->adjacent_frame);
@@ -8911,10 +9032,13 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
   app->adjacent_warm_next_text_command = 0;
   app->adjacent_warm_distance = 1;
   app->adjacent_warm_completed_page_count = 0;
+  S32 warm_direction = app->page_repeat_active ?
+    app->page_repeat_direction : 1;
+  app->adjacent_warm_direction = warm_direction < 0 ? -1 : 1;
   app->adjacent_warm_source_spine_index = app->reader.current_page.spine_index;
   app->adjacent_warm_source_first_byte = app->reader.current_page.first_byte;
   MemoryZeroStruct(&app->adjacent_frame);
-  if (app->window)
+  if (app->window && !app->page_repeat_active)
   {
     if (SetTimer(app->window, Lectern0AdjacentWarmTimerId,
                  Lectern0AdjacentWarmDelayMs, 0) == 0)
@@ -8939,14 +9063,15 @@ lectern0_adjacent_warm_step(Lectern0App *app)
   if (app->reader_content_geometry.content_rect.w <= 0 ||
       app->reader_content_geometry.content_rect.h <= 0)
     return 0;
-  if (app->page_repeat_active)
-    return 0;
-
   if (!app->adjacent_warm_frame_ready)
   {
     SourceReaderPageRange target = {0};
-    B32 has_target = epub_reader_forward_page_range(
-      &app->reader, app->adjacent_warm_distance, &target);
+    B32 has_target = 0;
+    if (app->adjacent_warm_direction > 0)
+    {
+      has_target = epub_reader_forward_page_range(
+        &app->reader, app->adjacent_warm_distance, &target);
+    }
     if (!has_target && app->adjacent_warm_distance == 1)
     {
       EpubReaderNavigationPrepareResult prepare_result = {0};
@@ -8958,9 +9083,25 @@ lectern0_adjacent_warm_step(Lectern0App *app)
           .require_page_move = app->reader.navigation_stats.page_move_count != 0,
         },
         &prepare_result);
-      has_target = epub_reader_forward_page_range(&app->reader, 1, &target);
+      if (app->adjacent_warm_direction < 0 && prepare_result.prepared)
+      {
+        SourceReaderPageRange current = app->reader.current_page;
+        target = prepare_result.page;
+        has_target =
+          target.first_byte < target.one_past_last_byte &&
+          (target.spine_index < current.spine_index ||
+           (target.spine_index == current.spine_index &&
+            target.first_byte < current.first_byte &&
+            target.one_past_last_byte <= current.first_byte));
+      }
+      else if (app->adjacent_warm_direction > 0)
+      {
+        has_target = epub_reader_forward_page_range(&app->reader, 1, &target);
+      }
     }
     if (!has_target ||
+        (app->adjacent_warm_direction < 0 &&
+         app->adjacent_warm_distance > 1) ||
         (target.spine_index != app->reader.active_spine_index &&
          app->adjacent_warm_distance > 1) ||
         target.first_byte >= target.one_past_last_byte)
@@ -9032,6 +9173,8 @@ lectern0_adjacent_warm_step(Lectern0App *app)
 
   U32 shaped_index = 0;
   U32 warmed_count = 0;
+  U32 warm_text_budget = app->page_repeat_active ?
+    Lectern0AdjacentWarmRepeatTextBudget : Lectern0AdjacentWarmTextBudget;
   B32 warm_budget_exhausted = 0;
   U64 warm_start_ticks = os_time_ticks();
   U64 warm_frequency = os_time_frequency();
@@ -9048,7 +9191,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
           !(command->v.text.flags & DrawTextFlag_Shaped))
         continue;
       if (shaped_index++ < app->adjacent_warm_next_text_command) continue;
-      if (warmed_count >= Lectern0AdjacentWarmTextBudget)
+      if (warmed_count >= warm_text_budget)
       {
         warm_budget_exhausted = 1;
         break;
@@ -9101,7 +9244,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
     app->adjacent_warm_frame_ready = 0;
     app->adjacent_warm_next_text_command = 0;
     MemoryZeroStruct(&app->adjacent_frame);
-    if (crossed_spine ||
+    if (app->page_repeat_active || crossed_spine ||
         app->adjacent_warm_distance > Lectern0AdjacentWarmPageCap)
     {
       if (app->window)
@@ -10479,6 +10622,8 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       }
       if (app && w_param == Lectern0PageRepeatTimerId)
       {
+        if (app->adjacent_warm_pending)
+          (void)lectern0_adjacent_warm_step(app);
         (void)lectern0_page_repeat_step(app);
         return 0;
       }
@@ -17267,6 +17412,17 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U32 performance_pair_count = 0;
   U32 pixel_exact_count = 0;
   U32 repeat_move_count = 0;
+  U32 repeat_forward_move_count = 0;
+  U32 repeat_backward_move_count = 0;
+  U32 held_cache_hit_count = 0;
+  U32 held_pixel_exact_count = 0;
+  U32 held_warm_step_count = 0;
+  U64 held_move_total_ticks = 0;
+  U64 held_move_max_ticks = 0;
+  U64 held_render_total_ticks = 0;
+  U64 held_render_max_ticks = 0;
+  U64 held_warm_total_ticks = 0;
+  U64 held_warm_max_ticks = 0;
   U64 warmed_render_total_ticks = 0;
   U64 warmed_render_max_ticks = 0;
   U64 cold_render_total_ticks = 0;
@@ -17346,44 +17502,82 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   if (backward_count + 1 < forward_count) goto cleanup;
 
   checkpoint = 30;
+  if (!epub_reader_rebuild_search(&app.reader,
+                                  str8_from_cstr("1161st Year")) ||
+      app.reader.search_match_count == 0 ||
+      lectern0_navigate_to_search_match(
+        &app, 0, &(EpubReaderSearchNavigationResult){0}) != EpubReaderResult_Ok)
+    goto cleanup;
   reader_view_state_init(&app.reader_view_state);
   app.host_focus_control = Lectern0HostControl_None;
-  app.page_repeat_active = 1;
-  app.page_repeat_direction = 1;
-  app.page_repeat_key = VK_RIGHT;
-  app.page_repeat_frame_count = 0;
-  U32 repeat_start_spine = app.reader.active_spine_index;
-  U64 repeat_start_byte = app.reader.view_byte_offset;
-  for (U32 repeat_frame = 1;
-       repeat_frame < Lectern0PageRepeatInitialFrames;
-       repeat_frame += 1)
+  for (U32 repeat_pass = 0; repeat_pass < 2; repeat_pass += 1)
   {
-    if (lectern0_page_repeat_step(&app) ||
-        app.reader.active_spine_index != repeat_start_spine ||
-        app.reader.view_byte_offset != repeat_start_byte)
+    S32 repeat_direction = repeat_pass == 0 ? 1 : -1;
+    WPARAM repeat_key = repeat_direction > 0 ? VK_RIGHT : VK_LEFT;
+    checkpoint = 31 + repeat_pass;
+    lectern0_stop_page_repeat(&app);
+    lectern0_cancel_adjacent_warm(&app);
+    lectern0_invalidate_adjacent_page(&app);
+    if (!font_cache_clear_shaped_text(&app.render_state.text_cache) ||
+        lectern0_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
       goto cleanup;
+
+    /* A real first keydown moves immediately, then arms the bounded repeat.
+       Simulate the timer frames in their production order: one idle warm
+       opportunity followed by at most one accepted repeat action. */
+    app.page_repeat_active = 1;
+    app.page_repeat_direction = repeat_direction;
+    app.page_repeat_key = repeat_key;
+    app.page_repeat_frame_count = 0;
+    lectern0_schedule_adjacent_warm(&app);
+    U32 pass_move_count = 0;
+    U32 repeat_frame_cap = Lectern0PageRepeatInitialFrames +
+      Lectern0PageRepeatIntervalFrames * 3;
+    for (U32 repeat_frame = 0;
+         repeat_frame < repeat_frame_cap && pass_move_count < 2;
+         repeat_frame += 1)
+    {
+      if (app.adjacent_warm_pending)
+      {
+        U64 held_warm_start = os_time_ticks();
+        (void)lectern0_adjacent_warm_step(&app);
+        U64 held_warm_ticks = os_time_ticks() - held_warm_start;
+        held_warm_total_ticks += held_warm_ticks;
+        held_warm_max_ticks = MAX(held_warm_max_ticks, held_warm_ticks);
+        held_warm_step_count += 1;
+      }
+      U64 held_move_start = os_time_ticks();
+      B32 repeated = lectern0_page_repeat_step(&app);
+      U64 held_move_ticks = os_time_ticks() - held_move_start;
+      if (!repeated) continue;
+      held_move_total_ticks += held_move_ticks;
+      held_move_max_ticks = MAX(held_move_max_ticks, held_move_ticks);
+      repeat_move_count += 1;
+      pass_move_count += 1;
+      if (repeat_direction > 0) repeat_forward_move_count += 1;
+      else repeat_backward_move_count += 1;
+
+      U64 held_render_start = os_time_ticks();
+      lectern0_render_to_buffer(&app, &buffer);
+      U64 held_render_ticks = os_time_ticks() - held_render_start;
+      held_render_total_ticks += held_render_ticks;
+      held_render_max_ticks = MAX(held_render_max_ticks, held_render_ticks);
+      if (!app.adjacent_page_cache_used_last_render) goto cleanup;
+      held_cache_hit_count += 1;
+      U64 warmed_hash = u64_hash_bytes(
+        pixels, pixel_count * sizeof(*pixels));
+
+      lectern0_invalidate_adjacent_page(&app);
+      if (!font_cache_clear_shaped_text(&app.render_state.text_cache))
+        goto cleanup;
+      lectern0_render_to_buffer(&app, &buffer);
+      U64 cold_hash = u64_hash_bytes(
+        pixels, pixel_count * sizeof(*pixels));
+      if (warmed_hash != cold_hash) goto cleanup;
+      held_pixel_exact_count += 1;
+    }
+    if (pass_move_count != 2) goto cleanup;
   }
-  if (!lectern0_page_repeat_step(&app) ||
-      (app.reader.active_spine_index == repeat_start_spine &&
-       app.reader.view_byte_offset == repeat_start_byte))
-    goto cleanup;
-  repeat_move_count += 1;
-  U32 repeat_first_spine = app.reader.active_spine_index;
-  U64 repeat_first_byte = app.reader.view_byte_offset;
-  for (U32 repeat_frame = 1;
-       repeat_frame < Lectern0PageRepeatIntervalFrames;
-       repeat_frame += 1)
-  {
-    if (lectern0_page_repeat_step(&app) ||
-        app.reader.active_spine_index != repeat_first_spine ||
-        app.reader.view_byte_offset != repeat_first_byte)
-      goto cleanup;
-  }
-  if (!lectern0_page_repeat_step(&app) ||
-      (app.reader.active_spine_index == repeat_first_spine &&
-       app.reader.view_byte_offset == repeat_first_byte))
-    goto cleanup;
-  repeat_move_count += 1;
   lectern0_stop_page_repeat(&app);
   lectern0_cancel_adjacent_warm(&app);
 
@@ -17452,7 +17646,9 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   if (performance_pair_count != PerformancePairCount ||
       pixel_exact_count != PerformancePairCount ||
       warmed_cache_hit_count != PerformancePairCount ||
-      repeat_move_count != 2 ||
+      repeat_move_count != 4 || repeat_forward_move_count != 2 ||
+      repeat_backward_move_count != 2 || held_cache_hit_count != 4 ||
+      held_pixel_exact_count != 4 ||
       warmed_render_total_ticks >= cold_render_total_ticks)
     goto cleanup;
   if (!render_text_cache_stats(&app.render_state, &cache_stats)) goto cleanup;
@@ -17462,12 +17658,30 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_page_turn_regression_smoke result=pass forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=initial24_interval3_coalesced repeat_moves=%u prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
+            "lectern0_page_turn_regression_smoke result=pass forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=initial24_interval3_coalesced repeat_moves=%u held_repeat=directional_prepared_cache held_forward=%u held_backward=%u held_cache_hits=%u/4 held_pixel_exact=%u/4 held_warm_steps=%u held_warm_avg_ms=%.3f held_warm_max_ms=%.3f held_move_avg_ms=%.3f held_move_max_ms=%.3f held_render_avg_ms=%.3f held_render_max_ms=%.3f prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
             forward_count, backward_count,
             adjacent_warm_page_count, adjacent_warm_step_count,
             pixel_exact_count, performance_pair_count,
             warmed_cache_hit_count, performance_pair_count,
             repeat_move_count,
+            repeat_forward_move_count, repeat_backward_move_count,
+            held_cache_hit_count, held_pixel_exact_count,
+            held_warm_step_count,
+            1000.0 * (double)held_warm_total_ticks /
+              (double)os_time_frequency() /
+              (double)MAX(held_warm_step_count, 1),
+            1000.0 * (double)held_warm_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_move_total_ticks /
+              (double)os_time_frequency() /
+              (double)MAX(repeat_move_count, 1),
+            1000.0 * (double)held_move_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_render_total_ticks /
+              (double)os_time_frequency() /
+              (double)MAX(repeat_move_count, 1),
+            1000.0 * (double)held_render_max_ticks /
+              (double)os_time_frequency(),
             1000.0 * (double)prepared_move_total_ticks /
               (double)os_time_frequency() /
               (double)MAX(performance_pair_count, 1),
@@ -17514,13 +17728,16 @@ cleanup:
       }
     }
     fprintf(stderr,
-            "lectern0_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d pixel_exact=%u/%u repeat_moves=%u ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu page=%llu/%llu location=%llu/%llu\n",
+            "lectern0_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d warm_direction=%d pixel_exact=%u/%u repeat_moves=%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u held_warm_steps=%u ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu page=%llu/%llu location=%llu/%llu\n",
             checkpoint, failure_backward ? "backward" : "forward", failure_step,
             forward_count, backward_count, adjacent_warm_page_count,
             adjacent_warm_step_count, app.adjacent_warm_next_text_command,
             failure_shaped_count, app.adjacent_warm_pending,
-            app.adjacent_warm_frame_ready, pixel_exact_count,
-            performance_pair_count, repeat_move_count, app.reader_view_ready,
+            app.adjacent_warm_frame_ready, app.adjacent_warm_direction,
+            pixel_exact_count, performance_pair_count, repeat_move_count,
+            repeat_forward_move_count, repeat_backward_move_count,
+            held_cache_hit_count, held_pixel_exact_count,
+            held_warm_step_count, app.reader_view_ready,
             app.reader_view_layout.toolbar_visible,
             app.reader_view_frame.error_flags,
             app.reader_view_frame.change_flags,
