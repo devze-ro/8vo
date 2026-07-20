@@ -234,7 +234,8 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('ui0_theme_profile_for_kind') -lt 0 -or
       $app.IndexOf('Lectern0Theme_Count == 6') -lt 0 -or
       $app.IndexOf('file.version == 1') -lt 0 -or
-      $app.IndexOf('.version = 2') -lt 0) {
+      $app.IndexOf('.version = 3') -lt 0 -or
+      $app.IndexOf('file.version < 3 ?') -lt 0) {
     $failures.Add("lectern0 must expose all six shared themes with explicit legacy settings migration")
   }
   if ($app.IndexOf('lectern0_draw_adapter_covers_all_ops') -lt 0 -or

@@ -49,20 +49,70 @@ $PassLine = Get-Content -LiteralPath $Log | Where-Object {
   $_ -match '^lectern0_publisher_typography_spacing result=pass '
 } | Select-Object -Last 1
 if (!$PassLine) { throw "publisher typography/spacing pass line is missing" }
-$Match = [regex]::Match(
-  $PassLine,
-  '^lectern0_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting italics=3 justification=3 line_heights=(\d+),(\d+),(\d+) navigation=persistent restart=persistent hashes=([0-9a-f]+),([0-9a-f]+),([0-9a-f]+) output=(.+)$')
-if (!$Match.Success) {
-  throw "publisher typography/spacing result is incomplete: $PassLine"
+foreach ($Token in @(
+  "book=gotm_new", "options=3", "action=select_setting",
+  "font_override=explicit", "embedded_fonts=disabled",
+  "italics=3", "justification=3", "navigation=persistent",
+  "restart=persistent", "legacy_v2=override")) {
+  if ($PassLine -notmatch [regex]::Escape($Token)) {
+    throw "publisher typography/spacing result is missing ${Token}: $PassLine"
+  }
 }
 
+$LineMatch = [regex]::Match($PassLine, ' line_heights=(\d+),(\d+),(\d+)')
+$MarginUnitMatch = [regex]::Match($PassLine, ' margin_units=(\d+),(\d+),(\d+)')
+$PublisherMarginMatch = [regex]::Match($PassLine, ' publisher_margin=(\d+),(\d+),(\d+)')
+$FamilyMatch = [regex]::Match(
+  $PassLine,
+  ' family_available=(\d+) family_gaps=(-?\d+),(-?\d+),(-?\d+),(-?\d+),(-?\d+) family_line_heights=(\d+),(\d+),(\d+),(\d+),(\d+) family_rows=(\d+),(\d+),(\d+),(\d+),(\d+)')
+$RangeMatch = [regex]::Match(
+  $PassLine,
+  ' family_ranges=(\d+)\.\.(\d+),(\d+)\.\.(\d+),(\d+)\.\.(\d+),(\d+)\.\.(\d+),(\d+)\.\.(\d+)')
+$ContentMatch = [regex]::Match(
+  $PassLine, ' parity_content=(-?\d+),(-?\d+),(\d+),(\d+)')
+$HashMatch = [regex]::Match(
+  $PassLine, ' hashes=([0-9a-f]+),([0-9a-f]+),([0-9a-f]+) output=(.+)$')
+if (!$LineMatch.Success -or !$MarginUnitMatch.Success -or
+    !$PublisherMarginMatch.Success -or !$FamilyMatch.Success -or
+    !$RangeMatch.Success -or !$ContentMatch.Success -or !$HashMatch.Success) {
+  throw "publisher typography/spacing result is incomplete: $PassLine"
+}
 $LineHeights = @(
-  [int]$Match.Groups[1].Value,
-  [int]$Match.Groups[2].Value,
-  [int]$Match.Groups[3].Value
+  [int]$LineMatch.Groups[1].Value,
+  [int]$LineMatch.Groups[2].Value,
+  [int]$LineMatch.Groups[3].Value
 )
+$MarginUnits = @(1..3 | ForEach-Object { [int]$MarginUnitMatch.Groups[$_].Value })
+$PublisherMargins = @(1..3 | ForEach-Object { [int]$PublisherMarginMatch.Groups[$_].Value })
+$FamilyAvailable = [int]$FamilyMatch.Groups[1].Value
+$FamilyGaps = @(2..6 | ForEach-Object { [int]$FamilyMatch.Groups[$_].Value })
+$FamilyLineHeights = @(7..11 | ForEach-Object { [int]$FamilyMatch.Groups[$_].Value })
+$FamilyRows = @(12..16 | ForEach-Object { [int]$FamilyMatch.Groups[$_].Value })
+$FamilyRanges = @()
+for ($Index = 0; $Index -lt 5; $Index += 1) {
+  $FamilyRanges += [pscustomobject]@{
+    start=[long]$RangeMatch.Groups[1 + $Index * 2].Value
+    end=[long]$RangeMatch.Groups[2 + $Index * 2].Value
+  }
+}
+$ParityContent = [pscustomobject]@{
+  x=[int]$ContentMatch.Groups[1].Value
+  y=[int]$ContentMatch.Groups[2].Value
+  width=[int]$ContentMatch.Groups[3].Value
+  height=[int]$ContentMatch.Groups[4].Value
+}
+$Hashes = @(1..3 | ForEach-Object { $HashMatch.Groups[$_].Value })
 if ($LineHeights[1] -ne $LineHeights[0] + 5 -or
-    $LineHeights[2] -ne $LineHeights[1] + 5) {
+    $LineHeights[2] -ne $LineHeights[1] + 5 -or
+    $MarginUnits[0] -ne 1000 -or
+    $MarginUnits[1] -ge $MarginUnits[0] -or
+    $MarginUnits[2] -ge $MarginUnits[1] -or
+    ($PublisherMargins | Select-Object -Unique).Count -ne 1 -or
+    $FamilyAvailable -lt 3 -or
+    $FamilyLineHeights[2] -ne 31 -or $FamilyRows[2] -ne 18 -or
+    $FamilyRanges[2].start -ne 0 -or $FamilyRanges[2].end -ne 873 -or
+    $ParityContent.x -ne 490 -or $ParityContent.y -ne 124 -or
+    $ParityContent.width -ne 556 -or $ParityContent.height -ne 682) {
   throw "unexpected spacing geometry: $($LineHeights -join ',')"
 }
 
@@ -81,7 +131,31 @@ for ($Index = 0; $Index -lt 3; $Index += 1) {
   $Evidence += [pscustomobject]@{
     index=$Index
     line_height=$LineHeights[$Index]
-    presentation_hash=$Match.Groups[4 + $Index].Value
+    presentation_hash=$Hashes[$Index]
+    bmp=$Bmp
+    bmp_sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Bmp).Hash
+    png=$Png
+    png_sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Png).Hash
+  }
+}
+$FamilyEvidence = @()
+for ($Index = 0; $Index -lt 5; $Index += 1) {
+  if ($FamilyGaps[$Index] -lt 0) { continue }
+  $Bmp = "${Prefix}_family_${Index}.bmp"
+  $Png = "${Prefix}_family_${Index}.png"
+  if (!(Test-Path -LiteralPath $Bmp -PathType Leaf) -or
+      (Get-Item -LiteralPath $Bmp).Length -le 54) {
+    throw "missing rendered family evidence: $Bmp"
+  }
+  $Image = [System.Drawing.Image]::FromFile($Bmp)
+  try { $Image.Save($Png, [System.Drawing.Imaging.ImageFormat]::Png) }
+  finally { $Image.Dispose() }
+  $FamilyEvidence += [pscustomobject]@{
+    family_index=$Index
+    line_height=$FamilyLineHeights[$Index]
+    row_count=$FamilyRows[$Index]
+    bottom_gap=$FamilyGaps[$Index]
+    page_range=$FamilyRanges[$Index]
     bmp=$Bmp
     bmp_sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Bmp).Hash
     png=$Png
@@ -115,6 +189,12 @@ $Summary = [pscustomobject]@{
   text_size_index=0
   line_spacing_options=@("Compact", "Comfortable", "Spacious")
   line_heights=$LineHeights
+  margin_units=$MarginUnits
+  publisher_margin_pixels=$PublisherMargins
+  font_family_user_override=$true
+  embedded_fonts_enabled=$false
+  parity_content=$ParityContent
+  family_evidence=$FamilyEvidence
   action="ReaderViewAction_SelectSetting"
   navigation_persistence=$true
   restart_persistence=$true

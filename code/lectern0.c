@@ -285,6 +285,16 @@ typedef struct Lectern0Highlight
   char note[Lectern0NoteCap];
 } Lectern0Highlight;
 
+typedef struct Lectern0SettingsFileV2
+{
+  U64 magic;
+  U32 version;
+  U32 font_family;
+  U32 text_size_index;
+  U32 line_spacing_index;
+  U32 theme;
+} Lectern0SettingsFileV2;
+
 typedef struct Lectern0SettingsFile
 {
   U64 magic;
@@ -293,6 +303,7 @@ typedef struct Lectern0SettingsFile
   U32 text_size_index;
   U32 line_spacing_index;
   U32 theme;
+  U32 font_family_user_override;
 } Lectern0SettingsFile;
 
 typedef struct Lectern0AnnotationFile
@@ -542,6 +553,7 @@ typedef struct Lectern0App
   B32 reader_view_ready;
   S32 pagination_viewport_width;
   S32 pagination_viewport_height;
+  S32 reader_margin_line_height;
   Lectern0HostControlRecord
     host_controls[Lectern0LibraryHostControlCap];
   U32 host_control_count;
@@ -569,6 +581,7 @@ typedef struct Lectern0App
   U64 next_record_id;
   U64 annotation_revision;
   U32 font_family;
+  B32 font_family_user_override;
   U32 text_size_index;
   U32 line_spacing_index;
   Lectern0Theme theme;
@@ -603,6 +616,7 @@ typedef struct Lectern0App
   S32 adjacent_page_buffer_width;
   S32 adjacent_page_buffer_height;
   U32 adjacent_page_font_family;
+  B32 adjacent_page_embedded_fonts_enabled;
   U32 adjacent_page_text_size_index;
   U32 adjacent_page_line_spacing_index;
   Lectern0Theme adjacent_page_theme;
@@ -819,13 +833,17 @@ lectern0_load_settings(Lectern0App *app)
   Lectern0SettingsFile file = {0};
   U64 size = 0;
   if (!os_read_entire_file(app->settings_path, &file, sizeof(file), &size) ||
-      size != sizeof(file) || file.magic != LECTERN0_SETTINGS_MAGIC ||
-      (file.version != 1 && file.version != 2))
+      file.magic != LECTERN0_SETTINGS_MAGIC ||
+      !(((file.version == 1 || file.version == 2) &&
+         size == sizeof(Lectern0SettingsFileV2)) ||
+        (file.version == 3 && size == sizeof(file))))
   {
     return;
   }
   if (file.font_family < FontProviderBookContentFamily_InternalCount)
     app->font_family = file.font_family;
+  app->font_family_user_override = file.version < 3 ?
+    1 : !!file.font_family_user_override;
   if (file.text_size_index < 4) app->text_size_index = file.text_size_index;
   if (file.line_spacing_index < 3) app->line_spacing_index = file.line_spacing_index;
   if (file.version == 1)
@@ -851,11 +869,12 @@ lectern0_save_settings(Lectern0App *app)
   if (!app || !app->persistence_enabled || !app->settings_path[0]) { return 0; }
   Lectern0SettingsFile file = {
     .magic = LECTERN0_SETTINGS_MAGIC,
-    .version = 2,
+    .version = 3,
     .font_family = app->font_family,
     .text_size_index = app->text_size_index,
     .line_spacing_index = app->line_spacing_index,
     .theme = (U32)app->theme,
+    .font_family_user_override = !!app->font_family_user_override,
   };
   return os_write_entire_file_atomic(app->settings_path, &file, sizeof(file));
 }
@@ -1619,6 +1638,17 @@ lectern0_attach_frame_images(Lectern0App *app)
   }
 }
 
+FUNCTION U32
+lectern0_reader_margin_unit_permille(S32 line_height,
+                                     S32 margin_line_height)
+{
+  if (line_height <= 0) { return 1000; }
+  if (margin_line_height <= 0) { margin_line_height = line_height; }
+  U64 unit = ((U64)margin_line_height * 1000ULL +
+              (U64)(line_height / 2)) / (U64)line_height;
+  return (U32)MIN(MAX(unit, 1ULL), 1000ULL);
+}
+
 FUNCTION B32
 lectern0_update_layout_inputs(Lectern0App *app)
 {
@@ -1660,11 +1690,12 @@ lectern0_update_layout_inputs(Lectern0App *app)
   S32 content_height = MAX(content.h, 48);
   S32 text_scale = text_scales[size_index];
   String8 uri = epub_reader_canonical_uri(&app->reader);
+  B32 embedded_fonts_enabled = !app->font_family_user_override;
 
   (void)epub_reader_typography_set_view(&app->reader.typography,
                                         text_scale,
                                         app->font_family,
-                                        1);
+                                        embedded_fonts_enabled);
   epub_reader_typography_set_text_mode(&app->reader.typography,
                                        EpubReaderTextMode_ShapedV1);
   String8 measure_sample = str8_from_cstr(
@@ -1692,6 +1723,9 @@ lectern0_update_layout_inputs(Lectern0App *app)
     base_line_height = font_metrics.line_advance_px;
   }
   S32 line_height = base_line_height + line_spacing_extra[spacing_index];
+  U32 margin_unit_permille =
+    lectern0_reader_margin_unit_permille(line_height, base_line_height);
+  app->reader_margin_line_height = base_line_height;
 
   app->layout_key = (EpubReaderLayoutKey){
     .document_id = epub_reader_document_id(&app->reader),
@@ -1704,9 +1738,9 @@ lectern0_update_layout_inputs(Lectern0App *app)
     .char_advance = char_advance,
     .line_height = line_height,
     .text_scale = text_scale,
-    .margin_unit_permille = 1000,
+    .margin_unit_permille = margin_unit_permille,
     .font_family_index = app->font_family,
-    .embedded_fonts_enabled = 1,
+    .embedded_fonts_enabled = embedded_fonts_enabled,
     .text_mode = EpubReaderTextMode_ShapedV1,
   };
   app->layout_config = (SourceReaderLayoutConfig){
@@ -6495,6 +6529,7 @@ lectern0_apply_setting(Lectern0App *app,
       if (!epub_reader_typography_family_available(&app->reader.typography, family))
         return 0;
       app->font_family = family;
+      app->font_family_user_override = 1;
       repaginate = 1;
     } break;
     case ReaderViewSetting_FontSize:
@@ -7162,7 +7197,8 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
                                           Lectern0PresentationRowMetrics *out_metrics)
 {
   if (out_metrics) { MemoryZeroStruct(out_metrics); }
-  if (!app || !row || !out_metrics || app->layout_key.char_advance <= 0)
+  if (!app || !row || !out_metrics || app->layout_key.char_advance <= 0 ||
+      app->reader_margin_line_height <= 0)
   {
     return 0;
   }
@@ -7183,14 +7219,15 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
   }
   if (metrics.scale_px > INT32_MAX - 4 ||
       !lectern0_resolve_scaled_px(app->layout_key.line_height,
-                                  row->line_height_permille,
+                                  row->line_height_permille ?
+                                    row->line_height_permille : 1000,
                                   metrics.scale_px + 4,
                                   &metrics.line_height_px) ||
       !lectern0_resolve_nonnegative_product(row->margin_top_rows,
-                                            app->layout_key.line_height,
+                                            app->reader_margin_line_height,
                                             &metrics.margin_before_px) ||
       !lectern0_resolve_nonnegative_product(row->margin_bottom_rows,
-                                            app->layout_key.line_height,
+                                            app->reader_margin_line_height,
                                             &metrics.margin_after_px) ||
       !lectern0_resolve_nonnegative_product(row->margin_left_cols,
                                             app->layout_key.char_advance,
@@ -8513,6 +8550,8 @@ lectern0_draw_cached_adjacent_page(Lectern0App *app, UI0Rect page)
       app->adjacent_page_rect.w != page.w ||
       app->adjacent_page_rect.h != page.h ||
       app->adjacent_page_font_family != app->font_family ||
+      app->adjacent_page_embedded_fonts_enabled !=
+        app->layout_key.embedded_fonts_enabled ||
       app->adjacent_page_text_size_index != app->text_size_index ||
       app->adjacent_page_line_spacing_index != app->line_spacing_index ||
       app->adjacent_page_theme != app->theme ||
@@ -8831,6 +8870,8 @@ lectern0_build_adjacent_page_raster(Lectern0App *app)
   app->adjacent_page_buffer_width = app->width;
   app->adjacent_page_buffer_height = app->height;
   app->adjacent_page_font_family = app->font_family;
+  app->adjacent_page_embedded_fonts_enabled =
+    app->layout_key.embedded_fonts_enabled;
   app->adjacent_page_text_size_index = app->text_size_index;
   app->adjacent_page_line_spacing_index = app->line_spacing_index;
   app->adjacent_page_theme = app->theme;
@@ -15037,7 +15078,21 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   Lectern0App reload = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
   U32 line_heights[3] = {0};
+  U32 margin_units[3] = {0};
+  S32 publisher_margin_pixels[3] = {0};
   U64 presentation_hashes[3] = {0};
+  static const U32 parity_families[] = {
+    FontProviderBookContentFamily_Georgia,
+    FontProviderBookContentFamily_NotoSerif,
+    FontProviderBookContentFamily_PalatinoLinotype,
+    FontProviderBookContentFamily_BookAntiqua,
+    FontProviderBookContentFamily_TimesNewRoman,
+  };
+  S32 family_bottom_gaps[ARRAY_COUNT(parity_families)] = {-1, -1, -1, -1, -1};
+  S32 family_line_heights[ARRAY_COUNT(parity_families)] = {0};
+  U32 family_row_counts[ARRAY_COUNT(parity_families)] = {0};
+  U64 family_page_starts[ARRAY_COUNT(parity_families)] = {0};
+  U64 family_page_ends[ARRAY_COUNT(parity_families)] = {0};
   char bmp_path[Lectern0PathCap] = {0};
   char settings_path[Lectern0PathCap] = {0};
   U32 italic_options = 0;
@@ -15055,6 +15110,22 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
 
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SelectSetting,
+    .setting_kind = ReaderViewSetting_FontFamily,
+    .key = 1000 + FontProviderBookContentFamily_Georgia,
+  });
+  if (!app.font_family_user_override ||
+      app.layout_key.embedded_fonts_enabled ||
+      app.reader.typography.embedded_fonts_enabled)
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=font_override override=%d layout_embedded=%d typography_embedded=%d\n",
+            app.font_family_user_override,
+            app.layout_key.embedded_fonts_enabled,
+            app.reader.typography.embedded_fonts_enabled);
+    goto cleanup;
+  }
   for (U32 spacing_index = 0; spacing_index < 3; spacing_index += 1)
   {
     lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
@@ -15088,6 +15159,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     B32 found_date = 0;
     B32 date_italic = 0;
     U32 justified_rows = 0;
+    S32 publisher_margin_px = -1;
     for (U32 row_index = 0;
          row_index < app.frame.style_row_count &&
          row_index < app.presentation_frame.row_count;
@@ -15096,6 +15168,19 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       const EpubReaderFrameStyleRow *row = app.frame.style_rows + row_index;
       const PresentationEngineBlockFlowRow *presentation_row =
         app.presentation_frame.rows + row_index;
+      if (publisher_margin_px < 0 && row->line_row == 0 &&
+          row->margin_top_rows > 0)
+      {
+        Lectern0PresentationRowMetrics metrics = {0};
+        if (!lectern0_resolve_presentation_row_metrics(&app, row, &metrics))
+        {
+          fprintf(stderr,
+                  "lectern0_publisher_typography_spacing result=fail reason=margin_metrics index=%u row=%u\n",
+                  spacing_index, row_index);
+          goto cleanup;
+        }
+        publisher_margin_px = metrics.margin_before_px;
+      }
       U32 start = MIN(row->byte_start, (U32)app.frame.visible_text.size);
       U32 end = MIN(row->byte_end, (U32)app.frame.visible_text.size);
       while (end > start &&
@@ -15157,6 +15242,8 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     italic_options += 1;
     justified_options += justified_rows >= 4;
     line_heights[spacing_index] = (U32)app.layout_key.line_height;
+    margin_units[spacing_index] = app.layout_key.margin_unit_permille;
+    publisher_margin_pixels[spacing_index] = publisher_margin_px;
     presentation_hashes[spacing_index] = app.presentation_hash;
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                       "%s_spacing_%u.bmp", output_prefix, spacing_index);
@@ -15183,15 +15270,135 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   }
   if (line_heights[1] != line_heights[0] + 5 ||
       line_heights[2] != line_heights[1] + 5 ||
+      margin_units[0] != 1000 ||
+      margin_units[1] >= margin_units[0] ||
+      margin_units[2] >= margin_units[1] ||
+      publisher_margin_pixels[0] <= 0 ||
+      publisher_margin_pixels[0] != publisher_margin_pixels[1] ||
+      publisher_margin_pixels[1] != publisher_margin_pixels[2] ||
       presentation_hashes[0] == presentation_hashes[1] ||
       presentation_hashes[1] == presentation_hashes[2])
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=geometry heights=%u,%u,%u hashes=%016llx,%016llx,%016llx\n",
+            "lectern0_publisher_typography_spacing result=fail reason=geometry heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d hashes=%016llx,%016llx,%016llx\n",
             line_heights[0], line_heights[1], line_heights[2],
+            margin_units[0], margin_units[1], margin_units[2],
+            publisher_margin_pixels[0], publisher_margin_pixels[1],
+            publisher_margin_pixels[2],
             (unsigned long long)presentation_hashes[0],
             (unsigned long long)presentation_hashes[1],
             (unsigned long long)presentation_hashes[2]);
+    goto cleanup;
+  }
+
+  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_SelectSetting,
+    .setting_kind = ReaderViewSetting_LineSpacing,
+    .key = 3000,
+  });
+  U32 available_family_count = 0;
+  for (U32 family_index = 0;
+       family_index < ARRAY_COUNT(parity_families);
+       family_index += 1)
+  {
+    U32 family = parity_families[family_index];
+    if (!epub_reader_typography_family_available(&app.reader.typography,
+                                                  family))
+    {
+      continue;
+    }
+    available_family_count += 1;
+    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      .kind = ReaderViewAction_SelectSetting,
+      .setting_kind = ReaderViewSetting_FontFamily,
+      .key = 1000 + family,
+    });
+    if (!app.font_family_user_override ||
+        app.layout_key.font_family_index != family ||
+        app.layout_key.embedded_fonts_enabled ||
+        app.reader.typography.embedded_fonts_enabled ||
+        app.layout_key.margin_unit_permille != 1000 ||
+        app.reader_margin_line_height != app.layout_key.line_height ||
+        !epub_reader_rebuild_search(&app.reader,
+                                    str8_from_cstr("1161st Year")) ||
+        app.reader.search_match_count == 0 ||
+        lectern0_navigate_to_search_match(
+          &app, 0, &(EpubReaderSearchNavigationResult){0}) !=
+            EpubReaderResult_Ok)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=family_layout index=%u family=%u override=%d layout_family=%u layout_embedded=%d typography_embedded=%d margin_unit=%u margin_line=%d line=%d\n",
+              family_index, family, app.font_family_user_override,
+              app.layout_key.font_family_index,
+              app.layout_key.embedded_fonts_enabled,
+              app.reader.typography.embedded_fonts_enabled,
+              app.layout_key.margin_unit_permille,
+              app.reader_margin_line_height,
+              app.layout_key.line_height);
+      goto cleanup;
+    }
+    lectern0_render_to_buffer(&app, &buffer);
+    if (!app.presentation_complete || !app.presentation_frame.valid ||
+        app.presentation_frame.row_count == 0 || !app.reader.has_current_page)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=family_presentation index=%u family=%u\n",
+              family_index, family);
+      goto cleanup;
+    }
+    const PresentationEngineBlockFlowRow *last_row =
+      app.presentation_frame.rows + app.presentation_frame.row_count - 1;
+    S32 content_bottom = app.reader_content_geometry.content_rect.y +
+                         app.reader_content_geometry.content_rect.h;
+    S32 last_bottom = last_row->row_rect.y + last_row->row_rect.h;
+    S32 bottom_gap = content_bottom - last_bottom;
+    S32 maximum_gap = app.layout_key.line_height * 2;
+    if (bottom_gap < 0 || bottom_gap > maximum_gap)
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=family_bottom_gap index=%u family=%u gap=%d maximum=%d rows=%u\n",
+              family_index, family, bottom_gap, maximum_gap,
+              app.presentation_frame.row_count);
+      goto cleanup;
+    }
+    family_bottom_gaps[family_index] = bottom_gap;
+    family_line_heights[family_index] = app.layout_key.line_height;
+    family_row_counts[family_index] = app.presentation_frame.row_count;
+    family_page_starts[family_index] = app.reader.current_page.first_byte;
+    family_page_ends[family_index] = app.reader.current_page.one_past_last_byte;
+    (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
+                      "%s_family_%u.bmp", output_prefix, family_index);
+    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    {
+      fprintf(stderr,
+              "lectern0_publisher_typography_spacing result=fail reason=family_evidence index=%u\n",
+              family_index);
+      goto cleanup;
+    }
+  }
+  UI0Rect parity_content = app.reader_content_geometry.content_rect;
+  if (available_family_count < 3 ||
+      parity_content.x != 490 || parity_content.y != 124 ||
+      parity_content.w != 556 || parity_content.h != 682 ||
+      family_line_heights[FontProviderBookContentFamily_PalatinoLinotype] != 31 ||
+      family_row_counts[FontProviderBookContentFamily_PalatinoLinotype] != 18 ||
+      family_page_starts[FontProviderBookContentFamily_PalatinoLinotype] != 0 ||
+      family_page_ends[FontProviderBookContentFamily_PalatinoLinotype] != 873)
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=family_parity available=%u gaps=%d,%d,%d,%d,%d content=%d,%d,%d,%d palatino_line=%d rows=%u range=%llu..%llu\n",
+            available_family_count,
+            family_bottom_gaps[0], family_bottom_gaps[1],
+            family_bottom_gaps[2], family_bottom_gaps[3],
+            family_bottom_gaps[4],
+            parity_content.x, parity_content.y,
+            parity_content.w, parity_content.h,
+            family_line_heights[FontProviderBookContentFamily_PalatinoLinotype],
+            family_row_counts[FontProviderBookContentFamily_PalatinoLinotype],
+            (unsigned long long)
+              family_page_starts[FontProviderBookContentFamily_PalatinoLinotype],
+            (unsigned long long)
+              family_page_ends[FontProviderBookContentFamily_PalatinoLinotype]);
     goto cleanup;
   }
 
@@ -15211,18 +15418,73 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   lectern0_copy_cstr(reload.settings_path, ARRAY_COUNT(reload.settings_path),
                      settings_path);
   lectern0_load_settings(&reload);
-  if (reload.line_spacing_index != 2)
+  if (reload.line_spacing_index != 0 ||
+      !reload.font_family_user_override)
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=restart_persistence spacing=%u\n",
-            reload.line_spacing_index);
+            "lectern0_publisher_typography_spacing result=fail reason=restart_persistence spacing=%u override=%d\n",
+            reload.line_spacing_index,
+            reload.font_family_user_override);
+    goto cleanup;
+  }
+
+  Lectern0SettingsFileV2 legacy_settings = {
+    .magic = LECTERN0_SETTINGS_MAGIC,
+    .version = 2,
+    .font_family = FontProviderBookContentFamily_PalatinoLinotype,
+    .text_size_index = 1,
+    .line_spacing_index = 1,
+    .theme = Lectern0Theme_Light,
+  };
+  reload.font_family_user_override = 0;
+  if (!os_write_entire_file_atomic(settings_path,
+                                   &legacy_settings,
+                                   sizeof(legacy_settings)))
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=legacy_write\n");
+    goto cleanup;
+  }
+  lectern0_load_settings(&reload);
+  if (!reload.font_family_user_override ||
+      reload.font_family != FontProviderBookContentFamily_PalatinoLinotype)
+  {
+    fprintf(stderr,
+            "lectern0_publisher_typography_spacing result=fail reason=legacy_migration family=%u override=%d\n",
+            reload.font_family,
+            reload.font_family_user_override);
     goto cleanup;
   }
 
   fprintf(stdout,
-          "lectern0_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting italics=%u justification=%u line_heights=%u,%u,%u navigation=persistent restart=persistent hashes=%016llx,%016llx,%016llx output=%s\n",
+          "lectern0_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting font_override=explicit embedded_fonts=disabled italics=%u justification=%u line_heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d family_available=%u family_gaps=%d,%d,%d,%d,%d family_line_heights=%d,%d,%d,%d,%d family_rows=%u,%u,%u,%u,%u family_ranges=%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu parity_content=%d,%d,%d,%d navigation=persistent restart=persistent legacy_v2=override hashes=%016llx,%016llx,%016llx output=%s\n",
           italic_options, justified_options,
           line_heights[0], line_heights[1], line_heights[2],
+          margin_units[0], margin_units[1], margin_units[2],
+          publisher_margin_pixels[0], publisher_margin_pixels[1],
+          publisher_margin_pixels[2],
+          available_family_count,
+          family_bottom_gaps[0], family_bottom_gaps[1],
+          family_bottom_gaps[2], family_bottom_gaps[3],
+          family_bottom_gaps[4],
+          family_line_heights[0], family_line_heights[1],
+          family_line_heights[2], family_line_heights[3],
+          family_line_heights[4],
+          family_row_counts[0], family_row_counts[1],
+          family_row_counts[2], family_row_counts[3],
+          family_row_counts[4],
+          (unsigned long long)family_page_starts[0],
+          (unsigned long long)family_page_ends[0],
+          (unsigned long long)family_page_starts[1],
+          (unsigned long long)family_page_ends[1],
+          (unsigned long long)family_page_starts[2],
+          (unsigned long long)family_page_ends[2],
+          (unsigned long long)family_page_starts[3],
+          (unsigned long long)family_page_ends[3],
+          (unsigned long long)family_page_starts[4],
+          (unsigned long long)family_page_ends[4],
+          parity_content.x, parity_content.y,
+          parity_content.w, parity_content.h,
           (unsigned long long)presentation_hashes[0],
           (unsigned long long)presentation_hashes[1],
           (unsigned long long)presentation_hashes[2],

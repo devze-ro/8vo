@@ -219,3 +219,72 @@ only and is fast-forwarded on top of that approved tip.
 Lectern0 remains local-only with no remote configured. No repository was
 created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
 history rewrite was performed.
+
+## 2026-07-20 regression addendum: font and pagination parity
+
+After the library and shared navigation-preparation adoption, the exact
+`gotm_new.epub` acceptance book reproduced two related Lectern0 regressions:
+
+- choosing the same named font in Re10 and Lectern0 did not produce the same
+  concrete font inputs because Lectern0 continued to permit the publisher's
+  embedded face after an explicit user font-family selection; and
+- the visible text bottom edge varied substantially by font, with Palatino
+  leaving about 90 pixels of artificial empty space above the progress area.
+
+The second defect was a host presentation error rather than a Reader0
+pagination error. Reader0 uses `line_height_permille == 0` to mean the normal
+1000-permille line height. Lectern0 instead passed that zero through a
+minimum-of-one calculation before applying its pixel clamp. For Palatino,
+Reader0 paginated at 31 pixels while Lectern0 presented each row at 26 pixels.
+The five-pixel discrepancy accumulated over 18 rows and created the apparent
+font-dependent lower boundary.
+
+The bounded repair keeps ownership unchanged:
+
+- Lectern0 now interprets an unspecified row height as 1000 permille before
+  presentation scaling, matching Reader0's canonical meaning;
+- publisher top and bottom margin units derive from the unexpanded base font
+  line height, so user row spacing no longer inflates publisher margins;
+- an explicit Lectern0 font-family choice is persisted as a user override and
+  disables publisher-embedded fonts in the Reader0 typography inputs;
+- the Lectern0 settings file advances to version 3, while version 1 and 2
+  24-byte records migrate to the pre-existing explicit-host-font behavior; and
+- adjacent-page cache identity includes the embedded-font policy so a font
+  policy transition cannot reuse stale presentation data.
+
+Lectern0 intentionally retains its standalone full-window reader viewport.
+Re10 places the Reader destination inside a shell-owned ten-pixel inset. Copying
+that Re10 shell inset into Lectern0 would make one text rectangle identical at
+1536 by 912, but it also reduces the canonical image capacity and regresses the
+frozen cover/map media box from 556 by 468 to 556 by 442. Host-specific shell
+composition therefore remains outside Reader0 and Readerview0; parity is
+defined by shared typography semantics for equivalent content geometry, not by
+forcing the two hosts to have identical outer chrome.
+
+The extended exact-book regression now exercises the real font-family action,
+version 3 restart persistence, version 2 migration, all locally available
+families, line-height and margin geometry, page ranges, row counts, and decoded
+render evidence. Final pre-commit evidence at 1536 by 912:
+
+- summary:
+  `local\v\typefinal4\summary.json`;
+- summary SHA-256:
+  `20BC99E4C8BE500B088B0C8E3EFCF63616609692127C24CD55906D242588674C`;
+- exact-book identity:
+  `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`;
+- line heights: 26, 31, and 36 pixels;
+- margin units: 1000, 839, and 722 permille;
+- publisher vertical margin: 52 pixels for all three spacing choices;
+- Palatino: 18 rows, range 0 through 873, zero-pixel bottom gap;
+- Georgia and Times New Roman: six-pixel bottom gaps;
+- Book Antiqua: 44-pixel bounded carry gap, below the two-line acceptance
+  ceiling and attributable to canonical row/page carry rather than mismatched
+  presentation geometry;
+- explicit family override persisted: pass; and
+- embedded publisher fonts disabled after explicit selection: pass.
+
+The retained image-only exact-book regression was rerun after rejecting the
+shell-inset experiment. Cover plus three maps remain 4/4, repeat 2/2, with the
+frozen 556 by 468 media geometry. Physical held-key navigation performance is
+not altered by this typography repair and is handled in a separate bounded
+Lectern0 slice.
