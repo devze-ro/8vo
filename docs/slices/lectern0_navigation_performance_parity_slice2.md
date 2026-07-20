@@ -90,3 +90,32 @@ The official runner executes twice in a fresh process and records the exact
 dependency pins, executable digest, clean Git state, and per-run timings.
 Strict MSVC C11 `/W4 /WX`, dependency guards, the architecture audit, library,
 Reader View, post-action arrow, and image-fit regressions remain required.
+
+## Implementation evidence
+
+The implementation commit is
+`a5359e0b45d17f30f189c9024732b5d43193580f`. Its exact dependency check,
+architecture audit, and strict MSVC C11 `/W4 /WX` build passed. The retained
+library, post-action arrow, Reader View, and exact-book image-fit regressions
+also passed; the library and post-action runners each repeated twice.
+
+The clean-tree page-turn runner summary is
+`local/validation/navigation-parity-page-turn-implementation/summary.json`
+with SHA-256
+`D5AC0EFD0ED9B9E246A7775B1EB55CEF3C7ADE6D162E29A222449AA74470C0BB`.
+It records the expected Git head, an empty status, executable SHA-256
+`2C50EC55BCD75E3DC72A4CCFB35A7BE7469C458D2B735531F8DF09BD5B604779`,
+and two passing runs:
+
+- run 1: 36 prepared pages, 16/16 snapshot hits, 16/16 pixel exact,
+  0.328 ms prepared-move max, 11.021 ms warmed-render max, and 56.978 ms
+  cold-render average;
+- run 2: 36 prepared pages, 16/16 snapshot hits, 16/16 pixel exact,
+  0.367 ms prepared-move max, 11.679 ms warmed-render max, and 54.565 ms
+  cold-render average; and
+- both runs: 64 forward, 63 backward, the 24/3 repeat contract, two emitted
+  repeat moves, and zero draw, raster-cache, or run-cache overflow.
+
+The four shaped-text overflow events are the existing bounded cache-eviction
+counter observed while scanning this typography-heavy book. They neither
+overflow drawing/raster/run storage nor affect the exact prepared-page output.
