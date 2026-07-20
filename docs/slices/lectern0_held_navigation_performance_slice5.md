@@ -2,7 +2,8 @@
 
 Date: 2026-07-20
 
-Status: implemented and validated on a dedicated branch; not promoted
+Status: implemented, validated, and promoted fast-forward-only to the
+local-only `main` branch on 2026-07-20
 
 ## Reproduced regression
 
@@ -143,6 +144,27 @@ The clean 15-state Re10/Lectern0 matrix rebuilt both hosts in-harness:
 
 ## Promotion state
 
-The branch is `codex/held-navigation-performance-slice5`. Promotion has not
-been requested or performed. Lectern0 remains local-only and no remote was
-created. The protected Re10 extraction worktree was not modified.
+Promotion was explicitly approved and completed in dependency order on
+2026-07-20:
+
+- Reader0 `main` and `origin/main` advanced fast-forward-only from
+  `3b86a1f7c1eae281fbb6c0c5fdc65e3616317bea` to
+  `2ffae376d9aa34d762f21d7ee61ea79ca613b151`;
+- Re10 `main` and `origin/main` advanced fast-forward-only from
+  `e504c87fee4d10f3c4c836925966c766971b1be8` to
+  `9969a1ed121bf3da25483ae55eb2e18e4ab3f274`; and
+- local-only Lectern0 `main` advanced fast-forward-only from
+  `d0c9f641fe24121027c1b1bb2508f2b43008ca17` through the validated
+  implementation and evidence at
+  `aef6b5e6120c090bf908bfd17e34c1cb6a48f38b`, followed only by this
+  documentation completion record.
+
+The canonical Lectern0 checkout then passed its exact dependency guards,
+architecture audit, and strict MSVC C11 `/W4 /WX` build. It used the retained
+exact zero_foundation 0.4.1 checkout at `3eab21c`; the independently advanced
+zero_foundation 0.4.3-dev `master` was not absorbed into this repair.
+
+Lectern0 remains local-only and no remote was created. No merge commit,
+rebase, reset, amendment, cherry-pick, or history rewrite was performed. UI0,
+Readerview0, zero_foundation, and the protected Re10 extraction worktree were
+not modified by promotion.
