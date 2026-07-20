@@ -36,11 +36,32 @@ will require a separately designed account, remote work identity, conflict,
 privacy, and reconciliation layer; none of that behavior is implemented here.
 
 Reader0 owns the EPUB document engine, source layout, typography, pagination,
-page transitions, semantic navigation, search/selection state, and canonical
-frame. Lectern0 passes its viewport-derived layout values directly to reader0
-API 4. No reader state is mirrored in application storage. Its narrow semantic
-adapters capture the resulting canonical frame, set host status, and persist
-the resulting reader-owned location.
+page transitions, bounded navigation preparation, semantic navigation,
+search/selection state, and canonical frames. Lectern0 passes its
+viewport-derived layout values directly to Reader0 API 5. It asks Reader0 to
+prepare at most one direction-aware window, queries up to four already
+prepared forward page ranges, and copies each range through Reader0's
+caller-storage page-frame builder. No reader state is mirrored or temporarily
+mutated in application storage. Its narrow semantic adapters capture the
+resulting canonical frame, set host status, and persist the resulting
+reader-owned location.
+
+Lectern0 owns when that preparation runs: 12 ms on first-open idle work, 8 ms
+on ordinary idle work, and no speculative work while a page key is held. It
+warms at most four forward text pages and at most one cross-spine page. The
+existing one-page, image-free, 4096-by-4096-capped pixel snapshot remains an
+explicit host presentation optimization because Lectern0's software renderer
+does not share Re10's retained UI caches. A cross-spine page that references an
+embedded font is prepared by Reader0 but not rasterized until that spine's
+font state becomes active. The snapshot is never persisted or synchronized
+and is rejected unless canonical frame content, annotations, geometry,
+typography, and theme all match.
+
+Win32 page-key repeat is host policy. Lectern0 ignores OS repeat messages,
+emits its first host repeat after 24 16-ms timer frames, then at most once every
+three frames, and stops on key-up or focus loss. This matches Re10's bounded
+cadence without moving input, scheduling, rendering, or persistence into
+Reader0.
 
 Readerview0 API 3 owns only the proven-common UI0 composition: the accepted
 fixed-slot top toolbar, page gutters and progress geometry, TOC/Find and

@@ -150,7 +150,7 @@ From a linked worktree, point the dependency variables at exact clean
 checkouts:
 
 ```powershell
-$env:LECTERN0_READER0_DIR = 'C:\path\to\reader0-api4-worktree'
+$env:LECTERN0_READER0_DIR = 'C:\path\to\reader0-api5-worktree'
 $env:LECTERN0_UI0_DIR = 'C:\path\to\ui0'
 $env:LECTERN0_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
 $env:LECTERN0_ZERO_FOUNDATION_DIR = 'C:\path\to\zero_foundation'

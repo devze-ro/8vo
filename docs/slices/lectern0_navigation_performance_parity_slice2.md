@@ -1,0 +1,92 @@
+# Lectern0 Reader0 navigation-performance parity slice 2
+
+Date: 2026-07-20
+
+Status: implemented; awaiting review before promotion
+
+## Objective
+
+Adopt the bounded Reader0 API 5 navigation-preparation contract in Lectern0
+and apply the proven Re10 host pacing policy without merging the two hosts'
+renderers, persistence, or input systems.
+
+This slice follows the library regression repair at `5ecaa77`. It does not
+start Reader0 Slice 4, add PDF support, change Readerview0 or UI0, or begin the
+deferred Re10 Books destination.
+
+## Shared Reader0 contract
+
+Lectern0 pins Reader0 API 5 at `3b86a1f` and calls:
+
+- `epub_reader_prepare_navigation` for one direction-aware same-spine or
+  adjacent-spine preparation decision;
+- `epub_reader_forward_page_range` for bounded already-prepared page lookup;
+  and
+- `epub_reader_build_page_frame` to copy a validated current or prepared page,
+  including an adjacent-spine page, into caller-owned frame storage without
+  moving or mutating the live reader.
+
+Reader0 therefore owns page/window selection and canonical speculative frames.
+Lectern0 no longer writes `current_page` or `view_byte_offset` temporarily to
+construct an adjacent frame.
+
+## Lectern0 host policy
+
+Lectern0 retains the policies that cannot be shared with Re10:
+
+- a 16 ms idle timer;
+- a 12 ms first-open and 8 ms ordinary warming budget;
+- four text commands per idle step;
+- up to four same-spine forward pages and one cross-spine page;
+- complete deferral while a page key is held;
+- a 24-frame initial delay and three-frame repeat interval; and
+- host-owned persistence debounce, invalidation, drawing, and progress status.
+
+OS key-repeat messages are ignored for eligible page keys. The first keydown
+still moves immediately; the host timer then emits at most one page action at
+each accepted repeat point and stops on key-up, focus loss, Close Book, or
+window destruction.
+
+## Presentation cache boundary
+
+Reader0 preparation does not replace Lectern0's previously accepted one-page
+presentation snapshot. Removing that snapshot regressed prepared text-page
+paint from roughly 9 ms to roughly 33 ms in the exact-book harness. Lectern0
+therefore retains one explicit image-free raster capped at 4096 by 4096 pixels.
+It is keyed by canonical frame content, annotation revision, page geometry,
+viewport, typography, and theme, and its match is checked before redundant
+presentation reconstruction.
+
+The snapshot is renderer policy, not pagination state. It is bounded,
+ephemeral, host-owned, never serialized, and never synchronized. Image pages
+continue through Reader0 resource access plus zero_foundation decoding. A
+cross-spine frame containing an embedded-font face is prepared but not
+speculatively rasterized until the target spine's font state is active.
+
+## Future sync
+
+The slice does not alter the sync-ready ownership established by the library
+reference lock. Durable catalog identity and canonical progress remain
+Lectern0-owned records; preparation state, timers, font-cache entries, and the
+page snapshot are ephemeral and must never enter a future sync protocol. Re10
+can synchronize its own durable Books/progress records later while consuming
+the same Reader0 canonical locations.
+
+## Acceptance
+
+The exact `gotm_new.epub` harness requires:
+
+- exact size 955125 bytes and SHA-256
+  `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`;
+- 64 forward and at least 63 backward page turns with visible Reader chrome;
+- the 24-frame/three-frame coalesced repeat contract;
+- at least 16 prepared pages;
+- 16/16 prepared snapshot hits and 16/16 warmed/cold pixel equality;
+- prepared move max and prepared render max below 16.667 ms;
+- warmed rendering materially faster than cold rendering; and
+- zero draw, raster-cache, or run-cache overflow.
+
+The official runner executes twice in a fresh process and records the exact
+dependency pins, executable digest, clean Git state, and per-run timings.
+Strict MSVC C11 `/W4 /WX`, dependency guards, the architecture audit, library,
+Reader View, post-action arrow, and image-fit regressions remain required.

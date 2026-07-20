@@ -60,9 +60,9 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 4') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 5') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("lectern0 must consume Reader0 API 4 metadata")
+    $failures.Add("lectern0 must consume Reader0 API 5 including author metadata")
   }
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("lectern0 must consume the UI0 umbrella")
@@ -273,9 +273,25 @@ if ($failures.Count -eq 0) {
     $failures.Add("lectern0 must retain its native adapter over shared semantic/action records")
   }
   if ($app.IndexOf('epub_reader_move_page') -lt 0 -or
+      $app.IndexOf('doc_engine_get_author') -lt 0 -or
       $app.IndexOf('epub_reader_navigate_to_nav_point') -lt 0 -or
       $app.IndexOf('epub_reader_navigate_to_search_match') -lt 0) {
-    $failures.Add("lectern0 must consume the concrete reader0 API 4 page, metadata, and semantic navigation surface")
+    $failures.Add("lectern0 must consume the concrete Reader0 page, metadata, and semantic navigation surface")
+  }
+  if ($app.IndexOf('epub_reader_prepare_navigation') -lt 0 -or
+      $app.IndexOf('epub_reader_forward_page_range') -lt 0 -or
+      $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
+      $app.IndexOf('Lectern0AdjacentWarmPageCap = 4') -lt 0 -or
+      $app.IndexOf('Lectern0PageRepeatInitialFrames = 24') -lt 0 -or
+      $app.IndexOf('Lectern0PageRepeatIntervalFrames = 3') -lt 0 -or
+      $app.IndexOf('if (app->page_repeat_active)') -lt 0) {
+    $failures.Add("lectern0 must consume Reader0 API 5 preparation with four-page host warming, held-input deferral, and 24/3 coalesced repeat pacing")
+  }
+  if ($app.IndexOf('Lectern0AdjacentPagePixelCap = 4096 * 4096') -lt 0 -or
+      $app.IndexOf('adjacent_page_pixels') -lt 0 -or
+      $app.IndexOf('lectern0_build_adjacent_page_raster') -lt 0 -or
+      $app.IndexOf('app->adjacent_warm_distance == 1') -lt 0) {
+    $failures.Add("lectern0 must retain one bounded host-owned next-page raster while Reader0 owns navigation preparation")
   }
   if ($app.IndexOf('font_cache_tag_from_provider') -lt 0 -or
       $app.IndexOf('lectern0_push_reader_text_chunks') -lt 0 -or

@@ -53,16 +53,30 @@ function Invoke-PageTurnSmoke {
     $_ -match '^lectern0_page_turn_regression_smoke result=pass '
   } | Select-Object -Last 1
   foreach ($Token in @(
-    "forward=64", "backward=63", "raster_exact=16/16",
+    "forward=64", "backward=63", "pixel_exact=16/16",
+    "warmed_cache_hits=16/16",
+    "repeat=initial24_interval3_coalesced", "repeat_moves=2",
     "draw_overflow=0", "raster_overflow=0", "run_overflow=0")) {
     if (!$PassLine -or $PassLine -notmatch [regex]::Escape($Token)) {
       throw "page-turn result is incomplete: missing $Token in $PassLine"
     }
   }
   $WarmMatch = [regex]::Match($PassLine, 'warmed_render_avg_ms=([0-9.]+)')
+  $WarmMaxMatch = [regex]::Match(
+    $PassLine, 'warmed_render_max_ms=([0-9.]+)')
   $ColdMatch = [regex]::Match($PassLine, 'cold_render_avg_ms=([0-9.]+)')
-  if (!$WarmMatch.Success -or !$ColdMatch.Success) {
+  $PreparedMoveMatch = [regex]::Match(
+    $PassLine, 'prepared_move_max_ms=([0-9.]+)')
+  if (!$WarmMatch.Success -or !$WarmMaxMatch.Success -or
+      !$ColdMatch.Success -or
+      !$PreparedMoveMatch.Success) {
     throw "page-turn performance fields are missing: $PassLine"
+  }
+  $PreparedMatch = [regex]::Match(
+    $PassLine, 'prepared_warm_pages=(\d+)')
+  if (!$PreparedMatch.Success -or
+      [int]$PreparedMatch.Groups[1].Value -lt 16) {
+    throw "bounded forward warming evidence is missing: $PassLine"
   }
   $WarmMs = [double]::Parse(
     $WarmMatch.Groups[1].Value,
@@ -70,13 +84,25 @@ function Invoke-PageTurnSmoke {
   $ColdMs = [double]::Parse(
     $ColdMatch.Groups[1].Value,
     [Globalization.CultureInfo]::InvariantCulture)
+  $PreparedMoveMaxMs = [double]::Parse(
+    $PreparedMoveMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
   if ($WarmMs -ge $ColdMs) {
     throw "prepared page render did not improve navigation: warm=$WarmMs cold=$ColdMs"
   }
+  $WarmMaxMs = [double]::Parse(
+    $WarmMaxMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
+  if ($WarmMaxMs -ge 16.667 -or $PreparedMoveMaxMs -ge 16.667) {
+    throw "prepared page turn exceeded the 60 FPS budget: move_max=$PreparedMoveMaxMs render_max=$WarmMaxMs"
+  }
   [pscustomobject]@{
     pass_line=[string]$PassLine
+    prepared_move_max_ms=$PreparedMoveMaxMs
     warmed_render_avg_ms=$WarmMs
+    warmed_render_max_ms=$WarmMaxMs
     cold_render_avg_ms=$ColdMs
+    prepared_warm_pages=[int]$PreparedMatch.Groups[1].Value
     log=$Log
   }
 }

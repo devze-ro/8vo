@@ -131,6 +131,10 @@ cross-window/cross-spine boundary. If that remains user-visible after this
 change, it should be a separately measured host-preparation slice using
 existing Reader0 mechanisms.
 
+The follow-up `lectern0_navigation_performance_parity_slice2` replaces that
+remaining host-local preparation decision with Reader0 API 5 while retaining
+this bounded one-page presentation snapshot as Lectern0 renderer policy.
+
 ## Ownership and future sync
 
 All product changes are Lectern0-owned:
