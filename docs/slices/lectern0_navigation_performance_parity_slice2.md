@@ -137,3 +137,12 @@ order:
 
 No Lectern0 remote was created. UI0, Readerview0, zero_foundation, and the
 protected Re10 extraction worktree were not modified by promotion.
+
+## 2026-07-20 held-navigation regression follow-up
+
+The complete held-input deferral recorded above is historical policy and was
+superseded after exact-book reproduction showed that it forced every
+timer-driven repeat to render cold. The bounded directional preparation and
+adapter hot-path repair are recorded in
+`docs/slices/lectern0_held_navigation_performance_slice5.md`. Reader0's API and
+ownership remain unchanged.
