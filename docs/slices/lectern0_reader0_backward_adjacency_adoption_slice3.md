@@ -5,7 +5,7 @@ Date: 2026-07-20
 ## Objective
 
 Adopt Reader0's bounded correction for a missing retained backward boundary.
-Lectern0 advances its exact Reader0 dependency from `3b86a1f` to `5611d36`;
+Lectern0 advances its exact Reader0 dependency from `3b86a1f` to `2ffae37`;
 Reader0 remains API 5 and version `0.5.0-dev`.
 
 ## Ownership
