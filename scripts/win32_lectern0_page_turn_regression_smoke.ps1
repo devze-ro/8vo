@@ -1,5 +1,5 @@
 param(
-  [string]$OutDir = "C:\Temp\lectern0_library_v1",
+  [string]$OutDir = "C:\Temp\lectern0_page_turn_regression",
   [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
   [string]$ExePath = "build\win32\lectern0.exe",
   [switch]$SkipBuild
@@ -10,13 +10,11 @@ $ExpectedBookSha256 =
   "D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9"
 $ExpectedBookSize = 955125
 $Root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-if (!(Test-Path -LiteralPath $BookPath -PathType Leaf)) {
-  throw "missing GOTM EPUB: $BookPath"
-}
 $Book = (Resolve-Path -LiteralPath $BookPath).Path
 $BookItem = Get-Item -LiteralPath $Book
 $BookHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Book).Hash
-if ($BookHash -ne $ExpectedBookSha256 -or $BookItem.Length -ne $ExpectedBookSize) {
+if ($BookHash -ne $ExpectedBookSha256 -or
+    $BookItem.Length -ne $ExpectedBookSize) {
   throw "GOTM EPUB identity mismatch: expected=$ExpectedBookSha256/$ExpectedBookSize actual=$BookHash/$($BookItem.Length) path=$Book"
 }
 $Exe = if ([System.IO.Path]::IsPathRooted($ExePath)) {
@@ -40,65 +38,51 @@ if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
   throw "missing Lectern0 executable: $Exe"
 }
 
-function Invoke-LibrarySmoke {
+function Invoke-PageTurnSmoke {
   param([string]$Name)
   $RunDir = Join-Path $Out $Name
   New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
-  $Prefix = Join-Path $RunDir "library"
+  $Prefix = Join-Path $RunDir "page_turn"
   $Log = Join-Path $RunDir "run.log"
-  & $Exe --library-smoke $Book $Prefix *> $Log
+  & $Exe --page-turn-regression-smoke $Book $Prefix *> $Log
   if ($LASTEXITCODE -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 100) -join "`n"
-    throw "Lectern0 library smoke failed`n$Tail"
+    throw "Lectern0 page-turn regression smoke failed`n$Tail"
   }
   $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^lectern0_library_smoke result=pass '
+    $_ -match '^lectern0_page_turn_regression_smoke result=pass '
   } | Select-Object -Last 1
   foreach ($Token in @(
-    "catalog=bounded_atomic_v1", "ordering=mru", "migration=legacy_state",
-    "metadata=title_author", "cover=first_library_frame", "progress=canonical",
-    "close=library", "restart=persisted",
-    "interaction=pointer_keyboard_card_open_arrow", "states=idle_hover_pressed",
-    "missing=locate_remove",
-    "remove=source_preserved", "responsive=wide_and_compact",
-    "accessibility=host_semantics", "digest=reserved_none")) {
+    "forward=64", "backward=63", "raster_exact=16/16",
+    "draw_overflow=0", "raster_overflow=0", "run_overflow=0")) {
     if (!$PassLine -or $PassLine -notmatch [regex]::Escape($Token)) {
-      throw "library result is incomplete: missing $Token in $PassLine"
+      throw "page-turn result is incomplete: missing $Token in $PassLine"
     }
   }
-  $Evidence = @{}
-  foreach ($State in @("empty", "populated", "restart", "restart_repeat",
-                        "compact", "missing", "hover", "pressed")) {
-    $Path = "${Prefix}_${State}.bmp"
-    if (!(Test-Path -LiteralPath $Path -PathType Leaf) -or
-        (Get-Item -LiteralPath $Path).Length -le 54) {
-      throw "missing library evidence: $Path"
-    }
-    $Evidence[$State] = [pscustomobject]@{
-      path=$Path
-      sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
-      size=(Get-Item -LiteralPath $Path).Length
-    }
+  $WarmMatch = [regex]::Match($PassLine, 'warmed_render_avg_ms=([0-9.]+)')
+  $ColdMatch = [regex]::Match($PassLine, 'cold_render_avg_ms=([0-9.]+)')
+  if (!$WarmMatch.Success -or !$ColdMatch.Success) {
+    throw "page-turn performance fields are missing: $PassLine"
   }
-  if ($Evidence.restart.sha256 -ne $Evidence.restart_repeat.sha256) {
-    throw "restart render is not repeatable"
+  $WarmMs = [double]::Parse(
+    $WarmMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
+  $ColdMs = [double]::Parse(
+    $ColdMatch.Groups[1].Value,
+    [Globalization.CultureInfo]::InvariantCulture)
+  if ($WarmMs -ge $ColdMs) {
+    throw "prepared page render did not improve navigation: warm=$WarmMs cold=$ColdMs"
   }
   [pscustomobject]@{
     pass_line=[string]$PassLine
-    evidence=$Evidence
+    warmed_render_avg_ms=$WarmMs
+    cold_render_avg_ms=$ColdMs
     log=$Log
   }
 }
 
-$First = Invoke-LibrarySmoke "run_1"
-$Second = Invoke-LibrarySmoke "run_2"
-foreach ($State in @("empty", "populated", "restart", "restart_repeat",
-                      "compact", "missing", "hover", "pressed")) {
-  if ($First.evidence[$State].sha256 -ne $Second.evidence[$State].sha256) {
-    throw "library evidence is not repeatable: $State"
-  }
-}
-
+$First = Invoke-PageTurnSmoke "run_1"
+$Second = Invoke-PageTurnSmoke "run_2"
 $Dependencies = @{}
 foreach ($Name in @("reader0", "ui0", "readerview0", "zero_foundation")) {
   $CommitPath = Join-Path $Root "vendor\${Name}_dependency\COMMIT"
@@ -116,10 +100,9 @@ $Summary = [pscustomobject]@{
   }
   book=@{ path=$Book; sha256=$BookHash; size=$BookItem.Length }
   repeat=2
-  result=$Second.pass_line
-  states=$Second.evidence
+  runs=@($First, $Second)
 }
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 7 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_lectern0_library_smoke result=pass repeat=2 summary=$SummaryPath"
+Write-Host "win32_lectern0_page_turn_regression_smoke result=pass repeat=2 summary=$SummaryPath"

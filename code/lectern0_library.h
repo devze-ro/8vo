@@ -26,6 +26,7 @@ enum
   Lectern0LibraryMetadata_Title = 1u << 0,
   Lectern0LibraryMetadata_Author = 1u << 1,
   Lectern0LibraryMetadata_Cover = 1u << 2,
+  Lectern0LibraryMetadata_Inspected = 1u << 3,
 };
 
 typedef struct Lectern0LibraryEntry
