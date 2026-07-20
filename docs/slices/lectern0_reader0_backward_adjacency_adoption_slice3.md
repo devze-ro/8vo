@@ -26,5 +26,6 @@ advance is included.
 
 - all exact dependency checks and the architecture audit pass;
 - strict MSVC C11 `/W4 /WX` build and retained reader regressions pass;
-- exact-book forward/backward navigation remains exactly adjacent; and
+- exact-book forward/backward navigation remains exactly adjacent, including
+  return across all 64 forward scan moves; and
 - source and protected worktrees remain unchanged and clean.

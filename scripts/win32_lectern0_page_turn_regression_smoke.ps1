@@ -53,7 +53,7 @@ function Invoke-PageTurnSmoke {
     $_ -match '^lectern0_page_turn_regression_smoke result=pass '
   } | Select-Object -Last 1
   foreach ($Token in @(
-    "forward=64", "backward=63", "pixel_exact=16/16",
+    "forward=64", "backward=64", "pixel_exact=16/16",
     "warmed_cache_hits=16/16",
     "repeat=initial24_interval3_coalesced", "repeat_moves=2",
     "draw_overflow=0", "raster_overflow=0", "run_overflow=0")) {
