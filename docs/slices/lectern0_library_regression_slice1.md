@@ -184,5 +184,7 @@ directly: the first library surface showed the real cover, card hover/press
 were distinct, a card open accepted Right immediately, and the toolbar
 remained visible on the next and restored pages.
 
-Implementation is confined to Lectern0 and awaits fast-forward promotion.
-No Re10 Books work is part of this slice.
+Implementation is confined to Lectern0 and was promoted fast-forward-only to
+the local-only `main` branch on 2026-07-20 as part of the validated navigation
+parity chain through `ca3257733ebfe02f0261936d311fe9da7f124b28`. No Re10
+Books work is part of this slice.

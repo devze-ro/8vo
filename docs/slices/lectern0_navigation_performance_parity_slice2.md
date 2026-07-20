@@ -2,7 +2,8 @@
 
 Date: 2026-07-20
 
-Status: implemented; awaiting review before promotion
+Status: implemented, validated, and promoted fast-forward-only to the
+local-only `main` branch on 2026-07-20
 
 ## Objective
 
@@ -119,3 +120,20 @@ and two passing runs:
 The four shaped-text overflow events are the existing bounded cache-eviction
 counter observed while scanning this typography-heavy book. They neither
 overflow drawing/raster/run storage nor affect the exact prepared-page output.
+
+## Promotion state
+
+Promotion was explicitly approved and completed on 2026-07-20 in dependency
+order:
+
+- Reader0 `main` and `origin/main` advanced fast-forward-only to
+  `3b86a1f7c1eae281fbb6c0c5fdc65e3616317bea`;
+- Re10 `main` and `origin/main` advanced fast-forward-only to
+  `e504c87fee4d10f3c4c836925966c766971b1be8`; and
+- local-only Lectern0 `main` advanced fast-forward-only through the regression
+  repair, implementation, and clean evidence at
+  `ca3257733ebfe02f0261936d311fe9da7f124b28`, followed only by this
+  documentation completion record.
+
+No Lectern0 remote was created. UI0, Readerview0, zero_foundation, and the
+protected Re10 extraction worktree were not modified by promotion.
