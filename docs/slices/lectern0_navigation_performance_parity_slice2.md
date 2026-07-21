@@ -146,3 +146,13 @@ timer-driven repeat to render cold. The bounded directional preparation and
 adapter hot-path repair are recorded in
 `docs/slices/lectern0_held_navigation_performance_slice5.md`. Reader0's API and
 ownership remain unchanged.
+
+## 2026-07-20 held-scheduling recovery follow-up
+
+The held-only directional preparation above was subsequently shown to compete
+with the accepted repeat action at a production-sized viewport. It is
+superseded by the action-first, render-gated scheduling contract recorded in
+`docs/slices/lectern0_held_navigation_scheduling_slice6.md`. That contract
+forbids host frame/raster warming while held but may run Reader0-only logical
+preparation after stable presentation and within deadline slack. Ordinary idle
+preparation and the Reader0 API remain unchanged.

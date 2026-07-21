@@ -44,6 +44,7 @@
 #include <string.h>
 #include <windows.h>
 #include <windowsx.h>
+#include <mmsystem.h>
 #include <shellapi.h>
 #include <oleacc.h>
 
@@ -90,17 +91,49 @@ enum
   Lectern0StateSaveDelayMs = 250,
   Lectern0AdjacentWarmTimerId = 2,
   Lectern0AdjacentWarmDelayMs = 16,
+  Lectern0PresentationRetryTimerId = 3,
+  Lectern0PresentationRetryBaseDelayMs = 16,
+  Lectern0PresentationRetryMaxDelayMs = 256,
   Lectern0AdjacentWarmTextBudget = 4,
-  Lectern0AdjacentWarmRepeatTextBudget = 64,
   Lectern0AdjacentWarmPageCap = 4,
   Lectern0AdjacentPagePixelCap = 4096 * 4096,
   Lectern0AdjacentWarmIdleBudgetUs = 8000,
   Lectern0AdjacentWarmFirstOpenBudgetUs = 12000,
-  Lectern0PageRepeatTimerId = 3,
-  Lectern0PageRepeatTimerMs = 16,
+  Lectern0PageRepeatFrameRate = 60,
   Lectern0PageRepeatInitialFrames = 24,
   Lectern0PageRepeatIntervalFrames = 3,
+  /* Frozen Re10 Win32 reader-key cadence at the accepted extracted baseline. */
+  Lectern0Re10PageRepeatFrameRate = 60,
+  Lectern0Re10PageRepeatInitialFrames = 24,
+  Lectern0Re10PageRepeatIntervalFrames = 3,
+  Lectern0PageRepeatProbeWidth = 1917,
+  Lectern0PageRepeatProbeHeight = 1137,
+  Lectern0PageRepeatProbeTimingToleranceMs = 200,
+  Lectern0PageRepeatProbeFrameBudgetMs = 64,
+  Lectern0PageRepeatProbeIntervalToleranceMs = 34,
+  Lectern0PageRepeatProbePersistenceWaitMs = 2000,
+  Lectern0PageRepeatProbeMoveCount = 12,
+  Lectern0PageRepeatProbePageCount = Lectern0PageRepeatProbeMoveCount + 1,
+  Lectern0PageRepeatProbeBoundaryLeadPageCount = 6,
+  Lectern0PageRepeatProbeBoundarySearchCap = 64,
+  Lectern0GotmMinimumProseSpineBytes = 128,
+  Lectern0GotmMinimumProseTextBytes = 8,
+  Lectern0GotmMinimumProseTextRows = 1,
+  Lectern0PageRepeatQueueDrainCap = 32,
+  Lectern0PageRepeatProbeQueueDrainCap = Lectern0PageRepeatQueueDrainCap,
+  Lectern0PageRepeatProbeMutationMessage = WM_APP + 41,
+  Lectern0PageRepeatProbeMutationCount = 7,
 };
+
+_Static_assert(Lectern0PageRepeatFrameRate ==
+                 Lectern0Re10PageRepeatFrameRate,
+               "Lectern0 reader repeat frame rate must match frozen Re10");
+_Static_assert(Lectern0PageRepeatInitialFrames ==
+                 Lectern0Re10PageRepeatInitialFrames,
+               "Lectern0 reader repeat first delay must match frozen Re10");
+_Static_assert(Lectern0PageRepeatIntervalFrames ==
+                 Lectern0Re10PageRepeatIntervalFrames,
+               "Lectern0 reader repeat interval must match frozen Re10");
 
 #define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
 #define LECTERN0_ANNOTATION_MAGIC 0x4C30414E4E4F5431ull
@@ -466,6 +499,42 @@ typedef struct Lectern0ReaderViewRightCandidate
   U64 record_id;
 } Lectern0ReaderViewRightCandidate;
 
+typedef enum Lectern0PresentationIdentityKind
+{
+  Lectern0PresentationIdentity_None,
+  Lectern0PresentationIdentity_Library,
+  Lectern0PresentationIdentity_Page,
+} Lectern0PresentationIdentityKind;
+
+/* Pointer-free copy of the canonical Reader0 page range plus owner-local
+   pagination metadata retained for diagnostics and frame validation. */
+typedef struct Lectern0CanonicalPageIdentity
+{
+  U64 global_page_index;
+  U32 spine_index;
+  U64 spine_page_index;
+  U64 spine_page_count;
+  U64 first_row;
+  U64 one_past_last_row;
+  U64 visible_row_count;
+  U64 first_byte;
+  U64 one_past_last_byte;
+} Lectern0CanonicalPageIdentity;
+
+typedef struct Lectern0PresentationIdentity
+{
+  Lectern0PresentationIdentityKind kind;
+  DocDocumentId document_id;
+  U64 document_generation;
+  U64 layout_generation;
+  U64 frame_generation;
+  U64 frame_capture_generation;
+  U64 reader_frame_generation;
+  U64 image_visual_identity;
+  U32 image_count;
+  Lectern0CanonicalPageIdentity page;
+} Lectern0PresentationIdentity;
+
 typedef struct Lectern0App
 {
   Arena *arena;
@@ -491,6 +560,8 @@ typedef struct Lectern0App
   B32 render_ready;
   B32 presentation_complete;
   B32 gfx_ready;
+  B32 last_present_complete;
+  U64 complete_present_sequence;
   HWND window;
   Lectern0Accessibility *accessibility;
   S32 width;
@@ -626,7 +697,59 @@ typedef struct Lectern0App
   B32 page_repeat_active;
   S32 page_repeat_direction;
   WPARAM page_repeat_key;
-  U32 page_repeat_frame_count;
+  U64 page_repeat_next_move_ticks;
+  U64 page_repeat_last_action_emitted_ticks;
+  B32 page_action_waiting_for_present;
+  B32 page_action_internal_dispatch;
+  B32 page_action_reflow_deferred;
+  B32 page_action_pending;
+  B32 page_action_pending_arm_repeat;
+  S32 page_action_pending_direction;
+  WPARAM page_action_pending_key;
+  U64 page_action_emitted_count;
+  U64 page_action_presented_count;
+  U64 page_action_frame_generation;
+  U64 page_action_last_stable_present_ticks;
+  Lectern0PresentationIdentity page_action_expected_identity;
+  Lectern0PresentationIdentity last_surface_identity;
+  U32 page_action_overlap_count;
+  U32 page_action_identity_mismatch_count;
+  U32 page_action_presentation_retry_attempt;
+  U32 page_action_presentation_retry_scheduled_count;
+  U32 page_action_presentation_retry_fired_count;
+  U32 page_action_mutation_drop_count;
+  U32 page_action_reflow_deferred_count;
+  U32 capture_frame_fail_count;
+  B32 capture_frame_failed_since_mutation;
+  U32 capture_frame_recovery_count;
+  U64 frame_capture_generation;
+  U32 page_repeat_frame_move_count;
+  U32 page_repeat_native_coalesced_count;
+  U32 page_repeat_presented_frame_count;
+  B32 page_repeat_navigation_prepare_pending;
+  S32 page_repeat_navigation_prepare_direction;
+  U32 page_repeat_navigation_prepare_source_spine_index;
+  U64 page_repeat_navigation_prepare_source_first_byte;
+  U64 page_repeat_navigation_prepare_call_count;
+  U64 page_repeat_navigation_prepare_build_count;
+  U64 page_repeat_navigation_prepare_ready_count;
+  U64 page_repeat_navigation_prepare_fail_count;
+  U64 page_repeat_navigation_prepare_total_ticks;
+  U64 page_repeat_navigation_prepare_max_ticks;
+  WPARAM page_repeat_cancelled_key;
+  U32 page_repeat_cancelled_repeat_consumed_count;
+  U32 page_repeat_modifier_cancel_count;
+  U32 page_repeat_focus_cancel_count;
+  U32 page_repeat_deactivate_cancel_count;
+  U32 page_repeat_keyup_cancel_count;
+  U32 page_repeat_mutation_cancel_count;
+  U32 page_repeat_persistence_deferred_count;
+  U32 page_repeat_persistence_rescheduled_count;
+  U64 last_render_acquire_ticks;
+  U64 last_render_buffer_ticks;
+  U64 last_render_accessibility_ticks;
+  U64 last_render_present_ticks;
+  U32 state_save_transaction_success_count;
   B32 adjacent_page_cache_used_last_render;
   Lectern0SavedState saved;
   char app_directory[Lectern0PathCap];
@@ -639,11 +762,173 @@ typedef struct Lectern0App
   char status[Lectern0StatusCap];
 } Lectern0App;
 
+typedef struct Lectern0PageRepeatFrameResult
+{
+  B32 action_due;
+  B32 action_emitted;
+  B32 action_waiting_for_render;
+} Lectern0PageRepeatFrameResult;
+
+typedef struct Lectern0PageRepeatFrameTiming
+{
+  U64 action_prepare_ticks;
+  U64 action_emitted_ticks;
+  U64 render_acquire_ticks;
+  U64 render_buffer_ticks;
+  U64 render_accessibility_ticks;
+  U64 render_present_ticks;
+} Lectern0PageRepeatFrameTiming;
+
 typedef struct Lectern0Win32
 {
   Lectern0App app;
   HWND window;
+  HWND page_repeat_probe_paint_window;
+  U32 page_repeat_probe_aux_paint_pending_count;
+  U32 page_repeat_probe_aux_paint_dispatch_count;
+  U32 page_repeat_probe_main_null_paint_pending_count;
+  U32 page_repeat_probe_main_null_paint_dispatch_count;
+  B32 page_repeat_probe_track_paints;
 } Lectern0Win32;
+
+typedef enum Lectern0PageRepeatWin32ProbeKind
+{
+  Lectern0PageRepeatWin32Probe_Direction,
+  Lectern0PageRepeatWin32Probe_FocusLoss,
+  Lectern0PageRepeatWin32Probe_ControlModifier,
+  Lectern0PageRepeatWin32Probe_ShiftModifier,
+  Lectern0PageRepeatWin32Probe_SystemModifier,
+  Lectern0PageRepeatWin32Probe_Deactivation,
+  Lectern0PageRepeatWin32Probe_MutationGate,
+} Lectern0PageRepeatWin32ProbeKind;
+
+typedef struct Lectern0PageRepeatWin32Probe
+{
+  B32 enabled;
+  B32 started;
+  B32 stop_posted;
+  B32 completed;
+  B32 failed;
+  Lectern0PageRepeatWin32ProbeKind kind;
+  S32 direction;
+  WPARAM key;
+  U32 target_frame_move_count;
+  U32 frame_cap;
+  U32 frame_count;
+  U32 native_repeats_per_frame;
+  U32 native_repeat_posted_count;
+  U32 cancelled_repeat_posted_count;
+  U32 logical_frame_count;
+  U64 start_ticks;
+  U64 elapsed_ticks;
+  U64 frame_max_ticks;
+  U64 cold_render_ticks;
+  U64 cold_present_ticks;
+  U64 repeat_prepare_total_ticks;
+  U64 repeat_prepare_max_ticks;
+  U64 repeat_render_total_ticks;
+  U64 repeat_render_max_ticks;
+  U64 repeat_present_total_ticks;
+  U64 repeat_present_max_ticks;
+  U32 repeat_timing_count;
+  U64 navigation_prepare_call_count;
+  U64 navigation_prepare_build_count;
+  U64 navigation_prepare_ready_count;
+  U64 navigation_prepare_fail_count;
+  U64 navigation_prepare_total_ticks;
+  U64 navigation_prepare_max_ticks;
+  U32 prepared_window_move_count;
+  U32 synchronous_window_rebuild_move_count;
+  U32 synchronous_adjacent_measured_move_count;
+  U32 cross_spine_boundary_ring_move_count;
+  U64 first_move_elapsed_ticks;
+  U64 last_move_elapsed_ticks;
+  U64 move_interval_min_ticks;
+  U64 move_interval_max_ticks;
+  U64 move_interval_total_ticks;
+  U32 move_interval_count;
+  U32 observed_move_count;
+  U64 stable_present_elapsed_ticks[Lectern0PageRepeatProbePageCount];
+  U64 stable_present_transition_ticks[Lectern0PageRepeatProbeMoveCount];
+  B32 stable_present_transition_cross_spine[
+    Lectern0PageRepeatProbeMoveCount];
+  U32 stable_present_transition_count;
+  U32 stable_present_count;
+  U64 stable_present_first_delay_ticks;
+  U64 stable_present_interval_min_ticks;
+  U64 stable_present_interval_max_ticks;
+  U64 stable_present_interval_total_ticks;
+  U32 stable_present_interval_count;
+  U64 stable_present_same_spine_interval_min_ticks;
+  U64 stable_present_same_spine_interval_max_ticks;
+  U64 stable_present_same_spine_interval_total_ticks;
+  U32 stable_present_same_spine_interval_count;
+  U64 stable_present_cross_spine_interval_min_ticks;
+  U64 stable_present_cross_spine_interval_max_ticks;
+  U64 stable_present_cross_spine_interval_total_ticks;
+  U32 stable_present_cross_spine_interval_count;
+  SourceReaderPageRange start_page;
+  SourceReaderPageRange expected_pages[Lectern0PageRepeatProbePageCount];
+  SourceReaderPageRange actual_pages[Lectern0PageRepeatProbePageCount];
+  U32 expected_page_count;
+  U32 actual_page_count;
+  U32 canonical_match_count;
+  U32 cross_spine_transition_count;
+  U32 valid_frame_count;
+  U32 zero_page_or_frame_count;
+  U32 orphan_text_page_count;
+  U32 invalid_word_start_page_count;
+  U32 text_frame_count;
+  U64 minimum_text_bytes;
+  U32 minimum_text_rows;
+  U64 page_action_emitted_count;
+  U64 page_action_presented_count;
+  U32 page_action_overlap_count;
+  U64 page_action_emitted_before;
+  U64 page_action_presented_before;
+  U32 page_action_overlap_before;
+  U32 page_action_identity_mismatch_before;
+  U32 page_action_identity_mismatch_count;
+  U32 page_action_mutation_drop_before;
+  U32 page_action_mutation_drop_count;
+  U32 queue_drain_batch_max_count;
+  U32 queue_drain_message_count;
+  U32 queue_drain_batch_count;
+  U32 auxiliary_paint_dispatch_before;
+  U32 auxiliary_paint_dispatch_count;
+  U32 main_null_paint_dispatch_before;
+  U32 main_null_paint_dispatch_count;
+  B32 paint_messages_posted;
+  U32 native_repeat_coalesced_count;
+  U32 cancelled_repeat_consumed_count;
+  U32 modifier_cancel_count;
+  U32 focus_cancel_count;
+  U32 deactivate_cancel_count;
+  U32 keyup_cancel_count;
+  U32 mutation_cancel_count;
+  U32 persistence_deferred_count;
+  U32 persistence_rescheduled_count;
+  U32 persistence_transaction_success_before;
+  U32 persistence_transaction_success_during_hold;
+  U32 persistence_transaction_success_after;
+  U64 persistence_state_modified_time_before;
+  U64 persistence_state_modified_time_during_hold;
+  U64 persistence_state_modified_time_after;
+  U64 persistence_state_content_hash_before;
+  U64 persistence_state_content_hash_during_hold;
+  U64 persistence_state_content_hash_after;
+  U64 persistence_catalog_modified_time_before;
+  U64 persistence_catalog_modified_time_during_hold;
+  U64 persistence_catalog_modified_time_after;
+  U64 persistence_catalog_content_hash_before;
+  U64 persistence_catalog_content_hash_during_hold;
+  U64 persistence_catalog_content_hash_after;
+  U64 persistence_wait_deadline_ticks;
+  B32 persistence_baseline_ready;
+  B32 persistence_hold_checked;
+  B32 persistence_hold_unchanged;
+  B32 persistence_post_stop_advanced;
+} Lectern0PageRepeatWin32Probe;
 
 FUNCTION void lectern0_library_update_progress(Lectern0App *app);
 FUNCTION B32 lectern0_close_book(Lectern0App *app);
@@ -654,10 +939,31 @@ FUNCTION void lectern0_cancel_adjacent_warm(Lectern0App *app);
 FUNCTION B32 lectern0_adjacent_warm_step(Lectern0App *app);
 FUNCTION void lectern0_invalidate_adjacent_page(Lectern0App *app);
 FUNCTION void lectern0_stop_page_repeat(Lectern0App *app);
+FUNCTION void lectern0_cancel_page_repeat_for_modifier(Lectern0App *app);
+FUNCTION void lectern0_cancel_page_repeat_for_focus(Lectern0App *app);
+FUNCTION void lectern0_cancel_page_repeat_for_deactivation(Lectern0App *app);
+FUNCTION void lectern0_cancel_page_repeat_for_mutation(Lectern0App *app);
+FUNCTION void lectern0_page_action_note_emitted(Lectern0App *app);
+FUNCTION B32 lectern0_begin_document_mutation(Lectern0App *app);
+FUNCTION void lectern0_complete_document_mutation(Lectern0App *app,
+                                                   B32 changed);
+FUNCTION void lectern0_page_action_clear_pending(Lectern0App *app);
+FUNCTION void lectern0_page_action_defer(Lectern0App *app,
+                                          WPARAM key,
+                                          S32 direction,
+                                          B32 arm_repeat);
+FUNCTION void lectern0_page_action_release_key(Lectern0App *app, WPARAM key);
 FUNCTION void lectern0_start_page_repeat(Lectern0App *app,
                                          WPARAM key,
                                          S32 direction);
-FUNCTION B32 lectern0_page_repeat_step(Lectern0App *app);
+FUNCTION B32 lectern0_page_repeat_step(Lectern0App *app,
+                                        U64 now_ticks,
+                                        B32 *out_action_due);
+FUNCTION Lectern0PageRepeatFrameResult
+lectern0_page_repeat_frame_step(Lectern0App *app, U64 now_ticks);
+FUNCTION void lectern0_page_repeat_note_presented_frame(Lectern0App *app,
+                                                         B32 complete);
+FUNCTION B32 lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app);
 FUNCTION B32 lectern0_fit_image_rect(S32 src_w, S32 src_h,
                                      S32 rect_x, S32 rect_y,
                                      S32 rect_w, S32 rect_h,
@@ -1068,7 +1374,13 @@ lectern0_save_state(Lectern0App *app)
   if (size == 0 || size >= ARRAY_COUNT(data)) { return 0; }
   B32 state_saved = os_write_entire_file_atomic(app->state_path, data, size);
   B32 library_saved = lectern0_save_library(app);
-  return state_saved && library_saved;
+  B32 transaction_saved = state_saved && library_saved;
+  if (transaction_saved &&
+      app->state_save_transaction_success_count < UINT32_MAX)
+  {
+    app->state_save_transaction_success_count += 1;
+  }
+  return transaction_saved;
 }
 
 FUNCTION void
@@ -1078,6 +1390,16 @@ lectern0_schedule_state_save(Lectern0App *app)
     return;
   lectern0_library_update_progress(app);
   if (!app->persistence_enabled) return;
+  if (app->page_repeat_active || app->page_action_waiting_for_present ||
+      app->page_action_pending)
+  {
+    if (app->window && app->state_save_pending)
+      (void)KillTimer(app->window, Lectern0StateSaveTimerId);
+    app->state_save_pending = 1;
+    if (app->page_repeat_persistence_deferred_count < UINT32_MAX)
+      app->page_repeat_persistence_deferred_count += 1;
+    return;
+  }
   if (app->window &&
       SetTimer(app->window, Lectern0StateSaveTimerId,
                Lectern0StateSaveDelayMs, 0) != 0)
@@ -1752,8 +2074,12 @@ lectern0_update_layout_inputs(Lectern0App *app)
     .text_width_px = app->layout_key.text_w,
     .char_advance_px = app->layout_key.char_advance,
     .text_scale = app->layout_key.text_scale,
+    .focused_spine_index = app->reader.active_spine_index,
     .measure_focused_spine_only = 1,
     .load_focused_spine_only = 1,
+    .measure_generation = epub_reader_layout_key_generation(app->layout_key),
+    .measure_cache = epub_reader_measure_cache_for_key(&app->reader,
+                                                       app->layout_key),
     .measure_text = epub_reader_typography_measure_text,
     .measure_user = &app->reader.typography,
   };
@@ -1765,13 +2091,25 @@ lectern0_update_layout_inputs(Lectern0App *app)
 FUNCTION B32
 lectern0_capture_frame(Lectern0App *app)
 {
-  if (!app || !epub_reader_build_frame(&app->reader,
+  if (!app) return 0;
+  if (app->capture_frame_fail_count > 0)
+  {
+    app->capture_frame_fail_count -= 1;
+    app->capture_frame_failed_since_mutation = 1;
+    return 0;
+  }
+  if (!epub_reader_build_frame(&app->reader,
                                        &app->frame_storage,
                                        &app->frame))
   {
+    app->capture_frame_failed_since_mutation = 1;
     return 0;
   }
   lectern0_attach_frame_images(app);
+  app->frame_capture_generation += 1;
+  if (app->frame_capture_generation == 0)
+    app->frame_capture_generation = 1;
+  app->capture_frame_failed_since_mutation = 0;
   return 1;
 }
 
@@ -1825,6 +2163,7 @@ lectern0_frame_text_rows_are_complete(const EpubReaderFrame *frame,
 FUNCTION B32
 lectern0_repaginate(Lectern0App *app)
 {
+  if (!lectern0_begin_document_mutation(app)) return 0;
   if (!lectern0_update_layout_inputs(app)) { return 0; }
   lectern0_cancel_adjacent_warm(app);
   lectern0_invalidate_adjacent_page(app);
@@ -1837,7 +2176,9 @@ lectern0_repaginate(Lectern0App *app)
     return 0;
   }
   (void)reused;
-  if (!lectern0_capture_frame(app)) { return 0; }
+  B32 frame_captured = lectern0_capture_frame(app);
+  lectern0_complete_document_mutation(app, 1);
+  if (!frame_captured) { return 0; }
   lectern0_set_statusf(app,
                        "Page %llu/%llu | section %u/%u",
                        (unsigned long long)app->frame.page_index,
@@ -1849,9 +2190,38 @@ lectern0_repaginate(Lectern0App *app)
 }
 
 FUNCTION B32
+lectern0_recover_failed_open_to_library(Lectern0App *app)
+{
+  if (!app) return 0;
+  B32 changed = 0;
+  if (epub_reader_is_open(&app->reader))
+    (void)epub_reader_close(&app->reader, &changed);
+  app->current_path[0] = 0;
+  app->annotations_path[0] = 0;
+  app->document_state = ReaderViewLoad_Error;
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  lectern0_image_cache_reset(&app->image_cache);
+  reader_view_state_init(&app->reader_view_state);
+  app->reader_view_ready = 0;
+  app->host_focus_control = app->library.entry_count > 0 ?
+    (Lectern0HostControlIdentity)Lectern0HostControl_LibraryBookBase :
+    Lectern0HostControl_LibraryAdd;
+  app->host_focus_visible = 1;
+  lectern0_complete_document_mutation(app, 1);
+  return !epub_reader_is_open(&app->reader);
+}
+
+FUNCTION B32
 lectern0_open_path(Lectern0App *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
+  if (!lectern0_begin_document_mutation(app)) return 0;
   lectern0_cancel_adjacent_warm(app);
   lectern0_invalidate_adjacent_page(app);
   char normalized_path[Lectern0LibraryPathCap] = {0};
@@ -1877,18 +2247,34 @@ lectern0_open_path(Lectern0App *app, const char *path)
     (void)lectern0_save_state(app);
     (void)lectern0_save_annotations(app);
   }
+  B32 reader_was_open = epub_reader_is_open(&app->reader);
+  DocDocumentId previous_document_id = epub_reader_document_id(&app->reader);
+  U64 previous_document_generation = app->reader.document_generation;
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result =
     epub_reader_open(&app->reader,
                      str8_from_cstr(normalized_path),
                      DocSourceKind_EPUB,
                      &transition);
-  if (open_result != EpubReaderResult_Ok ||
-      !epub_reader_refresh_active_spine(&app->reader) ||
-      !lectern0_update_layout_inputs(app))
+  if (open_result != EpubReaderResult_Ok)
   {
     lectern0_set_statusf(app, "Open failed: %s", epub_reader_result_code(open_result));
-    app->document_state = ReaderViewLoad_Error;
+    B32 reader_changed = reader_was_open != epub_reader_is_open(&app->reader) ||
+      previous_document_id != epub_reader_document_id(&app->reader) ||
+      previous_document_generation != app->reader.document_generation;
+    if (reader_changed)
+      (void)lectern0_recover_failed_open_to_library(app);
+    else
+      app->document_state = reader_was_open ?
+        ReaderViewLoad_Ready : ReaderViewLoad_Error;
+    app->library_locate_entry_id = 0;
+    return 0;
+  }
+  if (!epub_reader_refresh_active_spine(&app->reader) ||
+      !lectern0_update_layout_inputs(app))
+  {
+    (void)lectern0_recover_failed_open_to_library(app);
+    lectern0_set_statusf(app, "Open failed: layout");
     app->library_locate_entry_id = 0;
     return 0;
   }
@@ -1926,30 +2312,32 @@ lectern0_open_path(Lectern0App *app, const char *path)
                                         app->layout_config,
                                         &reused))
     {
+      (void)lectern0_recover_failed_open_to_library(app);
       lectern0_set_statusf(app, "Open failed: pagination");
-      app->document_state = ReaderViewLoad_Error;
       app->library_locate_entry_id = 0;
       return 0;
     }
   }
-  if (!lectern0_capture_frame(app))
-  {
-    lectern0_set_statusf(app, "Open failed: frame");
-    app->document_state = ReaderViewLoad_Error;
-    app->library_locate_entry_id = 0;
-    return 0;
-  }
+  app->document_state = ReaderViewLoad_Ready;
+  B32 frame_captured = lectern0_capture_frame(app);
+  lectern0_complete_document_mutation(app, 1);
   Lectern0LibraryEntry *catalog_entry =
     lectern0_library_record_open_document(app, normalized_path);
-  lectern0_set_statusf(app,
-                       "%s | page %llu/%llu | section %u/%u",
-                       restored ? "Restored" : "Opened",
-                       (unsigned long long)app->frame.page_index,
-                       (unsigned long long)app->frame.page_count,
-                       (unsigned)(app->frame.spine_index + 1),
-                       (unsigned)app->frame.section_count);
+  if (frame_captured)
+  {
+    lectern0_set_statusf(app,
+                         "%s | page %llu/%llu | section %u/%u",
+                         restored ? "Restored" : "Opened",
+                         (unsigned long long)app->frame.page_index,
+                         (unsigned long long)app->frame.page_count,
+                         (unsigned)(app->frame.spine_index + 1),
+                         (unsigned)app->frame.section_count);
+  }
+  else
+  {
+    lectern0_set_statusf(app, "Opened; frame recovery pending");
+  }
   (void)transition;
-  app->document_state = ReaderViewLoad_Ready;
   app->host_focus_control = Lectern0HostControl_None;
   app->host_focus_visible = 0;
   app->host_pointer_armed = Lectern0HostControl_None;
@@ -1957,7 +2345,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   if (!catalog_entry)
     lectern0_set_statusf(app, "Opened, but the library is full");
   (void)lectern0_save_state(app);
-  lectern0_schedule_adjacent_warm(app);
+  if (frame_captured) lectern0_schedule_adjacent_warm(app);
   return 1;
 }
 
@@ -1965,6 +2353,7 @@ FUNCTION B32
 lectern0_close_book(Lectern0App *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return 0;
+  if (!lectern0_begin_document_mutation(app)) return 0;
   lectern0_stop_page_repeat(app);
   lectern0_cancel_adjacent_warm(app);
   lectern0_invalidate_adjacent_page(app);
@@ -1995,6 +2384,7 @@ lectern0_close_book(Lectern0App *app)
   app->host_pointer_armed = Lectern0HostControl_None;
   lectern0_library_set_summary_status(app);
   (void)lectern0_save_library(app);
+  lectern0_complete_document_mutation(app, 1);
   return 1;
 }
 
@@ -2006,6 +2396,8 @@ lectern0_move_page(Lectern0App *app, S32 direction)
     if (app) { lectern0_set_statusf(app, "Open an EPUB first"); }
     return EpubReaderResult_NotOpen;
   }
+  if (!lectern0_begin_document_mutation(app))
+    return EpubReaderResult_InvalidInput;
   if (!lectern0_update_layout_inputs(app))
   {
     lectern0_set_statusf(app, "Page move failed: layout");
@@ -2024,7 +2416,16 @@ lectern0_move_page(Lectern0App *app, S32 direction)
     lectern0_set_statusf(app, direction < 0 ? "Beginning of book" : "End of book");
     return result;
   }
-  if (result != EpubReaderResult_Ok || !change.changed || !lectern0_capture_frame(app))
+  B32 reader_changed = result == EpubReaderResult_Ok && change.changed;
+  if (reader_changed) lectern0_schedule_state_save(app);
+  B32 frame_captured = result == EpubReaderResult_Ok && change.changed &&
+    lectern0_capture_frame(app);
+  lectern0_complete_document_mutation(app, reader_changed);
+  B32 canonical_page_valid = frame_captured &&
+    app->reader.has_current_page &&
+    app->reader.current_page.spine_page_count > 0 &&
+    app->frame.ready && app->frame.document_open;
+  if (!canonical_page_valid)
   {
     lectern0_set_statusf(app,
                          "Page move failed: %s (%d)",
@@ -2035,11 +2436,12 @@ lectern0_move_page(Lectern0App *app, S32 direction)
 
   lectern0_set_statusf(app,
                        "Page %llu/%llu | section %u/%u",
-                       (unsigned long long)app->frame.page_index,
-                       (unsigned long long)app->frame.page_count,
+                       (unsigned long long)(
+                         app->reader.current_page.spine_page_index + 1),
+                       (unsigned long long)
+                         app->reader.current_page.spine_page_count,
                        (unsigned)(app->frame.spine_index + 1),
                        (unsigned)app->frame.section_count);
-  lectern0_schedule_state_save(app);
   lectern0_schedule_adjacent_warm(app);
   return EpubReaderResult_Ok;
 }
@@ -2058,7 +2460,10 @@ lectern0_finish_semantic_navigation(Lectern0App *app,
                          epub_reader_result_code(result));
     return result;
   }
-  if (!lectern0_capture_frame(app))
+  lectern0_schedule_state_save(app);
+  B32 frame_captured = lectern0_capture_frame(app);
+  lectern0_complete_document_mutation(app, 1);
+  if (!frame_captured)
   {
     lectern0_set_statusf(app, "%s failed: frame", operation);
     return EpubReaderResult_DocError;
@@ -2070,7 +2475,6 @@ lectern0_finish_semantic_navigation(Lectern0App *app,
                        (unsigned long long)app->frame.page_count,
                        (unsigned)(app->frame.spine_index + 1),
                        (unsigned)app->frame.section_count);
-  (void)lectern0_save_state(app);
   return EpubReaderResult_Ok;
 }
 
@@ -2086,6 +2490,8 @@ lectern0_navigate_to_nav_point(Lectern0App *app,
     lectern0_set_statusf(app, "Open an EPUB first");
     return EpubReaderResult_NotOpen;
   }
+  if (!lectern0_begin_document_mutation(app))
+    return EpubReaderResult_InvalidInput;
   if (!lectern0_update_layout_inputs(app))
   {
     lectern0_set_statusf(app, "Contents failed: layout");
@@ -2113,6 +2519,8 @@ lectern0_navigate_to_search_match(Lectern0App *app,
     lectern0_set_statusf(app, "Open an EPUB first");
     return EpubReaderResult_NotOpen;
   }
+  if (!lectern0_begin_document_mutation(app))
+    return EpubReaderResult_InvalidInput;
   if (!lectern0_update_layout_inputs(app))
   {
     lectern0_set_statusf(app, "Find failed: layout");
@@ -2411,6 +2819,8 @@ lectern0_navigate_to_location(Lectern0App *app,
                               EpubReaderNavigationReason reason)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
+  if (!lectern0_begin_document_mutation(app))
+    return EpubReaderResult_InvalidInput;
   if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
   EpubReaderNavigationResult navigation = {0};
   EpubReaderResult result = epub_reader_navigate_to_location(
@@ -2424,6 +2834,8 @@ FUNCTION EpubReaderResult
 lectern0_move_history(Lectern0App *app, B32 forward)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
+  if (!lectern0_begin_document_mutation(app))
+    return EpubReaderResult_InvalidInput;
   if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
   EpubReaderNavigationEntry current = {0};
   EpubReaderNavigationEntry target = {0};
@@ -3965,28 +4377,39 @@ lectern0_build_reader_view(Lectern0App *app)
     .document_flags = app->reader_view_projection.document_flags,
     .host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth,
   };
+  ReaderViewLayout resolved_layout = {0};
   if (!reader_view_resolve_layout(&app->reader_view_state,
                                   &layout_input,
-                                  &app->reader_view_layout))
+                                  &resolved_layout))
   {
     app->reader_view_ready = 0;
     return 0;
   }
-  app->reader_content_geometry = (ReaderViewContentGeometry){
-    .viewport_rect = app->reader_view_layout.viewport_rect,
-    .page_surface_rect = app->reader_view_layout.page_surface_rect,
-    .content_rect = app->reader_view_layout.content_rect,
+  ReaderViewContentGeometry resolved_geometry = {
+    .viewport_rect = resolved_layout.viewport_rect,
+    .page_surface_rect = resolved_layout.page_surface_rect,
+    .content_rect = resolved_layout.content_rect,
   };
-  if (epub_reader_is_open(&app->reader) &&
-      (app->pagination_viewport_width != app->reader_content_geometry.content_rect.w ||
-       app->pagination_viewport_height != app->reader_content_geometry.content_rect.h))
+  B32 viewport_changed = epub_reader_is_open(&app->reader) &&
+    (app->pagination_viewport_width != resolved_geometry.content_rect.w ||
+     app->pagination_viewport_height != resolved_geometry.content_rect.h);
+  if (viewport_changed && app->page_action_waiting_for_present)
   {
-    if (!lectern0_repaginate(app))
+    if (!app->page_action_reflow_deferred &&
+        app->page_action_reflow_deferred_count < UINT32_MAX)
+      app->page_action_reflow_deferred_count += 1;
+    app->page_action_reflow_deferred = 1;
+  }
+  else
+  {
+    app->reader_view_layout = resolved_layout;
+    app->reader_content_geometry = resolved_geometry;
+    if (viewport_changed && !lectern0_repaginate(app))
     {
       app->reader_view_ready = 0;
       return 0;
     }
-    lectern0_prepare_reader_view_projection(app);
+    if (viewport_changed) lectern0_prepare_reader_view_projection(app);
   }
   ReaderViewInput input = lectern0_reader_view_input(app);
   ReaderViewBuildInput build = {
@@ -6032,7 +6455,7 @@ lectern0_pick_epub_paths(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_pick_epub(Lectern0App *app)
+lectern0_pick_epub_impl(Lectern0App *app)
 {
   if (!app) return 0;
   app->native_picker_request_count += 1;
@@ -6068,7 +6491,25 @@ lectern0_pick_epub(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_locate_library_entry(Lectern0App *app, U64 entry_id)
+lectern0_pick_epub(Lectern0App *app)
+{
+  if (!lectern0_begin_document_mutation(app)) return 0;
+  B32 was_open = epub_reader_is_open(&app->reader);
+  DocDocumentId document_id = epub_reader_document_id(&app->reader);
+  U64 document_generation = app->reader.document_generation;
+  app->page_action_internal_dispatch = 1;
+  B32 result = lectern0_pick_epub_impl(app);
+  app->page_action_internal_dispatch = 0;
+  B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
+    document_id != epub_reader_document_id(&app->reader) ||
+    document_generation != app->reader.document_generation;
+  lectern0_complete_document_mutation(
+    app, !app->suppress_native_picker && reader_changed);
+  return result;
+}
+
+FUNCTION B32
+lectern0_locate_library_entry_impl(Lectern0App *app, U64 entry_id)
 {
   Lectern0LibraryEntry *entry =
     lectern0_library_catalog_find_id(app ? &app->library : 0, entry_id);
@@ -6102,6 +6543,23 @@ lectern0_locate_library_entry(Lectern0App *app, U64 entry_id)
   lectern0_library_catalog_sort(&app->library);
   (void)lectern0_save_library(app);
   return 1;
+}
+
+FUNCTION B32
+lectern0_locate_library_entry(Lectern0App *app, U64 entry_id)
+{
+  if (!lectern0_begin_document_mutation(app)) return 0;
+  B32 was_open = epub_reader_is_open(&app->reader);
+  DocDocumentId document_id = epub_reader_document_id(&app->reader);
+  U64 document_generation = app->reader.document_generation;
+  app->page_action_internal_dispatch = 1;
+  B32 result = lectern0_locate_library_entry_impl(app, entry_id);
+  app->page_action_internal_dispatch = 0;
+  B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
+    document_id != epub_reader_document_id(&app->reader) ||
+    document_generation != app->reader.document_generation;
+  lectern0_complete_document_mutation(app, reader_changed);
+  return result;
 }
 
 FUNCTION B32
@@ -6242,19 +6700,776 @@ lectern0_page_direction_for_key(Lectern0App *app,
   return 0;
 }
 
+FUNCTION B32
+lectern0_page_repeat_should_coalesce_keydown(Lectern0App *app,
+                                              WPARAM key,
+                                              LPARAM l_param,
+                                              S32 *out_direction)
+{
+  S32 direction = 0;
+  if (out_direction) { *out_direction = 0; }
+  if ((l_param & (1LL << 30)) == 0 ||
+      !lectern0_page_direction_for_key(app, key, &direction) ||
+      !app->page_repeat_active || app->page_repeat_key != key ||
+      app->page_repeat_direction != direction)
+  {
+    return 0;
+  }
+  if (out_direction) { *out_direction = direction; }
+  return 1;
+}
+
+FUNCTION Lectern0CanonicalPageIdentity
+lectern0_canonical_page_identity(SourceReaderPageRange page)
+{
+  return (Lectern0CanonicalPageIdentity){
+    .global_page_index = page.global_page_index,
+    .spine_index = page.spine_index,
+    .spine_page_index = page.spine_page_index,
+    .spine_page_count = page.spine_page_count,
+    .first_row = page.first_row,
+    .one_past_last_row = page.one_past_last_row,
+    .visible_row_count = page.visible_row_count,
+    .first_byte = page.first_byte,
+    .one_past_last_byte = page.one_past_last_byte,
+  };
+}
+
+FUNCTION B32
+lectern0_canonical_page_identity_equal(Lectern0CanonicalPageIdentity a,
+                                        Lectern0CanonicalPageIdentity b)
+{
+  /* Ordinals, totals, and row indexes belong to the bounded pagination owner
+     that produced the range. They can change when the same physical page is
+     republished from a sliding window. Reader0's stable page identity is the
+     spine plus exact byte boundaries. */
+  return a.spine_index == b.spine_index &&
+    a.first_byte == b.first_byte &&
+    a.one_past_last_byte == b.one_past_last_byte;
+}
+
+FUNCTION U64
+lectern0_frame_image_visual_identity(const EpubReaderFrame *frame,
+                                      B32 *out_valid)
+{
+  if (out_valid) *out_valid = 0;
+  if (!frame || frame->image_count == 0 || !frame->images) return 0;
+  U64 identity = 1469598103934665603ull;
+  for (U32 image_index = 0; image_index < frame->image_count; image_index += 1)
+  {
+    EpubReaderFrameImage image = frame->images[image_index];
+    U32 visual_units = 0;
+    for (U32 row_index = 0; row_index < frame->style_row_count; row_index += 1)
+    {
+      if (frame->style_rows[row_index].row == image.row)
+      {
+        visual_units = frame->style_rows[row_index].visual_units;
+        break;
+      }
+    }
+    if (visual_units == 0) return 0;
+    U64 values[] = {
+      image.row,
+      image.resource_index,
+      image.image_placement,
+      image.text_byte_start,
+      image.text_byte_end,
+      visual_units,
+    };
+    identity ^= u64_hash_bytes(values, sizeof(values));
+    identity *= 1099511628211ull;
+  }
+  if (identity == 0) identity = 1;
+  if (out_valid) *out_valid = 1;
+  return identity;
+}
+
+FUNCTION B32
+lectern0_frame_matches_canonical_page(
+  const Lectern0App *app,
+  Lectern0CanonicalPageIdentity page,
+  U64 document_id,
+  U64 document_generation)
+{
+  if (!app || !app->frame.ready || !app->frame.document_open ||
+      app->frame.document_id != document_id ||
+      app->frame.document_generation != document_generation ||
+      app->frame.spine_index != page.spine_index ||
+      (app->frame.page_index != 0 &&
+       app->frame.page_index != page.spine_page_index + 1) ||
+      (app->frame.page_count != 0 &&
+       app->frame.page_count != page.spine_page_count))
+  {
+    return 0;
+  }
+  U64 page_size = page.one_past_last_byte - page.first_byte;
+  if (app->frame.view_byte_offset == page.first_byte &&
+      app->frame.visible_text.size == page_size)
+  {
+    return 1;
+  }
+  /* Image-only frames intentionally have no visible UTF-8 payload. Their
+     exact canonical range stays in Reader0 current_page; the captured frame
+     is bound to it by document/spine/page identity plus the visual-unit and
+     image-placement signature below. */
+  B32 image_identity_valid = 0;
+  (void)lectern0_frame_image_visual_identity(&app->frame,
+                                              &image_identity_valid);
+  return app->frame.visible_text.size == 0 &&
+    app->frame.image_count > 0 && image_identity_valid;
+}
+
+FUNCTION B32
+lectern0_capture_presentation_identity(const Lectern0App *app,
+                                        Lectern0PresentationIdentity *out)
+{
+  if (out) MemoryZeroStruct(out);
+  if (!app || !out) return 0;
+  out->frame_generation = app->page_action_frame_generation;
+  if (!epub_reader_is_open(&app->reader))
+  {
+    out->kind = Lectern0PresentationIdentity_Library;
+    return 1;
+  }
+  if (!app->reader.has_current_page || app->reader.document_id == 0 ||
+      app->reader.document_generation == 0 ||
+      app->reader.current_page.spine_page_count == 0 ||
+      app->reader.current_page.first_byte >=
+        app->reader.current_page.one_past_last_byte)
+  {
+    return 0;
+  }
+  out->kind = Lectern0PresentationIdentity_Page;
+  out->document_id = epub_reader_document_id(&app->reader);
+  out->document_generation = app->reader.document_generation;
+  out->layout_generation = epub_reader_layout_key_generation(app->layout_key);
+  out->page = lectern0_canonical_page_identity(app->reader.current_page);
+  if (lectern0_frame_matches_canonical_page(
+        app, out->page, out->document_id, out->document_generation))
+  {
+    out->frame_capture_generation = app->frame_capture_generation;
+    out->reader_frame_generation = app->frame.generation;
+    out->image_count = app->frame.image_count;
+    if (out->image_count > 0)
+    {
+      B32 image_identity_valid = 0;
+      out->image_visual_identity = lectern0_frame_image_visual_identity(
+        &app->frame, &image_identity_valid);
+      if (!image_identity_valid) return 0;
+    }
+  }
+  return out->document_id != 0 && out->document_generation != 0 &&
+    out->layout_generation != 0;
+}
+
+FUNCTION B32
+lectern0_capture_rendered_presentation_identity(
+  const Lectern0App *app,
+  Lectern0PresentationIdentity *out)
+{
+  if (!lectern0_capture_presentation_identity(app, out)) return 0;
+  if (out->kind == Lectern0PresentationIdentity_Library) return 1;
+  return out->frame_capture_generation > 0 &&
+    out->reader_frame_generation != 0 &&
+    lectern0_frame_matches_canonical_page(
+      app, out->page, out->document_id, out->document_generation) &&
+    (out->image_count == 0 || out->image_visual_identity != 0);
+}
+
+FUNCTION B32
+lectern0_presentation_identity_equal(Lectern0PresentationIdentity a,
+                                      Lectern0PresentationIdentity b)
+{
+  if (a.kind == Lectern0PresentationIdentity_None || a.kind != b.kind ||
+      a.frame_generation == 0 || a.frame_generation != b.frame_generation)
+  {
+    return 0;
+  }
+  if (a.kind == Lectern0PresentationIdentity_Library) return 1;
+  return a.document_id == b.document_id &&
+    a.document_generation == b.document_generation &&
+    a.layout_generation == b.layout_generation &&
+    b.frame_capture_generation >= a.frame_capture_generation &&
+    (a.reader_frame_generation == 0 ||
+     a.reader_frame_generation == b.reader_frame_generation) &&
+    (a.image_count == 0 ||
+     (a.image_count == b.image_count &&
+      a.image_visual_identity == b.image_visual_identity)) &&
+    lectern0_canonical_page_identity_equal(a.page, b.page);
+}
+
+/* External document mutations never pass an outstanding presentation. One
+   directional keyboard tap alone may occupy the explicit pending slot. */
+FUNCTION B32
+lectern0_begin_document_mutation(Lectern0App *app)
+{
+  if (!app) return 0;
+  if (!app->window || app->page_action_internal_dispatch)
+  {
+    app->capture_frame_failed_since_mutation = 0;
+    return 1;
+  }
+  if (app->page_action_waiting_for_present)
+  {
+    if (app->page_action_mutation_drop_count < UINT32_MAX)
+      app->page_action_mutation_drop_count += 1;
+    lectern0_cancel_page_repeat_for_mutation(app);
+    return 0;
+  }
+  if (app->page_repeat_active || app->page_action_pending)
+    lectern0_cancel_page_repeat_for_mutation(app);
+  app->capture_frame_failed_since_mutation = 0;
+  return 1;
+}
+
+FUNCTION void
+lectern0_complete_document_mutation(Lectern0App *app, B32 changed)
+{
+  if (!app || !changed || !app->window || app->page_action_internal_dispatch)
+    return;
+  lectern0_page_action_note_emitted(app);
+  (void)InvalidateRect(app->window, 0, FALSE);
+}
+
+FUNCTION U64
+lectern0_frame_non_whitespace_byte_count(const EpubReaderFrame *frame)
+{
+  if (!frame || !frame->visible_text.str) return 0;
+  U64 count = 0;
+  for (U64 index = 0; index < frame->visible_text.size; index += 1)
+  {
+    U8 byte = frame->visible_text.str[index];
+    if (byte != ' ' && byte != '\t' && byte != '\r' && byte != '\n')
+      count += 1;
+  }
+  return count;
+}
+
+FUNCTION B32
+lectern0_gotm_word_scalar(U32 scalar)
+{
+  if ((scalar >= (U32)'a' && scalar <= (U32)'z') ||
+      (scalar >= (U32)'A' && scalar <= (U32)'Z') ||
+      (scalar >= (U32)'0' && scalar <= (U32)'9') || scalar == (U32)'_')
+  {
+    return 1;
+  }
+  if (scalar < 0x80u || scalar == 0x00a0u || scalar == 0x1680u ||
+      (scalar >= 0x2000u && scalar <= 0x206fu) ||
+      (scalar >= 0x2e00u && scalar <= 0x2e7fu) ||
+      (scalar >= 0x3000u && scalar <= 0x303fu))
+  {
+    return 0;
+  }
+  /* The exact English-language fixture uses non-ASCII letters as word
+     characters and General Punctuation for its typographic punctuation. */
+  return 1;
+}
+
+FUNCTION B32
+lectern0_gotm_word_connector(U32 scalar)
+{
+  return scalar == (U32)'\'' || scalar == (U32)'-' ||
+    scalar == 0x2010u || scalar == 0x2011u || scalar == 0x2019u;
+}
+
+FUNCTION B32
+lectern0_utf8_previous_scalar(String8 text,
+                              U64 byte_offset,
+                              U64 *out_byte_offset,
+                              U32 *out_scalar)
+{
+  if (out_byte_offset) *out_byte_offset = 0;
+  if (out_scalar) *out_scalar = 0;
+  if (!text.str || byte_offset == 0 || byte_offset > text.size) return 0;
+  U64 at = byte_offset - 1;
+  U32 continuation_count = 0;
+  while (at > 0 && (text.str[at] & 0xc0u) == 0x80u &&
+         continuation_count < 3)
+  {
+    at -= 1;
+    continuation_count += 1;
+  }
+  BaseUnicodeDecode decode = base_unicode_utf8_decode(text, at);
+  if (!decode.valid || decode.advance == 0 || at + decode.advance != byte_offset)
+    return 0;
+  if (out_byte_offset) *out_byte_offset = at;
+  if (out_scalar) *out_scalar = decode.scalar;
+  return 1;
+}
+
+/* Independent from adjacent-page replay: validate the raw UTF-8 source bytes
+   around a canonical range start. A page may start at a word, but never after
+   another word scalar or after an in-word apostrophe/hyphen. */
+FUNCTION B32
+lectern0_gotm_page_start_is_word_boundary(String8 spine_text,
+                                           U64 first_byte)
+{
+  if (!spine_text.str || first_byte > spine_text.size) return 0;
+  if (first_byte == 0 || first_byte == spine_text.size) return 1;
+  if ((spine_text.str[first_byte] & 0xc0u) == 0x80u) return 0;
+  BaseUnicodeDecode current = base_unicode_utf8_decode(spine_text, first_byte);
+  if (!current.valid || current.advance == 0) return 0;
+  if (lectern0_gotm_word_connector(current.scalar))
+  {
+    U32 previous_scalar = 0;
+    BaseUnicodeDecode next = base_unicode_utf8_decode(
+      spine_text, first_byte + current.advance);
+    if (lectern0_utf8_previous_scalar(spine_text,
+                                      first_byte,
+                                      0,
+                                      &previous_scalar) &&
+        lectern0_gotm_word_scalar(previous_scalar) && next.valid &&
+        next.advance > 0 && lectern0_gotm_word_scalar(next.scalar))
+    {
+      return 0;
+    }
+    return 1;
+  }
+  if (!lectern0_gotm_word_scalar(current.scalar)) return 1;
+
+  U64 previous_at = 0;
+  U32 previous_scalar = 0;
+  if (!lectern0_utf8_previous_scalar(spine_text,
+                                     first_byte,
+                                     &previous_at,
+                                     &previous_scalar))
+  {
+    return 0;
+  }
+  if (lectern0_gotm_word_scalar(previous_scalar)) return 0;
+  if (lectern0_gotm_word_connector(previous_scalar))
+  {
+    U32 before_connector = 0;
+    if (lectern0_utf8_previous_scalar(spine_text,
+                                      previous_at,
+                                      0,
+                                      &before_connector) &&
+        lectern0_gotm_word_scalar(before_connector))
+    {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+/* Exact gotm_new.epub navigation-reference assertion. The invoking PowerShell
+   smokes lock the fixture size and SHA-256; this is not production policy for
+   arbitrary publisher pages, where a one-character page can be legitimate. */
+FUNCTION B32
+lectern0_gotm_navigation_frame_is_canonical_nonempty(const Lectern0App *app,
+                                                      B32 *out_orphan_text,
+                                                      B32 *out_invalid_word_start,
+                                                      U64 *out_text_bytes,
+                                                      U32 *out_text_rows)
+{
+  if (out_orphan_text) *out_orphan_text = 0;
+  if (out_invalid_word_start) *out_invalid_word_start = 0;
+  if (out_text_bytes) *out_text_bytes = 0;
+  if (out_text_rows) *out_text_rows = 0;
+  if (!app || !epub_reader_is_open(&app->reader) ||
+      !app->reader.has_current_page ||
+      app->reader.current_page.spine_page_count == 0 ||
+      app->reader.current_page.first_byte >=
+      app->reader.current_page.one_past_last_byte ||
+      app->reader.current_page.spine_index != app->reader.active_spine_index ||
+      !app->frame.ready || !app->frame.document_open ||
+      !lectern0_frame_text_rows_are_complete(&app->frame, 0, 0))
+  {
+    return 0;
+  }
+  Lectern0CanonicalPageIdentity canonical_page =
+    lectern0_canonical_page_identity(app->reader.current_page);
+  if (!lectern0_frame_matches_canonical_page(
+        app,
+        canonical_page,
+        epub_reader_document_id(&app->reader),
+        app->reader.document_generation))
+  {
+    return 0;
+  }
+  U64 text_bytes = lectern0_frame_non_whitespace_byte_count(&app->frame);
+  U32 text_rows = app->frame.style_row_count;
+  B32 long_form_text = app->frame.image_count == 0 &&
+    app->reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes;
+  B32 orphan_text = long_form_text &&
+    (text_bytes < Lectern0GotmMinimumProseTextBytes ||
+     text_rows < Lectern0GotmMinimumProseTextRows);
+  B32 invalid_word_start = long_form_text &&
+    !lectern0_gotm_page_start_is_word_boundary(
+      app->reader.spine_text, app->reader.current_page.first_byte);
+  if (out_orphan_text) *out_orphan_text = orphan_text;
+  if (out_invalid_word_start) *out_invalid_word_start = invalid_word_start;
+  if (out_text_bytes) *out_text_bytes = text_bytes;
+  if (out_text_rows) *out_text_rows = text_rows;
+  return !orphan_text && !invalid_word_start;
+}
+
+FUNCTION B32
+lectern0_page_repeat_modifier_key(WPARAM key)
+{
+  return key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
+    key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT ||
+    key == VK_MENU || key == VK_LMENU || key == VK_RMENU;
+}
+
+FUNCTION B32
+lectern0_page_repeat_consume_cancelled_keydown(Lectern0App *app,
+                                                WPARAM key,
+                                                LPARAM l_param)
+{
+  if (!app || app->page_repeat_cancelled_key != key ||
+      (l_param & (1LL << 30)) == 0)
+  {
+    return 0;
+  }
+  if (app->page_repeat_cancelled_repeat_consumed_count < UINT32_MAX)
+    app->page_repeat_cancelled_repeat_consumed_count += 1;
+  return 1;
+}
+
+FUNCTION void
+lectern0_page_action_cancel_presentation_retry(Lectern0App *app)
+{
+  if (!app) return;
+  if (app->window)
+    (void)KillTimer(app->window, Lectern0PresentationRetryTimerId);
+  app->page_action_presentation_retry_attempt = 0;
+}
+
+FUNCTION void
+lectern0_page_action_schedule_presentation_retry(Lectern0App *app)
+{
+  if (!app || !app->window || !app->page_action_waiting_for_present) return;
+  U32 shift = MIN(app->page_action_presentation_retry_attempt, 4u);
+  U32 delay_ms = Lectern0PresentationRetryBaseDelayMs << shift;
+  delay_ms = MIN(delay_ms, (U32)Lectern0PresentationRetryMaxDelayMs);
+  (void)KillTimer(app->window, Lectern0PresentationRetryTimerId);
+  if (SetTimer(app->window,
+               Lectern0PresentationRetryTimerId,
+               delay_ms,
+               0) != 0)
+  {
+    if (app->page_action_presentation_retry_attempt < UINT32_MAX)
+      app->page_action_presentation_retry_attempt += 1;
+    if (app->page_action_presentation_retry_scheduled_count < UINT32_MAX)
+      app->page_action_presentation_retry_scheduled_count += 1;
+  }
+  else
+  {
+    /* Match the persistence timer's failure policy: never strand an accepted
+       page action merely because Win32 could not allocate a timer. */
+    (void)InvalidateRect(app->window, 0, FALSE);
+  }
+}
+
+FUNCTION void
+lectern0_page_action_note_emitted(Lectern0App *app)
+{
+  if (!app) return;
+  if (app->page_action_waiting_for_present)
+  {
+    if (app->page_action_overlap_count < UINT32_MAX)
+      app->page_action_overlap_count += 1;
+    return;
+  }
+  lectern0_page_action_cancel_presentation_retry(app);
+  app->page_action_frame_generation += 1;
+  if (app->page_action_frame_generation == 0)
+    app->page_action_frame_generation = 1;
+  MemoryZeroStruct(&app->page_action_expected_identity);
+  (void)lectern0_capture_presentation_identity(
+    app, &app->page_action_expected_identity);
+  if (app->page_action_expected_identity.kind ==
+        Lectern0PresentationIdentity_Page &&
+      app->capture_frame_failed_since_mutation)
+  {
+    app->page_action_expected_identity.frame_capture_generation =
+      app->frame_capture_generation + 1;
+    if (app->page_action_expected_identity.frame_capture_generation == 0)
+      app->page_action_expected_identity.frame_capture_generation = UINT64_MAX;
+    app->page_action_expected_identity.reader_frame_generation = 0;
+    app->page_action_expected_identity.image_count = 0;
+    app->page_action_expected_identity.image_visual_identity = 0;
+  }
+  app->page_action_waiting_for_present = 1;
+  if (app->page_action_emitted_count < UINT64_MAX)
+    app->page_action_emitted_count += 1;
+  if (app->window && app->state_save_pending)
+    (void)KillTimer(app->window, Lectern0StateSaveTimerId);
+  lectern0_cancel_adjacent_warm(app);
+}
+
+FUNCTION void
+lectern0_page_action_clear_pending(Lectern0App *app)
+{
+  if (!app) return;
+  app->page_action_pending = 0;
+  app->page_action_pending_arm_repeat = 0;
+  app->page_action_pending_direction = 0;
+  app->page_action_pending_key = 0;
+}
+
+FUNCTION void
+lectern0_page_action_defer(Lectern0App *app,
+                           WPARAM key,
+                           S32 direction,
+                           B32 arm_repeat)
+{
+  if (!app || direction == 0) return;
+  app->page_action_pending = 1;
+  app->page_action_pending_arm_repeat = arm_repeat;
+  app->page_action_pending_direction = direction < 0 ? -1 : 1;
+  app->page_action_pending_key = key;
+  if (app->page_repeat_active)
+  {
+    WPARAM cancelled_key = app->page_repeat_key;
+    lectern0_stop_page_repeat(app);
+    app->page_repeat_cancelled_key = cancelled_key;
+  }
+}
+
+FUNCTION void
+lectern0_page_action_release_key(Lectern0App *app, WPARAM key)
+{
+  if (!app) return;
+  if (app->page_action_pending && key == app->page_action_pending_key)
+    app->page_action_pending_arm_repeat = 0;
+  if (app->page_repeat_active && key == app->page_repeat_key)
+  {
+    if (app->page_repeat_keyup_cancel_count < UINT32_MAX)
+      app->page_repeat_keyup_cancel_count += 1;
+    lectern0_stop_page_repeat(app);
+  }
+  if (key == app->page_repeat_cancelled_key)
+    app->page_repeat_cancelled_key = 0;
+}
+
 FUNCTION void
 lectern0_stop_page_repeat(Lectern0App *app)
 {
   if (!app) return;
   B32 was_active = app->page_repeat_active;
-  if (app->window && was_active)
-    (void)KillTimer(app->window, Lectern0PageRepeatTimerId);
   app->page_repeat_active = 0;
   app->page_repeat_direction = 0;
   app->page_repeat_key = 0;
-  app->page_repeat_frame_count = 0;
-  if (was_active && app->adjacent_warm_pending)
+  app->page_repeat_next_move_ticks = 0;
+  app->page_repeat_last_action_emitted_ticks = 0;
+  app->page_repeat_navigation_prepare_pending = 0;
+  app->page_repeat_navigation_prepare_direction = 0;
+  app->page_repeat_navigation_prepare_source_spine_index = 0;
+  app->page_repeat_navigation_prepare_source_first_byte = 0;
+  if (was_active && app->state_save_pending &&
+      !app->page_action_waiting_for_present && !app->page_action_pending)
+  {
+    if (app->page_repeat_persistence_rescheduled_count < UINT32_MAX)
+      app->page_repeat_persistence_rescheduled_count += 1;
+    lectern0_schedule_state_save(app);
+  }
+  if (was_active && !app->page_action_waiting_for_present &&
+      !app->page_action_pending && epub_reader_is_open(&app->reader))
     lectern0_schedule_adjacent_warm(app);
+}
+
+FUNCTION void
+lectern0_cancel_page_repeat(Lectern0App *app, U32 *counter)
+{
+  if (!app) return;
+  lectern0_page_action_clear_pending(app);
+  if (!app->page_repeat_active) return;
+  WPARAM cancelled_key = app->page_repeat_key;
+  lectern0_stop_page_repeat(app);
+  app->page_repeat_cancelled_key = cancelled_key;
+  if (counter && *counter < UINT32_MAX) *counter += 1;
+}
+
+FUNCTION void
+lectern0_cancel_page_repeat_for_modifier(Lectern0App *app)
+{
+  if (!app) return;
+  lectern0_cancel_page_repeat(app, &app->page_repeat_modifier_cancel_count);
+}
+
+FUNCTION void
+lectern0_cancel_page_repeat_for_focus(Lectern0App *app)
+{
+  if (!app) return;
+  lectern0_cancel_page_repeat(app, &app->page_repeat_focus_cancel_count);
+}
+
+FUNCTION void
+lectern0_cancel_page_repeat_for_deactivation(Lectern0App *app)
+{
+  if (!app) return;
+  lectern0_cancel_page_repeat(app,
+                              &app->page_repeat_deactivate_cancel_count);
+}
+
+FUNCTION void
+lectern0_cancel_page_repeat_for_mutation(Lectern0App *app)
+{
+  if (!app) return;
+  lectern0_cancel_page_repeat(app, &app->page_repeat_mutation_cancel_count);
+}
+
+FUNCTION U64
+lectern0_page_repeat_delay_ticks(U32 frame_count)
+{
+  U64 frequency = os_time_frequency();
+  U64 whole_ticks = frequency / Lectern0PageRepeatFrameRate;
+  U64 remainder_ticks = frequency % Lectern0PageRepeatFrameRate;
+  U64 delay_ticks = whole_ticks * frame_count +
+    (remainder_ticks * frame_count + Lectern0PageRepeatFrameRate - 1) /
+      Lectern0PageRepeatFrameRate;
+  return delay_ticks ? delay_ticks : 1;
+}
+
+FUNCTION void
+lectern0_begin_page_repeat(Lectern0App *app,
+                           WPARAM key,
+                           S32 direction)
+{
+  if (!app || direction == 0 || !app->page_action_waiting_for_present) return;
+  U64 now_ticks = os_time_ticks();
+  U64 initial_delay_ticks =
+    lectern0_page_repeat_delay_ticks(Lectern0PageRepeatInitialFrames);
+  app->page_repeat_active = 1;
+  app->page_repeat_direction = direction < 0 ? -1 : 1;
+  app->page_repeat_key = key;
+  app->page_repeat_next_move_ticks =
+    now_ticks > UINT64_MAX - initial_delay_ticks ?
+      UINT64_MAX : now_ticks + initial_delay_ticks;
+  app->page_repeat_last_action_emitted_ticks = 0;
+  app->page_repeat_frame_move_count = 0;
+  app->page_repeat_native_coalesced_count = 0;
+  app->page_repeat_presented_frame_count = 0;
+  app->page_repeat_navigation_prepare_pending = 0;
+  app->page_repeat_navigation_prepare_direction = 0;
+  app->page_repeat_navigation_prepare_source_spine_index = 0;
+  app->page_repeat_navigation_prepare_source_first_byte = 0;
+  app->page_repeat_navigation_prepare_call_count = 0;
+  app->page_repeat_navigation_prepare_build_count = 0;
+  app->page_repeat_navigation_prepare_ready_count = 0;
+  app->page_repeat_navigation_prepare_fail_count = 0;
+  app->page_repeat_navigation_prepare_total_ticks = 0;
+  app->page_repeat_navigation_prepare_max_ticks = 0;
+  app->page_repeat_cancelled_repeat_consumed_count = 0;
+  app->page_repeat_modifier_cancel_count = 0;
+  app->page_repeat_focus_cancel_count = 0;
+  app->page_repeat_deactivate_cancel_count = 0;
+  app->page_repeat_keyup_cancel_count = 0;
+  app->page_repeat_mutation_cancel_count = 0;
+  app->page_repeat_persistence_deferred_count = 0;
+  app->page_repeat_persistence_rescheduled_count = 0;
+  /* The accepted immediate action already owns the independent presentation
+     gate. Releasing or cancelling repeat must not clear that action gate. */
+  if (app->window && app->state_save_pending)
+    (void)KillTimer(app->window, Lectern0StateSaveTimerId);
+  lectern0_cancel_adjacent_warm(app);
+}
+
+FUNCTION B32
+lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app)
+{
+  if (!app || !app->page_repeat_navigation_prepare_pending) return 0;
+
+  S32 expected_direction = app->page_repeat_navigation_prepare_direction;
+  U32 expected_spine =
+    app->page_repeat_navigation_prepare_source_spine_index;
+  U64 expected_first_byte =
+    app->page_repeat_navigation_prepare_source_first_byte;
+  app->page_repeat_navigation_prepare_pending = 0;
+
+  if (!app->page_repeat_active || app->page_action_waiting_for_present ||
+      app->page_action_pending || expected_direction == 0 ||
+      expected_direction != app->page_repeat_direction ||
+      !epub_reader_is_open(&app->reader) || !app->reader.has_current_page ||
+      app->reader.current_page.spine_index != expected_spine ||
+      app->reader.current_page.first_byte != expected_first_byte ||
+      !epub_reader_layout_keys_match(app->reader.layout_key, app->layout_key))
+  {
+    if (app->page_repeat_navigation_prepare_fail_count < UINT64_MAX)
+      app->page_repeat_navigation_prepare_fail_count += 1;
+    return 0;
+  }
+
+  SourceReaderPageRange before_page = app->reader.current_page;
+  U64 build_before = app->reader.navigation_stats.prepared_window_build_count;
+  SourceReaderLayoutConfig prepare_config = app->layout_config;
+  prepare_config.focused_spine_index = app->reader.active_spine_index;
+  prepare_config.measure_generation =
+    epub_reader_layout_key_generation(app->layout_key);
+  prepare_config.measure_cache =
+    epub_reader_measure_cache_for_key(&app->reader, app->layout_key);
+  U64 prepare_start = os_time_ticks();
+  EpubReaderNavigationPrepareResult prepare_result = {0};
+  B32 prepared = epub_reader_prepare_navigation(
+    &app->reader,
+    app->layout_key,
+    prepare_config,
+    (EpubReaderNavigationPrepareOptions){ .require_page_move = 1 },
+    &prepare_result);
+  U64 prepare_ticks = os_time_ticks() - prepare_start;
+
+  if (app->page_repeat_navigation_prepare_call_count < UINT64_MAX)
+    app->page_repeat_navigation_prepare_call_count += 1;
+  app->page_repeat_navigation_prepare_total_ticks =
+    app->page_repeat_navigation_prepare_total_ticks >
+        UINT64_MAX - prepare_ticks ?
+      UINT64_MAX :
+      app->page_repeat_navigation_prepare_total_ticks + prepare_ticks;
+  app->page_repeat_navigation_prepare_max_ticks = MAX(
+    app->page_repeat_navigation_prepare_max_ticks, prepare_ticks);
+  if (app->reader.navigation_stats.prepared_window_build_count > build_before &&
+      app->page_repeat_navigation_prepare_build_count < UINT64_MAX)
+  {
+    app->page_repeat_navigation_prepare_build_count +=
+      app->reader.navigation_stats.prepared_window_build_count - build_before;
+  }
+  if (prepare_result.kind == EpubReaderNavigationPrepareKind_AlreadyReady &&
+      app->page_repeat_navigation_prepare_ready_count < UINT64_MAX)
+  {
+    app->page_repeat_navigation_prepare_ready_count += 1;
+  }
+
+  B32 page_unchanged = !prepare_result.current_page_refreshed &&
+    app->reader.has_current_page &&
+    app->reader.current_page.spine_index == before_page.spine_index &&
+    app->reader.current_page.first_byte == before_page.first_byte &&
+    app->reader.current_page.one_past_last_byte ==
+      before_page.one_past_last_byte;
+  B32 direction_unchanged = prepare_result.preferred_direction == 0 ||
+    prepare_result.preferred_direction == expected_direction;
+  B32 prepared_page_nonempty =
+    prepare_result.page.first_byte < prepare_result.page.one_past_last_byte;
+  B32 prepared_page_same_spine =
+    prepare_result.page.spine_index == before_page.spine_index;
+  B32 prepared_cross_spine_kind =
+    prepare_result.kind == EpubReaderNavigationPrepareKind_AdjacentSpine ||
+    prepare_result.kind == EpubReaderNavigationPrepareKind_AlreadyReady;
+  B32 prepared_cross_spine_direction = expected_direction > 0 ?
+    prepare_result.page.spine_index > before_page.spine_index :
+    prepare_result.page.spine_index < before_page.spine_index;
+  /* Reader0's public same-spine validator can prove exact byte adjacency from
+     the active pagination. A returned cross-spine preparation is instead
+     owned by Reader0's bounded prepared ring, so the host verifies its public
+     result kind, nonempty range, and document direction without trying to
+     re-prove private prepared ownership through the active pagination. */
+  B32 adjacent_valid = !prepare_result.prepared ||
+    (prepared_page_nonempty &&
+     (prepared_page_same_spine ?
+        epub_reader_adjacent_page_candidate_is_valid(
+          &app->reader, before_page, expected_direction, prepare_result.page) :
+        (prepared_cross_spine_kind && prepared_cross_spine_direction)));
+  if (!page_unchanged || !direction_unchanged || !adjacent_valid ||
+      !prepared || !prepare_result.prepared ||
+      prepare_result.kind == EpubReaderNavigationPrepareKind_None)
+  {
+    if (app->page_repeat_navigation_prepare_fail_count < UINT64_MAX)
+      app->page_repeat_navigation_prepare_fail_count += 1;
+    return 0;
+  }
+  return 1;
 }
 
 FUNCTION void
@@ -6264,28 +7479,15 @@ lectern0_start_page_repeat(Lectern0App *app,
 {
   if (!app || !app->window || direction == 0) return;
   lectern0_stop_page_repeat(app);
-  app->page_repeat_active = 1;
-  app->page_repeat_direction = direction < 0 ? -1 : 1;
-  app->page_repeat_key = key;
-  app->page_repeat_frame_count = 0;
-  if (SetTimer(app->window,
-               Lectern0PageRepeatTimerId,
-               Lectern0PageRepeatTimerMs,
-               0) == 0)
-  {
-    lectern0_stop_page_repeat(app);
-  }
-  else
-  {
-    /* The first physical keydown already moved the page. Prepare the next
-       canonical target during the accepted 24-frame hold delay. */
-    lectern0_schedule_adjacent_warm(app);
-  }
+  lectern0_begin_page_repeat(app, key, direction);
 }
 
 FUNCTION B32
-lectern0_page_repeat_step(Lectern0App *app)
+lectern0_page_repeat_step(Lectern0App *app,
+                           U64 now_ticks,
+                           B32 *out_action_due)
 {
+  if (out_action_due) { *out_action_due = 0; }
   if (!app || !app->page_repeat_active ||
       app->page_repeat_direction == 0)
   {
@@ -6301,30 +7503,163 @@ lectern0_page_repeat_step(Lectern0App *app)
     return 0;
   }
 
-  app->page_repeat_frame_count += 1;
-  if (app->page_repeat_frame_count < Lectern0PageRepeatInitialFrames ||
-      (app->page_repeat_frame_count - Lectern0PageRepeatInitialFrames) %
-        Lectern0PageRepeatIntervalFrames != 0)
+  if (now_ticks < app->page_repeat_next_move_ticks)
+  {
+    return 0;
+  }
+  if (out_action_due) { *out_action_due = 1; }
+  if (app->page_action_waiting_for_present)
   {
     return 0;
   }
 
-  EpubReaderResult result =
-    lectern0_move_page(app, app->page_repeat_direction);
+  U64 action_emitted_ticks = os_time_ticks();
+  B32 had_page = app->reader.has_current_page;
+  Lectern0CanonicalPageIdentity before_page =
+    lectern0_canonical_page_identity(app->reader.current_page);
+  app->page_action_internal_dispatch = 1;
+  EpubReaderResult result = lectern0_move_page(
+    app, app->page_repeat_direction);
+  app->page_action_internal_dispatch = 0;
+  B32 reader_changed = app->reader.has_current_page &&
+    (!had_page || !lectern0_canonical_page_identity_equal(
+      before_page, lectern0_canonical_page_identity(app->reader.current_page)));
   if (result != EpubReaderResult_Ok)
   {
     lectern0_stop_page_repeat(app);
-    return 0;
+    if (reader_changed)
+    {
+      lectern0_page_action_note_emitted(app);
+      if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
+    }
+    return reader_changed;
   }
+  app->page_repeat_last_action_emitted_ticks = action_emitted_ticks;
+  lectern0_page_action_note_emitted(app);
+  U64 interval_ticks =
+    lectern0_page_repeat_delay_ticks(Lectern0PageRepeatIntervalFrames);
+  app->page_repeat_next_move_ticks =
+    action_emitted_ticks > UINT64_MAX - interval_ticks ?
+      UINT64_MAX : action_emitted_ticks + interval_ticks;
+  if (app->page_repeat_frame_move_count < UINT32_MAX)
+    app->page_repeat_frame_move_count += 1;
   if (app->window) { InvalidateRect(app->window, 0, FALSE); }
   return 1;
 }
 
-FUNCTION Lectern0ReaderKeyRoute
-lectern0_reader_view_route_keydown(Lectern0App *app,
-                                   WPARAM key,
-                                   B32 shift)
+FUNCTION Lectern0PageRepeatFrameResult
+lectern0_page_repeat_frame_step(Lectern0App *app, U64 now_ticks)
 {
+  Lectern0PageRepeatFrameResult result = {0};
+  result.action_emitted =
+    lectern0_page_repeat_step(app, now_ticks, &result.action_due);
+  result.action_waiting_for_render =
+    result.action_due && !result.action_emitted && app &&
+    app->page_action_waiting_for_present;
+  return result;
+}
+
+FUNCTION void
+lectern0_page_repeat_note_presented_frame(Lectern0App *app, B32 complete)
+{
+  if (!app || !app->page_action_waiting_for_present) return;
+  if (!complete)
+  {
+    lectern0_page_action_schedule_presentation_retry(app);
+    return;
+  }
+  if (!lectern0_presentation_identity_equal(
+        app->page_action_expected_identity, app->last_surface_identity))
+  {
+    if (app->page_action_identity_mismatch_count < UINT32_MAX)
+      app->page_action_identity_mismatch_count += 1;
+    lectern0_page_action_schedule_presentation_retry(app);
+    return;
+  }
+  lectern0_page_action_cancel_presentation_retry(app);
+  app->page_action_waiting_for_present = 0;
+  MemoryZeroStruct(&app->page_action_expected_identity);
+  app->page_action_last_stable_present_ticks = os_time_ticks();
+  if (app->page_action_presented_count < UINT64_MAX)
+    app->page_action_presented_count += 1;
+  if (app->page_repeat_active &&
+      app->page_repeat_presented_frame_count < UINT32_MAX)
+  {
+    app->page_repeat_presented_frame_count += 1;
+  }
+
+  if (app->page_action_pending)
+  {
+    WPARAM key = app->page_action_pending_key;
+    S32 direction = app->page_action_pending_direction;
+    B32 arm_repeat = app->page_action_pending_arm_repeat;
+    B32 had_page = app->reader.has_current_page;
+    Lectern0CanonicalPageIdentity before_page =
+      lectern0_canonical_page_identity(app->reader.current_page);
+    app->page_action_internal_dispatch = 1;
+    EpubReaderResult result = lectern0_move_page(app, direction);
+    app->page_action_internal_dispatch = 0;
+    B32 reader_changed = app->reader.has_current_page &&
+      (!had_page || !lectern0_canonical_page_identity_equal(
+        before_page,
+        lectern0_canonical_page_identity(app->reader.current_page)));
+    lectern0_page_action_clear_pending(app);
+    if (result == EpubReaderResult_Ok)
+    {
+      lectern0_page_action_note_emitted(app);
+      if (arm_repeat) lectern0_start_page_repeat(app, key, direction);
+      if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
+      return;
+    }
+    if (reader_changed)
+    {
+      lectern0_page_action_note_emitted(app);
+      if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
+      return;
+    }
+  }
+
+  if (app->page_action_reflow_deferred)
+  {
+    app->page_action_reflow_deferred = 0;
+    if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
+    return;
+  }
+
+  if (app->page_repeat_active && app->reader.has_current_page)
+  {
+    /* Re10 keeps this Reader0 model preparation separate from host frame and
+       raster warming. Queue it only after the accepted page is visibly stable,
+       then run it as measured tail work outside the page-action frame. */
+    app->page_repeat_navigation_prepare_pending = 1;
+    app->page_repeat_navigation_prepare_direction =
+      app->page_repeat_direction;
+    app->page_repeat_navigation_prepare_source_spine_index =
+      app->reader.current_page.spine_index;
+    app->page_repeat_navigation_prepare_source_first_byte =
+      app->reader.current_page.first_byte;
+  }
+
+  if (!app->page_repeat_active)
+  {
+    if (app->state_save_pending)
+    {
+      if (app->page_repeat_persistence_rescheduled_count < UINT32_MAX)
+        app->page_repeat_persistence_rescheduled_count += 1;
+      lectern0_schedule_state_save(app);
+    }
+    if (epub_reader_is_open(&app->reader))
+      lectern0_schedule_adjacent_warm(app);
+  }
+}
+
+FUNCTION Lectern0ReaderKeyRoute
+lectern0_reader_view_route_keydown_ex(Lectern0App *app,
+                                      WPARAM key,
+                                      B32 shift,
+                                      B32 *out_page_move_succeeded)
+{
+  if (out_page_move_succeeded) *out_page_move_succeeded = 0;
   if (!app) return Lectern0ReaderKeyRoute_None;
   B32 editing = lectern0_reader_view_text_editing(app);
   if (editing && key == VK_BACK)
@@ -6357,7 +7692,10 @@ lectern0_reader_view_route_keydown(Lectern0App *app,
   else if (!editing && app->reader_view_state.focus_id != 0 &&
            (key == VK_LEFT || key == VK_RIGHT))
   {
-    (void)lectern0_move_page(app, key == VK_LEFT ? -1 : 1);
+    EpubReaderResult move =
+      lectern0_move_page(app, key == VK_LEFT ? -1 : 1);
+    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+      *out_page_move_succeeded = 1;
   }
   else if (!editing && app->reader_view_state.focus_id != 0 &&
            (key == VK_UP || key == VK_DOWN))
@@ -6388,7 +7726,9 @@ lectern0_reader_view_route_keydown(Lectern0App *app,
            app->host_focus_control == Lectern0HostControl_None &&
            (key == VK_LEFT || key == VK_PRIOR))
   {
-    (void)lectern0_move_page(app, -1);
+    EpubReaderResult move = lectern0_move_page(app, -1);
+    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+      *out_page_move_succeeded = 1;
   }
   else if (key == VK_SPACE &&
            lectern0_reader_view_space_activates_focus(app))
@@ -6399,7 +7739,9 @@ lectern0_reader_view_route_keydown(Lectern0App *app,
            app->host_focus_control == Lectern0HostControl_None &&
            (key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE))
   {
-    (void)lectern0_move_page(app, 1);
+    EpubReaderResult move = lectern0_move_page(app, 1);
+    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+      *out_page_move_succeeded = 1;
   }
   else if (key == VK_TAB)
   {
@@ -6419,6 +7761,14 @@ lectern0_reader_view_route_keydown(Lectern0App *app,
     return Lectern0ReaderKeyRoute_None;
   }
   return Lectern0ReaderKeyRoute_Handled;
+}
+
+FUNCTION Lectern0ReaderKeyRoute
+lectern0_reader_view_route_keydown(Lectern0App *app,
+                                   WPARAM key,
+                                   B32 shift)
+{
+  return lectern0_reader_view_route_keydown_ex(app, key, shift, 0);
 }
 
 FUNCTION B32
@@ -6494,6 +7844,7 @@ FUNCTION B32
 lectern0_set_fullscreen(Lectern0App *app, B32 active)
 {
   if (!app || !app->window || app->fullscreen.active == active) return app != 0;
+  if (!lectern0_begin_document_mutation(app)) return 0;
   if (active)
   {
     app->fullscreen.style = (DWORD)GetWindowLongPtrW(app->window, GWL_STYLE);
@@ -6521,6 +7872,7 @@ lectern0_set_fullscreen(Lectern0App *app, B32 active)
                  SWP_NOZORDER | SWP_NOOWNERZORDER);
   }
   app->fullscreen.active = active;
+  lectern0_complete_document_mutation(app, 1);
   return 1;
 }
 
@@ -6530,6 +7882,7 @@ lectern0_apply_setting(Lectern0App *app,
                        ReaderViewKey key)
 {
   if (!app) return 0;
+  if (!lectern0_begin_document_mutation(app)) return 0;
   B32 repaginate = 0;
   switch (kind)
   {
@@ -6561,7 +7914,14 @@ lectern0_apply_setting(Lectern0App *app,
   }
   (void)lectern0_save_settings(app);
   if (repaginate && epub_reader_is_open(&app->reader))
-    return lectern0_repaginate(app);
+  {
+    app->page_action_internal_dispatch = 1;
+    B32 result = lectern0_repaginate(app);
+    app->page_action_internal_dispatch = 0;
+    lectern0_complete_document_mutation(app, 1);
+    return result;
+  }
+  lectern0_complete_document_mutation(app, 1);
   return 1;
 }
 
@@ -6699,15 +8059,27 @@ lectern0_apply_reader_view_action(Lectern0App *app,
       (void)lectern0_toggle_current_bookmark(app);
       break;
     case ReaderViewAction_FindChanged:
+    {
+      if (!lectern0_begin_document_mutation(app)) break;
       if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      app->page_action_internal_dispatch = 1;
       if (action->text.size == 0)
       {
         epub_reader_clear_search(&app->reader);
         (void)lectern0_capture_frame(app);
       }
-      break;
+      else
+      {
+        (void)lectern0_capture_frame(app);
+      }
+      app->page_action_internal_dispatch = 0;
+      lectern0_complete_document_mutation(app, 1);
+    } break;
     case ReaderViewAction_FindCommitted:
+    {
+      if (!lectern0_begin_document_mutation(app)) break;
       if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      app->page_action_internal_dispatch = 1;
       if (action->text.size == 0)
       {
         epub_reader_clear_search(&app->reader);
@@ -6725,15 +8097,28 @@ lectern0_apply_reader_view_action(Lectern0App *app,
         else
           (void)lectern0_capture_frame(app);
       }
-      break;
+      else
+      {
+        (void)lectern0_capture_frame(app);
+      }
+      app->page_action_internal_dispatch = 0;
+      lectern0_complete_document_mutation(app, 1);
+    } break;
     case ReaderViewAction_FindPrevious:
     case ReaderViewAction_FindNext:
+    {
+      if (!lectern0_begin_document_mutation(app)) break;
+      app->page_action_internal_dispatch = 1;
       if (epub_reader_search_step(&app->reader,
             action->kind == ReaderViewAction_FindPrevious ? -1 : 1))
         (void)lectern0_navigate_to_search_match(
           app, app->reader.search_active_index,
           &(EpubReaderSearchNavigationResult){0});
-      break;
+      else
+        (void)lectern0_capture_frame(app);
+      app->page_action_internal_dispatch = 0;
+      lectern0_complete_document_mutation(app, 1);
+    } break;
     case ReaderViewAction_ActivateTocRow:
       if (action->key > 0 && action->key - 1 <= 0xffffffffull)
         (void)lectern0_navigate_to_nav_point(
@@ -9025,6 +10410,12 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
     lectern0_cancel_adjacent_warm(app);
     return;
   }
+  if (app->page_repeat_active || app->page_action_waiting_for_present ||
+      app->page_action_pending)
+  {
+    lectern0_cancel_adjacent_warm(app);
+    return;
+  }
   if (app->window && app->adjacent_warm_pending)
     (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
   app->adjacent_warm_pending = 1;
@@ -9032,9 +10423,7 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
   app->adjacent_warm_next_text_command = 0;
   app->adjacent_warm_distance = 1;
   app->adjacent_warm_completed_page_count = 0;
-  S32 warm_direction = app->page_repeat_active ?
-    app->page_repeat_direction : 1;
-  app->adjacent_warm_direction = warm_direction < 0 ? -1 : 1;
+  app->adjacent_warm_direction = 1;
   app->adjacent_warm_source_spine_index = app->reader.current_page.spine_index;
   app->adjacent_warm_source_first_byte = app->reader.current_page.first_byte;
   MemoryZeroStruct(&app->adjacent_frame);
@@ -9173,8 +10562,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
 
   U32 shaped_index = 0;
   U32 warmed_count = 0;
-  U32 warm_text_budget = app->page_repeat_active ?
-    Lectern0AdjacentWarmRepeatTextBudget : Lectern0AdjacentWarmTextBudget;
+  U32 warm_text_budget = Lectern0AdjacentWarmTextBudget;
   B32 warm_budget_exhausted = 0;
   U64 warm_start_ticks = os_time_ticks();
   U64 warm_frequency = os_time_frequency();
@@ -9238,7 +10626,9 @@ lectern0_adjacent_warm_step(Lectern0App *app)
       app->adjacent_frame.spine_index != app->adjacent_warm_source_spine_index;
     if (app->adjacent_warm_distance == 1 &&
         adjacent_presentation_complete)
+    {
       (void)lectern0_build_adjacent_page_raster(app);
+    }
     app->adjacent_warm_completed_page_count += 1;
     app->adjacent_warm_distance += 1;
     app->adjacent_warm_frame_ready = 0;
@@ -9319,12 +10709,52 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
   lectern0_reset_input(app);
 }
 
-FUNCTION void
+FUNCTION B32
+lectern0_frame_presentation_is_complete(const Lectern0App *app)
+{
+  if (!app || !app->presentation_complete ||
+      app->draw_commands.overflow_count != 0)
+  {
+    return 0;
+  }
+  if (epub_reader_is_open(&app->reader) &&
+      (!app->reader_view_ready ||
+       app->reader_view_frame.error_flags != ReaderViewFrameError_None))
+  {
+    return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
 lectern0_render(Lectern0App *app)
 {
-  if (!app || !app->gfx_ready || !app->render_ready) { return; }
+  if (!app || !app->gfx_ready || !app->render_ready) { return 0; }
+  app->last_present_complete = 0;
+  app->last_render_acquire_ticks = 0;
+  app->last_render_buffer_ticks = 0;
+  app->last_render_accessibility_ticks = 0;
+  app->last_render_present_ticks = 0;
+  if (app->page_action_waiting_for_present &&
+      app->page_action_expected_identity.kind ==
+        Lectern0PresentationIdentity_Page)
+  {
+    Lectern0PresentationIdentity current_frame_identity = {0};
+    if (!lectern0_capture_rendered_presentation_identity(
+          app, &current_frame_identity) ||
+        !lectern0_presentation_identity_equal(
+          app->page_action_expected_identity, current_frame_identity))
+    {
+      if (lectern0_capture_frame(app) &&
+          app->capture_frame_recovery_count < UINT32_MAX)
+        app->capture_frame_recovery_count += 1;
+    }
+  }
   OS_GfxSurface surface = {0};
-  if (!os_gfx_acquire_surface(&app->gfx, &surface)) { return; }
+  U64 acquire_start = os_time_ticks();
+  B32 acquired = os_gfx_acquire_surface(&app->gfx, &surface);
+  app->last_render_acquire_ticks = os_time_ticks() - acquire_start;
+  if (!acquired) { return 0; }
   app->width = surface.width;
   app->height = surface.height;
   RenderBuffer buffer = {0};
@@ -9333,11 +10763,106 @@ lectern0_render(Lectern0App *app)
                      surface.width,
                      surface.height,
                      surface.stride_pixels);
+  U64 render_start = os_time_ticks();
   lectern0_render_to_buffer(app, &buffer);
+  app->last_render_buffer_ticks = os_time_ticks() - render_start;
+  Lectern0PresentationIdentity rendered_identity = {0};
+  B32 rendered_identity_valid =
+    lectern0_capture_rendered_presentation_identity(app,
+                                                     &rendered_identity);
+  U64 accessibility_start = os_time_ticks();
   if (app->accessibility)
     lectern0_accessibility_publish_frame(app->accessibility,
                                          &app->reader_view_frame);
-  (void)os_gfx_present_surface(&app->gfx, &surface);
+  app->last_render_accessibility_ticks =
+    os_time_ticks() - accessibility_start;
+  B32 frame_complete = lectern0_frame_presentation_is_complete(app);
+  U64 present_start = os_time_ticks();
+  B32 presented = os_gfx_present_surface(&app->gfx, &surface);
+  app->last_render_present_ticks = os_time_ticks() - present_start;
+  app->last_present_complete = frame_complete && presented;
+  if (app->last_present_complete && rendered_identity_valid)
+    app->last_surface_identity = rendered_identity;
+  return app->last_present_complete;
+}
+
+FUNCTION void
+lectern0_note_stable_presentation(Lectern0App *app,
+                                  B32 presented_complete,
+                                  B32 followup_frame_required)
+{
+  if (!app) return;
+  app->last_present_complete =
+    presented_complete && !followup_frame_required;
+  if (app->last_present_complete &&
+      app->complete_present_sequence < UINT64_MAX)
+  {
+    app->complete_present_sequence += 1;
+  }
+}
+
+FUNCTION B32
+lectern0_present_cached_frame(Lectern0App *app)
+{
+  if (!app || !app->gfx_ready || !app->last_present_complete) return 0;
+  OS_GfxSurface surface = {0};
+  if (!os_gfx_acquire_surface(&app->gfx, &surface) ||
+      !os_gfx_present_surface(&app->gfx, &surface))
+  {
+    app->last_present_complete = 0;
+    return 0;
+  }
+  if (app->complete_present_sequence < UINT64_MAX)
+    app->complete_present_sequence += 1;
+  return 1;
+}
+
+FUNCTION B32
+lectern0_win32_page_repeat_frame(Lectern0App *app,
+                                  U64 now_ticks,
+                                  Lectern0PageRepeatFrameTiming *out_timing)
+{
+  if (out_timing) MemoryZeroStruct(out_timing);
+  if (!app || !app->window || !app->page_repeat_active) return 0;
+  U64 present_sequence_before = app->complete_present_sequence;
+  U64 action_prepare_start = os_time_ticks();
+  Lectern0PageRepeatFrameResult frame_result =
+    lectern0_page_repeat_frame_step(app, now_ticks);
+  U64 action_prepare_end = os_time_ticks();
+  if (out_timing)
+  {
+    out_timing->action_prepare_ticks =
+      action_prepare_end - action_prepare_start;
+    if (frame_result.action_emitted)
+      out_timing->action_emitted_ticks =
+        app->page_repeat_last_action_emitted_ticks;
+  }
+  if (!app->page_repeat_active) return 0;
+
+  B32 update_pending = GetUpdateRect(app->window, 0, FALSE) != 0;
+  if (app->page_action_waiting_for_present &&
+      app->page_action_presentation_retry_attempt > 0 && !update_pending)
+  {
+    return 0;
+  }
+  if (app->page_action_waiting_for_present || update_pending ||
+      !app->last_present_complete)
+  {
+    if (!update_pending)
+      (void)InvalidateRect(app->window, 0, FALSE);
+    (void)UpdateWindow(app->window);
+  }
+  B32 complete =
+    app->complete_present_sequence > present_sequence_before;
+  if (out_timing)
+  {
+    out_timing->render_acquire_ticks = app->last_render_acquire_ticks;
+    out_timing->render_buffer_ticks = app->last_render_buffer_ticks;
+    out_timing->render_accessibility_ticks =
+      app->last_render_accessibility_ticks;
+    out_timing->render_present_ticks = app->last_render_present_ticks;
+  }
+  return complete;
 }
 
 FUNCTION B32
@@ -10390,6 +11915,42 @@ lectern0_library_route_keydown(Lectern0App *app, WPARAM key, B32 shift)
 }
 
 FUNCTION LRESULT CALLBACK
+lectern0_page_repeat_probe_paint_proc(HWND window,
+                                      UINT message,
+                                      WPARAM w_param,
+                                      LPARAM l_param)
+{
+  Lectern0Win32 *win32 =
+    (Lectern0Win32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
+  switch (message)
+  {
+    case WM_NCCREATE:
+    {
+      CREATESTRUCTW *create = (CREATESTRUCTW *)l_param;
+      SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)create->lpCreateParams);
+      return TRUE;
+    } break;
+
+    case WM_PAINT:
+    {
+      B32 had_update_region = GetUpdateRect(window, 0, FALSE) != 0;
+      PAINTSTRUCT paint = {0};
+      BeginPaint(window, &paint);
+      EndPaint(window, &paint);
+      if (win32 && win32->page_repeat_probe_track_paints &&
+          had_update_region &&
+          win32->page_repeat_probe_aux_paint_pending_count > 0)
+      {
+        win32->page_repeat_probe_aux_paint_pending_count -= 1;
+        win32->page_repeat_probe_aux_paint_dispatch_count += 1;
+      }
+      return 0;
+    } break;
+  }
+  return DefWindowProcW(window, message, w_param, l_param);
+}
+
+FUNCTION LRESULT CALLBACK
 lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 {
   Lectern0Win32 *win32 = (Lectern0Win32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -10411,6 +11972,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         app->height = (S32)HIWORD(l_param);
         if (app->gfx_ready && app->width > 0 && app->height > 0)
         {
+          app->last_present_complete = 0;
           (void)os_gfx_resize(&app->gfx, app->width, app->height);
           InvalidateRect(window, 0, FALSE);
         }
@@ -10438,8 +12000,25 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     case WM_CANCELMODE:
     case WM_CAPTURECHANGED:
     {
-      if (app) lectern0_host_pointer_cancel(app);
+      if (app)
+      {
+        lectern0_host_pointer_cancel(app);
+        if (message == WM_CANCELMODE)
+          lectern0_cancel_page_repeat_for_deactivation(app);
+      }
       return 0;
+    } break;
+
+    case WM_ACTIVATEAPP:
+    {
+      if (app && !w_param)
+        lectern0_cancel_page_repeat_for_deactivation(app);
+    } break;
+
+    case WM_ACTIVATE:
+    {
+      if (app && LOWORD(w_param) == WA_INACTIVE)
+        lectern0_cancel_page_repeat_for_deactivation(app);
     } break;
 
     case WM_LBUTTONDOWN:
@@ -10508,6 +12087,45 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       return 0;
     } break;
 
+    case WM_SYSKEYDOWN:
+    {
+      if (app)
+      {
+        B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        B32 system_repeat = (l_param & (1LL << 30)) != 0;
+        if (lectern0_page_repeat_consume_cancelled_keydown(app,
+                                                           w_param,
+                                                           l_param))
+        {
+          return 0;
+        }
+        if (app->page_repeat_active || app->page_action_pending)
+        {
+          B32 active_key = w_param == app->page_repeat_key;
+          lectern0_cancel_page_repeat_for_modifier(app);
+          if (active_key && system_repeat &&
+              lectern0_page_repeat_consume_cancelled_keydown(app,
+                                                              w_param,
+                                                              l_param))
+          {
+            return 0;
+          }
+        }
+        if (alt && w_param == VK_LEFT)
+        {
+          (void)lectern0_move_history(app, 0);
+          InvalidateRect(window, 0, FALSE);
+          return 0;
+        }
+        if (alt && w_param == VK_RIGHT)
+        {
+          (void)lectern0_move_history(app, 1);
+          InvalidateRect(window, 0, FALSE);
+          return 0;
+        }
+      }
+    } break;
+
     case WM_KEYDOWN:
     {
       if (app)
@@ -10515,15 +12133,59 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         B32 control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         B32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+        B32 system_repeat = (l_param & (1LL << 30)) != 0;
         B32 editing = lectern0_reader_view_text_editing(app);
         S32 repeat_direction = 0;
-        B32 repeat_candidate = !control && !alt &&
+        B32 page_action_candidate = !control && !alt &&
           lectern0_page_direction_for_key(app, w_param, &repeat_direction);
-        B32 system_repeat = (l_param & (1LL << 30)) != 0;
+        B32 repeat_candidate = page_action_candidate && !shift;
         B32 repeat_handled = 0;
-        if (repeat_candidate && system_repeat)
+        if (lectern0_page_repeat_consume_cancelled_keydown(app,
+                                                           w_param,
+                                                           l_param))
         {
           return 0;
+        }
+        if ((app->page_repeat_active || app->page_action_pending) &&
+            (control || shift || alt ||
+             lectern0_page_repeat_modifier_key(w_param)))
+        {
+          B32 active_key = w_param == app->page_repeat_key;
+          lectern0_cancel_page_repeat_for_modifier(app);
+          if (active_key && system_repeat &&
+              lectern0_page_repeat_consume_cancelled_keydown(app,
+                                                              w_param,
+                                                              l_param))
+          {
+            return 0;
+          }
+        }
+        if (!control && !alt &&
+            lectern0_page_repeat_should_coalesce_keydown(app,
+                                                         w_param,
+                                                         l_param,
+                                                         0))
+        {
+          if (app->page_repeat_native_coalesced_count < UINT32_MAX)
+            app->page_repeat_native_coalesced_count += 1;
+          return 0;
+        }
+        if (page_action_candidate && system_repeat) return 0;
+        if (page_action_candidate && app->page_action_waiting_for_present)
+        {
+          if (system_repeat) return 0;
+          lectern0_page_action_defer(app,
+                                     w_param,
+                                     repeat_direction,
+                                     repeat_candidate);
+          return 0;
+        }
+        if (page_action_candidate && app->page_repeat_active &&
+            w_param != app->page_repeat_key)
+        {
+          WPARAM cancelled_key = app->page_repeat_key;
+          lectern0_stop_page_repeat(app);
+          app->page_repeat_cancelled_key = cancelled_key;
         }
         if (w_param == 'O' && control)
         {
@@ -10574,14 +12236,18 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         else
         {
+          B32 page_move_succeeded = 0;
           Lectern0ReaderKeyRoute route =
-            lectern0_reader_view_route_keydown(app, w_param, shift);
+            lectern0_reader_view_route_keydown_ex(app,
+                                                  w_param,
+                                                  shift,
+                                                  &page_move_succeeded);
           if (route == Lectern0ReaderKeyRoute_CloseRequested)
           {
             InvalidateRect(window, 0, FALSE);
             return 0;
           }
-          repeat_handled = repeat_candidate &&
+          repeat_handled = repeat_candidate && page_move_succeeded &&
             route == Lectern0ReaderKeyRoute_Handled;
         }
         if (repeat_handled)
@@ -10595,23 +12261,56 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 
     case WM_KEYUP:
     {
-      if (app && app->page_repeat_active &&
-          w_param == app->page_repeat_key)
+      if (app)
       {
-        lectern0_stop_page_repeat(app);
+        if ((app->page_repeat_active || app->page_action_pending) &&
+            lectern0_page_repeat_modifier_key(w_param))
+        {
+          lectern0_cancel_page_repeat_for_modifier(app);
+        }
+        lectern0_page_action_release_key(app, w_param);
       }
       return 0;
     } break;
 
+    case WM_SYSKEYUP:
+    {
+      if (app)
+      {
+        if (app->page_repeat_active || app->page_action_pending)
+          lectern0_cancel_page_repeat_for_modifier(app);
+        if (w_param == app->page_repeat_cancelled_key)
+          app->page_repeat_cancelled_key = 0;
+      }
+    } break;
+
     case WM_KILLFOCUS:
     {
-      if (app) { lectern0_stop_page_repeat(app); }
+      if (app) lectern0_cancel_page_repeat_for_focus(app);
     } break;
 
     case WM_TIMER:
     {
+      if (app && w_param == Lectern0PresentationRetryTimerId)
+      {
+        (void)KillTimer(window, Lectern0PresentationRetryTimerId);
+        if (app->page_action_waiting_for_present)
+        {
+          if (app->page_action_presentation_retry_fired_count < UINT32_MAX)
+            app->page_action_presentation_retry_fired_count += 1;
+          (void)InvalidateRect(window, 0, FALSE);
+        }
+        return 0;
+      }
       if (app && w_param == Lectern0StateSaveTimerId)
       {
+        if (app->page_repeat_active || app->page_action_waiting_for_present ||
+            app->page_action_pending)
+        {
+          (void)KillTimer(window, Lectern0StateSaveTimerId);
+          app->state_save_pending = 1;
+          return 0;
+        }
         (void)lectern0_save_state(app);
         return 0;
       }
@@ -10620,27 +12319,63 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         (void)lectern0_adjacent_warm_step(app);
         return 0;
       }
-      if (app && w_param == Lectern0PageRepeatTimerId)
+    } break;
+
+    case Lectern0PageRepeatProbeMutationMessage:
+    {
+      if (app && win32 && win32->page_repeat_probe_track_paints &&
+          w_param < Lectern0PageRepeatProbeMutationCount)
       {
-        if (app->adjacent_warm_pending)
-          (void)lectern0_adjacent_warm_step(app);
-        (void)lectern0_page_repeat_step(app);
-        return 0;
+        switch ((U32)w_param)
+        {
+          case 0:
+            app->suppress_native_picker = 1;
+            (void)lectern0_pick_epub(app);
+            app->suppress_native_picker = 0;
+            break;
+          case 1: (void)lectern0_move_history(app, 0); break;
+          case 2:
+            (void)lectern0_apply_setting(
+              app, ReaderViewSetting_Theme, (ReaderViewKey)4001);
+            break;
+          case 3: (void)lectern0_seek_location(app, 0); break;
+          case 4:
+            lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+              .kind = ReaderViewAction_NextPage,
+            });
+            break;
+          case 5: (void)lectern0_repaginate(app); break;
+          case 6: (void)lectern0_close_book(app); break;
+        }
       }
+      return 0;
     } break;
 
     case WM_PAINT:
     {
+      B32 had_update_region = GetUpdateRect(window, 0, FALSE) != 0;
       PAINTSTRUCT paint = {0};
       BeginPaint(window, &paint);
-      if (app) { lectern0_render(app); }
+      B32 presented_complete = app ? lectern0_render(app) : 0;
       EndPaint(window, &paint);
+      if (win32 && win32->page_repeat_probe_track_paints &&
+          !had_update_region &&
+          win32->page_repeat_probe_main_null_paint_pending_count > 0)
+      {
+        win32->page_repeat_probe_main_null_paint_pending_count -= 1;
+        win32->page_repeat_probe_main_null_paint_dispatch_count += 1;
+      }
       if (app)
       {
         B32 needs_frame = app->reader_view_frame.action_count > 0 ||
           app->reader_view_frame.change_flags != ReaderViewFrameChange_None;
         lectern0_apply_reader_view_actions(app);
         if (needs_frame) InvalidateRect(window, 0, FALSE);
+        lectern0_note_stable_presentation(app,
+                                          presented_complete,
+                                          needs_frame);
+        lectern0_page_repeat_note_presented_frame(
+          app, app->last_present_complete);
       }
       return 0;
     } break;
@@ -17394,13 +19129,21 @@ lectern0_run_page_turn_regression_smoke(const char *path,
                                         const char *output_prefix)
 {
   enum { Width = 1100, Height = 760, ScanPageCount = 64,
-         PerformancePairCount = 16 };
+         PerformancePairCount = 16, HeldWidth = 1917, HeldHeight = 1137 };
   Lectern0App app = {0};
   U64 pixel_count = (U64)Width * Height;
+  U64 held_pixel_count = (U64)HeldWidth * HeldHeight;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
+  U32 *held_pixels =
+    (U32 *)calloc((size_t)held_pixel_count, sizeof(U32));
   RenderBuffer buffer = {0};
+  RenderBuffer held_buffer = {0};
   U32 forward_count = 0;
   U32 backward_count = 0;
+  SourceReaderPageRange forward_path[ScanPageCount + 1] = {0};
+  U32 reverse_exact_match_count = 0;
+  B32 forward_endpoint_valid = 0;
+  B32 returned_to_forward_start = 0;
   U32 failure_step = 0;
   B32 failure_backward = 0;
   U64 move_total_ticks = 0;
@@ -17417,10 +19160,15 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U32 held_cache_hit_count = 0;
   U32 held_pixel_exact_count = 0;
   U32 held_warm_step_count = 0;
+  U32 held_warm_on_action_count = 0;
+  U32 held_render_gate_block_count = 0;
+  U32 held_native_repeat_coalesced_count = 0;
   U64 held_move_total_ticks = 0;
   U64 held_move_max_ticks = 0;
   U64 held_render_total_ticks = 0;
   U64 held_render_max_ticks = 0;
+  U64 held_action_total_ticks = 0;
+  U64 held_action_max_ticks = 0;
   U64 held_warm_total_ticks = 0;
   U64 held_warm_max_ticks = 0;
   U64 warmed_render_total_ticks = 0;
@@ -17429,16 +19177,56 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U64 prepared_move_total_ticks = 0;
   U64 prepared_move_max_ticks = 0;
   U32 warmed_cache_hit_count = 0;
+  U32 canonical_nonempty_frame_count = 0;
+  U32 zero_page_or_frame_count = 0;
+  U32 orphan_text_page_count = 0;
+  U32 invalid_word_start_page_count = 0;
+  U32 gotm_text_frame_count = 0;
+  U64 gotm_minimum_text_bytes = UINT64_MAX;
+  U32 gotm_minimum_text_rows = UINT32_MAX;
+  B32 deferred_reversal_keyup_passed = 0;
+  String8 boundary_ascii = str8_from_cstr("Moon's lord");
+  String8 boundary_utf8 = str8_from_cstr("Moon\xe2\x80\x99s lord");
+  String8 boundary_hyphen = str8_from_cstr("Moon-s lord");
+  B32 boundary_oracle_self_test =
+    !lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 4) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 5) &&
+    lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 7) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 4) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 5) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 7) &&
+    lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 9) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 4) &&
+    !lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 5) &&
+    lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 7);
   RenderTextCacheStats cache_stats = {0};
+  U32 first_zero_page_count_step = ScanPageCount;
+  SourceReaderPageRange first_zero_before_page = {0};
+  SourceReaderPageRange first_zero_after_page = {0};
+  EpubReaderNavigationStats first_zero_nav_before = {0};
+  EpubReaderNavigationStats first_zero_nav_after = {0};
+  U32 first_zero_prepared_ring_before = 0;
+  U32 first_zero_prepared_ring_after = 0;
+  B32 first_zero_warm_pending_before = 0;
+  B32 first_zero_warm_ready_before = 0;
+  SourceReaderPageRange failure_before_page = {0};
+  SourceReaderPageRange failure_after_page = {0};
+  EpubReaderNavigationStats failure_nav_before = {0};
+  EpubReaderNavigationStats failure_nav_after = {0};
+  EpubReaderResult failure_move_result = EpubReaderResult_Ok;
   U32 checkpoint = 0;
   int result = 1;
 
   checkpoint = 1;
-  if (!pixels || !path || !path[0] || !output_prefix || !output_prefix[0] ||
+  if (!pixels || !held_pixels || !path || !path[0] ||
+      !output_prefix || !output_prefix[0] ||
       !lectern0_app_init(&app, Width, Height, 1, 0) ||
       !lectern0_open_path(&app, path))
     goto cleanup;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
+  render_buffer_init(&held_buffer, held_pixels,
+                     HeldWidth, HeldHeight, HeldWidth);
+  forward_path[0] = app.reader.current_page;
 
   checkpoint = 10;
   for (U32 step = 0; step < ScanPageCount; step += 1)
@@ -17448,6 +19236,30 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     U64 render_ticks = os_time_ticks() - render_start;
     render_total_ticks += render_ticks;
     render_max_ticks = MAX(render_max_ticks, render_ticks);
+    B32 orphan_text = 0;
+    B32 invalid_word_start = 0;
+    U64 text_bytes = 0;
+    U32 text_rows = 0;
+    if (app.reader.current_page.spine_page_count == 0)
+      zero_page_or_frame_count += 1;
+    B32 canonical_nonempty =
+      lectern0_gotm_navigation_frame_is_canonical_nonempty(
+        &app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows);
+    if (app.frame.image_count == 0 &&
+        app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+    {
+      gotm_text_frame_count += 1;
+      gotm_minimum_text_bytes = MIN(gotm_minimum_text_bytes, text_bytes);
+      gotm_minimum_text_rows = MIN(gotm_minimum_text_rows, text_rows);
+    }
+    if (!canonical_nonempty)
+    {
+      if (orphan_text) orphan_text_page_count += 1;
+      if (invalid_word_start) invalid_word_start_page_count += 1;
+      failure_step = step;
+      goto cleanup;
+    }
+    canonical_nonempty_frame_count += 1;
     if (!app.reader_view_ready || !app.reader_view_layout.toolbar_visible ||
         app.reader_view_frame.error_flags != ReaderViewFrameError_None ||
         app.draw_commands.overflow_count != 0)
@@ -17455,33 +19267,109 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       failure_step = step;
       goto cleanup;
     }
+    SourceReaderPageRange move_before_page = app.reader.current_page;
+    EpubReaderNavigationStats move_nav_before = app.reader.navigation_stats;
+    U32 move_prepared_ring_before = app.reader.prepared_window_ring.count;
+    B32 move_warm_pending_before = app.adjacent_warm_pending;
+    B32 move_warm_ready_before = app.adjacent_warm_frame_ready;
     U64 move_start = os_time_ticks();
     EpubReaderResult move = lectern0_move_page(&app, 1);
     U64 move_ticks = os_time_ticks() - move_start;
+    SourceReaderPageRange move_after_page = app.reader.current_page;
+    EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
+    if (first_zero_page_count_step == ScanPageCount &&
+        move_before_page.spine_page_count > 0 &&
+        move_after_page.spine_page_count == 0)
+    {
+      first_zero_page_count_step = step;
+      first_zero_before_page = move_before_page;
+      first_zero_after_page = move_after_page;
+      first_zero_nav_before = move_nav_before;
+      first_zero_nav_after = move_nav_after;
+      first_zero_prepared_ring_before = move_prepared_ring_before;
+      first_zero_prepared_ring_after = app.reader.prepared_window_ring.count;
+      first_zero_warm_pending_before = move_warm_pending_before;
+      first_zero_warm_ready_before = move_warm_ready_before;
+    }
     if (move != EpubReaderResult_Ok)
     {
       failure_step = step;
+      failure_before_page = move_before_page;
+      failure_after_page = move_after_page;
+      failure_nav_before = move_nav_before;
+      failure_nav_after = move_nav_after;
+      failure_move_result = move;
       goto cleanup;
     }
     move_total_ticks += move_ticks;
     move_max_ticks = MAX(move_max_ticks, move_ticks);
     forward_count += 1;
+    forward_path[forward_count] = move_after_page;
   }
   if (forward_count != ScanPageCount) goto cleanup;
+  lectern0_render_to_buffer(&app, &buffer);
+  forward_endpoint_valid =
+    lectern0_gotm_navigation_frame_is_canonical_nonempty(
+      &app, 0, 0, 0, 0) &&
+    app.reader_view_ready && app.reader_view_layout.toolbar_visible &&
+    app.reader_view_frame.error_flags == ReaderViewFrameError_None &&
+    app.draw_commands.overflow_count == 0 &&
+    lectern0_canonical_page_identity_equal(
+      lectern0_canonical_page_identity(app.reader.current_page),
+      lectern0_canonical_page_identity(forward_path[ScanPageCount]));
+  if (!forward_endpoint_valid) goto cleanup;
 
   checkpoint = 20;
   for (U32 step = 0; step < forward_count; step += 1)
   {
+    SourceReaderPageRange move_before_page = app.reader.current_page;
+    EpubReaderNavigationStats move_nav_before = app.reader.navigation_stats;
     U64 move_start = os_time_ticks();
     EpubReaderResult move = lectern0_move_page(&app, -1);
     U64 move_ticks = os_time_ticks() - move_start;
+    SourceReaderPageRange move_after_page = app.reader.current_page;
+    EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
     if (move == EpubReaderResult_Boundary) break;
     if (move != EpubReaderResult_Ok)
     {
       failure_step = step;
       failure_backward = 1;
+      failure_before_page = move_before_page;
+      failure_after_page = move_after_page;
+      failure_nav_before = move_nav_before;
+      failure_nav_after = move_nav_after;
+      failure_move_result = move;
       goto cleanup;
     }
+    SourceReaderPageRange expected_reverse_page =
+      forward_path[forward_count - step - 1];
+    if (!lectern0_canonical_page_identity_equal(
+          lectern0_canonical_page_identity(move_after_page),
+          lectern0_canonical_page_identity(expected_reverse_page)))
+    {
+      fprintf(stderr,
+              "lectern0_page_turn_reverse_mismatch step=%u expected=%u:%llu-%llu:%llu/%llu actual=%u:%llu-%llu:%llu/%llu\n",
+              step,
+              expected_reverse_page.spine_index,
+              (unsigned long long)expected_reverse_page.first_byte,
+              (unsigned long long)expected_reverse_page.one_past_last_byte,
+              (unsigned long long)expected_reverse_page.spine_page_index,
+              (unsigned long long)expected_reverse_page.spine_page_count,
+              move_after_page.spine_index,
+              (unsigned long long)move_after_page.first_byte,
+              (unsigned long long)move_after_page.one_past_last_byte,
+              (unsigned long long)move_after_page.spine_page_index,
+              (unsigned long long)move_after_page.spine_page_count);
+      failure_step = step;
+      failure_backward = 1;
+      failure_before_page = move_before_page;
+      failure_after_page = move_after_page;
+      failure_nav_before = move_nav_before;
+      failure_nav_after = move_nav_after;
+      failure_move_result = move;
+      goto cleanup;
+    }
+    reverse_exact_match_count += 1;
     move_total_ticks += move_ticks;
     move_max_ticks = MAX(move_max_ticks, move_ticks);
     backward_count += 1;
@@ -17490,6 +19378,31 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     U64 render_ticks = os_time_ticks() - render_start;
     render_total_ticks += render_ticks;
     render_max_ticks = MAX(render_max_ticks, render_ticks);
+    B32 orphan_text = 0;
+    B32 invalid_word_start = 0;
+    U64 text_bytes = 0;
+    U32 text_rows = 0;
+    if (app.reader.current_page.spine_page_count == 0)
+      zero_page_or_frame_count += 1;
+    B32 canonical_nonempty =
+      lectern0_gotm_navigation_frame_is_canonical_nonempty(
+        &app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows);
+    if (app.frame.image_count == 0 &&
+        app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+    {
+      gotm_text_frame_count += 1;
+      gotm_minimum_text_bytes = MIN(gotm_minimum_text_bytes, text_bytes);
+      gotm_minimum_text_rows = MIN(gotm_minimum_text_rows, text_rows);
+    }
+    if (!canonical_nonempty)
+    {
+      if (orphan_text) orphan_text_page_count += 1;
+      if (invalid_word_start) invalid_word_start_page_count += 1;
+      failure_step = step;
+      failure_backward = 1;
+      goto cleanup;
+    }
+    canonical_nonempty_frame_count += 1;
     if (!app.reader_view_ready || !app.reader_view_layout.toolbar_visible ||
         app.reader_view_frame.error_flags != ReaderViewFrameError_None ||
         app.draw_commands.overflow_count != 0)
@@ -17499,7 +19412,13 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       goto cleanup;
     }
   }
-  if (backward_count + 1 < forward_count) goto cleanup;
+  if (backward_count != ScanPageCount) goto cleanup;
+  returned_to_forward_start = lectern0_canonical_page_identity_equal(
+    lectern0_canonical_page_identity(app.reader.current_page),
+    lectern0_canonical_page_identity(forward_path[0]));
+  if (!returned_to_forward_start ||
+      reverse_exact_match_count != ScanPageCount)
+    goto cleanup;
 
   checkpoint = 30;
   if (!epub_reader_rebuild_search(&app.reader,
@@ -17510,76 +19429,187 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     goto cleanup;
   reader_view_state_init(&app.reader_view_state);
   app.host_focus_control = Lectern0HostControl_None;
+  app.width = HeldWidth;
+  app.height = HeldHeight;
+  lectern0_cancel_adjacent_warm(&app);
+  lectern0_invalidate_adjacent_page(&app);
+  lectern0_render_to_buffer(&app, &held_buffer);
+  if (!app.reader_view_ready || !app.reader_view_layout.toolbar_visible ||
+      app.reader_view_frame.error_flags != ReaderViewFrameError_None)
+    goto cleanup;
+  checkpoint = 31;
+  SourceReaderPageRange deferred_reversal_origin = app.reader.current_page;
+  U64 deferred_emitted_before = app.page_action_emitted_count;
+  U64 deferred_presented_before = app.page_action_presented_count;
+  U32 deferred_overlap_before = app.page_action_overlap_count;
+  if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  lectern0_page_action_note_emitted(&app);
+  lectern0_begin_page_repeat(&app, VK_RIGHT, 1);
+  lectern0_page_action_defer(&app, VK_LEFT, -1, 1);
+  lectern0_page_action_release_key(&app, VK_LEFT);
+  if (app.page_repeat_active || !app.page_action_waiting_for_present ||
+      !app.page_action_pending || app.page_action_pending_arm_repeat)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &held_buffer);
+  B32 deferred_forward_presented =
+    lectern0_frame_presentation_is_complete(&app) &&
+    lectern0_capture_rendered_presentation_identity(
+      &app, &app.last_surface_identity);
+  lectern0_page_repeat_note_presented_frame(&app,
+                                             deferred_forward_presented);
+  SourceReaderPageRange deferred_reversal_return = app.reader.current_page;
+  if (!deferred_forward_presented || app.page_repeat_active ||
+      !app.page_action_waiting_for_present || app.page_action_pending ||
+      deferred_reversal_return.spine_index !=
+        deferred_reversal_origin.spine_index ||
+      deferred_reversal_return.first_byte != deferred_reversal_origin.first_byte ||
+      deferred_reversal_return.one_past_last_byte !=
+        deferred_reversal_origin.one_past_last_byte)
+    goto cleanup;
+  lectern0_render_to_buffer(&app, &held_buffer);
+  B32 deferred_return_presented =
+    lectern0_frame_presentation_is_complete(&app) &&
+    lectern0_capture_rendered_presentation_identity(
+      &app, &app.last_surface_identity);
+  lectern0_page_repeat_note_presented_frame(&app,
+                                             deferred_return_presented);
+  lectern0_page_action_release_key(&app, VK_RIGHT);
+  if (!deferred_return_presented || app.page_action_waiting_for_present ||
+      app.page_action_pending || app.page_repeat_active ||
+      app.page_action_emitted_count != deferred_emitted_before + 2 ||
+      app.page_action_presented_count != deferred_presented_before + 2 ||
+      app.page_action_overlap_count != deferred_overlap_before)
+    goto cleanup;
+  deferred_reversal_keyup_passed = 1;
   for (U32 repeat_pass = 0; repeat_pass < 2; repeat_pass += 1)
   {
     S32 repeat_direction = repeat_pass == 0 ? 1 : -1;
     WPARAM repeat_key = repeat_direction > 0 ? VK_RIGHT : VK_LEFT;
-    checkpoint = 31 + repeat_pass;
+    checkpoint = 32 + repeat_pass;
     lectern0_stop_page_repeat(&app);
     lectern0_cancel_adjacent_warm(&app);
     lectern0_invalidate_adjacent_page(&app);
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache) ||
         lectern0_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
       goto cleanup;
+    lectern0_page_action_note_emitted(&app);
 
-    /* A real first keydown moves immediately, then arms the bounded repeat.
-       Simulate the timer frames in their production order: one idle warm
-       opportunity followed by at most one accepted repeat action. */
-    app.page_repeat_active = 1;
-    app.page_repeat_direction = repeat_direction;
-    app.page_repeat_key = repeat_key;
-    app.page_repeat_frame_count = 0;
-    lectern0_schedule_adjacent_warm(&app);
+    /* A production keydown moves immediately and then arms repeat. Lock the
+       same wall-clock due time, complete-presentation gate, active/same-key
+       native coalescing, and no-catch-up ordering used by the Win32 loop. */
+    lectern0_begin_page_repeat(&app, repeat_key, repeat_direction);
+    S32 coalesced_direction = 0;
+    WPARAM alternate_key = repeat_direction > 0 ? VK_NEXT : VK_PRIOR;
+    WPARAM opposite_key = repeat_direction > 0 ? VK_LEFT : VK_RIGHT;
+    if (!lectern0_page_repeat_should_coalesce_keydown(
+          &app, repeat_key, (LPARAM)0x40000001, &coalesced_direction) ||
+        coalesced_direction != repeat_direction ||
+        lectern0_page_repeat_should_coalesce_keydown(
+          &app, repeat_key, (LPARAM)1, 0) ||
+        lectern0_page_repeat_should_coalesce_keydown(
+          &app, alternate_key, (LPARAM)0x40000001, 0) ||
+        lectern0_page_repeat_should_coalesce_keydown(
+          &app, opposite_key, (LPARAM)0x40000001, 0))
+      goto cleanup;
+    held_native_repeat_coalesced_count += 1;
+
+    U64 initial_due_ticks = app.page_repeat_next_move_ticks;
+    Lectern0PageRepeatFrameResult blocked_tick =
+      lectern0_page_repeat_frame_step(&app, initial_due_ticks);
+    if (!blocked_tick.action_due || blocked_tick.action_emitted ||
+        !blocked_tick.action_waiting_for_render)
+      goto cleanup;
+    lectern0_page_repeat_note_presented_frame(&app, 0);
+    if (!app.page_action_waiting_for_present)
+      goto cleanup;
+    held_render_gate_block_count += 1;
+    lectern0_render_to_buffer(&app, &held_buffer);
+    B32 initial_present_complete =
+      lectern0_frame_presentation_is_complete(&app) &&
+      lectern0_capture_rendered_presentation_identity(
+        &app, &app.last_surface_identity);
+    lectern0_page_repeat_note_presented_frame(&app,
+                                               initial_present_complete);
+    if (!initial_present_complete || app.page_action_waiting_for_present)
+      goto cleanup;
+    Lectern0PageRepeatFrameResult early_tick =
+      lectern0_page_repeat_frame_step(
+        &app, initial_due_ticks > 0 ? initial_due_ticks - 1 : 0);
+    if (early_tick.action_due || early_tick.action_emitted ||
+        early_tick.action_waiting_for_render)
+      goto cleanup;
+
     U32 pass_move_count = 0;
-    U32 repeat_frame_cap = Lectern0PageRepeatInitialFrames +
-      Lectern0PageRepeatIntervalFrames * 3;
-    for (U32 repeat_frame = 0;
-         repeat_frame < repeat_frame_cap && pass_move_count < 2;
-         repeat_frame += 1)
+    U64 pass_warmed_hash = 0;
+    for (U32 repeat_step = 0; repeat_step < 2; repeat_step += 1)
     {
-      if (app.adjacent_warm_pending)
-      {
-        U64 held_warm_start = os_time_ticks();
-        (void)lectern0_adjacent_warm_step(&app);
-        U64 held_warm_ticks = os_time_ticks() - held_warm_start;
-        held_warm_total_ticks += held_warm_ticks;
-        held_warm_max_ticks = MAX(held_warm_max_ticks, held_warm_ticks);
-        held_warm_step_count += 1;
-      }
-      U64 held_move_start = os_time_ticks();
-      B32 repeated = lectern0_page_repeat_step(&app);
-      U64 held_move_ticks = os_time_ticks() - held_move_start;
-      if (!repeated) continue;
-      held_move_total_ticks += held_move_ticks;
-      held_move_max_ticks = MAX(held_move_max_ticks, held_move_ticks);
+      U64 repeat_now_ticks = app.page_repeat_next_move_ticks;
+      U64 held_step_start = os_time_ticks();
+      Lectern0PageRepeatFrameResult tick =
+        lectern0_page_repeat_frame_step(&app, repeat_now_ticks);
+      U64 held_step_ticks = os_time_ticks() - held_step_start;
+      if (!tick.action_due || !tick.action_emitted ||
+          tick.action_waiting_for_render)
+        goto cleanup;
+      held_move_total_ticks += held_step_ticks;
+      held_move_max_ticks = MAX(held_move_max_ticks, held_step_ticks);
       repeat_move_count += 1;
       pass_move_count += 1;
       if (repeat_direction > 0) repeat_forward_move_count += 1;
       else repeat_backward_move_count += 1;
 
       U64 held_render_start = os_time_ticks();
-      lectern0_render_to_buffer(&app, &buffer);
+      lectern0_render_to_buffer(&app, &held_buffer);
       U64 held_render_ticks = os_time_ticks() - held_render_start;
       held_render_total_ticks += held_render_ticks;
       held_render_max_ticks = MAX(held_render_max_ticks, held_render_ticks);
-      if (!app.adjacent_page_cache_used_last_render) goto cleanup;
-      held_cache_hit_count += 1;
-      U64 warmed_hash = u64_hash_bytes(
-        pixels, pixel_count * sizeof(*pixels));
-
-      lectern0_invalidate_adjacent_page(&app);
-      if (!font_cache_clear_shaped_text(&app.render_state.text_cache))
+      U64 held_action_ticks = held_step_ticks + held_render_ticks;
+      held_action_total_ticks += held_action_ticks;
+      held_action_max_ticks = MAX(held_action_max_ticks, held_action_ticks);
+      B32 held_present_complete =
+        lectern0_frame_presentation_is_complete(&app) &&
+        lectern0_capture_rendered_presentation_identity(
+          &app, &app.last_surface_identity);
+      lectern0_page_repeat_note_presented_frame(&app,
+                                                 held_present_complete);
+      if (!held_present_complete || app.page_action_waiting_for_present)
         goto cleanup;
-      lectern0_render_to_buffer(&app, &buffer);
-      U64 cold_hash = u64_hash_bytes(
-        pixels, pixel_count * sizeof(*pixels));
-      if (warmed_hash != cold_hash) goto cleanup;
-      held_pixel_exact_count += 1;
+      if (repeat_step + 1 < 2)
+      {
+        U64 next_due_ticks = app.page_repeat_next_move_ticks;
+        Lectern0PageRepeatFrameResult before_due_tick =
+          lectern0_page_repeat_frame_step(
+            &app, next_due_ticks > 0 ? next_due_ticks - 1 : 0);
+        if (before_due_tick.action_due || before_due_tick.action_emitted ||
+            before_due_tick.action_waiting_for_render)
+          goto cleanup;
+      }
+      if (app.adjacent_page_cache_used_last_render)
+        held_cache_hit_count += 1;
+      pass_warmed_hash = u64_hash_bytes(
+        held_pixels, held_pixel_count * sizeof(*held_pixels));
     }
-    if (pass_move_count != 2) goto cleanup;
+    if (pass_move_count != 2 || pass_warmed_hash == 0) goto cleanup;
+    lectern0_stop_page_repeat(&app);
+    if (lectern0_page_repeat_should_coalesce_keydown(
+          &app, repeat_key, (LPARAM)0x40000001, 0))
+      goto cleanup;
+    lectern0_cancel_adjacent_warm(&app);
+    lectern0_invalidate_adjacent_page(&app);
+    if (!font_cache_clear_shaped_text(&app.render_state.text_cache))
+      goto cleanup;
+    lectern0_render_to_buffer(&app, &held_buffer);
+    U64 cold_hash = u64_hash_bytes(
+      held_pixels, held_pixel_count * sizeof(*held_pixels));
+    if (pass_warmed_hash != cold_hash) goto cleanup;
+    held_pixel_exact_count += 1;
   }
   lectern0_stop_page_repeat(&app);
   lectern0_cancel_adjacent_warm(&app);
+  app.width = Width;
+  app.height = Height;
+  lectern0_invalidate_adjacent_page(&app);
+  lectern0_render_to_buffer(&app, &buffer);
 
   checkpoint = 40;
   for (U32 attempt = 0;
@@ -17647,8 +19677,22 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       pixel_exact_count != PerformancePairCount ||
       warmed_cache_hit_count != PerformancePairCount ||
       repeat_move_count != 4 || repeat_forward_move_count != 2 ||
-      repeat_backward_move_count != 2 || held_cache_hit_count != 4 ||
-      held_pixel_exact_count != 4 ||
+      repeat_backward_move_count != 2 || held_cache_hit_count != 0 ||
+      held_pixel_exact_count != 2 ||
+      held_warm_on_action_count != 0 ||
+      held_warm_step_count != 0 ||
+      held_render_gate_block_count != 2 ||
+      held_native_repeat_coalesced_count != 2 ||
+      !forward_endpoint_valid || reverse_exact_match_count != ScanPageCount ||
+      !returned_to_forward_start ||
+      !deferred_reversal_keyup_passed || !boundary_oracle_self_test ||
+      gotm_text_frame_count == 0 ||
+      gotm_minimum_text_bytes < Lectern0GotmMinimumProseTextBytes ||
+      gotm_minimum_text_rows < Lectern0GotmMinimumProseTextRows ||
+      canonical_nonempty_frame_count != ScanPageCount * 2 ||
+      zero_page_or_frame_count != 0 || orphan_text_page_count != 0 ||
+      invalid_word_start_page_count != 0 ||
+      first_zero_page_count_step != ScanPageCount ||
       warmed_render_total_ticks >= cold_render_total_ticks)
     goto cleanup;
   if (!render_text_cache_stats(&app.render_state, &cache_stats)) goto cleanup;
@@ -17658,14 +19702,30 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_page_turn_regression_smoke result=pass forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=initial24_interval3_coalesced repeat_moves=%u held_repeat=directional_prepared_cache held_forward=%u held_backward=%u held_cache_hits=%u/4 held_pixel_exact=%u/4 held_warm_steps=%u held_warm_avg_ms=%.3f held_warm_max_ms=%.3f held_move_avg_ms=%.3f held_move_max_ms=%.3f held_render_avg_ms=%.3f held_render_max_ms=%.3f prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
+            "lectern0_page_turn_regression_smoke result=pass forward=%u backward=%u direct_traversal=64+64_exact forward_endpoint_valid=%d/1 reverse_range_exact=%u/%u returned_to_start=%d/1 canonical_nonempty_frames=%u/%u zero_pages_or_frames=%u/0 orphan_text_pages=%u/0 invalid_word_start_pages=%u/0 boundary_oracle=raw_spine_utf8_word_start gotm_prose_scope=active_spine_text_ge_128 boundary_oracle_self_test=%d/1 row_coverage=%u/%u gotm_minimum_text_bytes=%llu/%d gotm_minimum_text_rows=%u/%d deferred_reversal_keyup=%d/1 prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=wall_clock24_interval3_coalesced_no_catch_up repeat_moves=%u held_repeat=action_first_render_gated_no_speculative held_viewport=%ux%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u/2 held_native_repeats_coalesced=%u/2 held_render_gate_blocks=%u/2 held_warm_on_action=%u held_warm_steps=%u held_warm_avg_ms=%.3f held_warm_max_ms=%.3f held_move_avg_ms=%.3f held_move_max_ms=%.3f held_render_avg_ms=%.3f held_render_max_ms=%.3f held_action_total_avg_ms=%.3f held_action_total_max_ms=%.3f prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
             forward_count, backward_count,
+            forward_endpoint_valid,
+            reverse_exact_match_count, ScanPageCount,
+            returned_to_forward_start,
+            canonical_nonempty_frame_count, ScanPageCount * 2,
+            zero_page_or_frame_count, orphan_text_page_count,
+            invalid_word_start_page_count, boundary_oracle_self_test,
+            canonical_nonempty_frame_count, ScanPageCount * 2,
+            (unsigned long long)gotm_minimum_text_bytes,
+            Lectern0GotmMinimumProseTextBytes,
+            gotm_minimum_text_rows,
+            Lectern0GotmMinimumProseTextRows,
+            deferred_reversal_keyup_passed,
             adjacent_warm_page_count, adjacent_warm_step_count,
             pixel_exact_count, performance_pair_count,
             warmed_cache_hit_count, performance_pair_count,
             repeat_move_count,
+            HeldWidth, HeldHeight,
             repeat_forward_move_count, repeat_backward_move_count,
             held_cache_hit_count, held_pixel_exact_count,
+            held_native_repeat_coalesced_count,
+            held_render_gate_block_count,
+            held_warm_on_action_count,
             held_warm_step_count,
             1000.0 * (double)held_warm_total_ticks /
               (double)os_time_frequency() /
@@ -17681,6 +19741,11 @@ cleanup:
               (double)os_time_frequency() /
               (double)MAX(repeat_move_count, 1),
             1000.0 * (double)held_render_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_action_total_ticks /
+              (double)os_time_frequency() /
+              (double)MAX(repeat_move_count, 1),
+            1000.0 * (double)held_action_max_ticks /
               (double)os_time_frequency(),
             1000.0 * (double)prepared_move_total_ticks /
               (double)os_time_frequency() /
@@ -17728,7 +19793,7 @@ cleanup:
       }
     }
     fprintf(stderr,
-            "lectern0_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d warm_direction=%d pixel_exact=%u/%u repeat_moves=%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u held_warm_steps=%u ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu page=%llu/%llu location=%llu/%llu\n",
+            "lectern0_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d warm_direction=%d pixel_exact=%u/%u repeat_moves=%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u held_native_repeats_coalesced=%u held_render_gate_blocks=%u held_warm_on_action=%u held_warm_steps=%u held_warm_max_ms=%.3f held_move_max_ms=%.3f held_render_max_ms=%.3f held_action_total_max_ms=%.3f ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu frame_page_summary=%llu/%llu canonical_page=%u:%llu-%llu:%llu/%llu frame_visible=%llu+%llu frame_images=%u frame_rows=%u frame_rows_complete=%d frame_non_whitespace=%llu active_spine_text_bytes=%llu prose_scope=%d location=%llu/%llu canonical_zero_step=%u zero_before=%u:%llu-%llu:%llu/%llu zero_after=%u:%llu-%llu:%llu/%llu zero_producer=%d zero_diagnostic=%d zero_resolved=%u:%llu-%llu zero_prepared_hit=%d zero_adjacent_kind=%d zero_prepared_build=%llu>%llu zero_prepared_hits=%llu>%llu zero_prepared_misses=%llu>%llu zero_ring=%u>%u zero_host_warm=%d/%d failure_result=%d failure_before=%u:%llu-%llu:%llu/%llu failure_after=%u:%llu-%llu:%llu/%llu failure_producer=%d failure_diagnostic=%d failure_resolved=%u:%llu-%llu failure_prepared_hit=%d failure_adjacent_kind=%d failure_prepared_build=%llu>%llu failure_prepared_hits=%llu>%llu failure_prepared_misses=%llu>%llu status=\"%s\"\n",
             checkpoint, failure_backward ? "backward" : "forward", failure_step,
             forward_count, backward_count, adjacent_warm_page_count,
             adjacent_warm_step_count, app.adjacent_warm_next_text_command,
@@ -17737,7 +19802,19 @@ cleanup:
             pixel_exact_count, performance_pair_count, repeat_move_count,
             repeat_forward_move_count, repeat_backward_move_count,
             held_cache_hit_count, held_pixel_exact_count,
-            held_warm_step_count, app.reader_view_ready,
+            held_native_repeat_coalesced_count,
+            held_render_gate_block_count,
+            held_warm_on_action_count,
+            held_warm_step_count,
+            1000.0 * (double)held_warm_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_move_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_render_max_ticks /
+              (double)os_time_frequency(),
+            1000.0 * (double)held_action_max_ticks /
+              (double)os_time_frequency(),
+            app.reader_view_ready,
             app.reader_view_layout.toolbar_visible,
             app.reader_view_frame.error_flags,
             app.reader_view_frame.change_flags,
@@ -17746,19 +19823,2080 @@ cleanup:
             (unsigned long long)app.reader.view_byte_offset,
             (unsigned long long)app.frame.page_index,
             (unsigned long long)app.frame.page_count,
+            app.reader.current_page.spine_index,
+            (unsigned long long)app.reader.current_page.first_byte,
+            (unsigned long long)
+              app.reader.current_page.one_past_last_byte,
+            (unsigned long long)app.reader.current_page.spine_page_index,
+            (unsigned long long)app.reader.current_page.spine_page_count,
+            (unsigned long long)app.frame.view_byte_offset,
+            (unsigned long long)app.frame.visible_text.size,
+            app.frame.image_count,
+            app.frame.style_row_count,
+            lectern0_frame_text_rows_are_complete(&app.frame, 0, 0),
+            (unsigned long long)
+              lectern0_frame_non_whitespace_byte_count(&app.frame),
+            (unsigned long long)app.reader.spine_text.size,
+            app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes,
             (unsigned long long)location.location_index,
-            (unsigned long long)location.location_count);
+            (unsigned long long)location.location_count,
+            first_zero_page_count_step,
+            first_zero_before_page.spine_index,
+            (unsigned long long)first_zero_before_page.first_byte,
+            (unsigned long long)first_zero_before_page.one_past_last_byte,
+            (unsigned long long)first_zero_before_page.spine_page_index,
+            (unsigned long long)first_zero_before_page.spine_page_count,
+            first_zero_after_page.spine_index,
+            (unsigned long long)first_zero_after_page.first_byte,
+            (unsigned long long)first_zero_after_page.one_past_last_byte,
+            (unsigned long long)first_zero_after_page.spine_page_index,
+            (unsigned long long)first_zero_after_page.spine_page_count,
+            first_zero_nav_after.page_move_last_producer_code,
+            first_zero_nav_after.page_move_last_diagnostic_code,
+            first_zero_nav_after.page_move_last_resolved_spine,
+            (unsigned long long)
+              first_zero_nav_after.page_move_last_resolved_first_byte,
+            (unsigned long long)
+              first_zero_nav_after.page_move_last_resolved_one_past_last_byte,
+            first_zero_nav_after.page_move_last_prepared_hit,
+            first_zero_nav_after.adjacent_resolve_last_kind,
+            (unsigned long long)first_zero_nav_before.prepared_window_build_count,
+            (unsigned long long)first_zero_nav_after.prepared_window_build_count,
+            (unsigned long long)first_zero_nav_before.prepared_window_hit_count,
+            (unsigned long long)first_zero_nav_after.prepared_window_hit_count,
+            (unsigned long long)first_zero_nav_before.prepared_window_miss_count,
+            (unsigned long long)first_zero_nav_after.prepared_window_miss_count,
+            first_zero_prepared_ring_before,
+            first_zero_prepared_ring_after,
+            first_zero_warm_pending_before,
+            first_zero_warm_ready_before,
+            (int)failure_move_result,
+            failure_before_page.spine_index,
+            (unsigned long long)failure_before_page.first_byte,
+            (unsigned long long)failure_before_page.one_past_last_byte,
+            (unsigned long long)failure_before_page.spine_page_index,
+            (unsigned long long)failure_before_page.spine_page_count,
+            failure_after_page.spine_index,
+            (unsigned long long)failure_after_page.first_byte,
+            (unsigned long long)failure_after_page.one_past_last_byte,
+            (unsigned long long)failure_after_page.spine_page_index,
+            (unsigned long long)failure_after_page.spine_page_count,
+            failure_nav_after.page_move_last_producer_code,
+            failure_nav_after.page_move_last_diagnostic_code,
+            failure_nav_after.page_move_last_resolved_spine,
+            (unsigned long long)
+              failure_nav_after.page_move_last_resolved_first_byte,
+            (unsigned long long)
+              failure_nav_after.page_move_last_resolved_one_past_last_byte,
+            failure_nav_after.page_move_last_prepared_hit,
+            failure_nav_after.adjacent_resolve_last_kind,
+            (unsigned long long)failure_nav_before.prepared_window_build_count,
+            (unsigned long long)failure_nav_after.prepared_window_build_count,
+            (unsigned long long)failure_nav_before.prepared_window_hit_count,
+            (unsigned long long)failure_nav_after.prepared_window_hit_count,
+            (unsigned long long)failure_nav_before.prepared_window_miss_count,
+            (unsigned long long)failure_nav_after.prepared_window_miss_count,
+            app.status);
   }
   free(pixels);
+  free(held_pixels);
   lectern0_app_release(&app);
   return result;
 }
 
+FUNCTION B32
+lectern0_page_repeat_probe_set_sandbox_paths(Lectern0App *app)
+{
+  if (!app || app->app_directory[0] || app->state_path[0] ||
+      app->catalog_path[0] || app->settings_path[0] ||
+      app->annotations_path[0])
+  {
+    return 0;
+  }
+  char temp_root[Lectern0PathCap] = {0};
+  DWORD temp_root_size = GetTempPathA((DWORD)ARRAY_COUNT(temp_root),
+                                      temp_root);
+  if (temp_root_size == 0 || temp_root_size >= ARRAY_COUNT(temp_root))
+    return 0;
+  U64 nonce = os_time_ticks();
+  if (cstr_format(app->app_directory,
+                  ARRAY_COUNT(app->app_directory),
+                  "%slectern0_page_repeat_%u_%llu",
+                  temp_root,
+                  (U32)GetCurrentProcessId(),
+                  (unsigned long long)nonce) == 0 ||
+      cstr_format(app->state_path,
+                  ARRAY_COUNT(app->state_path),
+                  "%s\\state.v1",
+                  app->app_directory) == 0 ||
+      cstr_format(app->catalog_path,
+                  ARRAY_COUNT(app->catalog_path),
+                  "%s\\library.v1",
+                  app->app_directory) == 0 ||
+      cstr_format(app->settings_path,
+                  ARRAY_COUNT(app->settings_path),
+                  "%s\\settings.v1",
+                  app->app_directory) == 0 ||
+      cstr_format(app->annotations_path,
+                  ARRAY_COUNT(app->annotations_path),
+                  "%s\\annotations.v1",
+                  app->app_directory) == 0 ||
+      cstr_format(app->export_path,
+                  ARRAY_COUNT(app->export_path),
+                  "%s\\annotations.txt",
+                  app->app_directory) == 0)
+  {
+    return 0;
+  }
+  return os_make_directory_chain(app->app_directory);
+}
+
+FUNCTION void
+lectern0_page_repeat_probe_delete_atomic_path(const char *path)
+{
+  if (!path || !path[0]) return;
+  char temp_path[Lectern0PathCap] = {0};
+  (void)os_file_delete(path);
+  if (os_make_temp_path(temp_path, ARRAY_COUNT(temp_path), path))
+    (void)os_file_delete(temp_path);
+}
+
+FUNCTION void
+lectern0_page_repeat_probe_cleanup_sandbox_files(Lectern0App *app)
+{
+  if (!app || !app->app_directory[0]) return;
+  for (U32 entry_index = 0;
+       entry_index < app->library.entry_count;
+       entry_index += 1)
+  {
+    char thumbnail_path[Lectern0PathCap] = {0};
+    if (lectern0_library_thumbnail_path(
+          app, app->library.entries[entry_index].entry_id,
+          thumbnail_path, ARRAY_COUNT(thumbnail_path)))
+    {
+      lectern0_page_repeat_probe_delete_atomic_path(thumbnail_path);
+    }
+  }
+  lectern0_page_repeat_probe_delete_atomic_path(app->state_path);
+  lectern0_page_repeat_probe_delete_atomic_path(app->catalog_path);
+  lectern0_page_repeat_probe_delete_atomic_path(app->settings_path);
+  lectern0_page_repeat_probe_delete_atomic_path(app->annotations_path);
+  lectern0_page_repeat_probe_delete_atomic_path(app->export_path);
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_remove_sandbox_directory(const char *directory)
+{
+  if (!directory || !directory[0]) return 0;
+  const char *names[] = {
+    "state.v1", "library.v1", "settings.v1", "annotations.v1",
+    "annotations.txt",
+  };
+  for (U32 attempt = 0; attempt < 8; attempt += 1)
+  {
+    for (U32 name_index = 0;
+         name_index < ARRAY_COUNT(names);
+         name_index += 1)
+    {
+      char path[Lectern0PathCap] = {0};
+      if (cstr_format(path, ARRAY_COUNT(path), "%s\\%s",
+                      directory, names[name_index]) > 0)
+      {
+        lectern0_page_repeat_probe_delete_atomic_path(path);
+      }
+    }
+    if (RemoveDirectoryA(directory)) return 1;
+    DWORD error = GetLastError();
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+      return 1;
+    if (error != ERROR_DIR_NOT_EMPTY && error != ERROR_SHARING_VIOLATION &&
+        error != ERROR_ACCESS_DENIED)
+      return 0;
+    Sleep(1);
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_cleanup_sandbox(Lectern0App *app)
+{
+  if (!app || !app->app_directory[0]) return 0;
+  lectern0_page_repeat_probe_cleanup_sandbox_files(app);
+  return lectern0_page_repeat_probe_remove_sandbox_directory(
+    app->app_directory);
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_file_snapshot(const char *path,
+                                          U64 size_cap,
+                                          OS_FileProperties *out_properties,
+                                          U64 *out_content_hash)
+{
+  if (out_properties) *out_properties = (OS_FileProperties){0};
+  if (out_content_hash) *out_content_hash = 0;
+  if (!path || !path[0] || size_cap == 0 || !out_properties ||
+      !out_content_hash)
+  {
+    return 0;
+  }
+  OS_FileProperties properties = os_file_properties(path);
+  if (!properties.exists || properties.is_directory || properties.size == 0 ||
+      properties.size > size_cap)
+  {
+    return 0;
+  }
+  U8 *data = (U8 *)malloc((size_t)properties.size);
+  U64 size = 0;
+  if (!data || !os_read_entire_file(path, data, properties.size, &size) ||
+      size != properties.size)
+  {
+    free(data);
+    return 0;
+  }
+  *out_properties = properties;
+  *out_content_hash = u64_hash_bytes(data, size);
+  free(data);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_prepare_persistence(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!app || !probe || !app->persistence_enabled ||
+      !app->state_path[0] || !app->catalog_path[0] ||
+      !lectern0_save_state(app))
+  {
+    return 0;
+  }
+  OS_FileProperties state_properties = {0};
+  OS_FileProperties catalog_properties = {0};
+  probe->persistence_transaction_success_before =
+    app->state_save_transaction_success_count;
+  probe->persistence_baseline_ready =
+    lectern0_page_repeat_probe_file_snapshot(
+      app->state_path,
+      Lectern0StateFileCap,
+      &state_properties,
+      &probe->persistence_state_content_hash_before) &&
+    lectern0_page_repeat_probe_file_snapshot(
+      app->catalog_path,
+      Lectern0LibraryCatalogFileCap,
+      &catalog_properties,
+      &probe->persistence_catalog_content_hash_before) &&
+    state_properties.modified_time > 0 &&
+    catalog_properties.modified_time > 0 &&
+    probe->persistence_transaction_success_before > 0;
+  probe->persistence_state_modified_time_before =
+    state_properties.modified_time;
+  probe->persistence_catalog_modified_time_before =
+    catalog_properties.modified_time;
+  return probe->persistence_baseline_ready;
+}
+
+FUNCTION void
+lectern0_page_repeat_probe_capture_hold_persistence(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!app || !probe || probe->persistence_hold_checked) return;
+  U64 now = os_time_ticks();
+  if (probe->elapsed_ticks == 0)
+  {
+    probe->elapsed_ticks = now >= probe->start_ticks ?
+      now - probe->start_ticks : 0;
+  }
+  OS_FileProperties state_properties = {0};
+  OS_FileProperties catalog_properties = {0};
+  B32 state_snapshot = lectern0_page_repeat_probe_file_snapshot(
+    app->state_path,
+    Lectern0StateFileCap,
+    &state_properties,
+    &probe->persistence_state_content_hash_during_hold);
+  B32 catalog_snapshot = lectern0_page_repeat_probe_file_snapshot(
+    app->catalog_path,
+    Lectern0LibraryCatalogFileCap,
+    &catalog_properties,
+    &probe->persistence_catalog_content_hash_during_hold);
+  probe->persistence_transaction_success_during_hold =
+    app->state_save_transaction_success_count;
+  probe->persistence_state_modified_time_during_hold =
+    state_properties.modified_time;
+  probe->persistence_catalog_modified_time_during_hold =
+    catalog_properties.modified_time;
+  probe->persistence_hold_checked = 1;
+  probe->persistence_hold_unchanged = probe->persistence_baseline_ready &&
+    state_snapshot && catalog_snapshot &&
+    probe->persistence_transaction_success_during_hold ==
+      probe->persistence_transaction_success_before &&
+    probe->persistence_state_modified_time_during_hold ==
+      probe->persistence_state_modified_time_before &&
+    probe->persistence_state_content_hash_during_hold ==
+      probe->persistence_state_content_hash_before &&
+    probe->persistence_catalog_modified_time_during_hold ==
+      probe->persistence_catalog_modified_time_before &&
+    probe->persistence_catalog_content_hash_during_hold ==
+      probe->persistence_catalog_content_hash_before;
+  U64 frequency = os_time_frequency();
+  U64 wait_ticks = frequency > UINT64_MAX /
+      Lectern0PageRepeatProbePersistenceWaitMs ?
+    UINT64_MAX :
+    frequency * Lectern0PageRepeatProbePersistenceWaitMs / 1000;
+  probe->persistence_wait_deadline_ticks =
+    now > UINT64_MAX - wait_ticks ? UINT64_MAX : now + wait_ticks;
+  if (!probe->persistence_hold_unchanged) probe->failed = 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_page_equal(SourceReaderPageRange a,
+                                       SourceReaderPageRange b)
+{
+  return lectern0_canonical_page_identity_equal(
+    lectern0_canonical_page_identity(a),
+    lectern0_canonical_page_identity(b));
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_seek_anchor(Lectern0App *app)
+{
+  B32 rebuilt = app && epub_reader_rebuild_search(
+    &app->reader, str8_from_cstr("1161st Year"));
+  EpubReaderResult navigation_result = rebuilt &&
+    app->reader.search_match_count > 0 ?
+      lectern0_navigate_to_search_match(
+        app, 0, &(EpubReaderSearchNavigationResult){0}) :
+      EpubReaderResult_DocError;
+  if (!app || !rebuilt || app->reader.search_match_count == 0 ||
+      navigation_result != EpubReaderResult_Ok)
+  {
+    fprintf(stderr,
+            "lectern0_page_repeat_anchor result=fail rebuilt=%d matches=%u navigation=%d status=%s\n",
+            rebuilt,
+            app ? app->reader.search_match_count : 0,
+            (int)navigation_result,
+            app ? app->status : "null");
+    return 0;
+  }
+  U32 target_spine = app->reader.current_page.spine_index;
+  B32 crossed_boundary = 0;
+  /* Build the boundary anchor through the same connected forward history
+     used by the product workflow. A cold semantic jump into Chapter 2 has
+     no authoritative predecessor after its bounded retained history is
+     cleared, so probing backward from that jump tests the deliberate
+     fail-closed contract rather than held-key reversal. */
+  for (U32 index = 0;
+       index < Lectern0PageRepeatProbeBoundarySearchCap;
+       index += 1)
+  {
+    EpubReaderResult move = lectern0_move_page(app, 1);
+    if (move != EpubReaderResult_Ok)
+    {
+      fprintf(stderr,
+              "lectern0_page_repeat_anchor result=fail step=%u move=%d status=%s\n",
+              index,
+              (int)move,
+              app->status);
+      return 0;
+    }
+    if (app->reader.current_page.spine_index != target_spine)
+    {
+      crossed_boundary = 1;
+      break;
+    }
+  }
+  if (!crossed_boundary) return 0;
+  for (U32 index = 0;
+       index < Lectern0PageRepeatProbeBoundaryLeadPageCount;
+       index += 1)
+  {
+    if (lectern0_move_page(app, -1) != EpubReaderResult_Ok) return 0;
+  }
+  lectern0_cancel_adjacent_warm(app);
+  lectern0_invalidate_adjacent_page(app);
+  return 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_probe_build_expected(const char *path,
+  SourceReaderPageRange forward[Lectern0PageRepeatProbePageCount],
+  SourceReaderPageRange backward[Lectern0PageRepeatProbePageCount],
+  SourceReaderPageRange *out_anchor,
+  SourceReaderPageRange *out_endpoint)
+{
+  Lectern0App app = {0};
+  B32 inputs_ok = path && path[0] && forward && backward && out_anchor &&
+    out_endpoint;
+  B32 init_ok = inputs_ok && lectern0_app_init(
+    &app,
+    Lectern0PageRepeatProbeWidth,
+    Lectern0PageRepeatProbeHeight,
+    0,
+    0);
+  B32 open_ok = init_ok && lectern0_open_path(&app, path);
+  B32 anchor_ok = open_ok && lectern0_page_repeat_probe_seek_anchor(&app);
+  B32 result = inputs_ok && init_ok && open_ok && anchor_ok;
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0_page_repeat_reference_setup inputs=%d init=%d open=%d anchor=%d status=%s\n",
+            inputs_ok,
+            init_ok,
+            open_ok,
+            anchor_ok,
+            app.status);
+  }
+  if (result) *out_anchor = app.reader.current_page;
+  U32 forward_crossings = 0;
+  U32 forward_moves = 0;
+  U32 backward_moves = 0;
+  EpubReaderResult last_move_result = EpubReaderResult_Ok;
+  for (U32 index = 0;
+       result && index < Lectern0PageRepeatProbePageCount;
+       index += 1)
+  {
+    SourceReaderPageRange before = app.reader.current_page;
+    last_move_result = lectern0_move_page(&app, 1);
+    result = last_move_result == EpubReaderResult_Ok;
+    if (result)
+    {
+      forward_moves += 1;
+      forward[index] = app.reader.current_page;
+      if (before.spine_index != app.reader.current_page.spine_index)
+        forward_crossings += 1;
+    }
+  }
+  if (result) *out_endpoint = app.reader.current_page;
+  U32 backward_crossings = 0;
+  for (U32 index = 0;
+       result && index < Lectern0PageRepeatProbePageCount;
+       index += 1)
+  {
+    SourceReaderPageRange before = app.reader.current_page;
+    last_move_result = lectern0_move_page(&app, -1);
+    result = last_move_result == EpubReaderResult_Ok;
+    if (result)
+    {
+      backward_moves += 1;
+      backward[index] = app.reader.current_page;
+      if (before.spine_index != app.reader.current_page.spine_index)
+        backward_crossings += 1;
+    }
+  }
+  result = result && forward_crossings > 0 && backward_crossings > 0 &&
+    lectern0_page_repeat_probe_page_equal(app.reader.current_page,
+                                           *out_anchor);
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0_page_repeat_reference result=fail forward=%u/%u backward=%u/%u cross_spine=%u+%u move_result=%d anchor=%u:%llu-%llu endpoint=%u:%llu-%llu final=%u:%llu-%llu\n",
+            forward_moves,
+            Lectern0PageRepeatProbePageCount,
+            backward_moves,
+            Lectern0PageRepeatProbePageCount,
+            forward_crossings,
+            backward_crossings,
+            (int)last_move_result,
+            out_anchor->spine_index,
+            (unsigned long long)out_anchor->first_byte,
+            (unsigned long long)out_anchor->one_past_last_byte,
+            out_endpoint->spine_index,
+            (unsigned long long)out_endpoint->first_byte,
+            (unsigned long long)out_endpoint->one_past_last_byte,
+            app.reader.current_page.spine_index,
+            (unsigned long long)app.reader.current_page.first_byte,
+            (unsigned long long)app.reader.current_page.one_past_last_byte);
+  }
+  lectern0_app_release(&app);
+  return result;
+}
+
+FUNCTION void
+lectern0_page_repeat_win32_probe_note_page(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!app || !probe ||
+      probe->kind != Lectern0PageRepeatWin32Probe_Direction ||
+      probe->actual_page_count >= ARRAY_COUNT(probe->actual_pages))
+  {
+    return;
+  }
+  U32 index = probe->actual_page_count;
+  probe->actual_pages[index] = app->reader.current_page;
+  SourceReaderPageRange previous =
+    index == 0 ? probe->start_page : probe->actual_pages[index - 1];
+  if (previous.spine_index != app->reader.current_page.spine_index)
+    probe->cross_spine_transition_count += 1;
+  B32 orphan_text = 0;
+  B32 invalid_word_start = 0;
+  U64 text_bytes = 0;
+  U32 text_rows = 0;
+  if (app->reader.current_page.spine_page_count == 0 ||
+      !app->frame.ready || !app->frame.document_open)
+    probe->zero_page_or_frame_count += 1;
+  if (lectern0_gotm_navigation_frame_is_canonical_nonempty(
+        app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows))
+    probe->valid_frame_count += 1;
+  else
+  {
+    if (orphan_text) probe->orphan_text_page_count += 1;
+    if (invalid_word_start) probe->invalid_word_start_page_count += 1;
+    probe->failed = 1;
+  }
+  if (app->frame.image_count == 0 &&
+      app->reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+  {
+    probe->text_frame_count += 1;
+    probe->minimum_text_bytes = MIN(probe->minimum_text_bytes, text_bytes);
+    probe->minimum_text_rows = MIN(probe->minimum_text_rows, text_rows);
+  }
+  if (index < probe->expected_page_count &&
+      lectern0_page_repeat_probe_page_equal(probe->actual_pages[index],
+                                             probe->expected_pages[index]))
+  {
+    probe->canonical_match_count += 1;
+  }
+  else
+  {
+    probe->failed = 1;
+  }
+  probe->actual_page_count += 1;
+}
+
+FUNCTION void
+lectern0_page_repeat_win32_probe_note_stable_presentation(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!app || !probe ||
+      probe->kind != Lectern0PageRepeatWin32Probe_Direction ||
+      probe->stable_present_count >= Lectern0PageRepeatProbePageCount ||
+      app->page_action_presented_count <=
+        probe->page_action_presented_before + probe->stable_present_count)
+  {
+    return;
+  }
+  if (app->page_action_presented_count !=
+        probe->page_action_presented_before + probe->stable_present_count + 1 ||
+      app->page_action_last_stable_present_ticks < probe->start_ticks)
+  {
+    probe->failed = 1;
+    return;
+  }
+  U32 index = probe->stable_present_count;
+  U64 elapsed = app->page_action_last_stable_present_ticks -
+    probe->start_ticks;
+  probe->stable_present_elapsed_ticks[index] = elapsed;
+  if (index >= 1 &&
+      probe->stable_present_transition_count <
+        ARRAY_COUNT(probe->stable_present_transition_ticks))
+  {
+    U32 transition_index = probe->stable_present_transition_count;
+    SourceReaderPageRange previous_page =
+      probe->actual_pages[index - 1];
+    U64 interval = elapsed - probe->stable_present_elapsed_ticks[index - 1];
+    B32 cross_spine = previous_page.spine_index !=
+      app->reader.current_page.spine_index;
+    probe->stable_present_transition_ticks[transition_index] = interval;
+    probe->stable_present_transition_cross_spine[transition_index] =
+      cross_spine;
+    probe->stable_present_transition_count += 1;
+    if (index >= 2)
+    {
+      U64 *minimum_ticks = cross_spine ?
+        &probe->stable_present_cross_spine_interval_min_ticks :
+        &probe->stable_present_same_spine_interval_min_ticks;
+      U64 *maximum_ticks = cross_spine ?
+        &probe->stable_present_cross_spine_interval_max_ticks :
+        &probe->stable_present_same_spine_interval_max_ticks;
+      U64 *total_ticks = cross_spine ?
+        &probe->stable_present_cross_spine_interval_total_ticks :
+        &probe->stable_present_same_spine_interval_total_ticks;
+      U32 *sample_count = cross_spine ?
+        &probe->stable_present_cross_spine_interval_count :
+        &probe->stable_present_same_spine_interval_count;
+      if (*sample_count == 0) { *minimum_ticks = interval; }
+      else { *minimum_ticks = MIN(*minimum_ticks, interval); }
+      *maximum_ticks = MAX(*maximum_ticks, interval);
+      *total_ticks += interval;
+      *sample_count += 1;
+    }
+  }
+  if (index == 1)
+  {
+    probe->stable_present_first_delay_ticks =
+      elapsed - probe->stable_present_elapsed_ticks[0];
+  }
+  else if (index >= 2)
+  {
+    U64 interval = elapsed -
+      probe->stable_present_elapsed_ticks[index - 1];
+    if (probe->stable_present_interval_count == 0)
+      probe->stable_present_interval_min_ticks = interval;
+    else
+      probe->stable_present_interval_min_ticks = MIN(
+        probe->stable_present_interval_min_ticks, interval);
+    probe->stable_present_interval_max_ticks = MAX(
+      probe->stable_present_interval_max_ticks, interval);
+    probe->stable_present_interval_total_ticks += interval;
+    probe->stable_present_interval_count += 1;
+  }
+  lectern0_page_repeat_win32_probe_note_page(app, probe);
+  probe->stable_present_count += 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_probe_post_native(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!app || !app->window || !probe || !probe->enabled ||
+      probe->native_repeats_per_frame == 0)
+  {
+    return 0;
+  }
+  for (U32 index = 0; index < probe->native_repeats_per_frame; index += 1)
+  {
+    if (!PostMessageW(app->window, WM_KEYDOWN, probe->key,
+                      (LPARAM)0x40000001))
+    {
+      return 0;
+    }
+    probe->native_repeat_posted_count += 1;
+  }
+  return 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_probe_post_mutations(
+  Lectern0App *app)
+{
+  if (!app || !app->window) return 0;
+  for (U32 index = 0; index < Lectern0PageRepeatProbeMutationCount;
+       index += 1)
+  {
+    if (!PostMessageW(app->window,
+                      Lectern0PageRepeatProbeMutationMessage,
+                      index,
+                      0))
+    {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+  Lectern0App *app,
+  Lectern0PageRepeatWin32Probe *probe,
+  UINT message)
+{
+  if (!app || !app->window || !probe ||
+      !PostMessageW(app->window, message, probe->key,
+                    (LPARAM)0x40000001))
+  {
+    return 0;
+  }
+  probe->cancelled_repeat_posted_count += 1;
+  return 1;
+}
+
+FUNCTION void
+lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
+                                         Lectern0PageRepeatWin32Probe *probe)
+{
+  Lectern0App *app = win32 ? &win32->app : 0;
+  if (!app || !probe || !probe->enabled) return;
+  U64 now = os_time_ticks();
+  if (probe->elapsed_ticks == 0)
+  {
+    probe->elapsed_ticks = now >= probe->start_ticks ?
+      now - probe->start_ticks : 0;
+  }
+  probe->logical_frame_count = app->page_repeat_presented_frame_count;
+  probe->navigation_prepare_call_count =
+    app->page_repeat_navigation_prepare_call_count;
+  probe->navigation_prepare_build_count =
+    app->page_repeat_navigation_prepare_build_count;
+  probe->navigation_prepare_ready_count =
+    app->page_repeat_navigation_prepare_ready_count;
+  probe->navigation_prepare_fail_count =
+    app->page_repeat_navigation_prepare_fail_count;
+  probe->navigation_prepare_total_ticks =
+    app->page_repeat_navigation_prepare_total_ticks;
+  probe->navigation_prepare_max_ticks =
+    app->page_repeat_navigation_prepare_max_ticks;
+  probe->native_repeat_coalesced_count =
+    app->page_repeat_native_coalesced_count;
+  probe->cancelled_repeat_consumed_count =
+    app->page_repeat_cancelled_repeat_consumed_count;
+  probe->modifier_cancel_count = app->page_repeat_modifier_cancel_count;
+  probe->focus_cancel_count = app->page_repeat_focus_cancel_count;
+  probe->deactivate_cancel_count = app->page_repeat_deactivate_cancel_count;
+  probe->keyup_cancel_count = app->page_repeat_keyup_cancel_count;
+  probe->mutation_cancel_count = app->page_repeat_mutation_cancel_count;
+  probe->persistence_deferred_count =
+    app->page_repeat_persistence_deferred_count;
+  probe->persistence_rescheduled_count =
+    app->page_repeat_persistence_rescheduled_count;
+  if (app->page_action_emitted_count < probe->page_action_emitted_before ||
+      app->page_action_presented_count < probe->page_action_presented_before ||
+      app->page_action_overlap_count < probe->page_action_overlap_before ||
+      app->page_action_identity_mismatch_count <
+        probe->page_action_identity_mismatch_before ||
+      app->page_action_mutation_drop_count <
+        probe->page_action_mutation_drop_before)
+  {
+    probe->failed = 1;
+  }
+  else
+  {
+    probe->page_action_emitted_count = app->page_action_emitted_count -
+      probe->page_action_emitted_before;
+    probe->page_action_presented_count = app->page_action_presented_count -
+      probe->page_action_presented_before;
+    probe->page_action_overlap_count = app->page_action_overlap_count -
+      probe->page_action_overlap_before;
+    probe->page_action_identity_mismatch_count =
+      app->page_action_identity_mismatch_count -
+        probe->page_action_identity_mismatch_before;
+    probe->page_action_mutation_drop_count =
+      app->page_action_mutation_drop_count -
+        probe->page_action_mutation_drop_before;
+  }
+  OS_FileProperties state_properties = {0};
+  OS_FileProperties catalog_properties = {0};
+  B32 state_snapshot = lectern0_page_repeat_probe_file_snapshot(
+    app->state_path,
+    Lectern0StateFileCap,
+    &state_properties,
+    &probe->persistence_state_content_hash_after);
+  B32 catalog_snapshot = lectern0_page_repeat_probe_file_snapshot(
+    app->catalog_path,
+    Lectern0LibraryCatalogFileCap,
+    &catalog_properties,
+    &probe->persistence_catalog_content_hash_after);
+  probe->persistence_transaction_success_after =
+    app->state_save_transaction_success_count;
+  probe->persistence_state_modified_time_after =
+    state_properties.modified_time;
+  probe->persistence_catalog_modified_time_after =
+    catalog_properties.modified_time;
+  probe->auxiliary_paint_dispatch_count =
+    win32->page_repeat_probe_aux_paint_dispatch_count -
+      probe->auxiliary_paint_dispatch_before;
+  probe->main_null_paint_dispatch_count =
+    win32->page_repeat_probe_main_null_paint_dispatch_count -
+      probe->main_null_paint_dispatch_before;
+  probe->persistence_post_stop_advanced =
+    probe->persistence_hold_unchanged && state_snapshot && catalog_snapshot &&
+    probe->persistence_transaction_success_before < UINT32_MAX &&
+    probe->persistence_transaction_success_after ==
+      probe->persistence_transaction_success_before + 1 &&
+    probe->persistence_state_modified_time_after >
+      probe->persistence_state_modified_time_during_hold &&
+    probe->persistence_state_content_hash_after !=
+      probe->persistence_state_content_hash_during_hold &&
+    probe->persistence_catalog_modified_time_after >
+      probe->persistence_catalog_modified_time_during_hold &&
+    probe->persistence_catalog_content_hash_after !=
+      probe->persistence_catalog_content_hash_during_hold;
+
+  B32 common = !probe->failed && probe->started && probe->stop_posted &&
+    !app->page_repeat_active && app->page_repeat_cancelled_key == 0 &&
+    !app->page_action_waiting_for_present && !app->page_action_pending &&
+    probe->page_action_emitted_count == probe->page_action_presented_count &&
+    probe->page_action_overlap_count == 0 &&
+    probe->page_action_identity_mismatch_count == 0 &&
+    win32->page_repeat_probe_aux_paint_pending_count == 0 &&
+    win32->page_repeat_probe_main_null_paint_pending_count == 0 &&
+    !app->state_save_pending && probe->persistence_baseline_ready &&
+    probe->persistence_hold_checked && probe->persistence_hold_unchanged &&
+    probe->persistence_post_stop_advanced &&
+    probe->queue_drain_batch_max_count <=
+      Lectern0PageRepeatProbeQueueDrainCap &&
+    probe->native_repeat_coalesced_count ==
+      probe->native_repeat_posted_count;
+  if (probe->kind == Lectern0PageRepeatWin32Probe_Direction)
+  {
+    U32 expected_presented_frames = probe->target_frame_move_count + 1;
+    probe->completed = common &&
+      app->page_repeat_frame_move_count == probe->target_frame_move_count &&
+      probe->observed_move_count == probe->target_frame_move_count &&
+      probe->logical_frame_count == expected_presented_frames &&
+      probe->native_repeat_posted_count ==
+        expected_presented_frames * probe->native_repeats_per_frame &&
+      probe->repeat_timing_count == probe->target_frame_move_count &&
+      probe->move_interval_count == probe->target_frame_move_count - 1 &&
+      probe->expected_page_count == Lectern0PageRepeatProbePageCount &&
+      probe->actual_page_count == Lectern0PageRepeatProbePageCount &&
+      probe->stable_present_count == Lectern0PageRepeatProbePageCount &&
+      probe->stable_present_interval_count ==
+        Lectern0PageRepeatProbeMoveCount - 1 &&
+      probe->canonical_match_count == Lectern0PageRepeatProbePageCount &&
+      probe->cross_spine_transition_count > 0 &&
+      probe->valid_frame_count == Lectern0PageRepeatProbePageCount &&
+      probe->zero_page_or_frame_count == 0 &&
+      probe->orphan_text_page_count == 0 &&
+      probe->invalid_word_start_page_count == 0 &&
+      probe->text_frame_count > 0 &&
+      probe->minimum_text_bytes >= Lectern0GotmMinimumProseTextBytes &&
+      probe->minimum_text_rows >= Lectern0GotmMinimumProseTextRows &&
+      probe->page_action_emitted_count == Lectern0PageRepeatProbePageCount &&
+      probe->paint_messages_posted &&
+      probe->auxiliary_paint_dispatch_count == 1 &&
+      probe->main_null_paint_dispatch_count == 1 &&
+      probe->cancelled_repeat_posted_count == 0 &&
+      probe->cancelled_repeat_consumed_count == 0 &&
+      probe->keyup_cancel_count == 1 &&
+      probe->modifier_cancel_count == 0 && probe->focus_cancel_count == 0 &&
+      probe->deactivate_cancel_count == 0 &&
+      probe->persistence_deferred_count == probe->target_frame_move_count &&
+      probe->persistence_rescheduled_count == 1;
+  }
+  else if (probe->kind == Lectern0PageRepeatWin32Probe_MutationGate)
+  {
+    probe->completed = common && app->page_repeat_frame_move_count == 0 &&
+      probe->observed_move_count == 0 &&
+      probe->native_repeat_posted_count == probe->native_repeats_per_frame &&
+      probe->native_repeat_coalesced_count == probe->native_repeat_posted_count &&
+      probe->page_action_emitted_count == 1 &&
+      probe->page_action_presented_count == 1 &&
+      probe->page_action_mutation_drop_count ==
+        Lectern0PageRepeatProbeMutationCount &&
+      probe->mutation_cancel_count == 1 &&
+      probe->cancelled_repeat_posted_count == 0 &&
+      probe->cancelled_repeat_consumed_count == 0 &&
+      probe->keyup_cancel_count == 0 &&
+      probe->persistence_deferred_count == 0 &&
+      probe->persistence_rescheduled_count == 1 &&
+      probe->expected_page_count == 1 &&
+      lectern0_page_repeat_probe_page_equal(
+        app->reader.current_page, probe->expected_pages[0]);
+  }
+  else
+  {
+    U32 expected_modifier =
+      (probe->kind == Lectern0PageRepeatWin32Probe_ControlModifier ||
+       probe->kind == Lectern0PageRepeatWin32Probe_ShiftModifier ||
+       probe->kind == Lectern0PageRepeatWin32Probe_SystemModifier) ? 1 : 0;
+    U32 expected_focus =
+      probe->kind == Lectern0PageRepeatWin32Probe_FocusLoss ? 1 : 0;
+    U32 expected_deactivate =
+      probe->kind == Lectern0PageRepeatWin32Probe_Deactivation ? 1 : 0;
+    probe->completed = common && app->page_repeat_frame_move_count == 0 &&
+      probe->observed_move_count == 0 &&
+      probe->native_repeat_posted_count ==
+        probe->native_repeats_per_frame &&
+      probe->cancelled_repeat_posted_count == 1 &&
+      probe->cancelled_repeat_consumed_count == 1 &&
+      probe->modifier_cancel_count == expected_modifier &&
+      probe->focus_cancel_count == expected_focus &&
+      probe->deactivate_cancel_count == expected_deactivate &&
+      probe->page_action_emitted_count == 1 &&
+      probe->keyup_cancel_count == 0 &&
+      probe->persistence_deferred_count == 0 &&
+      probe->persistence_rescheduled_count == 1;
+  }
+}
+
+FUNCTION B32
+lectern0_win32_repeat_owns_pending_paint(const Lectern0Win32 *win32,
+                                         const MSG *message)
+{
+  return win32 && message && message->message == WM_PAINT &&
+    message->hwnd == win32->window &&
+    GetUpdateRect(win32->window, 0, FALSE) != 0;
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_probe_post_paints(
+  Lectern0Win32 *win32,
+  Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!win32 || !probe || !probe->enabled || probe->paint_messages_posted ||
+      !win32->window || !win32->page_repeat_probe_paint_window ||
+      GetUpdateRect(win32->window, 0, FALSE) != 0)
+  {
+    return 0;
+  }
+  win32->page_repeat_probe_main_null_paint_pending_count += 1;
+  if (!PostMessageW(win32->window, WM_PAINT, 0, 0))
+  {
+    win32->page_repeat_probe_main_null_paint_pending_count -= 1;
+    return 0;
+  }
+  win32->page_repeat_probe_aux_paint_pending_count += 1;
+  if (!InvalidateRect(win32->page_repeat_probe_paint_window, 0, FALSE))
+  {
+    win32->page_repeat_probe_aux_paint_pending_count -= 1;
+    return 0;
+  }
+  probe->paint_messages_posted = 1;
+  return 1;
+}
+
+FUNCTION void
+lectern0_win32_run_message_loop(Lectern0Win32 *win32,
+                                 Lectern0PageRepeatWin32Probe *probe)
+{
+  if (!win32) return;
+  MSG message = {0};
+  B32 running = 1;
+  U64 time_frequency = os_time_frequency();
+  B32 timer_resolution_active = 0;
+  while (running)
+  {
+    if (win32->app.page_repeat_active && !timer_resolution_active)
+    {
+      timer_resolution_active = timeBeginPeriod(1) == TIMERR_NOERROR;
+    }
+    else if (!win32->app.page_repeat_active && timer_resolution_active)
+    {
+      (void)timeEndPeriod(1);
+      timer_resolution_active = 0;
+    }
+    if (!win32->app.page_repeat_active)
+    {
+      if (probe && probe->enabled && probe->stop_posted)
+      {
+        U64 now = os_time_ticks();
+        if (win32->app.state_save_transaction_success_count >
+              probe->persistence_transaction_success_before)
+        {
+          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          break;
+        }
+        if (probe->persistence_wait_deadline_ticks == 0 ||
+            now >= probe->persistence_wait_deadline_ticks)
+        {
+          probe->failed = 1;
+          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          break;
+        }
+        DWORD wait_result = MsgWaitForMultipleObjectsEx(
+          0, 0, 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        if (wait_result == WAIT_FAILED)
+        {
+          probe->failed = 1;
+          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          break;
+        }
+        while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+        {
+          if (message.message == WM_QUIT)
+          {
+            running = 0;
+            probe->failed = 1;
+            break;
+          }
+          TranslateMessage(&message);
+          DispatchMessageW(&message);
+        }
+        if (!running) break;
+        continue;
+      }
+      BOOL message_result = GetMessageW(&message, 0, 0, 0);
+      if (message_result <= 0)
+      {
+        if (probe && probe->enabled) probe->failed = 1;
+        break;
+      }
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+      if (probe && probe->enabled && !probe->started &&
+          message.hwnd == win32->window && message.message == WM_KEYDOWN &&
+          message.wParam == probe->key &&
+          (message.lParam & (1LL << 30)) == 0)
+      {
+        if (win32->app.page_repeat_active)
+        {
+          probe->started = 1;
+        }
+        else
+        {
+          probe->failed = 1;
+          probe->stop_posted = 1;
+          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          break;
+        }
+      }
+      if (probe && probe->enabled && probe->started &&
+          probe->kind == Lectern0PageRepeatWin32Probe_MutationGate &&
+          !probe->stop_posted && !win32->app.page_repeat_active &&
+          !win32->app.page_action_waiting_for_present &&
+          win32->app.page_action_mutation_drop_count ==
+            probe->page_action_mutation_drop_before +
+              Lectern0PageRepeatProbeMutationCount)
+      {
+        if (!lectern0_page_repeat_probe_page_equal(
+              win32->app.reader.current_page,
+              probe->expected_pages[0]))
+          probe->failed = 1;
+        lectern0_page_repeat_probe_capture_hold_persistence(
+          &win32->app, probe);
+        if (!PostMessageW(win32->app.window,
+                          WM_KEYUP,
+                          probe->key,
+                          (LPARAM)0xC0000001))
+          probe->failed = 1;
+        probe->stop_posted = 1;
+      }
+      continue;
+    }
+
+    U32 drained_message_count = 0;
+    while (PeekMessageW(&message, 0, 0, 0, PM_NOREMOVE))
+    {
+      if (lectern0_win32_repeat_owns_pending_paint(win32, &message)) break;
+      if (!PeekMessageW(&message, 0, 0, 0, PM_REMOVE)) break;
+      drained_message_count += 1;
+      if (message.message == WM_QUIT)
+      {
+        running = 0;
+        if (probe && probe->enabled) probe->failed = 1;
+        break;
+      }
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+      if (drained_message_count >= Lectern0PageRepeatQueueDrainCap)
+      {
+        break;
+      }
+    }
+    if (probe && probe->enabled)
+    {
+      probe->queue_drain_batch_max_count = MAX(
+        probe->queue_drain_batch_max_count, drained_message_count);
+      probe->queue_drain_message_count += drained_message_count;
+      probe->queue_drain_batch_count += 1;
+      if (drained_message_count > Lectern0PageRepeatProbeQueueDrainCap)
+        probe->failed = 1;
+    }
+    if (!running) break;
+    if (!win32->app.page_repeat_active)
+    {
+      continue;
+    }
+
+    U64 now = os_time_ticks();
+    B32 repeat_due = !win32->app.page_action_waiting_for_present &&
+      now >= win32->app.page_repeat_next_move_ticks;
+    B32 update_pending = GetUpdateRect(win32->window, 0, FALSE) != 0;
+    B32 presentation_retry_waiting =
+      win32->app.page_action_waiting_for_present &&
+      win32->app.page_action_presentation_retry_attempt > 0 &&
+      !update_pending;
+    if (!presentation_retry_waiting &&
+        (win32->app.page_action_waiting_for_present || update_pending ||
+         !win32->app.last_present_complete || repeat_due))
+    {
+      U64 repeat_frame_start = now;
+      U32 frame_move_count_before =
+        win32->app.page_repeat_frame_move_count;
+      Lectern0PageRepeatFrameTiming frame_timing = {0};
+      B32 frame_presented =
+        lectern0_win32_page_repeat_frame(&win32->app,
+                                          now,
+                                          &frame_timing);
+      U64 repeat_frame_end = os_time_ticks();
+
+      if (probe && probe->enabled)
+      {
+        if (win32->app.page_repeat_frame_move_count !=
+              frame_move_count_before)
+        {
+          U64 move_emitted_ticks = frame_timing.action_emitted_ticks ?
+            frame_timing.action_emitted_ticks : repeat_frame_end;
+          U64 move_elapsed_ticks =
+            move_emitted_ticks >= probe->start_ticks ?
+              move_emitted_ticks - probe->start_ticks : 0;
+          if (win32->app.page_repeat_frame_move_count !=
+                frame_move_count_before + 1)
+          {
+            probe->failed = 1;
+          }
+          if (probe->observed_move_count == 0)
+          {
+            probe->first_move_elapsed_ticks = move_elapsed_ticks;
+          }
+          else
+          {
+            U64 move_interval_ticks =
+              move_elapsed_ticks >= probe->last_move_elapsed_ticks ?
+                move_elapsed_ticks - probe->last_move_elapsed_ticks : 0;
+            if (probe->move_interval_count == 0)
+              probe->move_interval_min_ticks = move_interval_ticks;
+            else
+              probe->move_interval_min_ticks = MIN(
+                probe->move_interval_min_ticks, move_interval_ticks);
+            probe->move_interval_max_ticks = MAX(
+              probe->move_interval_max_ticks, move_interval_ticks);
+            probe->move_interval_total_ticks += move_interval_ticks;
+            probe->move_interval_count += 1;
+          }
+          probe->last_move_elapsed_ticks = move_elapsed_ticks;
+          probe->observed_move_count += 1;
+          S32 move_producer =
+            win32->app.reader.navigation_stats.page_move_last_producer_code;
+          if (move_producer == EpubReaderPageMoveProducer_PreparedWindow)
+            probe->prepared_window_move_count += 1;
+          else if (move_producer == EpubReaderPageMoveProducer_WindowRebuild)
+            probe->synchronous_window_rebuild_move_count += 1;
+          else if (move_producer == EpubReaderPageMoveProducer_AdjacentMeasured)
+            probe->synchronous_adjacent_measured_move_count += 1;
+          else if (move_producer ==
+                     EpubReaderPageMoveProducer_CrossSpineBoundaryRing)
+            probe->cross_spine_boundary_ring_move_count += 1;
+          U64 render_ticks = frame_timing.render_acquire_ticks +
+            frame_timing.render_buffer_ticks +
+            frame_timing.render_accessibility_ticks;
+          probe->repeat_prepare_total_ticks +=
+            frame_timing.action_prepare_ticks;
+          probe->repeat_prepare_max_ticks = MAX(
+            probe->repeat_prepare_max_ticks,
+            frame_timing.action_prepare_ticks);
+          probe->repeat_render_total_ticks += render_ticks;
+          probe->repeat_render_max_ticks = MAX(
+            probe->repeat_render_max_ticks, render_ticks);
+          probe->repeat_present_total_ticks +=
+            frame_timing.render_present_ticks;
+          probe->repeat_present_max_ticks = MAX(
+            probe->repeat_present_max_ticks,
+            frame_timing.render_present_ticks);
+          probe->repeat_timing_count += 1;
+        }
+        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+                 frame_presented && probe->frame_count == 0)
+        {
+          probe->cold_render_ticks = frame_timing.render_acquire_ticks +
+            frame_timing.render_buffer_ticks +
+            frame_timing.render_accessibility_ticks;
+          probe->cold_present_ticks = frame_timing.render_present_ticks;
+        }
+        U64 frame_ticks = repeat_frame_end >= repeat_frame_start ?
+          repeat_frame_end - repeat_frame_start : 0;
+        lectern0_page_repeat_win32_probe_note_stable_presentation(
+          &win32->app, probe);
+        probe->frame_max_ticks = MAX(probe->frame_max_ticks, frame_ticks);
+        probe->frame_count += 1;
+        if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+            frame_presented && !probe->paint_messages_posted &&
+            !lectern0_page_repeat_win32_probe_post_paints(win32, probe))
+        {
+          probe->failed = 1;
+        }
+        if (!win32->app.page_repeat_active)
+        {
+          probe->failed = 1;
+          probe->stop_posted = 1;
+        }
+        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+                 win32->app.page_repeat_frame_move_count >=
+                   probe->target_frame_move_count)
+        {
+          probe->elapsed_ticks = probe->stable_present_count > 0 ?
+            probe->stable_present_elapsed_ticks[
+              probe->stable_present_count - 1] : 0;
+          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+                                                               probe);
+          if (!PostMessageW(win32->app.window,
+                            WM_KEYUP,
+                            probe->key,
+                            (LPARAM)0xC0000001))
+            probe->failed = 1;
+          probe->stop_posted = 1;
+        }
+        else if (probe->frame_count >= probe->frame_cap)
+        {
+          probe->failed = 1;
+          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+                                                               probe);
+          (void)PostMessageW(win32->app.window,
+                             WM_KEYUP,
+                             probe->key,
+                             (LPARAM)0xC0000001);
+          probe->stop_posted = 1;
+        }
+        else if (probe->kind != Lectern0PageRepeatWin32Probe_Direction &&
+                 !probe->stop_posted && frame_presented)
+        {
+          B32 posted = 0;
+          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+                                                               probe);
+          if (probe->kind == Lectern0PageRepeatWin32Probe_FocusLoss)
+          {
+            posted = PostMessageW(win32->app.window, WM_KILLFOCUS, 0, 0) &&
+              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+                &win32->app, probe, WM_KEYDOWN) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           probe->key,
+                           (LPARAM)0xC0000001);
+          }
+          else if (probe->kind ==
+                     Lectern0PageRepeatWin32Probe_ControlModifier)
+          {
+            posted = PostMessageW(win32->app.window,
+                                  WM_KEYDOWN,
+                                  VK_CONTROL,
+                                  1) &&
+              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+                &win32->app, probe, WM_KEYDOWN) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           probe->key,
+                           (LPARAM)0xC0000001) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           VK_CONTROL,
+                           (LPARAM)0xC0000001);
+          }
+          else if (probe->kind ==
+                     Lectern0PageRepeatWin32Probe_ShiftModifier)
+          {
+            posted = PostMessageW(win32->app.window,
+                                  WM_KEYDOWN,
+                                  VK_SHIFT,
+                                  1) &&
+              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+                &win32->app, probe, WM_KEYDOWN) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           probe->key,
+                           (LPARAM)0xC0000001) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           VK_SHIFT,
+                           (LPARAM)0xC0000001);
+          }
+          else if (probe->kind ==
+                     Lectern0PageRepeatWin32Probe_SystemModifier)
+          {
+            posted = PostMessageW(win32->app.window,
+                                  WM_SYSKEYDOWN,
+                                  VK_MENU,
+                                  1) &&
+              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+                &win32->app, probe, WM_SYSKEYDOWN) &&
+              PostMessageW(win32->app.window,
+                           WM_SYSKEYUP,
+                           probe->key,
+                           (LPARAM)0xC0000001) &&
+              PostMessageW(win32->app.window,
+                           WM_SYSKEYUP,
+                           VK_MENU,
+                           (LPARAM)0xC0000001);
+          }
+          else if (probe->kind ==
+                     Lectern0PageRepeatWin32Probe_Deactivation)
+          {
+            posted = PostMessageW(win32->app.window,
+                                  WM_ACTIVATEAPP,
+                                  FALSE,
+                                  0) &&
+              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+                &win32->app, probe, WM_KEYDOWN) &&
+              PostMessageW(win32->app.window,
+                           WM_KEYUP,
+                           probe->key,
+                           (LPARAM)0xC0000001);
+          }
+          if (!posted) probe->failed = 1;
+          probe->stop_posted = 1;
+        }
+        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+                 frame_presented &&
+                 !lectern0_page_repeat_win32_probe_post_native(
+                   &win32->app, probe))
+        {
+          probe->failed = 1;
+          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+                                                               probe);
+          (void)PostMessageW(win32->app.window,
+                             WM_KEYUP,
+                             probe->key,
+                             (LPARAM)0xC0000001);
+          probe->stop_posted = 1;
+        }
+      }
+    }
+    if (!win32->app.page_repeat_active) continue;
+
+    now = os_time_ticks();
+    update_pending = GetUpdateRect(win32->window, 0, FALSE) != 0;
+    if (win32->app.page_action_waiting_for_present &&
+        win32->app.page_action_presentation_retry_attempt > 0 &&
+        !update_pending)
+    {
+      DWORD wait_result = MsgWaitForMultipleObjectsEx(
+        0, 0, Lectern0PresentationRetryMaxDelayMs,
+        QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+      if (wait_result == WAIT_FAILED && probe && probe->enabled)
+        probe->failed = 1;
+      continue;
+    }
+    if (win32->app.page_repeat_navigation_prepare_pending &&
+        !win32->app.page_action_waiting_for_present &&
+        !win32->app.page_action_pending && !update_pending &&
+        now < win32->app.page_repeat_next_move_ticks && time_frequency > 0)
+    {
+      U64 remaining_ticks =
+        win32->app.page_repeat_next_move_ticks - now;
+      U64 reserve_ticks =
+        (time_frequency + 999ULL) / 1000ULL;
+      if (remaining_ticks > reserve_ticks)
+      {
+        /* Input/cancellation already in the queue owns priority over optional
+           logical preparation. Return to the existing bounded FIFO drain so
+           its paint reservation, dispatch ordering, and probe accounting stay
+           authoritative; key-up/cancellation will clear this pending tail. */
+        if (PeekMessageW(&message, 0, 0, 0, PM_NOREMOVE)) continue;
+        /* Match Re10's proven split: due actions and completed presentation
+           come first. Reader0-only logical preparation may consume remaining
+           deadline slack; host frame/raster warming stays disabled. */
+        (void)lectern0_page_repeat_prepare_navigation_tail(&win32->app);
+        continue;
+      }
+    }
+    if (!win32->app.page_action_waiting_for_present && !update_pending &&
+        now < win32->app.page_repeat_next_move_ticks && time_frequency > 0)
+    {
+      U64 remaining_ticks = win32->app.page_repeat_next_move_ticks - now;
+      U64 whole_seconds = remaining_ticks / time_frequency;
+      U64 fractional_ticks = remaining_ticks % time_frequency;
+      U64 wait_ms = whole_seconds > UINT64_MAX / 1000 ?
+        UINT64_MAX : whole_seconds * 1000;
+      if (wait_ms < UINT64_MAX)
+      {
+        U64 fractional_ms =
+          (fractional_ticks * 1000 + time_frequency - 1) / time_frequency;
+        wait_ms = wait_ms > UINT64_MAX - fractional_ms ?
+          UINT64_MAX : wait_ms + fractional_ms;
+      }
+      DWORD timeout_ms = (DWORD)MIN(wait_ms, (U64)MAXDWORD);
+      DWORD wait_result = MsgWaitForMultipleObjectsEx(
+        0, 0, timeout_ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+      if (wait_result == WAIT_FAILED && probe && probe->enabled)
+      {
+        probe->failed = 1;
+      }
+    }
+  }
+  if (timer_resolution_active) (void)timeEndPeriod(1);
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
+                                                 B32 seek_anchor)
+{
+  if (!win32 || !win32->window) return 0;
+  win32->app.persistence_enabled = 0;
+  lectern0_stop_page_repeat(&win32->app);
+  for (U32 pass = 0;
+       pass < 16 && (win32->app.page_action_waiting_for_present ||
+                     GetUpdateRect(win32->window, 0, FALSE));
+       pass += 1)
+  {
+    (void)InvalidateRect(win32->window, 0, FALSE);
+    (void)UpdateWindow(win32->window);
+  }
+  if (win32->app.page_action_waiting_for_present ||
+      win32->app.page_action_pending)
+  {
+    fprintf(stderr,
+            "lectern0_page_repeat_present_anchor result=fail setup=preexisting_gate gate=%d pending=%d status=%s\n",
+            win32->app.page_action_waiting_for_present,
+            win32->app.page_action_pending,
+            win32->app.status);
+    return 0;
+  }
+  (void)lectern0_save_state(&win32->app);
+  win32->app.page_repeat_cancelled_key = 0;
+  if (seek_anchor)
+  {
+    /* Anchor construction is one probe-only setup transaction. The search
+       jump and bounded reverse walk intentionally precede the single frame
+       that becomes observable to the Win32 queue. */
+    B32 prior_internal_dispatch = win32->app.page_action_internal_dispatch;
+    win32->app.page_action_internal_dispatch = 1;
+    B32 anchor_ok = lectern0_page_repeat_probe_seek_anchor(&win32->app);
+    win32->app.page_action_internal_dispatch = prior_internal_dispatch;
+    if (!anchor_ok)
+    {
+      fprintf(stderr,
+              "lectern0_page_repeat_present_anchor result=fail setup=anchor status=%s\n",
+              win32->app.status);
+      return 0;
+    }
+    lectern0_page_action_note_emitted(&win32->app);
+  }
+  reader_view_state_init(&win32->app.reader_view_state);
+  win32->app.host_focus_control = Lectern0HostControl_None;
+  win32->app.host_focus_visible = 0;
+  (void)InvalidateRect(win32->window, 0, FALSE);
+  for (U32 pass = 0;
+       pass < 16 && GetUpdateRect(win32->window, 0, FALSE);
+       pass += 1)
+  {
+    (void)UpdateWindow(win32->window);
+  }
+  B32 result = win32->app.last_present_complete &&
+    !win32->app.page_action_waiting_for_present &&
+    !win32->app.page_action_pending &&
+    lectern0_gotm_navigation_frame_is_canonical_nonempty(
+      &win32->app, 0, 0, 0, 0) &&
+    !GetUpdateRect(win32->window, 0, FALSE);
+  if (!result)
+  {
+    fprintf(stderr,
+            "lectern0_page_repeat_present_anchor result=fail present=%d gate=%d pending=%d update=%d identity_mismatch=%u frame=%llu:%llu expected=%llu:%llu frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
+            win32->app.last_present_complete,
+            win32->app.page_action_waiting_for_present,
+            win32->app.page_action_pending,
+            GetUpdateRect(win32->window, 0, FALSE) != 0,
+            win32->app.page_action_identity_mismatch_count,
+            (unsigned long long)win32->app.last_surface_identity.frame_generation,
+            (unsigned long long)win32->app.last_surface_identity.frame_capture_generation,
+            (unsigned long long)win32->app.page_action_expected_identity.frame_generation,
+            (unsigned long long)win32->app.page_action_expected_identity.frame_capture_generation,
+            (unsigned long long)win32->app.frame.document_id,
+            (unsigned long long)win32->app.frame.document_generation,
+            (unsigned long long)epub_reader_document_id(&win32->app.reader),
+            (unsigned long long)win32->app.reader.document_generation,
+            win32->app.frame.spine_index,
+            (unsigned long long)win32->app.frame.page_index,
+            (unsigned long long)win32->app.frame.page_count,
+            (unsigned long long)win32->app.frame.view_byte_offset,
+            (unsigned long long)win32->app.frame.visible_text.size,
+            win32->app.reader.current_page.spine_index,
+            (unsigned long long)win32->app.reader.current_page.spine_page_index,
+            (unsigned long long)win32->app.reader.current_page.spine_page_count,
+            (unsigned long long)win32->app.reader.current_page.first_byte,
+            (unsigned long long)
+              win32->app.reader.current_page.one_past_last_byte);
+  }
+  return result;
+}
+
+FUNCTION B32
+lectern0_win32_present_until_gate_clear(Lectern0Win32 *win32,
+                                         U32 pass_cap)
+{
+  if (!win32 || !win32->window || pass_cap == 0) return 0;
+  for (U32 pass = 0; pass < pass_cap; pass += 1)
+  {
+    if (win32->app.page_action_waiting_for_present ||
+        GetUpdateRect(win32->window, 0, FALSE))
+    {
+      (void)InvalidateRect(win32->window, 0, FALSE);
+      (void)UpdateWindow(win32->window);
+    }
+    if (!win32->app.page_action_waiting_for_present &&
+        !win32->app.page_action_pending &&
+        !GetUpdateRect(win32->window, 0, FALSE) &&
+        win32->app.last_present_complete)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_win32_pump_capture_retry_and_persistence(
+  Lectern0Win32 *win32,
+  U32 retry_scheduled_before,
+  U32 retry_fired_before,
+  U32 persistence_transaction_before,
+  U32 timeout_ms,
+  U32 *out_retry_recovered,
+  U32 *out_persistence_recovered)
+{
+  if (out_retry_recovered) *out_retry_recovered = 0;
+  if (out_persistence_recovered) *out_persistence_recovered = 0;
+  if (!win32 || !win32->window || timeout_ms == 0) return 0;
+  U64 frequency = os_time_frequency();
+  if (frequency == 0) return 0;
+  U64 timeout_ticks = frequency > UINT64_MAX / timeout_ms ?
+    UINT64_MAX : (frequency * timeout_ms + 999) / 1000;
+  U64 start_ticks = os_time_ticks();
+  U64 deadline_ticks = start_ticks > UINT64_MAX - timeout_ticks ?
+    UINT64_MAX : start_ticks + timeout_ticks;
+  B32 retry_fired_while_gated = 0;
+  MSG message = {0};
+  while (os_time_ticks() < deadline_ticks)
+  {
+    DWORD wait_result = MsgWaitForMultipleObjectsEx(
+      0, 0, 50, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    if (wait_result == WAIT_FAILED) return 0;
+    while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+    {
+      if (message.message == WM_QUIT) return 0;
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+      if (message.hwnd == win32->window && message.message == WM_TIMER &&
+          message.wParam == Lectern0PresentationRetryTimerId &&
+          win32->app.page_action_presentation_retry_fired_count >
+            retry_fired_before &&
+          win32->app.page_action_waiting_for_present)
+      {
+        if (win32->app.state_save_transaction_success_count !=
+              persistence_transaction_before)
+          return 0;
+        retry_fired_while_gated = 1;
+      }
+    }
+    B32 stable_page =
+      !win32->app.page_action_waiting_for_present &&
+      !win32->app.page_action_pending &&
+      win32->app.last_present_complete &&
+      win32->app.last_surface_identity.kind ==
+        Lectern0PresentationIdentity_Page &&
+      lectern0_canonical_page_identity_equal(
+        win32->app.last_surface_identity.page,
+        lectern0_canonical_page_identity(win32->app.reader.current_page));
+    B32 retry_recovered = retry_fired_while_gated && stable_page &&
+      win32->app.page_action_presentation_retry_scheduled_count >
+        retry_scheduled_before &&
+      win32->app.page_action_presentation_retry_fired_count > retry_fired_before;
+    B32 persistence_recovered = retry_recovered &&
+      !win32->app.state_save_pending &&
+      win32->app.state_save_transaction_success_count ==
+        persistence_transaction_before + 1;
+    if (persistence_recovered)
+    {
+      MemoryZeroStruct(&win32->app.saved);
+      lectern0_load_state(&win32->app);
+      Lectern0LibraryEntry *entry = lectern0_library_catalog_find_path(
+        &win32->app.library, win32->app.current_path);
+      persistence_recovered = win32->app.saved.valid && entry &&
+        win32->app.saved.spine_index == win32->app.reader.active_spine_index &&
+        win32->app.saved.byte_offset == win32->app.reader.view_byte_offset &&
+        entry->progress_spine_index == win32->app.reader.active_spine_index &&
+        entry->progress_byte_offset == win32->app.reader.view_byte_offset;
+    }
+    if (retry_recovered && persistence_recovered)
+    {
+      if (out_retry_recovered) *out_retry_recovered = 1;
+      if (out_persistence_recovered) *out_persistence_recovered = 1;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_win32_capture_failure_gate_regression(
+  Lectern0Win32 *win32,
+  const char *path,
+  U32 *out_recovered,
+  U32 *out_same_page_recovered,
+  U32 *out_open_catalog_recovered,
+  U32 *out_retry_recovered,
+  U32 *out_persistence_recovered)
+{
+  if (out_recovered) *out_recovered = 0;
+  if (out_same_page_recovered) *out_same_page_recovered = 0;
+  if (out_open_catalog_recovered) *out_open_catalog_recovered = 0;
+  if (out_retry_recovered) *out_retry_recovered = 0;
+  if (out_persistence_recovered) *out_persistence_recovered = 0;
+  if (!win32 || !path || !path[0] ||
+      !lectern0_page_repeat_win32_probe_present_anchor(win32, 1))
+    return 0;
+
+  U32 recovery_before = win32->app.capture_frame_recovery_count;
+  U32 mismatch_before = win32->app.page_action_identity_mismatch_count;
+  Lectern0CanonicalPageIdentity page_before =
+    lectern0_canonical_page_identity(win32->app.reader.current_page);
+  win32->app.persistence_enabled = 1;
+  if (!lectern0_save_state(&win32->app)) return 0;
+  U32 persistence_transaction_before =
+    win32->app.state_save_transaction_success_count;
+  U32 retry_scheduled_before =
+    win32->app.page_action_presentation_retry_scheduled_count;
+  U32 retry_fired_before =
+    win32->app.page_action_presentation_retry_fired_count;
+  win32->app.capture_frame_fail_count = 2;
+  if (!PostMessageW(win32->window, WM_KEYDOWN, VK_RIGHT, 1) ||
+      !PostMessageW(win32->window, WM_KEYUP, VK_RIGHT, (LPARAM)0xC0000001))
+    return 0;
+  U32 retry_recovered = 0;
+  U32 persistence_recovered = 0;
+  B32 pumped = lectern0_win32_pump_capture_retry_and_persistence(
+    win32,
+    retry_scheduled_before,
+    retry_fired_before,
+    persistence_transaction_before,
+    2000,
+    &retry_recovered,
+    &persistence_recovered);
+  B32 page_changed = win32->app.reader.has_current_page &&
+    !lectern0_canonical_page_identity_equal(
+      page_before,
+      lectern0_canonical_page_identity(win32->app.reader.current_page));
+  B32 page_recovered = pumped && page_changed && retry_recovered &&
+    persistence_recovered && !win32->app.page_action_waiting_for_present &&
+    win32->app.capture_frame_recovery_count == recovery_before + 1 &&
+    win32->app.page_action_identity_mismatch_count == mismatch_before + 1;
+  if (!page_recovered) return 0;
+  if (out_recovered) *out_recovered = 1;
+  if (out_retry_recovered) *out_retry_recovered = retry_recovered;
+  if (out_persistence_recovered) *out_persistence_recovered =
+    persistence_recovered;
+
+  U64 same_page_capture_before = win32->app.frame_capture_generation;
+  mismatch_before = win32->app.page_action_identity_mismatch_count;
+  SourceReaderPageRange same_page = win32->app.reader.current_page;
+  win32->app.capture_frame_fail_count = 2;
+  lectern0_apply_reader_view_action(&win32->app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindChanged,
+    .text = lectern0_reader_view_text("same-page capture recovery"),
+  });
+  B32 same_page_recovered =
+    win32->app.page_action_waiting_for_present &&
+    lectern0_win32_present_until_gate_clear(win32, 16) &&
+    lectern0_page_repeat_probe_page_equal(
+      same_page, win32->app.reader.current_page) &&
+    win32->app.frame_capture_generation > same_page_capture_before &&
+    win32->app.page_action_identity_mismatch_count == mismatch_before + 1;
+  if (!same_page_recovered) return 0;
+  if (out_same_page_recovered) *out_same_page_recovered = 1;
+
+  U32 catalog_count_before_open = win32->app.library.entry_count;
+  if (!lectern0_close_book(&win32->app) ||
+      !lectern0_win32_present_until_gate_clear(win32, 16) ||
+      epub_reader_is_open(&win32->app.reader))
+  {
+    return 0;
+  }
+  U64 closed_document_generation = win32->app.reader.document_generation;
+  U64 open_capture_before = win32->app.frame_capture_generation;
+  U32 open_recovery_before = win32->app.capture_frame_recovery_count;
+  mismatch_before = win32->app.page_action_identity_mismatch_count;
+  win32->app.capture_frame_fail_count = 2;
+  B32 open_result = lectern0_open_path(&win32->app, path);
+  Lectern0LibraryEntry *catalog_entry =
+    lectern0_library_catalog_find_path(&win32->app.library,
+                                        win32->app.current_path);
+  B32 open_catalog_recovered = open_result && catalog_entry &&
+    epub_reader_is_open(&win32->app.reader) &&
+    win32->app.reader.document_generation != closed_document_generation &&
+    win32->app.library.entry_count == catalog_count_before_open &&
+    win32->app.page_action_waiting_for_present &&
+    lectern0_win32_present_until_gate_clear(win32, 16) &&
+    win32->app.frame_capture_generation > open_capture_before &&
+    win32->app.capture_frame_recovery_count == open_recovery_before + 1 &&
+    win32->app.last_surface_identity.kind ==
+      Lectern0PresentationIdentity_Page &&
+    win32->app.last_surface_identity.document_generation ==
+      win32->app.reader.document_generation &&
+    lectern0_canonical_page_identity_equal(
+      win32->app.last_surface_identity.page,
+      lectern0_canonical_page_identity(win32->app.reader.current_page)) &&
+    win32->app.capture_frame_fail_count == 0;
+  if (!open_catalog_recovered)
+  {
+    fprintf(stderr,
+            "lectern0_capture_failure_open result=fail open=%d catalog=%d reader_open=%d generation=%llu/%llu catalog_count=%u/%u gate=%d mismatch=%u/%u capture=%llu/%llu recovery=%u/%u failures_left=%u status=%s\n",
+            open_result,
+            catalog_entry != 0,
+            epub_reader_is_open(&win32->app.reader),
+            (unsigned long long)win32->app.reader.document_generation,
+            (unsigned long long)closed_document_generation,
+            win32->app.library.entry_count,
+            catalog_count_before_open,
+            win32->app.page_action_waiting_for_present,
+            win32->app.page_action_identity_mismatch_count,
+            mismatch_before,
+            (unsigned long long)win32->app.frame_capture_generation,
+            (unsigned long long)open_capture_before,
+            win32->app.capture_frame_recovery_count,
+            open_recovery_before,
+            win32->app.capture_frame_fail_count,
+            win32->app.status);
+  }
+  if (out_open_catalog_recovered) *out_open_catalog_recovered =
+    open_catalog_recovered;
+  return open_catalog_recovered;
+}
+
+FUNCTION B32
+lectern0_win32_current_image_page_gate_is_exact(Lectern0Win32 *win32)
+{
+  if (!win32 || !epub_reader_is_open(&win32->app.reader) ||
+      win32->app.frame.image_count == 0)
+    return 0;
+  B32 image_identity_valid = 0;
+  U64 image_identity = lectern0_frame_image_visual_identity(
+    &win32->app.frame, &image_identity_valid);
+  Lectern0PresentationIdentity visible = win32->app.last_surface_identity;
+  return image_identity_valid && image_identity != 0 &&
+    visible.kind == Lectern0PresentationIdentity_Page &&
+    visible.frame_generation == win32->app.page_action_frame_generation &&
+    visible.frame_capture_generation == win32->app.frame_capture_generation &&
+    visible.reader_frame_generation == win32->app.frame.generation &&
+    visible.document_id == epub_reader_document_id(&win32->app.reader) &&
+    visible.document_generation == win32->app.reader.document_generation &&
+    visible.layout_generation ==
+      epub_reader_layout_key_generation(win32->app.layout_key) &&
+    visible.image_count == win32->app.frame.image_count &&
+    visible.image_visual_identity == image_identity &&
+    lectern0_canonical_page_identity_equal(
+      visible.page,
+      lectern0_canonical_page_identity(win32->app.reader.current_page));
+}
+
+FUNCTION B32
+lectern0_win32_image_page_gate_regression(Lectern0Win32 *win32,
+                                           U32 *out_image_pages)
+{
+  if (out_image_pages) *out_image_pages = 0;
+  if (!win32 || !epub_reader_is_open(&win32->app.reader)) return 0;
+
+  EpubReaderResult cover_navigation = lectern0_navigate_to_location(
+    &win32->app, 0, 0, EpubReaderNavigationReason_Location);
+  if (cover_navigation != EpubReaderResult_Ok ||
+      !lectern0_win32_present_until_gate_clear(win32, 16) ||
+      !lectern0_win32_current_image_page_gate_is_exact(win32))
+  {
+    fprintf(stderr,
+            "lectern0_image_page_gate result=fail case=cover navigation=%d spine=%u images=%u expected_kind=%d expected_images=%u expected_identity=%llu expected_frame=%llu:%llu visible_kind=%d visible_images=%u visible_identity=%llu visible_frame=%llu:%llu gate=%d present=%d mismatch=%u frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
+            (int)cover_navigation,
+            win32->app.reader.active_spine_index,
+            win32->app.frame.image_count,
+            (int)win32->app.page_action_expected_identity.kind,
+            win32->app.page_action_expected_identity.image_count,
+            (unsigned long long)
+              win32->app.page_action_expected_identity.image_visual_identity,
+            (unsigned long long)
+              win32->app.page_action_expected_identity.frame_generation,
+            (unsigned long long)
+              win32->app.page_action_expected_identity.frame_capture_generation,
+            (int)win32->app.last_surface_identity.kind,
+            win32->app.last_surface_identity.image_count,
+            (unsigned long long)
+              win32->app.last_surface_identity.image_visual_identity,
+            (unsigned long long)
+              win32->app.last_surface_identity.frame_generation,
+            (unsigned long long)
+              win32->app.last_surface_identity.frame_capture_generation,
+            win32->app.page_action_waiting_for_present,
+            win32->app.last_present_complete,
+            win32->app.page_action_identity_mismatch_count,
+            (unsigned long long)win32->app.frame.document_id,
+            (unsigned long long)win32->app.frame.document_generation,
+            (unsigned long long)epub_reader_document_id(&win32->app.reader),
+            (unsigned long long)win32->app.reader.document_generation,
+            win32->app.frame.spine_index,
+            (unsigned long long)win32->app.frame.page_index,
+            (unsigned long long)win32->app.frame.page_count,
+            (unsigned long long)win32->app.frame.view_byte_offset,
+            (unsigned long long)win32->app.frame.visible_text.size,
+            win32->app.reader.current_page.spine_index,
+            (unsigned long long)win32->app.reader.current_page.spine_page_index,
+            (unsigned long long)win32->app.reader.current_page.spine_page_count,
+            (unsigned long long)win32->app.reader.current_page.first_byte,
+            (unsigned long long)
+              win32->app.reader.current_page.one_past_last_byte);
+    return 0;
+  }
+  U32 image_pages = 1;
+
+  U32 nav_count = 0;
+  EpubReaderNavPointResult navigation = {0};
+  EpubReaderResult maps_navigation = EpubReaderResult_DocError;
+  if (doc_engine_get_nav_point_count(epub_reader_engine(&win32->app.reader),
+                                     epub_reader_document_id(&win32->app.reader),
+                                     &nav_count) == DocError_Ok &&
+      nav_count > 0)
+  {
+    maps_navigation = lectern0_navigate_to_nav_point(
+      &win32->app, 0, &navigation);
+  }
+  if (maps_navigation != EpubReaderResult_Ok ||
+      win32->app.reader.active_spine_index != 9 ||
+      !lectern0_win32_present_until_gate_clear(win32, 16) ||
+      !lectern0_win32_current_image_page_gate_is_exact(win32))
+  {
+    fprintf(stderr,
+            "lectern0_image_page_gate result=fail case=maps_1 navigation=%d nav_count=%u spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
+            (int)maps_navigation,
+            nav_count,
+            win32->app.reader.active_spine_index,
+            win32->app.frame.image_count,
+            win32->app.last_surface_identity.image_count,
+            (unsigned long long)
+              win32->app.last_surface_identity.image_visual_identity,
+            win32->app.page_action_waiting_for_present);
+    return 0;
+  }
+  image_pages += 1;
+
+  for (U32 map_index = 2; map_index <= 3; map_index += 1)
+  {
+    EpubReaderResult move = lectern0_move_page(&win32->app, 1);
+    if (move != EpubReaderResult_Ok ||
+        !lectern0_win32_present_until_gate_clear(win32, 16) ||
+        !lectern0_win32_current_image_page_gate_is_exact(win32))
+    {
+      fprintf(stderr,
+              "lectern0_image_page_gate result=fail case=maps_%u move=%d spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
+              map_index,
+              (int)move,
+              win32->app.reader.active_spine_index,
+              win32->app.frame.image_count,
+              win32->app.last_surface_identity.image_count,
+              (unsigned long long)
+                win32->app.last_surface_identity.image_visual_identity,
+              win32->app.page_action_waiting_for_present);
+      return 0;
+    }
+    image_pages += 1;
+  }
+  if (out_image_pages) *out_image_pages = image_pages;
+  return image_pages == 4;
+}
+
+FUNCTION B32
+lectern0_page_repeat_win32_run_probe(
+  Lectern0Win32 *win32,
+  const char *path,
+  Lectern0PageRepeatWin32ProbeKind kind,
+  S32 direction,
+  const SourceReaderPageRange *expected_pages,
+  U32 expected_page_count,
+  B32 seek_anchor,
+  Lectern0PageRepeatWin32Probe *out_probe)
+{
+  if (out_probe) MemoryZeroStruct(out_probe);
+  if (!win32 || !win32->window || !path || !path[0] ||
+      !out_probe || direction == 0)
+  {
+    return 0;
+  }
+
+  Lectern0PageRepeatWin32Probe probe = {0};
+  probe.minimum_text_bytes = UINT64_MAX;
+  probe.minimum_text_rows = UINT32_MAX;
+  probe.enabled = 1;
+  probe.kind = kind;
+  probe.direction = direction < 0 ? -1 : 1;
+  probe.key = probe.direction < 0 ? VK_LEFT : VK_RIGHT;
+  probe.target_frame_move_count =
+    kind == Lectern0PageRepeatWin32Probe_Direction ?
+      Lectern0PageRepeatProbeMoveCount : 0;
+  probe.frame_cap =
+    kind == Lectern0PageRepeatWin32Probe_Direction ? 200 : 16;
+  probe.native_repeats_per_frame = 8;
+  if (kind == Lectern0PageRepeatWin32Probe_Direction)
+  {
+    if (!expected_pages ||
+        expected_page_count != ARRAY_COUNT(probe.expected_pages))
+    {
+      *out_probe = probe;
+      return 0;
+    }
+    probe.expected_page_count = expected_page_count;
+    for (U32 index = 0; index < expected_page_count; index += 1)
+      probe.expected_pages[index] = expected_pages[index];
+  }
+  else if (kind == Lectern0PageRepeatWin32Probe_MutationGate)
+  {
+    if (!expected_pages || expected_page_count != 1)
+    {
+      *out_probe = probe;
+      return 0;
+    }
+    probe.expected_page_count = 1;
+    probe.expected_pages[0] = expected_pages[0];
+  }
+  if (!lectern0_page_repeat_win32_probe_present_anchor(win32, seek_anchor))
+  {
+    *out_probe = probe;
+    return 0;
+  }
+  probe.start_page = win32->app.reader.current_page;
+
+  win32->app.persistence_enabled = 1;
+  if (!lectern0_page_repeat_probe_prepare_persistence(&win32->app, &probe))
+  {
+    probe.failed = 1;
+    win32->app.persistence_enabled = 0;
+    *out_probe = probe;
+    return 0;
+  }
+  if (win32->page_repeat_probe_aux_paint_pending_count != 0 ||
+      win32->page_repeat_probe_main_null_paint_pending_count != 0)
+  {
+    probe.failed = 1;
+    win32->app.persistence_enabled = 0;
+    (void)lectern0_save_state(&win32->app);
+    *out_probe = probe;
+    return 0;
+  }
+  probe.auxiliary_paint_dispatch_before =
+    win32->page_repeat_probe_aux_paint_dispatch_count;
+  probe.main_null_paint_dispatch_before =
+    win32->page_repeat_probe_main_null_paint_dispatch_count;
+  probe.page_action_emitted_before = win32->app.page_action_emitted_count;
+  probe.page_action_presented_before = win32->app.page_action_presented_count;
+  probe.page_action_overlap_before = win32->app.page_action_overlap_count;
+  probe.page_action_identity_mismatch_before =
+    win32->app.page_action_identity_mismatch_count;
+  probe.page_action_mutation_drop_before =
+    win32->app.page_action_mutation_drop_count;
+  probe.start_ticks = os_time_ticks();
+  if (!PostMessageW(win32->window, WM_KEYDOWN, probe.key, 1) ||
+      !lectern0_page_repeat_win32_probe_post_native(&win32->app, &probe) ||
+      (kind == Lectern0PageRepeatWin32Probe_MutationGate &&
+       !lectern0_page_repeat_win32_probe_post_mutations(&win32->app)))
+  {
+    probe.failed = 1;
+    win32->app.persistence_enabled = 0;
+    (void)lectern0_save_state(&win32->app);
+    *out_probe = probe;
+    return 0;
+  }
+
+  lectern0_win32_run_message_loop(win32, &probe);
+  win32->app.persistence_enabled = 0;
+  (void)lectern0_save_state(&win32->app);
+
+  if (probe.kind == Lectern0PageRepeatWin32Probe_Direction)
+  {
+    U64 frequency = os_time_frequency();
+    for (U32 index = 0;
+         index < probe.stable_present_transition_count;
+         index += 1)
+    {
+      SourceReaderPageRange from_page = probe.actual_pages[index];
+      SourceReaderPageRange to_page = probe.actual_pages[index + 1];
+      double interval_ms = frequency > 0 ?
+        1000.0 * (double)probe.stable_present_transition_ticks[index] /
+          (double)frequency : 0.0;
+      fprintf(stderr,
+              "lectern0_page_repeat_transition direction=%d index=%u "
+              "from=%u:%llu-%llu to=%u:%llu-%llu cross_spine=%d "
+              "initial_delay=%d interval_ms=%.3f\n",
+              probe.direction,
+              index,
+              from_page.spine_index,
+              (unsigned long long)from_page.first_byte,
+              (unsigned long long)from_page.one_past_last_byte,
+              to_page.spine_index,
+              (unsigned long long)to_page.first_byte,
+              (unsigned long long)to_page.one_past_last_byte,
+              probe.stable_present_transition_cross_spine[index],
+              index == 0,
+              interval_ms);
+    }
+    double elapsed_ms = frequency > 0 ?
+      1000.0 * (double)probe.elapsed_ticks / (double)frequency : 0.0;
+    double frame_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.frame_max_ticks / (double)frequency : 0.0;
+    double first_move_ms = frequency > 0 ?
+      1000.0 * (double)probe.first_move_elapsed_ticks /
+        (double)frequency : 0.0;
+    double move_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)probe.move_interval_min_ticks /
+        (double)frequency : 0.0;
+    double move_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.move_interval_max_ticks /
+        (double)frequency : 0.0;
+    double immediate_visible_ms = frequency > 0 &&
+      probe.stable_present_count > 0 ?
+        1000.0 * (double)probe.stable_present_elapsed_ticks[0] /
+          (double)frequency : 0.0;
+    double visible_first_delay_ms = frequency > 0 ?
+      1000.0 * (double)probe.stable_present_first_delay_ticks /
+        (double)frequency : 0.0;
+    double visible_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)probe.stable_present_interval_min_ticks /
+        (double)frequency : 0.0;
+    double visible_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.stable_present_interval_max_ticks /
+        (double)frequency : 0.0;
+    double visible_elapsed_ms = frequency > 0 &&
+      probe.stable_present_count == Lectern0PageRepeatProbePageCount ?
+        1000.0 * (double)(
+          probe.stable_present_elapsed_ticks[
+            Lectern0PageRepeatProbePageCount - 1] -
+          probe.stable_present_elapsed_ticks[0]) / (double)frequency : 0.0;
+    double nominal_first_move_ms =
+      1000.0 * Lectern0PageRepeatInitialFrames /
+        Lectern0PageRepeatFrameRate;
+    double nominal_move_interval_ms =
+      1000.0 * Lectern0PageRepeatIntervalFrames /
+        Lectern0PageRepeatFrameRate;
+    double nominal_elapsed_ms = nominal_first_move_ms +
+      (probe.target_frame_move_count - 1) * nominal_move_interval_ms;
+    double repeat_prepare_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.repeat_prepare_max_ticks /
+        (double)frequency : 0.0;
+    double repeat_render_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.repeat_render_max_ticks /
+        (double)frequency : 0.0;
+    double repeat_present_max_ms = frequency > 0 ?
+      1000.0 * (double)probe.repeat_present_max_ticks /
+        (double)frequency : 0.0;
+    double move_prepare_budget_ms = 1000.0 / 60.0;
+    double render_budget_ms = 48.0;
+    double present_budget_ms = 1000.0 / 60.0;
+    B32 timing_ok = frequency > 0 &&
+      elapsed_ms >= nominal_elapsed_ms * 0.75 &&
+      elapsed_ms <= nominal_elapsed_ms +
+        Lectern0PageRepeatProbeTimingToleranceMs &&
+      first_move_ms >= nominal_first_move_ms * 0.75 &&
+      first_move_ms <= nominal_first_move_ms +
+        Lectern0PageRepeatProbeTimingToleranceMs &&
+      probe.move_interval_count == probe.target_frame_move_count - 1 &&
+      move_interval_min_ms >= nominal_move_interval_ms * 0.5 &&
+      move_interval_max_ms <= nominal_move_interval_ms +
+        Lectern0PageRepeatProbeIntervalToleranceMs &&
+      probe.stable_present_count == Lectern0PageRepeatProbePageCount &&
+      immediate_visible_ms < Lectern0PageRepeatProbeFrameBudgetMs &&
+      visible_first_delay_ms >= nominal_first_move_ms * 0.75 &&
+      visible_first_delay_ms <= nominal_first_move_ms +
+        Lectern0PageRepeatProbeTimingToleranceMs &&
+      probe.stable_present_interval_count ==
+        Lectern0PageRepeatProbeMoveCount - 1 &&
+      visible_interval_min_ms >= nominal_move_interval_ms * 0.5 &&
+      visible_interval_max_ms <= nominal_move_interval_ms +
+        Lectern0PageRepeatProbeIntervalToleranceMs &&
+      visible_elapsed_ms >= nominal_elapsed_ms * 0.75 &&
+      visible_elapsed_ms <= nominal_elapsed_ms +
+        Lectern0PageRepeatProbeTimingToleranceMs &&
+      repeat_prepare_max_ms < move_prepare_budget_ms &&
+      repeat_render_max_ms < render_budget_ms &&
+      repeat_present_max_ms < present_budget_ms &&
+      frame_max_ms < Lectern0PageRepeatProbeFrameBudgetMs;
+    probe.completed = probe.completed && timing_ok;
+  }
+  *out_probe = probe;
+  return probe.completed;
+}
+
 FUNCTION int
-lectern0_run_window(const char *initial_path)
+lectern0_run_window_internal(const char *initial_path,
+                             B32 page_repeat_probe_enabled)
 {
   Lectern0Win32 win32 = {0};
-  if (!lectern0_app_init(&win32.app, 1100, 760, 1, 1)) { return 1; }
+  B32 page_repeat_sandbox_ready = 0;
+  S32 initial_width = page_repeat_probe_enabled ?
+    Lectern0PageRepeatProbeWidth : 1100;
+  S32 initial_height = page_repeat_probe_enabled ?
+    Lectern0PageRepeatProbeHeight : 760;
+  if (!lectern0_app_init(&win32.app,
+                         initial_width,
+                         initial_height,
+                         1,
+                         !page_repeat_probe_enabled))
+  {
+    return 1;
+  }
 
   (void)SetProcessDPIAware();
   HINSTANCE instance = GetModuleHandleW(0);
@@ -17774,14 +21912,19 @@ lectern0_run_window(const char *initial_path)
     return 1;
   }
 
+  DWORD window_style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+  DWORD window_ex_style = page_repeat_probe_enabled ?
+    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE : 0;
   RECT rect = {0, 0, win32.app.width, win32.app.height};
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-  win32.window = CreateWindowExW(0,
+  win32.window = CreateWindowExW(window_ex_style,
                                  window_class.lpszClassName,
                                  L"lectern0 - EPUB reader",
-                                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                 CW_USEDEFAULT,
-                                 CW_USEDEFAULT,
+                                 window_style,
+                                 page_repeat_probe_enabled ? -32000 :
+                                   CW_USEDEFAULT,
+                                 page_repeat_probe_enabled ? -32000 :
+                                   CW_USEDEFAULT,
                                  rect.right - rect.left,
                                  rect.bottom - rect.top,
                                  0,
@@ -17807,17 +21950,767 @@ lectern0_run_window(const char *initial_path)
     return 1;
   }
   win32.app.gfx_ready = 1;
-  if (initial_path && initial_path[0]) { (void)lectern0_open_path(&win32.app, initial_path); }
+  if (initial_path && initial_path[0] &&
+      !lectern0_open_path(&win32.app, initial_path))
+  {
+    if (page_repeat_probe_enabled)
+      fprintf(stderr,
+              "lectern0_page_repeat_win32_smoke result=fail reason=open\n");
+    DestroyWindow(win32.window);
+    lectern0_app_release(&win32.app);
+    return 1;
+  }
+  if (page_repeat_probe_enabled)
+  {
+    page_repeat_sandbox_ready =
+      lectern0_page_repeat_probe_set_sandbox_paths(&win32.app);
+    if (!page_repeat_sandbox_ready)
+    {
+      fprintf(stderr,
+              "lectern0_page_repeat_win32_smoke result=fail reason=sandbox_persistence\n");
+      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+      DestroyWindow(win32.window);
+      lectern0_app_release(&win32.app);
+      return 1;
+    }
+    WNDCLASSW paint_probe_class = {0};
+    paint_probe_class.lpfnWndProc = lectern0_page_repeat_probe_paint_proc;
+    paint_probe_class.hInstance = instance;
+    paint_probe_class.lpszClassName = L"Lectern0PageRepeatPaintProbeWindow";
+    if (!RegisterClassW(&paint_probe_class))
+    {
+      fprintf(stderr,
+              "lectern0_page_repeat_win32_smoke result=fail reason=paint_probe_register\n");
+      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+      DestroyWindow(win32.window);
+      lectern0_app_release(&win32.app);
+      return 1;
+    }
+    win32.page_repeat_probe_paint_window = CreateWindowExW(
+      WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      paint_probe_class.lpszClassName,
+      L"lectern0 page-repeat paint probe",
+      WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      -32000,
+      -32000,
+      32,
+      32,
+      0,
+      0,
+      instance,
+      &win32);
+    if (!win32.page_repeat_probe_paint_window)
+    {
+      fprintf(stderr,
+              "lectern0_page_repeat_win32_smoke result=fail reason=paint_probe_window\n");
+      (void)UnregisterClassW(paint_probe_class.lpszClassName, instance);
+      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+      DestroyWindow(win32.window);
+      lectern0_app_release(&win32.app);
+      return 1;
+    }
+    (void)UpdateWindow(win32.page_repeat_probe_paint_window);
+    win32.page_repeat_probe_track_paints = 1;
+  }
+
+  if (page_repeat_probe_enabled)
+  {
+    U64 frequency = os_time_frequency();
+    Lectern0PageRepeatWin32Probe forward = {0};
+    Lectern0PageRepeatWin32Probe backward = {0};
+    Lectern0PageRepeatWin32Probe focus = {0};
+    Lectern0PageRepeatWin32Probe control_modifier = {0};
+    Lectern0PageRepeatWin32Probe shift_modifier = {0};
+    Lectern0PageRepeatWin32Probe system_modifier = {0};
+    Lectern0PageRepeatWin32Probe deactivate = {0};
+    Lectern0PageRepeatWin32Probe mutation_gate = {0};
+    SourceReaderPageRange expected_forward[Lectern0PageRepeatProbePageCount] =
+      {0};
+    SourceReaderPageRange expected_backward[Lectern0PageRepeatProbePageCount] =
+      {0};
+    SourceReaderPageRange reversal_anchor = {0};
+    SourceReaderPageRange reversal_endpoint = {0};
+    B32 expected_ok = lectern0_page_repeat_probe_build_expected(
+      initial_path,
+      expected_forward,
+      expected_backward,
+      &reversal_anchor,
+      &reversal_endpoint);
+
+    B32 forward_ok = expected_ok && lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_Direction,
+      1,
+      expected_forward,
+      ARRAY_COUNT(expected_forward),
+      1,
+      &forward);
+    B32 backward_ok = forward_ok &&
+      lectern0_page_repeat_probe_page_equal(win32.app.reader.current_page,
+                                             reversal_endpoint) &&
+      lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_Direction,
+      -1,
+      expected_backward,
+      ARRAY_COUNT(expected_backward),
+      0,
+      &backward);
+    B32 returned_to_anchor = backward_ok &&
+      lectern0_page_repeat_probe_page_equal(win32.app.reader.current_page,
+                                             reversal_anchor);
+    B32 focus_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_FocusLoss,
+      1,
+      0,
+      0,
+      1,
+      &focus);
+    B32 control_modifier_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_ControlModifier,
+      1,
+      0,
+      0,
+      1,
+      &control_modifier);
+    B32 shift_modifier_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_ShiftModifier,
+      1,
+      0,
+      0,
+      1,
+      &shift_modifier);
+    B32 system_modifier_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_SystemModifier,
+      1,
+      0,
+      0,
+      1,
+      &system_modifier);
+    B32 deactivate_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_Deactivation,
+      1,
+      0,
+      0,
+      1,
+      &deactivate);
+    B32 mutation_gate_ok = lectern0_page_repeat_win32_run_probe(
+      &win32,
+      initial_path,
+      Lectern0PageRepeatWin32Probe_MutationGate,
+      1,
+      expected_forward,
+      1,
+      1,
+      &mutation_gate);
+    U32 capture_page_recovered = 0;
+    U32 capture_same_page_recovered = 0;
+    U32 capture_open_catalog_recovered = 0;
+    U32 capture_retry_recovered = 0;
+    U32 capture_persistence_recovered = 0;
+    B32 capture_failure_ok = mutation_gate_ok &&
+      lectern0_win32_capture_failure_gate_regression(
+        &win32,
+        initial_path,
+        &capture_page_recovered,
+        &capture_same_page_recovered,
+        &capture_open_catalog_recovered,
+        &capture_retry_recovered,
+        &capture_persistence_recovered);
+    U32 image_gate_pages = 0;
+    B32 image_gate_ok = capture_failure_ok &&
+      lectern0_win32_image_page_gate_regression(&win32,
+                                                 &image_gate_pages);
+
+    double forward_first_move_ms = frequency > 0 ?
+      1000.0 * (double)forward.first_move_elapsed_ticks /
+        (double)frequency : 0.0;
+    double forward_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)forward.move_interval_min_ticks /
+        (double)frequency : 0.0;
+    double forward_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.move_interval_max_ticks /
+        (double)frequency : 0.0;
+    double forward_interval_avg_ms =
+      frequency > 0 && forward.move_interval_count > 0 ?
+        1000.0 * (double)forward.move_interval_total_ticks /
+          ((double)frequency * forward.move_interval_count) : 0.0;
+    double forward_elapsed_ms = frequency > 0 ?
+      1000.0 * (double)forward.elapsed_ticks /
+        (double)frequency : 0.0;
+    double forward_immediate_visible_ms = frequency > 0 &&
+      forward.stable_present_count > 0 ?
+        1000.0 * (double)forward.stable_present_elapsed_ticks[0] /
+          (double)frequency : 0.0;
+    double forward_visible_first_delay_ms = frequency > 0 ?
+      1000.0 * (double)forward.stable_present_first_delay_ticks /
+        (double)frequency : 0.0;
+    double forward_visible_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)forward.stable_present_interval_min_ticks /
+        (double)frequency : 0.0;
+    double forward_visible_interval_avg_ms =
+      frequency > 0 && forward.stable_present_interval_count > 0 ?
+        1000.0 * (double)forward.stable_present_interval_total_ticks /
+          ((double)frequency * forward.stable_present_interval_count) : 0.0;
+    double forward_visible_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.stable_present_interval_max_ticks /
+        (double)frequency : 0.0;
+    double forward_visible_elapsed_ms = frequency > 0 &&
+      forward.stable_present_count == Lectern0PageRepeatProbePageCount ?
+        1000.0 * (double)(forward.stable_present_elapsed_ticks[
+          Lectern0PageRepeatProbePageCount - 1] -
+          forward.stable_present_elapsed_ticks[0]) /
+          (double)frequency : 0.0;
+    double forward_frame_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.frame_max_ticks /
+        (double)frequency : 0.0;
+    double forward_cold_render_ms = frequency > 0 ?
+      1000.0 * (double)forward.cold_render_ticks /
+        (double)frequency : 0.0;
+    double forward_cold_present_ms = frequency > 0 ?
+      1000.0 * (double)forward.cold_present_ticks /
+        (double)frequency : 0.0;
+    double forward_repeat_prepare_avg_ms =
+      frequency > 0 && forward.repeat_timing_count > 0 ?
+        1000.0 * (double)forward.repeat_prepare_total_ticks /
+          ((double)frequency * forward.repeat_timing_count) : 0.0;
+    double forward_repeat_prepare_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.repeat_prepare_max_ticks /
+        (double)frequency : 0.0;
+    double forward_repeat_render_avg_ms =
+      frequency > 0 && forward.repeat_timing_count > 0 ?
+        1000.0 * (double)forward.repeat_render_total_ticks /
+          ((double)frequency * forward.repeat_timing_count) : 0.0;
+    double forward_repeat_render_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.repeat_render_max_ticks /
+        (double)frequency : 0.0;
+    double forward_repeat_present_avg_ms =
+      frequency > 0 && forward.repeat_timing_count > 0 ?
+        1000.0 * (double)forward.repeat_present_total_ticks /
+          ((double)frequency * forward.repeat_timing_count) : 0.0;
+    double forward_repeat_present_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.repeat_present_max_ticks /
+        (double)frequency : 0.0;
+    double forward_navigation_prepare_avg_ms =
+      frequency > 0 && forward.navigation_prepare_call_count > 0 ?
+        1000.0 * (double)forward.navigation_prepare_total_ticks /
+          ((double)frequency * forward.navigation_prepare_call_count) : 0.0;
+    double forward_navigation_prepare_max_ms = frequency > 0 ?
+      1000.0 * (double)forward.navigation_prepare_max_ticks /
+        (double)frequency : 0.0;
+    double backward_first_move_ms = frequency > 0 ?
+      1000.0 * (double)backward.first_move_elapsed_ticks /
+        (double)frequency : 0.0;
+    double backward_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)backward.move_interval_min_ticks /
+        (double)frequency : 0.0;
+    double backward_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.move_interval_max_ticks /
+        (double)frequency : 0.0;
+    double backward_interval_avg_ms =
+      frequency > 0 && backward.move_interval_count > 0 ?
+        1000.0 * (double)backward.move_interval_total_ticks /
+          ((double)frequency * backward.move_interval_count) : 0.0;
+    double backward_elapsed_ms = frequency > 0 ?
+      1000.0 * (double)backward.elapsed_ticks /
+        (double)frequency : 0.0;
+    double backward_immediate_visible_ms = frequency > 0 &&
+      backward.stable_present_count > 0 ?
+        1000.0 * (double)backward.stable_present_elapsed_ticks[0] /
+          (double)frequency : 0.0;
+    double backward_visible_first_delay_ms = frequency > 0 ?
+      1000.0 * (double)backward.stable_present_first_delay_ticks /
+        (double)frequency : 0.0;
+    double backward_visible_interval_min_ms = frequency > 0 ?
+      1000.0 * (double)backward.stable_present_interval_min_ticks /
+        (double)frequency : 0.0;
+    double backward_visible_interval_avg_ms =
+      frequency > 0 && backward.stable_present_interval_count > 0 ?
+        1000.0 * (double)backward.stable_present_interval_total_ticks /
+          ((double)frequency * backward.stable_present_interval_count) : 0.0;
+    double backward_visible_interval_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.stable_present_interval_max_ticks /
+        (double)frequency : 0.0;
+    double backward_visible_elapsed_ms = frequency > 0 &&
+      backward.stable_present_count == Lectern0PageRepeatProbePageCount ?
+        1000.0 * (double)(backward.stable_present_elapsed_ticks[
+          Lectern0PageRepeatProbePageCount - 1] -
+          backward.stable_present_elapsed_ticks[0]) /
+          (double)frequency : 0.0;
+    double backward_frame_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.frame_max_ticks /
+        (double)frequency : 0.0;
+    double backward_cold_render_ms = frequency > 0 ?
+      1000.0 * (double)backward.cold_render_ticks /
+        (double)frequency : 0.0;
+    double backward_cold_present_ms = frequency > 0 ?
+      1000.0 * (double)backward.cold_present_ticks /
+        (double)frequency : 0.0;
+    double backward_repeat_prepare_avg_ms =
+      frequency > 0 && backward.repeat_timing_count > 0 ?
+        1000.0 * (double)backward.repeat_prepare_total_ticks /
+          ((double)frequency * backward.repeat_timing_count) : 0.0;
+    double backward_repeat_prepare_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.repeat_prepare_max_ticks /
+        (double)frequency : 0.0;
+    double backward_repeat_render_avg_ms =
+      frequency > 0 && backward.repeat_timing_count > 0 ?
+        1000.0 * (double)backward.repeat_render_total_ticks /
+          ((double)frequency * backward.repeat_timing_count) : 0.0;
+    double backward_repeat_render_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.repeat_render_max_ticks /
+        (double)frequency : 0.0;
+    double backward_repeat_present_avg_ms =
+      frequency > 0 && backward.repeat_timing_count > 0 ?
+        1000.0 * (double)backward.repeat_present_total_ticks /
+          ((double)frequency * backward.repeat_timing_count) : 0.0;
+    double backward_repeat_present_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.repeat_present_max_ticks /
+        (double)frequency : 0.0;
+    double backward_navigation_prepare_avg_ms =
+      frequency > 0 && backward.navigation_prepare_call_count > 0 ?
+        1000.0 * (double)backward.navigation_prepare_total_ticks /
+          ((double)frequency * backward.navigation_prepare_call_count) : 0.0;
+    double backward_navigation_prepare_max_ms = frequency > 0 ?
+      1000.0 * (double)backward.navigation_prepare_max_ticks /
+        (double)frequency : 0.0;
+    double nominal_first_move_ms =
+      1000.0 * Lectern0PageRepeatInitialFrames /
+        Lectern0PageRepeatFrameRate;
+    double nominal_move_interval_ms =
+      1000.0 * Lectern0PageRepeatIntervalFrames /
+        Lectern0PageRepeatFrameRate;
+    double nominal_elapsed_ms = nominal_first_move_ms +
+      (Lectern0PageRepeatProbeMoveCount - 1) * nominal_move_interval_ms;
+    U32 native_posted = forward.native_repeat_posted_count +
+      backward.native_repeat_posted_count;
+    U32 native_coalesced = forward.native_repeat_coalesced_count +
+      backward.native_repeat_coalesced_count;
+    U32 canonical_matches = forward.canonical_match_count +
+      backward.canonical_match_count;
+    U32 canonical_valid_frames = forward.valid_frame_count +
+      backward.valid_frame_count;
+    U32 cross_spine_transitions = forward.cross_spine_transition_count +
+      backward.cross_spine_transition_count;
+    U32 cross_spine_directions =
+      (forward.cross_spine_transition_count > 0 ? 1u : 0u) +
+      (backward.cross_spine_transition_count > 0 ? 1u : 0u);
+    U32 zero_page_or_frame_count = forward.zero_page_or_frame_count +
+      backward.zero_page_or_frame_count;
+    U32 orphan_text_page_count = forward.orphan_text_page_count +
+      backward.orphan_text_page_count;
+    U32 invalid_word_start_page_count =
+      forward.invalid_word_start_page_count +
+      backward.invalid_word_start_page_count;
+    U32 gotm_text_frame_count = forward.text_frame_count +
+      backward.text_frame_count;
+    U64 gotm_minimum_text_bytes = MIN(forward.minimum_text_bytes,
+                                       backward.minimum_text_bytes);
+    U32 gotm_minimum_text_rows = MIN(forward.minimum_text_rows,
+                                      backward.minimum_text_rows);
+    U64 page_actions_emitted = forward.page_action_emitted_count +
+      backward.page_action_emitted_count;
+    U64 page_actions_presented = forward.page_action_presented_count +
+      backward.page_action_presented_count;
+    U32 page_action_overlaps = forward.page_action_overlap_count +
+      backward.page_action_overlap_count;
+    U32 persistence_deferred = forward.persistence_deferred_count +
+      backward.persistence_deferred_count;
+    U32 persistence_rescheduled = forward.persistence_rescheduled_count +
+      backward.persistence_rescheduled_count +
+      focus.persistence_rescheduled_count +
+      control_modifier.persistence_rescheduled_count +
+      shift_modifier.persistence_rescheduled_count +
+      system_modifier.persistence_rescheduled_count +
+      deactivate.persistence_rescheduled_count +
+      mutation_gate.persistence_rescheduled_count;
+    U32 cancelled_repeat_posted = focus.cancelled_repeat_posted_count +
+      control_modifier.cancelled_repeat_posted_count +
+      shift_modifier.cancelled_repeat_posted_count +
+      system_modifier.cancelled_repeat_posted_count +
+      deactivate.cancelled_repeat_posted_count;
+    U32 cancelled_repeat_consumed = focus.cancelled_repeat_consumed_count +
+      control_modifier.cancelled_repeat_consumed_count +
+      shift_modifier.cancelled_repeat_consumed_count +
+      system_modifier.cancelled_repeat_consumed_count +
+      deactivate.cancelled_repeat_consumed_count;
+    U32 persistence_transactions =
+      forward.persistence_transaction_success_after -
+        forward.persistence_transaction_success_before +
+      backward.persistence_transaction_success_after -
+        backward.persistence_transaction_success_before +
+      focus.persistence_transaction_success_after -
+        focus.persistence_transaction_success_before +
+      control_modifier.persistence_transaction_success_after -
+        control_modifier.persistence_transaction_success_before +
+      shift_modifier.persistence_transaction_success_after -
+        shift_modifier.persistence_transaction_success_before +
+      system_modifier.persistence_transaction_success_after -
+        system_modifier.persistence_transaction_success_before +
+      deactivate.persistence_transaction_success_after -
+        deactivate.persistence_transaction_success_before +
+      mutation_gate.persistence_transaction_success_after -
+        mutation_gate.persistence_transaction_success_before;
+    U32 persistence_hold_unchanged = forward.persistence_hold_unchanged +
+      backward.persistence_hold_unchanged + focus.persistence_hold_unchanged +
+      control_modifier.persistence_hold_unchanged +
+      shift_modifier.persistence_hold_unchanged +
+      system_modifier.persistence_hold_unchanged +
+      deactivate.persistence_hold_unchanged +
+      mutation_gate.persistence_hold_unchanged;
+    U32 persistence_post_stop_advanced =
+      forward.persistence_post_stop_advanced +
+      backward.persistence_post_stop_advanced +
+      focus.persistence_post_stop_advanced +
+      control_modifier.persistence_post_stop_advanced +
+      shift_modifier.persistence_post_stop_advanced +
+      system_modifier.persistence_post_stop_advanced +
+      deactivate.persistence_post_stop_advanced +
+      mutation_gate.persistence_post_stop_advanced;
+    U32 auxiliary_paint_dispatches = forward.auxiliary_paint_dispatch_count +
+      backward.auxiliary_paint_dispatch_count;
+    U32 main_null_paint_dispatches = forward.main_null_paint_dispatch_count +
+      backward.main_null_paint_dispatch_count;
+    U32 interval_sample_count = forward.move_interval_count +
+      backward.move_interval_count;
+    U32 repeat_timing_sample_count = forward.repeat_timing_count +
+      backward.repeat_timing_count;
+    U32 stable_presentation_count = forward.stable_present_count +
+      backward.stable_present_count;
+    U32 visible_interval_sample_count =
+      forward.stable_present_interval_count +
+      backward.stable_present_interval_count;
+    U32 queue_drain_batch_max = MAX(
+      MAX(forward.queue_drain_batch_max_count,
+          backward.queue_drain_batch_max_count),
+      MAX(MAX(focus.queue_drain_batch_max_count,
+              control_modifier.queue_drain_batch_max_count),
+          MAX(MAX(shift_modifier.queue_drain_batch_max_count,
+                  system_modifier.queue_drain_batch_max_count),
+              MAX(deactivate.queue_drain_batch_max_count,
+                  mutation_gate.queue_drain_batch_max_count))));
+    U32 queue_drained_message_count = forward.queue_drain_message_count +
+      backward.queue_drain_message_count + focus.queue_drain_message_count +
+      control_modifier.queue_drain_message_count +
+      shift_modifier.queue_drain_message_count +
+      system_modifier.queue_drain_message_count +
+      deactivate.queue_drain_message_count +
+      mutation_gate.queue_drain_message_count;
+    U32 expected_presented_frames = Lectern0PageRepeatProbeMoveCount + 1;
+    U32 idle_presentations =
+      (forward.logical_frame_count > expected_presented_frames ?
+         forward.logical_frame_count - expected_presented_frames : 0) +
+      (backward.logical_frame_count > expected_presented_frames ?
+         backward.logical_frame_count - expected_presented_frames : 0);
+    U32 expected_native_repeats =
+      expected_presented_frames * 2 * forward.native_repeats_per_frame;
+    win32.app.persistence_enabled = 0;
+    char sandbox_directory[Lectern0PathCap] = {0};
+    lectern0_copy_cstr(sandbox_directory,
+                       ARRAY_COUNT(sandbox_directory),
+                       win32.app.app_directory);
+    lectern0_page_repeat_probe_cleanup_sandbox_files(&win32.app);
+    win32.page_repeat_probe_track_paints = 0;
+    DestroyWindow(win32.page_repeat_probe_paint_window);
+    win32.page_repeat_probe_paint_window = 0;
+    (void)UnregisterClassW(L"Lectern0PageRepeatPaintProbeWindow", instance);
+    DestroyWindow(win32.window);
+    win32.window = 0;
+    lectern0_app_release(&win32.app);
+    B32 persistence_cleanup_ok =
+      lectern0_page_repeat_probe_remove_sandbox_directory(sandbox_directory);
+    B32 passed = frequency > 0 && page_repeat_sandbox_ready &&
+      persistence_cleanup_ok &&
+      expected_ok && forward_ok && backward_ok && returned_to_anchor &&
+      focus_ok && control_modifier_ok && shift_modifier_ok &&
+      system_modifier_ok && deactivate_ok && mutation_gate_ok &&
+      capture_failure_ok && image_gate_ok &&
+      native_posted == expected_native_repeats &&
+      native_coalesced == expected_native_repeats &&
+      idle_presentations == 0 && canonical_matches == 26 &&
+      canonical_valid_frames == 26 && cross_spine_directions == 2 &&
+      zero_page_or_frame_count == 0 && orphan_text_page_count == 0 &&
+      invalid_word_start_page_count == 0 && gotm_text_frame_count > 0 &&
+      gotm_minimum_text_bytes >= Lectern0GotmMinimumProseTextBytes &&
+      gotm_minimum_text_rows >= Lectern0GotmMinimumProseTextRows &&
+      page_actions_emitted == 26 && page_actions_presented == 26 &&
+      page_action_overlaps == 0 &&
+      interval_sample_count == 22 && repeat_timing_sample_count == 24 &&
+      stable_presentation_count == 26 &&
+      visible_interval_sample_count == 22 &&
+      forward.navigation_prepare_fail_count == 0 &&
+      backward.navigation_prepare_fail_count == 0 &&
+      forward.navigation_prepare_build_count > 0 &&
+      backward.navigation_prepare_build_count > 0 &&
+      forward.prepared_window_move_count > 0 &&
+      backward.prepared_window_move_count > 0 &&
+      forward.synchronous_window_rebuild_move_count == 0 &&
+      backward.synchronous_window_rebuild_move_count == 0 &&
+      forward.synchronous_adjacent_measured_move_count == 0 &&
+      backward.synchronous_adjacent_measured_move_count == 0 &&
+      queue_drain_batch_max <= Lectern0PageRepeatProbeQueueDrainCap &&
+      auxiliary_paint_dispatches == 2 && main_null_paint_dispatches == 2 &&
+      mutation_gate.page_action_mutation_drop_count ==
+        Lectern0PageRepeatProbeMutationCount &&
+      mutation_gate.mutation_cancel_count == 1 &&
+      capture_page_recovered == 1 && capture_same_page_recovered == 1 &&
+      capture_open_catalog_recovered == 1 && capture_retry_recovered == 1 &&
+      capture_persistence_recovered == 1 && image_gate_pages == 4 &&
+      persistence_deferred == 24 && persistence_rescheduled == 8 &&
+      persistence_transactions == 8 && persistence_hold_unchanged == 8 &&
+      persistence_post_stop_advanced == 8 &&
+      cancelled_repeat_posted == 5 && cancelled_repeat_consumed == 5;
+    fprintf(passed ? stdout : stderr,
+            "lectern0_page_repeat_win32_smoke result=%s viewport=%dx%d "
+            "directions=%d/2 reversal=forward_then_backward "
+            "returned_to_anchor=%d/1 cross_spine_directions=%u/2 "
+            "cross_spine_transitions=%u "
+            "schedule=wall_clock_rebased_no_catch_up frame_rate=%d "
+            "initial_frames=%d interval_frames=%d repeat_moves=%d+%d "
+            "presented_frames=%u+%u expected_presented_frames=%u+%u "
+            "idle_presentations=%u/0 canonical_pages=%u/26 "
+            "canonical_nonempty_frames=%u/26 zero_pages_or_frames=%u/0 "
+            "orphan_text_pages=%u/0 invalid_word_start_pages=%u/0 "
+            "boundary_oracle=raw_spine_utf8_word_start "
+            "gotm_prose_scope=active_spine_text_ge_128 "
+            "queue_range_oracle=self_derived_order_only "
+            "independent_range_oracle=external_frozen_re10_required_not_evaluated "
+            "gotm_minimum_text_bytes=%llu/%d "
+            "gotm_minimum_text_rows=%u/%d "
+             "action_presentations=%llu/%llu "
+             "action_overlap=%u/0 native_repeats=%u/%u "
+             "navigation_prepare_calls=%llu+%llu "
+             "navigation_prepare_builds=%llu+%llu "
+             "navigation_prepare_ready=%llu+%llu "
+             "navigation_prepare_failures=%llu+%llu "
+             "prepared_window_moves=%u+%u "
+             "synchronous_window_rebuild_moves=%u+%u "
+             "synchronous_adjacent_measured_moves=%u+%u "
+             "cross_spine_boundary_ring_moves=%u+%u "
+            "interval_samples=%u/22 action_timing_samples=%u/24 "
+            "stable_presentations=%u/26 visible_interval_samples=%u/22 "
+            "queue_drain_batch_max=%u/%d queue_drained_messages=%u "
+            "keyup_cancel=%u/2 focus_cancel=%u/1 control_cancel=%u/1 "
+            "shift_cancel=%u/1 system_modifier_cancel=%u/1 "
+            "modifier_cancel=%u/3 deactivate_cancel=%u/1 "
+            "cancelled_repeats=%u/%u mutation_gate_drops=%u/%d "
+            "mutation_cancel=%u/1 capture_failure_page_recovery=%u/1 "
+            "capture_failure_same_page_freshness=%u/1 "
+            "capture_failure_open_catalog_recovery=%u/1 "
+            "capture_failure_retry_timer_recovery=%u/1 "
+            "capture_failure_persistence_recovery=%u/1 "
+            "image_page_gate=%u/4 persistence_deferred=%u/24 "
+            "persistence_rescheduled=%u/8 persistence_transactions=%u/8 "
+            "persistence_hold_state_catalog_unchanged=%u/8 "
+            "persistence_post_stop_state_catalog_advanced=%u/8 "
+            "persistence=sandboxed_paired_save_individually_atomic_files "
+            "persistence_cleanup=%d/1 auxiliary_paint_dispatched=%u/2 "
+            "main_null_paint_dispatched=%u/2 paint=real_queue_dispatch "
+            "nominal_first_move_ms=%.3f forward_first_move_ms=%.3f "
+            "backward_first_move_ms=%.3f nominal_move_interval_ms=%.3f "
+            "interval_tolerance_ms=%d forward_interval_min_ms=%.3f "
+            "forward_interval_avg_ms=%.3f forward_interval_max_ms=%.3f "
+            "backward_interval_min_ms=%.3f backward_interval_avg_ms=%.3f "
+            "backward_interval_max_ms=%.3f nominal_elapsed_ms=%.3f "
+            "timing_tolerance_ms=%d forward_elapsed_ms=%.3f "
+            "backward_elapsed_ms=%.3f "
+            "forward_immediate_visible_ms=%.3f "
+            "forward_visible_first_delay_ms=%.3f "
+            "forward_visible_interval_min_ms=%.3f "
+            "forward_visible_interval_avg_ms=%.3f "
+            "forward_visible_interval_max_ms=%.3f "
+            "forward_visible_elapsed_ms=%.3f "
+            "backward_immediate_visible_ms=%.3f "
+            "backward_visible_first_delay_ms=%.3f "
+            "backward_visible_interval_min_ms=%.3f "
+            "backward_visible_interval_avg_ms=%.3f "
+            "backward_visible_interval_max_ms=%.3f "
+            "backward_visible_elapsed_ms=%.3f frame_budget_ms=%d "
+            "move_prepare_budget_ms=16.667 render_budget_ms=48.000 "
+            "present_budget_ms=16.667 forward_frame_max_ms=%.3f "
+            "backward_frame_max_ms=%.3f forward_cold_render_ms=%.3f "
+            "forward_cold_present_ms=%.3f "
+            "forward_repeat_prepare_avg_ms=%.3f "
+            "forward_repeat_prepare_max_ms=%.3f "
+            "forward_repeat_render_avg_ms=%.3f "
+            "forward_repeat_render_max_ms=%.3f "
+             "forward_repeat_present_avg_ms=%.3f "
+             "forward_repeat_present_max_ms=%.3f "
+             "forward_navigation_prepare_avg_ms=%.3f "
+             "forward_navigation_prepare_max_ms=%.3f "
+             "backward_cold_render_ms=%.3f backward_cold_present_ms=%.3f "
+            "backward_repeat_prepare_avg_ms=%.3f "
+            "backward_repeat_prepare_max_ms=%.3f "
+            "backward_repeat_render_avg_ms=%.3f "
+            "backward_repeat_render_max_ms=%.3f "
+             "backward_repeat_present_avg_ms=%.3f "
+             "backward_repeat_present_max_ms=%.3f "
+             "backward_navigation_prepare_avg_ms=%.3f "
+             "backward_navigation_prepare_max_ms=%.3f\n",
+            passed ? "pass" : "fail",
+            Lectern0PageRepeatProbeWidth,
+            Lectern0PageRepeatProbeHeight,
+            forward_ok + backward_ok,
+            returned_to_anchor,
+            cross_spine_directions,
+            cross_spine_transitions,
+            Lectern0PageRepeatFrameRate,
+            Lectern0PageRepeatInitialFrames,
+            Lectern0PageRepeatIntervalFrames,
+            Lectern0PageRepeatProbeMoveCount,
+            Lectern0PageRepeatProbeMoveCount,
+            forward.logical_frame_count,
+            backward.logical_frame_count,
+            expected_presented_frames,
+            expected_presented_frames,
+            idle_presentations,
+            canonical_matches,
+            canonical_valid_frames,
+            zero_page_or_frame_count,
+            orphan_text_page_count,
+            invalid_word_start_page_count,
+            (unsigned long long)gotm_minimum_text_bytes,
+            Lectern0GotmMinimumProseTextBytes,
+            gotm_minimum_text_rows,
+            Lectern0GotmMinimumProseTextRows,
+            (unsigned long long)page_actions_emitted,
+            (unsigned long long)page_actions_presented,
+            page_action_overlaps,
+             native_coalesced,
+             native_posted,
+             (unsigned long long)forward.navigation_prepare_call_count,
+             (unsigned long long)backward.navigation_prepare_call_count,
+             (unsigned long long)forward.navigation_prepare_build_count,
+             (unsigned long long)backward.navigation_prepare_build_count,
+             (unsigned long long)forward.navigation_prepare_ready_count,
+             (unsigned long long)backward.navigation_prepare_ready_count,
+             (unsigned long long)forward.navigation_prepare_fail_count,
+             (unsigned long long)backward.navigation_prepare_fail_count,
+             forward.prepared_window_move_count,
+             backward.prepared_window_move_count,
+             forward.synchronous_window_rebuild_move_count,
+             backward.synchronous_window_rebuild_move_count,
+             forward.synchronous_adjacent_measured_move_count,
+             backward.synchronous_adjacent_measured_move_count,
+             forward.cross_spine_boundary_ring_move_count,
+             backward.cross_spine_boundary_ring_move_count,
+            interval_sample_count,
+            repeat_timing_sample_count,
+            stable_presentation_count,
+            visible_interval_sample_count,
+            queue_drain_batch_max,
+            Lectern0PageRepeatProbeQueueDrainCap,
+            queue_drained_message_count,
+            forward.keyup_cancel_count + backward.keyup_cancel_count,
+            focus.focus_cancel_count,
+            control_modifier.modifier_cancel_count,
+            shift_modifier.modifier_cancel_count,
+            system_modifier.modifier_cancel_count,
+            control_modifier.modifier_cancel_count +
+              shift_modifier.modifier_cancel_count +
+              system_modifier.modifier_cancel_count,
+            deactivate.deactivate_cancel_count,
+            cancelled_repeat_consumed,
+            cancelled_repeat_posted,
+            mutation_gate.page_action_mutation_drop_count,
+            Lectern0PageRepeatProbeMutationCount,
+            mutation_gate.mutation_cancel_count,
+            capture_page_recovered,
+            capture_same_page_recovered,
+            capture_open_catalog_recovered,
+            capture_retry_recovered,
+            capture_persistence_recovered,
+            image_gate_pages,
+            persistence_deferred,
+            persistence_rescheduled,
+            persistence_transactions,
+            persistence_hold_unchanged,
+            persistence_post_stop_advanced,
+            persistence_cleanup_ok,
+            auxiliary_paint_dispatches,
+            main_null_paint_dispatches,
+            nominal_first_move_ms,
+            forward_first_move_ms,
+            backward_first_move_ms,
+            nominal_move_interval_ms,
+            Lectern0PageRepeatProbeIntervalToleranceMs,
+            forward_interval_min_ms,
+            forward_interval_avg_ms,
+            forward_interval_max_ms,
+            backward_interval_min_ms,
+            backward_interval_avg_ms,
+            backward_interval_max_ms,
+            nominal_elapsed_ms,
+            Lectern0PageRepeatProbeTimingToleranceMs,
+            forward_elapsed_ms,
+            backward_elapsed_ms,
+            forward_immediate_visible_ms,
+            forward_visible_first_delay_ms,
+            forward_visible_interval_min_ms,
+            forward_visible_interval_avg_ms,
+            forward_visible_interval_max_ms,
+            forward_visible_elapsed_ms,
+            backward_immediate_visible_ms,
+            backward_visible_first_delay_ms,
+            backward_visible_interval_min_ms,
+            backward_visible_interval_avg_ms,
+            backward_visible_interval_max_ms,
+            backward_visible_elapsed_ms,
+            Lectern0PageRepeatProbeFrameBudgetMs,
+            forward_frame_max_ms,
+            backward_frame_max_ms,
+            forward_cold_render_ms,
+            forward_cold_present_ms,
+            forward_repeat_prepare_avg_ms,
+            forward_repeat_prepare_max_ms,
+            forward_repeat_render_avg_ms,
+            forward_repeat_render_max_ms,
+             forward_repeat_present_avg_ms,
+             forward_repeat_present_max_ms,
+             forward_navigation_prepare_avg_ms,
+             forward_navigation_prepare_max_ms,
+             backward_cold_render_ms,
+            backward_cold_present_ms,
+            backward_repeat_prepare_avg_ms,
+            backward_repeat_prepare_max_ms,
+            backward_repeat_render_avg_ms,
+            backward_repeat_render_max_ms,
+             backward_repeat_present_avg_ms,
+             backward_repeat_present_max_ms,
+             backward_navigation_prepare_avg_ms,
+             backward_navigation_prepare_max_ms);
+    return passed ? 0 : 1;
+  }
+
   InvalidateRect(win32.window, 0, FALSE);
 
-  MSG message = {0};
-  while (GetMessageW(&message, 0, 0, 0) > 0)
-  {
-    TranslateMessage(&message);
-    DispatchMessageW(&message);
-  }
+  lectern0_win32_run_message_loop(&win32, 0);
   lectern0_app_release(&win32.app);
   return 0;
+}
+
+FUNCTION int
+lectern0_run_window(const char *initial_path)
+{
+  return lectern0_run_window_internal(initial_path, 0);
+}
+
+FUNCTION int
+lectern0_run_page_repeat_win32_smoke(const char *path)
+{
+  return lectern0_run_window_internal(path, 1);
 }
 
 int
@@ -17849,6 +22742,11 @@ main(int argc, char **argv)
   else if (argc == 4 && strcmp(argv[1], "--page-turn-regression-smoke") == 0)
   {
     result = lectern0_run_page_turn_regression_smoke(argv[2], argv[3]);
+  }
+  else if (argc == 3 &&
+           strcmp(argv[1], "--page-repeat-win32-smoke") == 0)
+  {
+    result = lectern0_run_page_repeat_win32_smoke(argv[2]);
   }
   else if (argc == 4 && strcmp(argv[1], "--library-smoke") == 0)
   {
@@ -17921,7 +22819,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

@@ -47,7 +47,7 @@ cl /nologo /std:c11 /W4 /WX /Zi /Od /MD /DUNICODE /D_UNICODE ^
   /I "%LECTERN0_READERVIEW0_DIR%\code" ^
   /Fe"%EXE_NAME%" "%SRC_UNITY%" ^
   /link /STACK:16777216 user32.lib gdi32.lib dwrite.lib ole32.lib oleaut32.lib ^
-  oleacc.lib comdlg32.lib windowscodecs.lib uuid.lib shell32.lib
+  oleacc.lib comdlg32.lib windowscodecs.lib uuid.lib shell32.lib winmm.lib
 if errorlevel 1 (
   echo [lectern0] Build failed.
   popd

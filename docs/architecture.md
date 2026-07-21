@@ -46,9 +46,20 @@ mutated in application storage. Its narrow semantic adapters capture the
 resulting canonical frame, set host status, and persist the resulting
 reader-owned location.
 
-Lectern0 owns when that preparation runs: 12 ms on first-open idle work, 8 ms
-on ordinary idle work, and no speculative work while a page key is held. It
-warms at most four forward text pages and at most one cross-spine page. The
+Lectern0 defensively checks a prepared result without taking over its
+ownership. Same-spine results pass Reader0's public exact-adjacency validator.
+For a cross-spine result, the active pagination cannot re-prove Reader0's
+private prepared-ring ownership, so the host requires a public
+`AdjacentSpine` or `AlreadyReady` result, a nonempty range, and strict movement
+in the requested document direction. Reader0 remains solely responsible for
+proving the exact cross-spine predecessor and its bounded lifetime.
+
+Lectern0 owns when presentation warming runs: 12 ms on first-open idle work and
+8 ms on ordinary idle work. During a held page key it permits only Reader0's
+direction-aware logical preparation after stable presentation and within the
+remaining repeat-deadline slack; page-frame construction and raster warming
+remain suspended. It warms at most four forward text pages and at most one
+cross-spine page. The
 existing one-page, image-free, 4096-by-4096-capped pixel snapshot remains an
 explicit host presentation optimization because Lectern0's software renderer
 does not share Re10's retained UI caches. A cross-spine page that references an
@@ -57,11 +68,72 @@ font state becomes active. The snapshot is never persisted or synchronized
 and is rejected unless canonical frame content, annotations, geometry,
 typography, and theme all match.
 
-Win32 page-key repeat is host policy. Lectern0 ignores OS repeat messages,
-emits its first host repeat after 24 16-ms timer frames, then at most once every
-three frames, and stops on key-up or focus loss. This matches Re10's bounded
-cadence without moving input, scheduling, rendering, or persistence into
-Reader0.
+Win32 page-key repeat is host policy. The first physical keydown moves
+immediately, and repeat is armed only when Reader0 reports a successful page
+move and the resulting canonical frame has been captured. While that same key
+remains active, Lectern0 coalesces only its
+native repeat messages and uses monotonic wall-clock deadlines equivalent to
+Re10's 60 Hz 24/3 policy: 400 ms before the first repeat and 50 ms from each
+actual emitted repeat to the next due time. It does not render idle frames to
+count either delay. An action-to-presentation gate is independent of repeat
+lifetime, so key-up, cancellation, or a direction change cannot admit a second
+Reader0 move before the accepted frame is visibly stable. At most one new
+physical page action is retained in an explicit pending slot; it runs only
+after that presentation, and a released pending key cannot arm repeat. The
+synchronous gate identity includes the Reader document id/generation, layout
+generation, exact canonical page range, Reader frame generation, and host
+capture generation. Text surfaces must match their exact visible byte range.
+Image-only surfaces instead match that canonical page plus the decoded image's
+visual-unit/placement signature, because their frame has no visible UTF-8
+payload. Optional frame page-index/count summaries never override the committed
+Reader canonical page. Capture failure leaves the gate outstanding; same-page
+recovery requires a newer frame/capture epoch, while a successful book open
+remains a successful catalog transaction and recovers its first frame in place.
+All other open, close, history, seek, settings, repagination, picker, and Reader
+View page mutations are rejected while that gate is outstanding. The scheduler
+rebases after emission so a late frame cannot cause a catch-up burst. The paired
+one-millisecond Win32 timer resolution prevents the wait from stretching to the
+platform's coarse default. Each accepted action is followed by a complete
+successful surface presentation whose post-action Reader View state needs no
+follow-up frame before another action can advance. Key-up, focus loss, app
+deactivation, or a Ctrl/Shift/Alt or system-key transition stops the stream;
+none clears an outstanding presentation gate, and stale
+repeats for that key are consumed until key-up. The bounded active message drain
+reserves only a real invalid-region `WM_PAINT` for Lectern0's own window, while
+dispatching auxiliary-window and null-region paints normally. Before optional
+Reader0 tail preparation, any already-queued message returns control to that
+same bounded FIFO drain; key-up or another cancellation transition therefore
+clears the pending tail before it can perform useless post-stop work.
+Speculative page-frame construction, raster warming, and synchronous persistence remain
+suspended for the duration of the hold; pending persistence and ordinary
+forward idle warming are rescheduled after release. The real-queue regression
+verifies this with temporary host-owned state/catalog files: the paired-save
+counter and both files' modified times and bounded content hashes
+stay fixed during the hold, then advance once after the stop condition's
+debounced save. The two directions, five cancellation routes, and mutation
+gate require eight unchanged holds and eight corresponding post-stop paired
+host saves. Each file is replaced atomically on its own; this does not claim a
+cross-file transaction or rollback. The SHA-locked GOTM queue proof performs one connected
+13-page forward traversal and exact 13-page reversal across a spine boundary,
+requires 26 canonical nonempty frames with no zero-page, orphan-text, or
+mid-word-start frame, and gates sustained move/prepare, render, and present
+maxima separately. The fixture-only content oracle is independent of adjacent-
+page replay: for every long-form text page whose active source contains at
+least 128 bytes, it checks the raw active-spine UTF-8 bytes at the canonical
+`first_byte`, rejects continuation-byte starts and starts inside
+ASCII/non-ASCII words (including apostrophe/hyphen connectors), and also
+requires at least eight non-whitespace bytes and one completely covered style
+row. This rejects the reported isolated-character defect without rejecting a
+legitimate one-row chapter tail. Short
+publisher headings remain valid when their exact canonical page/frame identity
+and complete row coverage agree; image-only pages use the exact visual identity
+described above. The
+queue-derived range sequence proves ordering only; frozen Re10/cross-host
+canonical ranges remain the independent acceptance oracle. The same real queue
+also rejects seven mutation routes, exercises page/same-page/open capture
+failure recovery, and locks gate identity on the cover plus three map pages.
+Together, these checks match Re10's bounded action scheduling without moving
+input, scheduling, rendering, or persistence into Reader0.
 
 Readerview0 API 3 owns only the proven-common UI0 composition: the accepted
 fixed-slot top toolbar, page gutters and progress geometry, TOC/Find and

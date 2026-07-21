@@ -168,3 +168,18 @@ Lectern0 remains local-only and no remote was created. No merge commit,
 rebase, reset, amendment, cherry-pick, or history rewrite was performed. UI0,
 Readerview0, zero_foundation, and the protected Re10 extraction worktree were
 not modified by promotion.
+
+## 2026-07-20 scheduling recovery follow-up
+
+The held-preparation policy in this promoted record is historical. A later
+production-sized reproduction showed that doing speculative frame and raster
+work on the same timer stream could consume the interval immediately before an
+accepted repeat and make held navigation feel slower than Re10. The bounded
+replacement is action-first, permits only one semantic move per rendered
+frame, coalesces native repeat messages, and performs no speculative host page-
+frame construction or raster warming while the key remains held. The current
+contract may still run Reader0-only logical preparation after stable
+presentation and within remaining deadline slack. The diagnosis, contract, and focused evidence are
+recorded in
+`docs/slices/lectern0_held_navigation_scheduling_slice6.md`. Reader0's
+navigation-preparation API and ordinary idle warming remain unchanged.
