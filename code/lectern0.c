@@ -506,17 +506,13 @@ typedef enum Lectern0PresentationIdentityKind
   Lectern0PresentationIdentity_Page,
 } Lectern0PresentationIdentityKind;
 
-/* Pointer-free copy of the canonical Reader0 page range plus owner-local
-   pagination metadata retained for diagnostics and frame validation. */
+/* Pointer-free subset of the canonical Reader0 page range retained for
+   presentation identity and frame validation. */
 typedef struct Lectern0CanonicalPageIdentity
 {
-  U64 global_page_index;
   U32 spine_index;
   U64 spine_page_index;
   U64 spine_page_count;
-  U64 first_row;
-  U64 one_past_last_row;
-  U64 visible_row_count;
   U64 first_byte;
   U64 one_past_last_byte;
 } Lectern0CanonicalPageIdentity;
@@ -718,7 +714,6 @@ typedef struct Lectern0App
   U32 page_action_presentation_retry_scheduled_count;
   U32 page_action_presentation_retry_fired_count;
   U32 page_action_mutation_drop_count;
-  U32 page_action_reflow_deferred_count;
   U32 capture_frame_fail_count;
   B32 capture_frame_failed_since_mutation;
   U32 capture_frame_recovery_count;
@@ -861,14 +856,6 @@ typedef struct Lectern0PageRepeatWin32Probe
   U64 stable_present_interval_max_ticks;
   U64 stable_present_interval_total_ticks;
   U32 stable_present_interval_count;
-  U64 stable_present_same_spine_interval_min_ticks;
-  U64 stable_present_same_spine_interval_max_ticks;
-  U64 stable_present_same_spine_interval_total_ticks;
-  U32 stable_present_same_spine_interval_count;
-  U64 stable_present_cross_spine_interval_min_ticks;
-  U64 stable_present_cross_spine_interval_max_ticks;
-  U64 stable_present_cross_spine_interval_total_ticks;
-  U32 stable_present_cross_spine_interval_count;
   SourceReaderPageRange start_page;
   SourceReaderPageRange expected_pages[Lectern0PageRepeatProbePageCount];
   SourceReaderPageRange actual_pages[Lectern0PageRepeatProbePageCount];
@@ -895,7 +882,6 @@ typedef struct Lectern0PageRepeatWin32Probe
   U32 page_action_mutation_drop_count;
   U32 queue_drain_batch_max_count;
   U32 queue_drain_message_count;
-  U32 queue_drain_batch_count;
   U32 auxiliary_paint_dispatch_before;
   U32 auxiliary_paint_dispatch_count;
   U32 main_null_paint_dispatch_before;
@@ -4397,9 +4383,6 @@ lectern0_build_reader_view(Lectern0App *app)
      app->pagination_viewport_height != resolved_geometry.content_rect.h);
   if (viewport_changed && app->page_action_waiting_for_present)
   {
-    if (!app->page_action_reflow_deferred &&
-        app->page_action_reflow_deferred_count < UINT32_MAX)
-      app->page_action_reflow_deferred_count += 1;
     app->page_action_reflow_deferred = 1;
   }
   else
@@ -6725,13 +6708,9 @@ FUNCTION Lectern0CanonicalPageIdentity
 lectern0_canonical_page_identity(SourceReaderPageRange page)
 {
   return (Lectern0CanonicalPageIdentity){
-    .global_page_index = page.global_page_index,
     .spine_index = page.spine_index,
     .spine_page_index = page.spine_page_index,
     .spine_page_count = page.spine_page_count,
-    .first_row = page.first_row,
-    .one_past_last_row = page.one_past_last_row,
-    .visible_row_count = page.visible_row_count,
     .first_byte = page.first_byte,
     .one_past_last_byte = page.one_past_last_byte,
   };
@@ -10808,22 +10787,6 @@ lectern0_note_stable_presentation(Lectern0App *app,
   {
     app->complete_present_sequence += 1;
   }
-}
-
-FUNCTION B32
-lectern0_present_cached_frame(Lectern0App *app)
-{
-  if (!app || !app->gfx_ready || !app->last_present_complete) return 0;
-  OS_GfxSurface surface = {0};
-  if (!os_gfx_acquire_surface(&app->gfx, &surface) ||
-      !os_gfx_present_surface(&app->gfx, &surface))
-  {
-    app->last_present_complete = 0;
-    return 0;
-  }
-  if (app->complete_present_sequence < UINT64_MAX)
-    app->complete_present_sequence += 1;
-  return 1;
 }
 
 FUNCTION B32
@@ -19168,8 +19131,6 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U32 repeat_backward_move_count = 0;
   U32 held_cache_hit_count = 0;
   U32 held_pixel_exact_count = 0;
-  U32 held_warm_step_count = 0;
-  U32 held_warm_on_action_count = 0;
   U32 held_render_gate_block_count = 0;
   U32 held_native_repeat_coalesced_count = 0;
   U64 held_move_total_ticks = 0;
@@ -19178,8 +19139,6 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U64 held_render_max_ticks = 0;
   U64 held_action_total_ticks = 0;
   U64 held_action_max_ticks = 0;
-  U64 held_warm_total_ticks = 0;
-  U64 held_warm_max_ticks = 0;
   U64 warmed_render_total_ticks = 0;
   U64 warmed_render_max_ticks = 0;
   U64 cold_render_total_ticks = 0;
@@ -19688,8 +19647,6 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       repeat_move_count != 4 || repeat_forward_move_count != 2 ||
       repeat_backward_move_count != 2 || held_cache_hit_count != 0 ||
       held_pixel_exact_count != 2 ||
-      held_warm_on_action_count != 0 ||
-      held_warm_step_count != 0 ||
       held_render_gate_block_count != 2 ||
       held_native_repeat_coalesced_count != 2 ||
       !forward_endpoint_valid || reverse_exact_match_count != ScanPageCount ||
@@ -19734,13 +19691,10 @@ cleanup:
             held_cache_hit_count, held_pixel_exact_count,
             held_native_repeat_coalesced_count,
             held_render_gate_block_count,
-            held_warm_on_action_count,
-            held_warm_step_count,
-            1000.0 * (double)held_warm_total_ticks /
-              (double)os_time_frequency() /
-              (double)MAX(held_warm_step_count, 1),
-            1000.0 * (double)held_warm_max_ticks /
-              (double)os_time_frequency(),
+            0U,
+            0U,
+            0.0,
+            0.0,
             1000.0 * (double)held_move_total_ticks /
               (double)os_time_frequency() /
               (double)MAX(repeat_move_count, 1),
@@ -19813,10 +19767,9 @@ cleanup:
             held_cache_hit_count, held_pixel_exact_count,
             held_native_repeat_coalesced_count,
             held_render_gate_block_count,
-            held_warm_on_action_count,
-            held_warm_step_count,
-            1000.0 * (double)held_warm_max_ticks /
-              (double)os_time_frequency(),
+            0U,
+            0U,
+            0.0,
             1000.0 * (double)held_move_max_ticks /
               (double)os_time_frequency(),
             1000.0 * (double)held_render_max_ticks /
@@ -20411,26 +20364,6 @@ lectern0_page_repeat_win32_probe_note_stable_presentation(
     probe->stable_present_transition_cross_spine[transition_index] =
       cross_spine;
     probe->stable_present_transition_count += 1;
-    if (index >= 2)
-    {
-      U64 *minimum_ticks = cross_spine ?
-        &probe->stable_present_cross_spine_interval_min_ticks :
-        &probe->stable_present_same_spine_interval_min_ticks;
-      U64 *maximum_ticks = cross_spine ?
-        &probe->stable_present_cross_spine_interval_max_ticks :
-        &probe->stable_present_same_spine_interval_max_ticks;
-      U64 *total_ticks = cross_spine ?
-        &probe->stable_present_cross_spine_interval_total_ticks :
-        &probe->stable_present_same_spine_interval_total_ticks;
-      U32 *sample_count = cross_spine ?
-        &probe->stable_present_cross_spine_interval_count :
-        &probe->stable_present_same_spine_interval_count;
-      if (*sample_count == 0) { *minimum_ticks = interval; }
-      else { *minimum_ticks = MIN(*minimum_ticks, interval); }
-      *maximum_ticks = MAX(*maximum_ticks, interval);
-      *total_ticks += interval;
-      *sample_count += 1;
-    }
   }
   if (index == 1)
   {
@@ -20882,7 +20815,6 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
       probe->queue_drain_batch_max_count = MAX(
         probe->queue_drain_batch_max_count, drained_message_count);
       probe->queue_drain_message_count += drained_message_count;
-      probe->queue_drain_batch_count += 1;
       if (drained_message_count > Lectern0PageRepeatProbeQueueDrainCap)
         probe->failed = 1;
     }
