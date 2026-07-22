@@ -321,3 +321,32 @@ Final summary SHA-256:
 
 The implementation and evidence records remain separate non-promoted commits,
 and promotion still requires explicit approval.
+
+## Final reduced-Reader qualification
+
+The scheduling contract is unchanged at final Reader0
+`df65b516a095bba42b5310dc287d2b392ed9d52e`. From clean Lectern0
+`af4e701116ae4dd79a4eddb2d66f14be64bec549`, the strict guard, architecture
+audit, and `/W4 /WX` build passed. The wrapper then used `-SkipBuild` solely
+to keep its two queue and two direct runs on that one already-hashed binary.
+The exact binary hash is
+`EADD05D5FE1EEB5AD61D5E6BB7D5B92FD22AFD42998E92C78667B462E9561E7E`.
+
+Each queue run retained the locked `12+12` calls, `4+1` builds, `8+11`
+already-ready results, exact `0+2` cross-spine readiness, `5+4` prepared
+moves, zero failures/recovery, and 26/26 stable presentations. Visible maxima
+were `78.919/72.383 ms` and `68.921/72.768 ms`; direct held-action maxima were
+`37.917 ms` and `34.204 ms`. No interval, frame, render, present, failure, or
+ownership budget changed.
+
+Evidence directory:
+`local/validation/navigation-reduction/final_df65b51_2`
+
+Queue summary SHA-256:
+`B85959292FF814CC91CBBC58601169475CFBD06DA073DA4206C07325AEF3E045`
+
+Combined summary SHA-256:
+`092BDF70F477EB59B1EE34A975BE7BC64A6071D3F58C97C072A57B5389DDB37B`
+
+This completes the clean held-scheduling gate; promotion still requires the
+user's explicit approval.

@@ -210,3 +210,41 @@ Final summary SHA-256:
 `1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`
 
 No promotion or Lectern0 remote creation is authorized by this record.
+
+## Post-recovery Reader0 reduction adoption
+
+Lectern0 now exact-pins the behavior-preserving Reader0 reduction at
+`df65b516a095bba42b5310dc287d2b392ed9d52e`, still API 5/version
+`0.5.0-dev`. The five Reader0 commits centralize shared proof/assignment
+mechanics and remove a duplicate contextual suffix walk; they do not change
+the held scheduling policy, bounded owner caps, `2/4/8` reverse probes,
+two-anchor cold cross-spine rule, provenance, eviction priority, or failure
+atomicity. The core implementation is 35 lines smaller than recovered
+`8eb1db6`.
+
+The final clean-tree wrapper ran from Lectern0 pin commit
+`af4e701116ae4dd79a4eddb2d66f14be64bec549`. Its exact dependency set was
+Reader0 `df65b516`, UI0 `cadafcac`, Readerview0 `26d83639`, and
+zero_foundation `3eab21c`. The strict dependency guard, architecture audit,
+and C11 `/W4 /WX` build passed; the 2647040-byte executable has SHA-256
+`EADD05D5FE1EEB5AD61D5E6BB7D5B92FD22AFD42998E92C78667B462E9561E7E`.
+
+Both queue processes completed 13+13 presentations, returned to the exact
+anchor, crossed spines four times, and reported calls `12+12`, builds `4+1`,
+already-ready `8+11`, cross-spine already-ready `0+2`, prepared moves `5+4`,
+failures `0+0`, and no synchronous rebuild or adjacent measurement. Their
+forward/backward visible maxima were `78.919/72.383 ms` and
+`68.921/72.768 ms`, below the unchanged 84 ms ceiling. Both direct processes
+completed exact 64+64 traversal with 128/128 nonempty canonical frames; held
+action maxima were `37.917 ms` and `34.204 ms`.
+
+Fresh evidence is under
+`local/validation/navigation-reduction/final_df65b51_2`. The queue summary is
+19249 bytes, SHA-256
+`B85959292FF814CC91CBBC58601169475CFBD06DA073DA4206C07325AEF3E045`;
+the combined summary is 30055 bytes, SHA-256
+`092BDF70F477EB59B1EE34A975BE7BC64A6071D3F58C97C072A57B5389DDB37B`.
+An earlier same-day candidate attempt and two unchanged `8eb1db6` controls
+missed only the same 84 ms environmental interval ceiling; no harness or
+budget was changed. The accepted final wrapper and Re10's frozen `c5_*` matrix
+are green. Promotion remains subject to explicit user approval.
