@@ -733,6 +733,7 @@ typedef struct Lectern0App
   U64 page_repeat_navigation_prepare_call_count;
   U64 page_repeat_navigation_prepare_build_count;
   U64 page_repeat_navigation_prepare_ready_count;
+  U64 page_repeat_navigation_prepare_cross_spine_ready_count;
   U64 page_repeat_navigation_prepare_fail_count;
   U64 page_repeat_navigation_prepare_total_ticks;
   U64 page_repeat_navigation_prepare_max_ticks;
@@ -834,6 +835,7 @@ typedef struct Lectern0PageRepeatWin32Probe
   U64 navigation_prepare_call_count;
   U64 navigation_prepare_build_count;
   U64 navigation_prepare_ready_count;
+  U64 navigation_prepare_cross_spine_ready_count;
   U64 navigation_prepare_fail_count;
   U64 navigation_prepare_total_ticks;
   U64 navigation_prepare_max_ticks;
@@ -7350,6 +7352,7 @@ lectern0_begin_page_repeat(Lectern0App *app,
   app->page_repeat_navigation_prepare_call_count = 0;
   app->page_repeat_navigation_prepare_build_count = 0;
   app->page_repeat_navigation_prepare_ready_count = 0;
+  app->page_repeat_navigation_prepare_cross_spine_ready_count = 0;
   app->page_repeat_navigation_prepare_fail_count = 0;
   app->page_repeat_navigation_prepare_total_ticks = 0;
   app->page_repeat_navigation_prepare_max_ticks = 0;
@@ -7426,10 +7429,16 @@ lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app)
     app->page_repeat_navigation_prepare_build_count +=
       app->reader.navigation_stats.prepared_window_build_count - build_before;
   }
-  if (prepare_result.kind == EpubReaderNavigationPrepareKind_AlreadyReady &&
-      app->page_repeat_navigation_prepare_ready_count < UINT64_MAX)
+  if (prepare_result.kind == EpubReaderNavigationPrepareKind_AlreadyReady)
   {
-    app->page_repeat_navigation_prepare_ready_count += 1;
+    if (app->page_repeat_navigation_prepare_ready_count < UINT64_MAX)
+      app->page_repeat_navigation_prepare_ready_count += 1;
+    if (prepare_result.page.spine_index != before_page.spine_index &&
+        app->page_repeat_navigation_prepare_cross_spine_ready_count <
+          UINT64_MAX)
+    {
+      app->page_repeat_navigation_prepare_cross_spine_ready_count += 1;
+    }
   }
 
   B32 page_unchanged = !prepare_result.current_page_refreshed &&
@@ -20522,6 +20531,8 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
     app->page_repeat_navigation_prepare_build_count;
   probe->navigation_prepare_ready_count =
     app->page_repeat_navigation_prepare_ready_count;
+  probe->navigation_prepare_cross_spine_ready_count =
+    app->page_repeat_navigation_prepare_cross_spine_ready_count;
   probe->navigation_prepare_fail_count =
     app->page_repeat_navigation_prepare_fail_count;
   probe->navigation_prepare_total_ticks =
@@ -22452,6 +22463,8 @@ lectern0_run_window_internal(const char *initial_path,
       visible_interval_sample_count == 22 &&
       forward.navigation_prepare_fail_count == 0 &&
       backward.navigation_prepare_fail_count == 0 &&
+      forward.navigation_prepare_cross_spine_ready_count == 0 &&
+      backward.navigation_prepare_cross_spine_ready_count == 2 &&
       forward.navigation_prepare_build_count > 0 &&
       backward.navigation_prepare_build_count > 0 &&
       forward.prepared_window_move_count > 0 &&
@@ -22494,6 +22507,7 @@ lectern0_run_window_internal(const char *initial_path,
              "navigation_prepare_calls=%llu+%llu "
              "navigation_prepare_builds=%llu+%llu "
              "navigation_prepare_ready=%llu+%llu "
+             "navigation_prepare_cross_spine_ready=%llu+%llu "
              "navigation_prepare_failures=%llu+%llu "
              "prepared_window_moves=%u+%u "
              "synchronous_window_rebuild_moves=%u+%u "
@@ -22596,6 +22610,10 @@ lectern0_run_window_internal(const char *initial_path,
              (unsigned long long)backward.navigation_prepare_build_count,
              (unsigned long long)forward.navigation_prepare_ready_count,
              (unsigned long long)backward.navigation_prepare_ready_count,
+             (unsigned long long)
+               forward.navigation_prepare_cross_spine_ready_count,
+             (unsigned long long)
+               backward.navigation_prepare_cross_spine_ready_count,
              (unsigned long long)forward.navigation_prepare_fail_count,
              (unsigned long long)backward.navigation_prepare_fail_count,
              forward.prepared_window_move_count,

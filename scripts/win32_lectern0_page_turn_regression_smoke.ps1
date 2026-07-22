@@ -60,8 +60,19 @@ function Invoke-PageTurnSmoke {
   New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
   $Prefix = Join-Path $RunDir "page_turn"
   $Log = Join-Path $RunDir "run.log"
-  & $Exe --page-turn-regression-smoke $Book $Prefix *> $Log
-  if ($LASTEXITCODE -ne 0) {
+  $NativeExitCode = 0
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Preserve strict process-exit checking under Windows PowerShell, where
+    # expected native stderr diagnostics otherwise become a terminating
+    # NativeCommandError under the script-wide Stop policy.
+    $ErrorActionPreference = "Continue"
+    & $Exe --page-turn-regression-smoke $Book $Prefix *> $Log
+    $NativeExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+  }
+  if ($NativeExitCode -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 100) -join "`n"
     throw "Lectern0 page-turn regression smoke failed`n$Tail"
   }

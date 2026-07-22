@@ -3,7 +3,7 @@
 Date: 2026-07-21
 
 Status: host implementation complete and Reader0 dependency reconciled at
-`e362378`; dirty executable diagnostics pass, clean two-process acceptance
+`8eb1db6`; dirty executable diagnostics pass, clean two-process acceptance
 evidence pending
 
 ## Reproduced host scheduling problem
@@ -142,9 +142,11 @@ procedure and message loop. For each direction it requires:
 - native repeated `WM_KEYDOWN` coalescing throughout the stream;
 - exactly twelve optional Reader0 logical preparation calls per direction for
   thirteen presented canonical pages. Queued key-up suppresses the useless
-  terminal tail, preparation failures must remain 0+0, and logical-tail time
-  remains separately reported from the strict action move/frame budget and
-  unchanged visible-cadence limits;
+  terminal tail, preparation failures must remain 0+0, the two backward
+  cross-spine preparations must be structurally reported `AlreadyReady`
+  (`navigation_prepare_cross_spine_ready=0+2`), and logical-tail time remains
+  separately reported from the strict action move/frame budget and unchanged
+  visible-cadence limits;
 - one real auxiliary-window invalid-region paint and one real main-window
   null-region paint dispatched through the production queue; and
 - a bounded drain batch no larger than 32 messages.
@@ -244,36 +246,40 @@ complete owner instead of compacting it to a six-page recovery publication.
 It rechecks retained history after proven empty or suppressed split spines.
 Reader0 `9e0f3317f0836668396dbe53ccd3700558e62695` restored cold contextual
 cross-spine recovery but still accepted a probe-local forward phase and
-published only the terminal page. The current exact commit
-`e362378feb772dd27ac85a6af25dd95283fc4eba` instead requires two
-reverse-capacity evidence anchors, rebuilds forward with a seven-page cap, and
-publishes the exact terminal page plus up to five predecessors. Retained
-cross-spine truth uses the same bounded suffix ownership, so later held PageUp
-turns remain resident. Arbitrary unanchored tails remain forbidden and failed
-final publication preserves both rings and the visible owner.
+  published only the terminal page. Reader0
+  `e362378feb772dd27ac85a6af25dd95283fc4eba` instead requires two
+  reverse-capacity evidence anchors, rebuilds forward with a seven-page cap, and
+  publishes the exact terminal page plus up to five predecessors. Retained
+  cross-spine truth uses the same bounded suffix ownership, so later held PageUp
+  turns remain resident. Arbitrary unanchored tails remain forbidden and failed
+  final publication preserves both rings and the visible owner. The current
+  exact commit `8eb1db66786c588bbe963552d7e78a7cb8fbdacc` revalidates only older,
+  exact committed-source provenance and prioritizes the retained reverse
+  breadcrumb plus its linked suffix over ordinary prepared-ring speculation.
 
 ## Current-pin dirty diagnostic
 
-Against exact Reader0 `e362378`, the strict dependency guard, architecture
+Against exact Reader0 `8eb1db6`, the strict dependency guard, architecture
 audit, and MSVC C11 `/W4 /WX` build pass. The dirty direct executable completes
 64 forward plus 64 exact reverse moves, returns to its starting range, and
 produces 128/128 nonempty canonical frames with zero zero-page, orphan-text, or
 invalid-word-start findings. Its held 2+2 action proof remains render-gated with
-a 23.409 ms maximum action-plus-render time.
+a 27.245 ms maximum action-plus-render time.
 
 The corrected real queue makes 12+12 logical preparation calls: terminal
-post-key-up work is suppressed, builds are 4+2, already-ready results are 8+10,
-and preparation failures are 0+0. Two consecutive accepted processes complete
+post-key-up work is suppressed, builds are 4+1, already-ready results are 8+11,
+cross-spine already-ready results are exactly 0+2, and preparation failures are
+0+0. Two consecutive accepted processes complete
 13+13 pages, 26/26 stable presentations, four cross-spine transitions, and no
 synchronous window rebuild or adjacent measurement. Their forward/backward
-visible-interval maxima are 63.869/78.799 ms and 60.715/77.653 ms; navigation-
-preparation maxima are 41.077/66.497 ms and 36.223/66.260 ms.
+visible-interval maxima are 60.250/63.688 ms and 62.144/62.305 ms; navigation-
+preparation maxima are 33.636/10.900 ms and 33.832/9.964 ms.
 
-An immediately preceding cold diagnostic already had the corrected 0+0
-functional result but reached a 102.509 ms backward visible interval. It is not
-accepted evidence: the unchanged 84 ms ceiling rejected it, and no timing or
-failure budget was loosened. The clean two-process wrapper remains the
-authoritative final host gate.
+The pre-`8eb1db6` cold diagnostic already had the corrected 0+0 functional
+result but reached a 102.509 ms backward visible interval. It is not accepted
+evidence: the unchanged 84 ms ceiling rejected it, and no timing or failure
+budget was loosened. The clean two-process wrapper remains the authoritative
+final host gate.
 
 The earlier two-move, 28-presentation result and its 448-repeat evidence are
 superseded. They proved the first queue repair but could not detect the
@@ -282,7 +288,7 @@ presentation-count clock defect or sustained outliers.
 ## Final acceptance gate
 
 Against the exact Reader0 pin
-`e362378feb772dd27ac85a6af25dd95283fc4eba`:
+`8eb1db66786c588bbe963552d7e78a7cb8fbdacc`:
 
 1. run the dependency guard and architecture audit, then compile strict MSVC
    C11 `/W4 /WX`;

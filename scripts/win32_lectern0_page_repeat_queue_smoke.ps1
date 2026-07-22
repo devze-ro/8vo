@@ -68,8 +68,19 @@ function Invoke-QueueSmoke {
   $RunDir = Join-Path $Out $Name
   New-Item -ItemType Directory -Path $RunDir | Out-Null
   $Log = Join-Path $RunDir "run.log"
-  & $Exe --page-repeat-win32-smoke $Book *> $Log
-  if ($LASTEXITCODE -ne 0) {
+  $NativeExitCode = 0
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell wraps native stderr as a non-terminating
+    # NativeCommandError. Capture that diagnostic stream without allowing the
+    # script-wide Stop policy to preempt the authoritative process exit code.
+    $ErrorActionPreference = "Continue"
+    & $Exe --page-repeat-win32-smoke $Book *> $Log
+    $NativeExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+  }
+  if ($NativeExitCode -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 100) -join "`n"
     throw "Lectern0 Win32 page-repeat queue smoke failed`n$Tail"
   }
@@ -94,7 +105,9 @@ function Invoke-QueueSmoke {
     "action_presentations=26/26",
     "action_overlap=0/0", "native_repeats=208/208",
     "navigation_prepare_calls=12+12", "navigation_prepare_builds=",
-    "navigation_prepare_ready=", "navigation_prepare_failures=0+0",
+    "navigation_prepare_ready=",
+    "navigation_prepare_cross_spine_ready=0+2",
+    "navigation_prepare_failures=0+0",
     "prepared_window_moves=", "synchronous_window_rebuild_moves=0+0",
     "synchronous_adjacent_measured_moves=0+0",
     "interval_samples=22/22", "action_timing_samples=24/24",
@@ -189,6 +202,8 @@ function Invoke-QueueSmoke {
   $CrossSpineTransitions = Read-Metric $PassLine "cross_spine_transitions"
   $NavigationPrepareBuilds =
     Read-PairMetric $PassLine "navigation_prepare_builds"
+  $NavigationPrepareCrossSpineReady =
+    Read-PairMetric $PassLine "navigation_prepare_cross_spine_ready"
   $PreparedWindowMoves = Read-PairMetric $PassLine "prepared_window_moves"
   $MinimumTextBytes = Read-Metric $PassLine "gotm_minimum_text_bytes"
   $MinimumTextRows = Read-Metric $PassLine "gotm_minimum_text_rows"
@@ -231,6 +246,8 @@ function Invoke-QueueSmoke {
       $CrossSpineTransitions -lt 2.0 -or
       $NavigationPrepareBuilds[0] -lt 1 -or
       $NavigationPrepareBuilds[1] -lt 1 -or
+      $NavigationPrepareCrossSpineReady[0] -ne 0 -or
+      $NavigationPrepareCrossSpineReady[1] -ne 2 -or
       $PreparedWindowMoves[0] -lt 1 -or
       $PreparedWindowMoves[1] -lt 1 -or
       $QueueDrainBatchMax -lt 8.0 -or $QueueDrainBatchMax -gt 32.0 -or
@@ -275,6 +292,7 @@ function Invoke-QueueSmoke {
     backward_repeat_present_max_ms=$BackwardPresentMaxMs
     cross_spine_transitions=[int]$CrossSpineTransitions
     navigation_prepare_builds=@($NavigationPrepareBuilds)
+    navigation_prepare_cross_spine_ready=@($NavigationPrepareCrossSpineReady)
     prepared_window_moves=@($PreparedWindowMoves)
     queue_drain_batch_max=[int]$QueueDrainBatchMax
     gotm_minimum_text_bytes=[int64]$MinimumTextBytes
@@ -342,6 +360,7 @@ $Summary = [pscustomobject]@{
     render_budget_ms=48.0
     present_budget_ms=16.667
     navigation_prepare_calls_per_direction=12
+    navigation_prepare_cross_spine_ready=@(0, 2)
     terminal_navigation_prepare_suppressed=$true
     queue_drain_batch_cap=32
     mutation_gate_drops=7

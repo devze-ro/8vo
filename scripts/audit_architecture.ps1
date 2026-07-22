@@ -343,7 +343,10 @@ if ($failures.Count -eq 0) {
       $repeatQueue.IndexOf('action_presentations=26/26') -lt 0 -or
       $repeatQueue.IndexOf('action_overlap=0/0') -lt 0 -or
       $repeatQueue.IndexOf('native_repeats=208/208') -lt 0 -or
+      $repeatQueue.IndexOf('navigation_prepare_cross_spine_ready=0+2') -lt 0 -or
       $repeatQueue.IndexOf('navigation_prepare_failures=0+0') -lt 0 -or
+      $app.IndexOf('forward.navigation_prepare_cross_spine_ready_count == 0') -lt 0 -or
+      $app.IndexOf('backward.navigation_prepare_cross_spine_ready_count == 2') -lt 0 -or
       $repeatQueue.IndexOf('prepared_window_moves=') -lt 0 -or
       $repeatQueue.IndexOf('synchronous_window_rebuild_moves=0+0') -lt 0 -or
       $repeatQueue.IndexOf('synchronous_adjacent_measured_moves=0+0') -lt 0 -or

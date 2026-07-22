@@ -3,7 +3,7 @@
 Date: 2026-07-21
 
 Status: Lectern0 host adoption implemented; Reader0 dependency reconciled at
-`e362378`; dirty executable diagnostics pass, clean two-process acceptance
+`8eb1db6`; dirty executable diagnostics pass, clean two-process acceptance
 evidence pending
 
 ## Objective
@@ -12,7 +12,7 @@ Adopt the same Reader0 canonical navigation repair as Re10 and combine it
 with Lectern0's bounded action-first held-key scheduling repair.
 
 The current exact Reader0 dependency is
-`e362378feb772dd27ac85a6af25dd95283fc4eba`. It contains the independently
+`8eb1db66786c588bbe963552d7e78a7cb8fbdacc`. It contains the independently
 audited recovery contract and is the fixed input to the clean connected
 cross-spine reversal and timing gates. Reader0 remains API 5 and version
 `0.5.0-dev`.
@@ -92,7 +92,8 @@ the first capture fails, and subsequent capture recovery makes it visible.
   gates pass without host-side navigation recovery or filtering;
 - held input remains coalesced and render-gated, with no held-path speculative
   host frame/raster warming, exactly 12+12 Reader0-only logical tail calls for
-  13+13 presentations, and bounded action-plus-render time;
+  13+13 presentations, exactly 0+2 cross-spine `AlreadyReady` results, and
+  bounded action-plus-render time;
 - Re10 and Lectern0 agree on canonical byte ranges for equivalent layout
   inputs; and
 - library, Reader View, post-action arrow, cover/image-fit, persistence, and
@@ -136,29 +137,36 @@ an incomplete resident pagination as a semantic-restore fast path, requires a
 complete byte-zero focused-spine candidate with complete rows and exact page
 ownership, and retains that complete active pagination rather than compacting
 it to a six-page recovery owner. Reader0
-`9e0f3317f0836668396dbe53ccd3700558e62695` then restored cold contextual
-cross-spine recovery but retained a probe-local residual phase and only one
-prepared page. The current pin
-`e362378feb772dd27ac85a6af25dd95283fc4eba` restores the stable cold
-cross-spine producer: two reverse-capacity evidence anchors drive a forward
-build capped at seven pages, whose exact terminal page plus up to five
-predecessors are copied into prepared ownership before movement. Retained
-history publishes the same bounded exact suffix. Failed staging, probing, or
-final publication preserves the current page, frame, prepared state, and
-retained ownership atomically.
+  `9e0f3317f0836668396dbe53ccd3700558e62695` then restored cold contextual
+  cross-spine recovery but retained a probe-local residual phase and only one
+  prepared page. Reader0
+  `e362378feb772dd27ac85a6af25dd95283fc4eba` restores the stable cold
+  cross-spine producer: two reverse-capacity evidence anchors drive a forward
+  build capped at seven pages, whose exact terminal page plus up to five
+  predecessors are copied into prepared ownership before movement. Retained
+  history publishes the same bounded exact suffix. Failed staging, probing, or
+  final publication preserves the current page, frame, prepared state, and
+  retained ownership atomically. The current pin
+  `8eb1db66786c588bbe963552d7e78a7cb8fbdacc` additionally revalidates older
+  cross-spine provenance only after an exact page command commits and retains
+  a valid reverse breadcrumb plus its linked complete suffix ahead of ordinary
+  full-ring speculation.
 Dirty executable diagnostics now prove the connected production path at this
 pin. The direct runner completes 64 forward plus 64 exact reverse moves with
 128/128 nonempty canonical frames. Two consecutive accepted queue processes
 complete 13+13 pages with four cross-spine transitions, 26/26 stable
-presentations, 12+12 logical preparation calls, 4+2 builds, 8+10 already-ready
-results, and 0+0 preparation failures. Terminal post-key-up preparation is
-suppressed. No synchronous window rebuild or adjacent measurement occurs.
+presentations, 12+12 logical preparation calls, 4+1 builds, 8+11 already-ready
+results, exactly 0+2 cross-spine already-ready results, and 0+0 preparation
+failures. Terminal post-key-up preparation is suppressed. No synchronous
+window rebuild or adjacent measurement occurs.
 The host does not skip, synthesize, or filter a replacement page.
 
-One immediately preceding cold queue diagnostic already had 0+0 preparation
-failures but exceeded the unchanged visible-interval ceiling at 102.509 ms. It
-is deliberately excluded; two subsequent processes passed the original 84 ms
-ceiling, and the clean two-process wrapper remains required. No timing or
+The pre-`8eb1db6` cold queue diagnostic already had 0+0 preparation failures
+but exceeded the unchanged visible-interval ceiling at 102.509 ms. It remains
+deliberately excluded. Two current-pin processes passed the original 84 ms
+ceiling with forward/backward visible maxima of 60.250/63.688 ms and
+62.144/62.305 ms; navigation-preparation maxima were 33.636/10.900 ms and
+33.832/9.964 ms. The clean two-process wrapper remains required. No timing or
 failure budget was loosened.
 
 Acceptance evidence follows an explicit two-commit host sequence. First run
@@ -170,7 +178,7 @@ summary hashes in a separate follow-up evidence-record commit. No wrapper pass
 is claimed until that clean run actually completes, and the frozen external
 Re10/cross-host canonical-range oracle remains independently mandatory.
 
-Current Reader0 SHA: `e362378feb772dd27ac85a6af25dd95283fc4eba`
+Current Reader0 SHA: `8eb1db66786c588bbe963552d7e78a7cb8fbdacc`
 Final evidence directory: `PENDING_FINAL_EVIDENCE_DIRECTORY`
 Final summary SHA-256: `PENDING_FINAL_SUMMARY_SHA256`
 
