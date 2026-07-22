@@ -2,9 +2,9 @@
 
 Date: 2026-07-21
 
-Status: host implementation complete and Reader0 dependency reconciled at
-`8eb1db6`; dirty executable diagnostics pass, clean two-process acceptance
-evidence pending
+Status: host implementation and clean two-process acceptance complete at
+implementation commit `01f77de`; Reader0 dependency reconciled at `8eb1db6`;
+no promotion performed
 
 ## Reproduced host scheduling problem
 
@@ -290,25 +290,34 @@ presentation-count clock defect or sustained outliers.
 Against the exact Reader0 pin
 `8eb1db66786c588bbe963552d7e78a7cb8fbdacc`:
 
-1. run the dependency guard and architecture audit, then compile strict MSVC
-   C11 `/W4 /WX`;
-2. while the Lectern0 implementation is still an uncommitted WIP, run the
-   direct page-turn and real-Win32-queue executable smokes as diagnostic gates
-   (complete as recorded above);
-3. only after those dirty-tree diagnostics pass, create one non-promoted
-   Lectern0 implementation commit;
-4. from that clean implementation commit, run the page-turn wrapper, which
-   rebuilds and executes both the direct traversal and sustained real queue in
-   two fresh processes;
-5. require every semantic, queue, cancellation, paint, combined-persistence,
-   and unchanged two-direction timing invariant above; and
-6. record the dependency hash, executable hash, exact-book identity, and
-   two-run summary in a follow-up evidence-record commit.
+All six prescribed steps passed. The dependency guard, architecture audit, and
+strict MSVC C11 `/W4 /WX` build were green; dirty direct and queue diagnostics
+passed; implementation commit
+`01f77dea1a519475dbf43c639c34a7c15f5779e0` was created without promotion;
+and the clean page-turn wrapper then ran two queue plus two direct processes.
 
-Final evidence directory: `PENDING_FINAL_EVIDENCE_DIRECTORY`
-Final summary SHA-256: `PENDING_FINAL_SUMMARY_SHA256`
+The queue runs each reported calls `12+12`, builds `4+1`, already-ready
+`8+11`, cross-spine already-ready `0+2`, failures `0+0`, and prepared moves
+`5+4`. Forward/backward visible maxima were 63.515/65.960 ms and
+64.732/63.536 ms; logical preparation maxima were 32.643/10.307 ms and
+33.462/10.504 ms. Both direct runs completed exact 64+64 traversal, and their
+maximum held action totals were 23.341 ms and 28.150 ms. No timing, failure,
+queue, frame, render, or present budget was loosened.
 
-The dependency pin and dirty diagnostics are reconciled, but neither wrapper
-acceptance nor promotion is claimed before the clean two-process run passes. The implementation and
-evidence records remain separate non-promoted commits, and promotion still
-requires explicit approval.
+The exact dependency set is Reader0 `8eb1db66786c588bbe963552d7e78a7cb8fbdacc`,
+UI0 `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec`, Readerview0
+`26d836390fce2de64198430fa82d6f660fc7fc07`, and zero_foundation
+`3eab21c06c4aa0b4915f9e7fcb3830ba1688451f`. The rebuilt executable SHA-256 is
+`AD9E160EC3BB3AA07D0ECA4DDE475FF3769974343C72446BB4BBF9D57674DA72`.
+
+Final evidence directory:
+`local\validation\navigation-recovery-slice6\lectern0_01f77de_8eb1db6_final`
+
+Queue summary SHA-256:
+`9FD9A048996486DA3E8525FB16991871F5EBB250E416FE786DDA8C9464D174DB`
+
+Final summary SHA-256:
+`1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`
+
+The implementation and evidence records remain separate non-promoted commits,
+and promotion still requires explicit approval.

@@ -2,9 +2,9 @@
 
 Date: 2026-07-21
 
-Status: Lectern0 host adoption implemented; Reader0 dependency reconciled at
-`8eb1db6`; dirty executable diagnostics pass, clean two-process acceptance
-evidence pending
+Status: Lectern0 host adoption and clean two-process acceptance complete at
+implementation commit `01f77de`; Reader0 dependency reconciled at `8eb1db6`;
+no promotion performed
 
 ## Objective
 
@@ -169,17 +169,44 @@ ceiling with forward/backward visible maxima of 60.250/63.688 ms and
 33.832/9.964 ms. The clean two-process wrapper remains required. No timing or
 failure budget was loosened.
 
-Acceptance evidence follows an explicit two-commit host sequence. First run
-the strict dependency/audit/build gate and the direct page-turn and real-queue
-executables against the dirty WIP; those diagnostics now pass. Create a
-non-promoted clean implementation commit and run the two-process page-turn
-wrapper from that clean tree. Record its dependency, executable, fixture, and
-summary hashes in a separate follow-up evidence-record commit. No wrapper pass
-is claimed until that clean run actually completes, and the frozen external
-Re10/cross-host canonical-range oracle remains independently mandatory.
+## Clean implementation evidence
+
+The required implementation commit is
+`01f77dea1a519475dbf43c639c34a7c15f5779e0`, **Lock retained cross-spine
+repeat reuse**. From that clean tree, the page-turn wrapper rebuilt strict and
+ran two fresh real-queue processes plus two fresh direct processes. Both
+wrappers passed; their recorded `git_status` arrays are empty.
+
+The exact dependency set was Reader0
+`8eb1db66786c588bbe963552d7e78a7cb8fbdacc`, UI0
+`cadafcacdae8e63cf0d2b505f54e2a2a228c0bec`, Readerview0
+`26d836390fce2de64198430fa82d6f660fc7fc07`, and zero_foundation
+`3eab21c06c4aa0b4915f9e7fcb3830ba1688451f`. The exact 955125-byte GOTM book
+retained SHA-256
+`D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
+The rebuilt 2484736-byte executable has SHA-256
+`AD9E160EC3BB3AA07D0ECA4DDE475FF3769974343C72446BB4BBF9D57674DA72`.
+
+Both queue processes reported calls `12+12`, builds `4+1`, already-ready
+`8+11`, cross-spine already-ready `0+2`, failures `0+0`, and prepared moves
+`5+4`. Their forward/backward visible maxima were 63.515/65.960 ms and
+64.732/63.536 ms; logical preparation maxima were 32.643/10.307 ms and
+33.462/10.504 ms. Both stayed below the unchanged 84 ms interval ceiling and
+had no synchronous window rebuild or adjacent measurement. Both direct
+processes completed exact 64+64 traversal; maximum held action totals were
+23.341 ms and 28.150 ms.
+
+The queue summary is 19279 bytes, SHA-256
+`9FD9A048996486DA3E8525FB16991871F5EBB250E416FE786DDA8C9464D174DB`.
+The combined summary is 30159 bytes, SHA-256
+`1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`.
+The frozen external Re10/cross-host canonical-range oracle passed separately;
+it is not reclassified as queue-local evidence.
 
 Current Reader0 SHA: `8eb1db66786c588bbe963552d7e78a7cb8fbdacc`
-Final evidence directory: `PENDING_FINAL_EVIDENCE_DIRECTORY`
-Final summary SHA-256: `PENDING_FINAL_SUMMARY_SHA256`
+Final evidence directory:
+`local\validation\navigation-recovery-slice6\lectern0_01f77de_8eb1db6_final`
+Final summary SHA-256:
+`1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`
 
 No promotion or Lectern0 remote creation is authorized by this record.
