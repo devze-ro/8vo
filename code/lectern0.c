@@ -87,6 +87,9 @@ enum
   Lectern0LibraryThumbnailWidth = 256,
   Lectern0LibraryThumbnailHeight = 384,
   Lectern0LibraryThumbnailBudget = 24 * 1024 * 1024,
+  Lectern0LibraryThumbnailVersion = 2,
+  Lectern0PreparedImageCap = 16,
+  Lectern0PreparedImageBudget = 64 * 1024 * 1024,
   Lectern0StateSaveTimerId = 1,
   Lectern0StateSaveDelayMs = 250,
   Lectern0AdjacentWarmTimerId = 2,
@@ -150,16 +153,39 @@ typedef struct Lectern0ImageCacheEntry
   S32 stride_pixels;
 } Lectern0ImageCacheEntry;
 
+typedef struct Lectern0PreparedImage
+{
+  const U32 *source_pixels;
+  U32 *pixels;
+  S32 source_width;
+  S32 source_height;
+  S32 source_stride_pixels;
+  S32 width;
+  S32 height;
+  DrawSpriteSampleKind sample_kind;
+  U64 pixel_bytes;
+} Lectern0PreparedImage;
+
 typedef struct Lectern0ImageCache
 {
   OS_ImageDecoder decoder;
   Arena *pixel_arena;
+  Arena *prepared_arena;
   Lectern0ImageCacheEntry entries[Lectern0ImageCacheCap];
+  Lectern0PreparedImage prepared_images[Lectern0PreparedImageCap];
   U32 entry_count;
+  U32 prepared_image_count;
   U64 lookup_count;
   U64 hit_count;
   U64 miss_count;
   U64 cache_full_count;
+  U64 prepared_cache_key;
+  U64 prepared_pixel_bytes;
+  U64 prepared_lookup_count;
+  U64 prepared_hit_count;
+  U64 prepared_build_count;
+  U64 prepared_reset_count;
+  U64 prepared_fallback_count;
   B32 decoder_ready;
 } Lectern0ImageCache;
 
@@ -1404,13 +1430,19 @@ lectern0_image_cache_init(Lectern0ImageCache *cache)
   if (!cache) { return 0; }
   MemoryZeroStruct(cache);
   cache->pixel_arena = arena_alloc(0);
+  ArenaParams prepared_params = {
+    .reserve_size = Lectern0PreparedImageBudget + KILOBYTES(64),
+    .commit_size = KILOBYTES(64),
+  };
+  cache->prepared_arena = arena_alloc(&prepared_params);
   OS_ImageDecoderInitParams params = {
     .backend = OS_ImageDecoderBackendKind_Win32WIC,
   };
   cache->decoder_ready = os_image_decoder_init(&cache->decoder, &params);
-  if (!cache->pixel_arena || !cache->decoder_ready)
+  if (!cache->pixel_arena || !cache->prepared_arena || !cache->decoder_ready)
   {
     if (cache->decoder_ready) { os_image_decoder_release(&cache->decoder); }
+    if (cache->prepared_arena) { arena_release(cache->prepared_arena); }
     if (cache->pixel_arena) { arena_release(cache->pixel_arena); }
     MemoryZeroStruct(cache);
     return 0;
@@ -1423,6 +1455,7 @@ lectern0_image_cache_release(Lectern0ImageCache *cache)
 {
   if (!cache) { return; }
   if (cache->decoder_ready) { os_image_decoder_release(&cache->decoder); }
+  if (cache->prepared_arena) { arena_release(cache->prepared_arena); }
   if (cache->pixel_arena) { arena_release(cache->pixel_arena); }
   MemoryZeroStruct(cache);
 }
@@ -1430,14 +1463,156 @@ lectern0_image_cache_release(Lectern0ImageCache *cache)
 FUNCTION void
 lectern0_image_cache_reset(Lectern0ImageCache *cache)
 {
-  if (!cache || !cache->pixel_arena) { return; }
+  if (!cache || !cache->pixel_arena || !cache->prepared_arena) { return; }
   arena_clear(cache->pixel_arena);
+  arena_clear(cache->prepared_arena);
   MemoryZeroArray(cache->entries);
+  MemoryZeroArray(cache->prepared_images);
   cache->entry_count = 0;
+  cache->prepared_image_count = 0;
   cache->lookup_count = 0;
   cache->hit_count = 0;
   cache->miss_count = 0;
   cache->cache_full_count = 0;
+  cache->prepared_cache_key = 0;
+  cache->prepared_pixel_bytes = 0;
+  cache->prepared_lookup_count = 0;
+  cache->prepared_hit_count = 0;
+  cache->prepared_build_count = 0;
+  cache->prepared_reset_count = 0;
+  cache->prepared_fallback_count = 0;
+}
+
+FUNCTION DrawSpriteSampleKind
+lectern0_image_sample_kind(S32 source_width,
+                           S32 source_height,
+                           S32 target_width,
+                           S32 target_height)
+{
+  if (source_width == target_width && source_height == target_height)
+  {
+    return DrawSpriteSampleKind_Nearest;
+  }
+  if (target_width < source_width || target_height < source_height)
+  {
+    return DrawSpriteSampleKind_Area;
+  }
+  return DrawSpriteSampleKind_Linear;
+}
+
+FUNCTION void
+lectern0_image_cache_begin_prepared(Lectern0ImageCache *cache, U64 key)
+{
+  if (!cache || !cache->prepared_arena || key == 0 ||
+      cache->prepared_cache_key == key)
+  {
+    return;
+  }
+  if (cache->prepared_cache_key != 0)
+  {
+    cache->prepared_reset_count += 1;
+  }
+  arena_clear(cache->prepared_arena);
+  MemoryZeroArray(cache->prepared_images);
+  cache->prepared_image_count = 0;
+  cache->prepared_pixel_bytes = 0;
+  cache->prepared_cache_key = key;
+}
+
+FUNCTION Lectern0PreparedImage *
+lectern0_image_cache_prepare(Lectern0ImageCache *cache,
+                             const U32 *source_pixels,
+                             S32 source_width,
+                             S32 source_height,
+                             S32 source_stride_pixels,
+                             S32 target_width,
+                             S32 target_height)
+{
+  if (!cache || !cache->prepared_arena || !source_pixels ||
+      source_width <= 0 || source_height <= 0 ||
+      source_stride_pixels < source_width ||
+      target_width <= 0 || target_height <= 0)
+  {
+    return 0;
+  }
+
+  DrawSpriteSampleKind sample_kind =
+    lectern0_image_sample_kind(source_width,
+                               source_height,
+                               target_width,
+                               target_height);
+  cache->prepared_lookup_count += 1;
+  for (U32 index = 0; index < cache->prepared_image_count; index += 1)
+  {
+    Lectern0PreparedImage *candidate = cache->prepared_images + index;
+    if (candidate->source_pixels == source_pixels &&
+        candidate->source_width == source_width &&
+        candidate->source_height == source_height &&
+        candidate->source_stride_pixels == source_stride_pixels &&
+        candidate->width == target_width &&
+        candidate->height == target_height &&
+        candidate->sample_kind == sample_kind)
+    {
+      cache->prepared_hit_count += 1;
+      return candidate;
+    }
+  }
+
+  U64 pixel_count = (U64)(U32)target_width * (U64)(U32)target_height;
+  U64 pixel_bytes = pixel_count * sizeof(U32);
+  if (pixel_count == 0 ||
+      pixel_bytes / sizeof(U32) != pixel_count ||
+      pixel_bytes > Lectern0PreparedImageBudget ||
+      cache->prepared_pixel_bytes >
+        Lectern0PreparedImageBudget - pixel_bytes ||
+      cache->prepared_image_count >= ARRAY_COUNT(cache->prepared_images))
+  {
+    cache->prepared_fallback_count += 1;
+    return 0;
+  }
+
+  U64 arena_start = arena_pos(cache->prepared_arena);
+  U32 *pixels = PUSH_ARRAY(cache->prepared_arena, U32, pixel_count);
+  if (!pixels)
+  {
+    cache->prepared_fallback_count += 1;
+    return 0;
+  }
+  RenderBuffer destination = {0};
+  render_buffer_init(&destination,
+                     pixels,
+                     target_width,
+                     target_height,
+                     target_width);
+  if (!render_resample_bgra8(&destination,
+                             source_pixels,
+                             source_width,
+                             source_height,
+                             source_stride_pixels,
+                             sample_kind))
+  {
+    arena_pop_to(cache->prepared_arena, arena_start);
+    cache->prepared_fallback_count += 1;
+    return 0;
+  }
+
+  Lectern0PreparedImage *prepared =
+    cache->prepared_images + cache->prepared_image_count;
+  *prepared = (Lectern0PreparedImage){
+    .source_pixels = source_pixels,
+    .pixels = pixels,
+    .source_width = source_width,
+    .source_height = source_height,
+    .source_stride_pixels = source_stride_pixels,
+    .width = target_width,
+    .height = target_height,
+    .sample_kind = sample_kind,
+    .pixel_bytes = pixel_bytes,
+  };
+  cache->prepared_image_count += 1;
+  cache->prepared_pixel_bytes += pixel_bytes;
+  cache->prepared_build_count += 1;
+  return prepared;
 }
 
 FUNCTION B32
@@ -1654,7 +1829,8 @@ lectern0_library_thumbnail_load(Lectern0App *app,
   Lectern0LibraryThumbnailFile *header =
     (Lectern0LibraryThumbnailFile *)file_data;
   if (header->magic != LECTERN0_LIBRARY_THUMBNAIL_MAGIC ||
-      header->version != 1 || header->entry_id != book->entry_id ||
+      header->version != Lectern0LibraryThumbnailVersion ||
+      header->entry_id != book->entry_id ||
       header->file_size != book->file_size ||
       header->file_modified_time != book->file_modified_time ||
       header->width == 0 || header->height == 0 ||
@@ -1727,7 +1903,7 @@ lectern0_library_thumbnail_write(Lectern0App *app,
   Lectern0LibraryThumbnailFile *file = (Lectern0LibraryThumbnailFile *)data;
   *file = (Lectern0LibraryThumbnailFile){
     .magic = LECTERN0_LIBRARY_THUMBNAIL_MAGIC,
-    .version = 1,
+    .version = Lectern0LibraryThumbnailVersion,
     .width = (U32)width,
     .height = (U32)height,
     .entry_id = book->entry_id,
@@ -1735,16 +1911,21 @@ lectern0_library_thumbnail_write(Lectern0App *app,
     .file_modified_time = book->file_modified_time,
   };
   U32 *pixels = (U32 *)(file + 1);
-  for (S32 y = 0; y < height; y += 1)
+  RenderBuffer destination = {0};
+  render_buffer_init(&destination, pixels, width, height, width);
+  if (!render_resample_bgra8(
+        &destination,
+        source->pixels,
+        source->width,
+        source->height,
+        source->stride_pixels,
+        lectern0_image_sample_kind(source->width,
+                                   source->height,
+                                   width,
+                                   height)))
   {
-    S32 source_y = (S32)(((S64)y * source->height) / height);
-    for (S32 x = 0; x < width; x += 1)
-    {
-      S32 source_x = (S32)(((S64)x * source->width) / width);
-      pixels[(U64)y * (U64)width + (U64)x] =
-        source->pixels[(U64)source_y * (U64)source->stride_pixels +
-                       (U64)source_x];
-    }
+    arena_release(arena);
+    return 0;
   }
   char path[Lectern0PathCap] = {0};
   B32 result = lectern0_library_thumbnail_path(app, book->entry_id,
@@ -1893,9 +2074,14 @@ lectern0_library_hydrate_startup_entry(Lectern0App *app)
     return;
   Lectern0LibraryEntry *entry = lectern0_library_catalog_find_id(
     &app->library, app->library_selected_entry_id);
-  if (!entry || entry->runtime_missing ||
-      (entry->metadata_flags & Lectern0LibraryMetadata_Inspected) != 0)
+  if (!entry || entry->runtime_missing)
     return;
+  B32 metadata_inspected =
+    (entry->metadata_flags & Lectern0LibraryMetadata_Inspected) != 0;
+  B32 thumbnail_current =
+    !(entry->metadata_flags & Lectern0LibraryMetadata_Cover) ||
+    lectern0_library_thumbnail_load(app, entry) != 0;
+  if (metadata_inspected && thumbnail_current) return;
 
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result = epub_reader_open(
@@ -5775,13 +5961,25 @@ lectern0_draw_library(Lectern0App *app)
                                   card->cover_rect.w - 16,
                                   card->cover_rect.h - 16,
                                   &fit_x, &fit_y, &fit_w, &fit_h))
-        (void)draw_push_sprite_clipped(&app->draw_commands, DrawLayer_World,
-                                       thumbnail->pixels,
-                                       thumbnail->width, thumbnail->height,
-                                       thumbnail->stride_pixels,
-                                       fit_x, fit_y, fit_w, fit_h,
-                                       card->cover_rect.x, card->cover_rect.y,
-                                       card->cover_rect.w, card->cover_rect.h);
+        (void)draw_push_sprite_clipped_sampled(
+          &app->draw_commands,
+          DrawLayer_World,
+          thumbnail->pixels,
+          thumbnail->width,
+          thumbnail->height,
+          thumbnail->stride_pixels,
+          lectern0_image_sample_kind(thumbnail->width,
+                                     thumbnail->height,
+                                     fit_w,
+                                     fit_h),
+          fit_x,
+          fit_y,
+          fit_w,
+          fit_h,
+          card->cover_rect.x,
+          card->cover_rect.y,
+          card->cover_rect.w,
+          card->cover_rect.h);
     }
     else
     {
@@ -10114,6 +10312,22 @@ lectern0_draw_reader_page(Lectern0App *app)
 
   if (lectern0_draw_cached_adjacent_page(app, page)) return;
 
+  if (app->frame.image_count != 0)
+  {
+    U64 prepared_key_values[] = {
+      lectern0_reader_page_visual_key(&app->frame),
+      (U64)(U32)body_x,
+      (U64)(U32)body_y,
+      (U64)(U32)body_w,
+      (U64)(U32)body_h,
+      (U64)(U32)app->layout_key.line_height,
+    };
+    U64 prepared_key =
+      u64_hash_bytes(prepared_key_values, sizeof(prepared_key_values));
+    lectern0_image_cache_begin_prepared(&app->image_cache,
+                                        prepared_key ? prepared_key : 1);
+  }
+
   if (!lectern0_build_reader_presentation(app,
                                           body_x,
                                           body_y,
@@ -10204,47 +10418,74 @@ lectern0_draw_reader_page(Lectern0App *app)
         S32 fit_y = 0;
         S32 fit_w = 0;
         S32 fit_h = 0;
-        if (!lectern0_fit_image_rect(image->src_w,
-                                     image->src_h,
-                                     image_x,
-                                     image_y,
-                                     image_w,
-                                     image_h,
-                                     &fit_x,
-                                     &fit_y,
-                                     &fit_w,
-                                     &fit_h) ||
-            !(loaded_image_only ?
-                draw_push_sprite_clipped_sampled(
-                  &app->draw_commands,
-                  DrawLayer_World,
-                  image->pixels,
-                  image->src_w,
-                  image->src_h,
-                  image->src_stride_pixels,
-                  DrawSpriteSampleKind_Nearest,
-                  fit_x,
-                  fit_y,
-                  fit_w,
-                  fit_h,
-                  body_x,
-                  body_y,
-                  body_w,
-                  body_h) :
-                draw_push_sprite_clipped(&app->draw_commands,
-                                         DrawLayer_World,
-                                         image->pixels,
-                                         image->src_w,
+        B32 fitted = lectern0_fit_image_rect(image->src_w,
+                                             image->src_h,
+                                             image_x,
+                                             image_y,
+                                             image_w,
+                                             image_h,
+                                             &fit_x,
+                                             &fit_y,
+                                             &fit_w,
+                                             &fit_h);
+        B32 pushed = 0;
+        if (fitted)
+        {
+          Lectern0PreparedImage *prepared = 0;
+          if (fit_w != image->src_w || fit_h != image->src_h)
+          {
+            prepared = lectern0_image_cache_prepare(
+              &app->image_cache,
+              image->pixels,
+              image->src_w,
+              image->src_h,
+              image->src_stride_pixels,
+              fit_w,
+              fit_h);
+          }
+          if (prepared)
+          {
+            pushed = draw_push_sprite_clipped_sampled(
+              &app->draw_commands,
+              DrawLayer_World,
+              prepared->pixels,
+              prepared->width,
+              prepared->height,
+              prepared->width,
+              DrawSpriteSampleKind_Nearest,
+              fit_x,
+              fit_y,
+              fit_w,
+              fit_h,
+              body_x,
+              body_y,
+              body_w,
+              body_h);
+          }
+          else
+          {
+            pushed = draw_push_sprite_clipped_sampled(
+              &app->draw_commands,
+              DrawLayer_World,
+              image->pixels,
+              image->src_w,
+              image->src_h,
+              image->src_stride_pixels,
+              lectern0_image_sample_kind(image->src_w,
                                          image->src_h,
-                                         image->src_stride_pixels,
-                                         fit_x,
-                                         fit_y,
                                          fit_w,
-                                         fit_h,
-                                         body_x,
-                                         body_y,
-                                         body_w,
-                                         body_h)))
+                                         fit_h),
+              fit_x,
+              fit_y,
+              fit_w,
+              fit_h,
+              body_x,
+              body_y,
+              body_w,
+              body_h);
+          }
+        }
+        if (!fitted || !pushed)
         {
           app->presentation_complete = 0;
         }
@@ -11158,7 +11399,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
     goto fail;
 
   fprintf(stdout,
-          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
+          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame thumbnail=area_v2 progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
           (unsigned long long)restart_hash, empty_bmp, populated_bmp,
           restart_bmp, restart_repeat_bmp, compact_bmp, missing_bmp,
           hover_bmp, pressed_bmp);
@@ -12723,6 +12964,10 @@ lectern0_capture_reader_image_fit_evidence(
     return 0;
   }
 
+  U64 prepared_build_before = app->image_cache.prepared_build_count;
+  U64 prepared_hit_before = app->image_cache.prepared_hit_count;
+  U64 prepared_fallback_before = app->image_cache.prepared_fallback_count;
+  lectern0_render_to_buffer(app, buffer);
   lectern0_render_to_buffer(app, buffer);
   U64 pixel_count = (U64)buffer->width * (U64)buffer->height;
   U64 pixel_hash = u64_hash_bytes(buffer->pixels,
@@ -12801,7 +13046,7 @@ lectern0_capture_reader_image_fit_evidence(
 
   U32 matching_sprites = 0;
   U32 matching_media_backgrounds = 0;
-  B32 nearest_sampling = 0;
+  B32 area_prepared_sampling = 0;
   for (U16 command_index = 0;
        command_index < app->draw_commands.command_count[DrawLayer_World];
        command_index += 1)
@@ -12809,17 +13054,34 @@ lectern0_capture_reader_image_fit_evidence(
     const DrawCommand *command =
       app->draw_commands.commands[DrawLayer_World] + command_index;
     if (command->type == DrawCommandType_Sprite &&
-        command->v.sprite.pixels == image->pixels)
+        command->v.sprite.dst_x == fit_x &&
+        command->v.sprite.dst_y == fit_y &&
+        command->v.sprite.dst_w == fit_w &&
+        command->v.sprite.dst_h == fit_h)
     {
       matching_sprites += 1;
-      nearest_sampling = command->v.sprite.sample_kind ==
-        DrawSpriteSampleKind_Nearest;
-      if (command->v.sprite.dst_x != fit_x ||
-          command->v.sprite.dst_y != fit_y ||
-          command->v.sprite.dst_w != fit_w ||
-          command->v.sprite.dst_h != fit_h)
+      for (U32 prepared_index = 0;
+           prepared_index < app->image_cache.prepared_image_count;
+           prepared_index += 1)
       {
-        nearest_sampling = 0;
+        const Lectern0PreparedImage *prepared =
+          app->image_cache.prepared_images + prepared_index;
+        if (command->v.sprite.pixels == prepared->pixels &&
+            command->v.sprite.pixels != image->pixels &&
+            command->v.sprite.src_w == fit_w &&
+            command->v.sprite.src_h == fit_h &&
+            command->v.sprite.src_stride_pixels == fit_w &&
+            command->v.sprite.sample_kind == DrawSpriteSampleKind_Nearest &&
+            prepared->source_pixels == image->pixels &&
+            prepared->source_width == image->src_w &&
+            prepared->source_height == image->src_h &&
+            prepared->width == fit_w &&
+            prepared->height == fit_h &&
+            prepared->sample_kind == DrawSpriteSampleKind_Area)
+        {
+          area_prepared_sampling = 1;
+          break;
+        }
       }
     }
     if (command->type == DrawCommandType_RoundedRect &&
@@ -12847,10 +13109,13 @@ lectern0_capture_reader_image_fit_evidence(
     aspect_delta <= MAX(image->src_w, image->src_h);
   if (!canonical_geometry || !aspect_preserved ||
       matching_sprites != 1 || matching_media_backgrounds != 0 ||
-      !nearest_sampling)
+      !area_prepared_sampling ||
+      app->image_cache.prepared_build_count != prepared_build_before + 1 ||
+      app->image_cache.prepared_hit_count < prepared_hit_before + 1 ||
+      app->image_cache.prepared_fallback_count != prepared_fallback_before)
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit_case result=fail case=%s reason=contract spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d canonical=%lld sprites=%u backgrounds=%u nearest=%d aspect=%d bmp=%s\n",
+            "lectern0_reader_image_fit_case result=fail case=%s reason=contract spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d canonical=%lld sprites=%u backgrounds=%u area_prepared=%d builds=%llu hits=%llu fallbacks=%llu aspect=%d bmp=%s\n",
             case_name,
             app->frame.spine_index,
             (unsigned long long)app->frame.page_index,
@@ -12863,7 +13128,13 @@ lectern0_capture_reader_image_fit_evidence(
             (long long)canonical_height,
             matching_sprites,
             matching_media_backgrounds,
-            nearest_sampling,
+            area_prepared_sampling,
+            (unsigned long long)(app->image_cache.prepared_build_count -
+                                 prepared_build_before),
+            (unsigned long long)(app->image_cache.prepared_hit_count -
+                                 prepared_hit_before),
+            (unsigned long long)(app->image_cache.prepared_fallback_count -
+                                 prepared_fallback_before),
             aspect_preserved,
             bmp_path);
     return 0;
@@ -12886,7 +13157,7 @@ lectern0_capture_reader_image_fit_evidence(
     .presentation_hash = app->presentation_hash,
   };
   fprintf(stdout,
-          "lectern0_reader_image_fit_case result=pass case=%s spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d sampling=nearest pixel=%016llx presentation=%016llx bmp=%s\n",
+          "lectern0_reader_image_fit_case result=pass case=%s spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d sampling=area_prepared builds=1 hits=1 fallbacks=0 pixel=%016llx presentation=%016llx bmp=%s\n",
           case_name,
           out_evidence->spine_index,
           (unsigned long long)out_evidence->page_index,
@@ -12982,7 +13253,7 @@ lectern0_run_reader_image_fit_smoke(const char *epub_path,
   }
 
   fprintf(stdout,
-          "lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=%dx%d image_only=4 canonical_units=reader0 cap320=absent sampling=nearest hashes=%016llx,%016llx,%016llx,%016llx output=%s\n",
+          "lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=%dx%d image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=%016llx,%016llx,%016llx,%016llx output=%s\n",
           Width, Height,
           (unsigned long long)evidence[0].pixel_hash,
           (unsigned long long)evidence[1].pixel_hash,
@@ -22395,7 +22666,7 @@ lectern0_run_window_internal(const char *initial_path,
       visible_interval_sample_count == 22 &&
       forward.navigation_prepare_fail_count == 0 &&
       backward.navigation_prepare_fail_count == 0 &&
-      forward.navigation_prepare_cross_spine_ready_count == 0 &&
+      forward.navigation_prepare_cross_spine_ready_count == 1 &&
       backward.navigation_prepare_cross_spine_ready_count == 2 &&
       forward.navigation_prepare_build_count > 0 &&
       backward.navigation_prepare_build_count > 0 &&

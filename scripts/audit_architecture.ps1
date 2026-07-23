@@ -343,9 +343,9 @@ if ($failures.Count -eq 0) {
       $repeatQueue.IndexOf('action_presentations=26/26') -lt 0 -or
       $repeatQueue.IndexOf('action_overlap=0/0') -lt 0 -or
       $repeatQueue.IndexOf('native_repeats=208/208') -lt 0 -or
-      $repeatQueue.IndexOf('navigation_prepare_cross_spine_ready=0+2') -lt 0 -or
+      $repeatQueue.IndexOf('navigation_prepare_cross_spine_ready=1+2') -lt 0 -or
       $repeatQueue.IndexOf('navigation_prepare_failures=0+0') -lt 0 -or
-      $app.IndexOf('forward.navigation_prepare_cross_spine_ready_count == 0') -lt 0 -or
+      $app.IndexOf('forward.navigation_prepare_cross_spine_ready_count == 1') -lt 0 -or
       $app.IndexOf('backward.navigation_prepare_cross_spine_ready_count == 2') -lt 0 -or
       $repeatQueue.IndexOf('prepared_window_moves=') -lt 0 -or
       $repeatQueue.IndexOf('synchronous_window_rebuild_moves=0+0') -lt 0 -or
@@ -453,8 +453,10 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('row->visual_units ? row->visual_units : 18') -lt 0 -or
       $app.IndexOf('SourceReaderLayoutImagePlacement_ImageOnly') -lt 0 -or
       $app.IndexOf('draw_push_sprite_clipped_sampled') -lt 0 -or
-      $app.IndexOf('DrawSpriteSampleKind_Nearest') -lt 0) {
-    $failures.Add("lectern0 image-only pages must consume reader0 visual units and retain explicit frozen-nearest sampling evidence")
+      $app.IndexOf('lectern0_image_cache_prepare') -lt 0 -or
+      $app.IndexOf('render_resample_bgra8') -lt 0 -or
+      $app.IndexOf('DrawSpriteSampleKind_Area') -lt 0) {
+    $failures.Add("lectern0 image pages must consume reader0 visual units and retain bounded zero_foundation area-prepared sampling evidence")
   }
   if ($app.IndexOf('#include "presentation_engine/presentation_engine.h"') -lt 0 -or
       $app.IndexOf('PRESENTATION_ENGINE_API_VERSION != 1') -lt 0 -or

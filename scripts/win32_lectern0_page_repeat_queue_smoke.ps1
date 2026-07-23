@@ -106,7 +106,7 @@ function Invoke-QueueSmoke {
     "action_overlap=0/0", "native_repeats=208/208",
     "navigation_prepare_calls=12+12", "navigation_prepare_builds=",
     "navigation_prepare_ready=",
-    "navigation_prepare_cross_spine_ready=0+2",
+    "navigation_prepare_cross_spine_ready=1+2",
     "navigation_prepare_failures=0+0",
     "prepared_window_moves=", "synchronous_window_rebuild_moves=0+0",
     "synchronous_adjacent_measured_moves=0+0",
@@ -360,7 +360,7 @@ $Summary = [pscustomobject]@{
     render_budget_ms=48.0
     present_budget_ms=16.667
     navigation_prepare_calls_per_direction=12
-    navigation_prepare_cross_spine_ready=@(0, 2)
+    navigation_prepare_cross_spine_ready=@(1, 2)
     terminal_navigation_prepare_suppressed=$true
     queue_drain_batch_cap=32
     mutation_gate_drops=7

@@ -5,7 +5,7 @@ Current pinned reader0 consumer dependency:
 - mode: `sibling-source`
 - version: `0.5.0-dev`
 - API version: `5`
-- commit: `95f72ca6c7e9c06748b37e49e241d4e1279bf11e`
+- commit: `0770b509d19cbefe86209c28045881993b65d105`
 
 This directory contains dependency metadata, not a source snapshot. Lectern0
 locates the live reader0 checkout through `LECTERN0_READER0_DIR` or

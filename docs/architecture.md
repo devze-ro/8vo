@@ -264,9 +264,11 @@ Lectern0 also owns one bounded 64-entry image cache keyed by concrete reader0
 document/resource identity. It fetches encoded resource bytes through reader0,
 passes them to the explicit zero_foundation decoder, maps decoder failures into
 canonical frame image status, and attaches arena-owned BGRA8 views to the
-current frame. The host retains cache capacity/full policy, failed-attempt
-retention, media-type exclusions, cache reset on successful document open, and
-final aspect-fit sprite/fallback presentation. Neither reader0 nor
+current frame. A separate 16-entry/64 MiB presentation cache retains
+target-sized zero_foundation resamples for the active page and layout key.
+The host retains cache capacity/full policy, failed-attempt retention,
+media-type exclusions, cache reset on successful document open, resampling
+policy, and final aspect-fit sprite/fallback presentation. Neither reader0 nor
 zero_foundation owns product cache policy.
 
 Image-only canonical rows are a distinct host-presentation case. Reader0 owns
@@ -275,9 +277,13 @@ width and exactly `visual_units * line_height` pixels of vertical media space,
 then aspect-fits the decoded image inside that box. The 18-unit fallback is
 used only when the canonical row omits a value, matching the frozen Re10
 adapter. Loaded image-only media has no synthetic card background. Lectern0
-selects explicit nearest sampling for this path to preserve the frozen Re10
-benchmark; zero_foundation owns the sampling mechanism, not that product
-policy. Publisher in-flow images retain their separately bounded box policy.
+prepares area-filtered target surfaces for shrink, linear-filtered surfaces for
+enlargement, and exact-size nearest surfaces; the prepared surface is then
+drawn one-to-one. The same policy applies to publisher in-flow images.
+Zero_foundation owns the resampling mechanism while Lectern0 owns the bounded
+host cache and product policy. Library thumbnails use the same area filter,
+persist as thumbnail format version 2 so legacy nearest thumbnails are
+invalidated, and use explicit area/linear sampling for their final card fit.
 
 Vertical placement follows the canonical row metadata through Presentation
 Engine API 1: block top margins apply only to `line_row == 0`, while resolved

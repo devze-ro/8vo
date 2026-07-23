@@ -51,7 +51,7 @@ function Invoke-ImageFitSmoke {
     $_ -match '^lectern0_reader_image_fit result=pass '
   } | Select-Object -Last 1
   $PassPattern =
-    '^lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=1182x713 image_only=4 canonical_units=reader0 cap320=absent sampling=nearest hashes=([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}) output=(.+)$'
+    '^lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=1182x713 image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}) output=(.+)$'
   $PassMatch = [regex]::Match([string]$PassLine, $PassPattern)
   if (!$PassLine -or !$PassMatch.Success) {
     throw "reader image-fit result is incomplete: $PassLine"
@@ -146,7 +146,7 @@ $Summary = [pscustomobject]@{
     canonical_visual_units="reader0"
     media_geometry="lectern0_host_presentation"
     aspect_fit="lectern0_host_rendering"
-    sampling="zero_foundation_nearest"
+    sampling="zero_foundation_area_prepared"
   }
   result=$Second.PassLine
   repeat=2
