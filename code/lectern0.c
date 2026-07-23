@@ -667,6 +667,7 @@ typedef struct Lectern0App
   B32 library_import_in_progress;
   B32 suppress_native_picker;
   U32 native_picker_request_count;
+  U32 library_metadata_refresh_count;
 
   Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
   U32 bookmark_count;
@@ -1970,10 +1971,12 @@ lectern0_library_update_progress(Lectern0App *app)
 
 FUNCTION B32
 lectern0_library_refresh_open_document_metadata(Lectern0App *app,
-                                                Lectern0LibraryEntry *entry)
+                                                 Lectern0LibraryEntry *entry)
 {
   if (!app || !entry || !entry->source_path[0] ||
       !epub_reader_is_open(&app->reader)) return 0;
+  if (app->library_metadata_refresh_count < UINT32_MAX)
+    app->library_metadata_refresh_count += 1;
 
   String8 title = {0};
   String8 author = {0};
@@ -2052,17 +2055,28 @@ lectern0_library_record_open_document(Lectern0App *app,
       !epub_reader_is_open(&app->reader))
     return 0;
   OS_FileProperties properties = os_file_properties(normalized_path);
+  Lectern0LibraryEntry *existing = app->library_locate_entry_id ?
+    lectern0_library_catalog_find_id(&app->library,
+                                     app->library_locate_entry_id) :
+    lectern0_library_catalog_find_path(&app->library, normalized_path);
+  B32 source_changed = existing &&
+    (existing->file_size != properties.size ||
+     existing->file_modified_time != properties.modified_time);
   B32 created = 0;
   Lectern0LibraryEntry *entry = lectern0_library_catalog_upsert(
     &app->library, normalized_path, properties, lectern0_library_now(),
     app->library_locate_entry_id, &created);
   app->library_locate_entry_id = 0;
   if (!entry) return 0;
-  (void)created;
-  (void)lectern0_library_refresh_open_document_metadata(app, entry);
+  B32 metadata_current =
+    (entry->metadata_flags & Lectern0LibraryMetadata_Inspected) != 0;
+  B32 thumbnail_current =
+    !(entry->metadata_flags & Lectern0LibraryMetadata_Cover) ||
+    lectern0_library_thumbnail_load(app, entry) != 0;
+  if (created || source_changed || !metadata_current || !thumbnail_current)
+    (void)lectern0_library_refresh_open_document_metadata(app, entry);
   app->library_selected_entry_id = entry->entry_id;
   lectern0_library_catalog_sort(&app->library);
-  (void)lectern0_save_library(app);
   return lectern0_library_catalog_find_id(&app->library,
                                           app->library_selected_entry_id);
 }
@@ -2520,7 +2534,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   app->host_exit_pointer_armed = 0;
   if (!catalog_entry)
     lectern0_set_statusf(app, "Opened, but the library is full");
-  (void)lectern0_save_state(app);
+  lectern0_schedule_state_save(app);
   if (frame_captured) lectern0_schedule_adjacent_warm(app);
   return 1;
 }
@@ -2794,15 +2808,25 @@ lectern0_selection_highlight_index(const Lectern0App *app)
 {
   if (!app || !app->reader.has_active_selection) { return -1; }
   DocSelection selection = app->reader.active_selection;
+  S32 best_index = -1;
+  U64 best_size = UINT64_MAX;
   for (U32 index = 0; index < app->highlight_count; index += 1)
   {
     const Lectern0Highlight *highlight = app->highlights + index;
     if (highlight->spine_index == selection.spine_index &&
-        highlight->start_byte == selection.text_byte_start &&
-        highlight->end_byte == selection.text_byte_end)
-      return (S32)index;
+        highlight->start_byte <= selection.text_byte_start &&
+        highlight->end_byte >= selection.text_byte_end &&
+        highlight->end_byte > highlight->start_byte)
+    {
+      U64 size = highlight->end_byte - highlight->start_byte;
+      if (size < best_size)
+      {
+        best_index = (S32)index;
+        best_size = size;
+      }
+    }
   }
-  return -1;
+  return best_index;
 }
 
 FUNCTION B32
@@ -9666,28 +9690,13 @@ lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
   {
     app->selection_dragging = 1;
     app->selection_anchor_byte = byte;
+    epub_reader_clear_selection(&app->reader);
+    app->selected_text[0] = 0;
+    return;
   }
   if (!app->selection_dragging) return;
   U64 start = MIN(app->selection_anchor_byte, byte);
   U64 end = MAX(app->selection_anchor_byte, byte);
-  if (end == start)
-  {
-    U64 relative = start >= app->frame.view_byte_offset ?
-      start - app->frame.view_byte_offset : 0;
-    if (relative >= app->frame.visible_text.size && relative > 0)
-    {
-      U64 previous = base_unicode_utf8_previous_grapheme_boundary(
-        app->frame.visible_text, relative);
-      start = app->frame.view_byte_offset + previous;
-      end = app->frame.view_byte_offset + relative;
-    }
-    else
-    {
-      U64 next = base_unicode_utf8_next_grapheme_boundary(app->frame.visible_text,
-                                                          relative);
-      end = app->frame.view_byte_offset + MIN(next, app->frame.visible_text.size);
-    }
-  }
   if (end <= start) return;
   DocSelection selection = {
     .spine_index = app->reader.active_spine_index,
@@ -11239,6 +11248,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   Lectern0LibraryThumbnail *hydrated_thumbnail =
     lectern0_library_thumbnail_load(&app, hydrated);
   if (epub_reader_is_open(&app.reader) || !hydrated_thumbnail ||
+      app.library_metadata_refresh_count != 1 ||
       !(hydrated->metadata_flags & Lectern0LibraryMetadata_Inspected) ||
       !(hydrated->metadata_flags & Lectern0LibraryMetadata_Title) ||
       !(hydrated->metadata_flags & Lectern0LibraryMetadata_Author) ||
@@ -11246,6 +11256,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
     goto fail;
 
   if (!lectern0_open_path(&app, epub_path) || app.library.entry_count != 1 ||
+      app.library_metadata_refresh_count != 1 ||
       !epub_reader_is_open(&app.reader))
     goto fail;
   Lectern0LibraryEntry *opened = app.library.entries;
@@ -11299,6 +11310,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   U64 restart_hash = u64_hash_bytes(pixels,
                                     (U64)Width * Height * sizeof(U32));
   if (!lectern0_library_active(&app) || !app.library.entries[0].title[0] ||
+      app.library_metadata_refresh_count != 0 ||
       !lectern0_write_bmp(restart_bmp, pixels, Width, Height))
     goto fail;
   lectern0_render_to_buffer(&app, &buffer);
@@ -11347,6 +11359,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   lectern0_host_pointer_press(&app, book_x, book_y);
   if (!lectern0_host_pointer_release(&app, book_x, book_y) ||
       !epub_reader_is_open(&app.reader) ||
+      app.library_metadata_refresh_count != 0 ||
       app.host_focus_control != Lectern0HostControl_None)
     goto fail;
   U32 card_open_spine = app.reader.active_spine_index;
@@ -11368,6 +11381,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   lectern0_render_to_buffer(&app, &buffer);
   if (!lectern0_host_focus_set(&app, Lectern0HostControl_LibraryBookBase, 1) ||
       !lectern0_host_keyboard_activate(&app) ||
+      app.library_metadata_refresh_count != 0 ||
       !epub_reader_is_open(&app.reader))
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
@@ -11401,7 +11415,7 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
     goto fail;
 
   fprintf(stdout,
-          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame thumbnail=area_v2 progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
+          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame_reused_on_open thumbnail=area_v2 progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
           (unsigned long long)restart_hash, empty_bmp, populated_bmp,
           restart_bmp, restart_repeat_bmp, compact_bmp, missing_bmp,
           hover_bmp, pressed_bmp);
@@ -14915,6 +14929,8 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   U32 selection_row_count = 0;
   U64 expected_start = 0;
   U64 expected_end = 0;
+  S32 end_x = 0;
+  S32 end_y = 0;
   if (!pixels || !epub_path || !output_prefix ||
       !lectern0_app_init(&app, Width, Height, 1, 0) ||
       !lectern0_open_path(&app, epub_path) ||
@@ -14980,15 +14996,13 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
         app.presentation_frame.rows + selection_rows[1],
         &end_row) || end_row.span_count == 0)
     goto cleanup;
-  const TextEngineDisplaySpan *last_end_span =
-    end_row.spans + end_row.span_count - 1;
-  if (last_end_span->stop_count < 2) goto cleanup;
-  TextEngineDisplayRowStop end_stop =
-    last_end_span->stops[last_end_span->stop_count - 2];
+  const TextEngineDisplaySpan *first_end_span = end_row.spans;
+  if (first_end_span->stop_count < 2) goto cleanup;
+  TextEngineDisplayRowStop end_stop = first_end_span->stops[1];
   expected_end = end_stop.source_byte;
-  S32 end_x = end_row.x + last_end_span->x + end_stop.x;
-  S32 end_y = app.presentation_frame.rows[selection_rows[1]].row_rect.y +
-              app.presentation_frame.rows[selection_rows[1]].row_rect.h / 2;
+  end_x = end_row.x + first_end_span->x + end_stop.x;
+  end_y = app.presentation_frame.rows[selection_rows[1]].row_rect.y +
+          app.presentation_frame.rows[selection_rows[1]].row_rect.h / 2;
   if (expected_end <= expected_start)
     goto cleanup;
   checkpoint = 1;
@@ -14998,15 +15012,18 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   if (!app.selection_dragging ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
+  checkpoint = 11;
   lectern0_host_pointer_move(&app, end_x, end_y);
   lectern0_update_pointer_selection(&app, end_x, end_y, 0);
   lectern0_render_to_buffer(&app, &buffer);
   if (!app.selection_dragging ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
+  checkpoint = 12;
   if (lectern0_host_pointer_release(&app, end_x, end_y) ||
       !app.input.pointer_selection_release)
     goto cleanup;
+  checkpoint = 13;
   lectern0_render_to_buffer(&app, &buffer);
   if (!app.reader.has_active_selection ||
       app.reader.active_selection.text_byte_start != expected_start ||
@@ -15091,6 +15108,116 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
       !app.reader.has_active_selection)
     goto cleanup;
   lectern0_render_to_buffer(&app, &buffer);
+
+  TextEngineDisplaySpanRow interaction_row = {0};
+  if (!lectern0_reader_display_span_row(
+        &app,
+        app.frame.style_rows + selection_rows[0],
+        app.presentation_frame.rows + selection_rows[0],
+        &interaction_row) || interaction_row.span_count == 0)
+    goto cleanup;
+  checkpoint = 41;
+  S32 outside_x = 0;
+  S32 partial_start_x = 0;
+  S32 partial_end_x = 0;
+  U64 partial_start = 0;
+  U64 partial_end = 0;
+  B32 found_partial_start = 0;
+  B32 found_partial_end = 0;
+  for (U32 span_index = 0;
+       span_index < interaction_row.span_count;
+       span_index += 1)
+  {
+    const TextEngineDisplaySpan *span = interaction_row.spans + span_index;
+    for (U32 stop_index = 0; stop_index < span->stop_count; stop_index += 1)
+    {
+      TextEngineDisplayRowStop stop = span->stops[stop_index];
+      S32 stop_x = interaction_row.x + span->x + stop.x;
+      if (!found_partial_start &&
+          stop.source_byte >= expected_start &&
+          stop.source_byte < expected_end)
+      {
+        partial_start = stop.source_byte;
+        partial_start_x = stop_x;
+        found_partial_start = 1;
+      }
+      else if (found_partial_start && !found_partial_end &&
+               stop.source_byte >= partial_start + 8 &&
+               stop.source_byte < expected_end)
+      {
+        partial_end = stop.source_byte;
+        partial_end_x = stop_x;
+        found_partial_end = 1;
+      }
+    }
+  }
+  if (!found_partial_start || !found_partial_end ||
+      selection_rows[0] == 0)
+    goto cleanup;
+  checkpoint = 42;
+  S32 interaction_y =
+    app.presentation_frame.rows[selection_rows[0]].row_rect.y +
+    app.presentation_frame.rows[selection_rows[0]].row_rect.h / 2;
+  U32 outside_row_index = selection_rows[0] - 1;
+  TextEngineDisplaySpanRow outside_row = {0};
+  if (!lectern0_reader_display_span_row(
+        &app,
+        app.frame.style_rows + outside_row_index,
+        app.presentation_frame.rows + outside_row_index,
+        &outside_row) || outside_row.span_count == 0 ||
+      outside_row.spans[0].stop_count == 0)
+    goto cleanup;
+  checkpoint = 43;
+  TextEngineDisplayRowStop outside_stop = outside_row.spans[0].stops[0];
+  outside_x = outside_row.x + outside_row.spans[0].x + outside_stop.x + 2;
+  S32 outside_y =
+    app.presentation_frame.rows[outside_row_index].row_rect.y +
+    app.presentation_frame.rows[outside_row_index].row_rect.h / 2;
+  /* Exercise the concrete-selection click path after the transient action
+     surface has been dismissed without changing the owned text range. */
+  app.reader_view_state.popup = ReaderViewPopup_None;
+  U64 outside_byte = 0;
+  UI0Rect outside_rect = {0};
+  if (!lectern0_reader_point_to_byte(&app, outside_x, outside_y,
+                                     &outside_byte, &outside_rect) ||
+      outside_byte >= expected_start)
+    goto cleanup;
+
+  lectern0_host_pointer_press(&app, outside_x, outside_y);
+  if (!app.selection_dragging || app.reader.has_active_selection ||
+      app.selected_text[0])
+    goto cleanup;
+  checkpoint = 44;
+  if (lectern0_host_pointer_release(&app, outside_x, outside_y) ||
+      app.input.pointer_selection_release)
+    goto cleanup;
+  checkpoint = 45;
+  lectern0_render_to_buffer(&app, &buffer);
+  if (app.reader.has_active_selection || app.selected_text[0] ||
+      app.reader_view_state.popup != ReaderViewPopup_None)
+    goto cleanup;
+  checkpoint = 46;
+
+  lectern0_host_pointer_press(&app, partial_start_x, interaction_y);
+  lectern0_render_to_buffer(&app, &buffer);
+  lectern0_host_pointer_move(&app, partial_end_x, interaction_y);
+  lectern0_update_pointer_selection(&app, partial_end_x, interaction_y, 0);
+  lectern0_render_to_buffer(&app, &buffer);
+  if (lectern0_host_pointer_release(&app, partial_end_x, interaction_y) ||
+      !app.input.pointer_selection_release)
+    goto cleanup;
+  checkpoint = 47;
+  lectern0_render_to_buffer(&app, &buffer);
+  pink = lectern0_reader_view_parity_semantic(
+    &app, ReaderViewSemantic_MenuItem, "Pink");
+  if (!app.reader.has_active_selection ||
+      app.reader.active_selection.text_byte_start != partial_start ||
+      app.reader.active_selection.text_byte_end != partial_end ||
+      app.reader_view_state.popup != ReaderViewPopup_SelectionTools ||
+      !pink || (pink->flags & ReaderViewSemantic_Selected) == 0 ||
+      lectern0_selection_highlight_index(&app) != 0)
+    goto cleanup;
+
   app.theme = Lectern0Theme_Dark;
   lectern0_render_to_buffer(&app, &buffer);
   pink = lectern0_reader_view_parity_semantic(
@@ -15128,7 +15255,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops release=popup_safe menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
+            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops release=popup_safe click=clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
             checkpoint,
             selection_rows[0], selection_rows[1],
             (unsigned long long)expected_start,
@@ -15137,15 +15264,37 @@ cleanup:
   }
   else
   {
+    U64 mapped_end = 0;
+    UI0Rect mapped_rect = {0};
+    B32 mapped_end_valid =
+      lectern0_reader_point_to_byte(&app, end_x, end_y,
+                                    &mapped_end, &mapped_rect);
     fprintf(stderr,
-            "lectern0_reader_view_selection_menu result=fail checkpoint=%u popup=%d selection=%d range=%llu..%llu rows=%u,%u highlights=%u\n",
+            "lectern0_reader_view_selection_menu result=fail checkpoint=%u popup=%d selection=%d range=%llu..%llu rows=%u,%u highlights=%u dragging=%d anchor=%llu mapped_end=%d:%llu frame_rows=%u presentation_rows=%u content=%d,%d,%d,%d end_point=%d,%d selected=\"%s\" projection_key=%llu projection_flags=%llu\n",
             checkpoint,
             (int)app.reader_view_state.popup,
             app.reader.has_active_selection,
             (unsigned long long)app.reader.active_selection.text_byte_start,
             (unsigned long long)app.reader.active_selection.text_byte_end,
             selection_rows[0], selection_rows[1],
-            app.highlight_count);
+            app.highlight_count,
+            app.selection_dragging,
+            (unsigned long long)app.selection_anchor_byte,
+            mapped_end_valid,
+            (unsigned long long)mapped_end,
+            app.frame.style_row_count,
+            app.presentation_frame.row_count,
+            app.reader_content_geometry.content_rect.x,
+            app.reader_content_geometry.content_rect.y,
+            app.reader_content_geometry.content_rect.w,
+            app.reader_content_geometry.content_rect.h,
+            end_x,
+            end_y,
+            app.selected_text,
+            (unsigned long long)
+              app.reader_view_projection.selection.selection_key,
+            (unsigned long long)
+              app.reader_view_projection.selection.flags);
   }
   free(pixels);
   lectern0_app_release(&app);

@@ -56,7 +56,8 @@ function Invoke-LibrarySmoke {
   } | Select-Object -Last 1
   foreach ($Token in @(
     "catalog=bounded_atomic_v1", "ordering=mru", "migration=legacy_state",
-    "metadata=title_author", "cover=first_library_frame", "progress=canonical",
+    "metadata=title_author", "cover=first_library_frame_reused_on_open",
+    "progress=canonical",
     "thumbnail=area_v2",
     "close=library", "restart=persisted",
     "interaction=pointer_keyboard_card_open_arrow", "states=idle_hover_pressed",
