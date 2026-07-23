@@ -53,7 +53,7 @@ function Invoke-SelectionMenuRun {
   if (!$PassLine) { throw "Lectern0 selection-menu pass line is missing: $Name" }
   $Match = [regex]::Match(
     $PassLine,
-    '^lectern0_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
+    '^lectern0_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
   if (!$Match.Success -or
       [UInt64]$Match.Groups[4].Value -le [UInt64]$Match.Groups[3].Value) {
     throw "Lectern0 selection-menu result is incomplete: $PassLine"

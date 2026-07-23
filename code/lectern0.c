@@ -97,6 +97,8 @@ enum
   Lectern0PresentationRetryTimerId = 3,
   Lectern0PresentationRetryBaseDelayMs = 16,
   Lectern0PresentationRetryMaxDelayMs = 256,
+  Lectern0LocationWarmTimerId = 4,
+  Lectern0LocationWarmDelayMs = 32,
   Lectern0AdjacentWarmTextBudget = 4,
   Lectern0AdjacentWarmPageCap = 4,
   Lectern0AdjacentPagePixelCap = 4096 * 4096,
@@ -697,6 +699,7 @@ typedef struct Lectern0App
   B32 persistence_enabled;
   B32 state_save_pending;
   B32 first_reader_present_pending;
+  B32 location_warm_pending;
   B32 adjacent_warm_pending;
   B32 adjacent_warm_frame_ready;
   U32 adjacent_warm_next_text_command;
@@ -957,6 +960,9 @@ FUNCTION B32 lectern0_locate_library_entry(Lectern0App *app, U64 entry_id);
 FUNCTION void lectern0_schedule_adjacent_warm(Lectern0App *app);
 FUNCTION void lectern0_cancel_adjacent_warm(Lectern0App *app);
 FUNCTION B32 lectern0_adjacent_warm_step(Lectern0App *app);
+FUNCTION void lectern0_schedule_location_warm(Lectern0App *app);
+FUNCTION void lectern0_cancel_location_warm(Lectern0App *app);
+FUNCTION B32 lectern0_location_warm_step(Lectern0App *app);
 FUNCTION void lectern0_invalidate_adjacent_page(Lectern0App *app);
 FUNCTION void lectern0_stop_page_repeat(Lectern0App *app);
 FUNCTION void lectern0_cancel_page_repeat_for_modifier(Lectern0App *app);
@@ -2386,6 +2392,7 @@ FUNCTION B32
 lectern0_recover_failed_open_to_library(Lectern0App *app)
 {
   if (!app) return 0;
+  lectern0_cancel_location_warm(app);
   B32 changed = 0;
   if (epub_reader_is_open(&app->reader))
     (void)epub_reader_close(&app->reader, &changed);
@@ -2416,6 +2423,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
   if (!lectern0_begin_document_mutation(app)) return 0;
+  lectern0_cancel_location_warm(app);
   lectern0_cancel_adjacent_warm(app);
   lectern0_invalidate_adjacent_page(app);
   char normalized_path[Lectern0LibraryPathCap] = {0};
@@ -2552,6 +2560,7 @@ lectern0_close_book(Lectern0App *app)
   if (!app || !epub_reader_is_open(&app->reader)) return 0;
   if (!lectern0_begin_document_mutation(app)) return 0;
   lectern0_stop_page_repeat(app);
+  lectern0_cancel_location_warm(app);
   lectern0_cancel_adjacent_warm(app);
   lectern0_invalidate_adjacent_page(app);
   (void)lectern0_save_state(app);
@@ -3516,6 +3525,21 @@ lectern0_reader_view_right_secondary(Lectern0App *app,
   if (!app || !kind || row_index >= READER_VIEW_RIGHT_ROW_CAP)
     return (ReaderViewText){0};
   char *storage = app->reader_view_right_secondary[row_index];
+  /*
+  Hidden annotation rows must not synchronously extract every EPUB spine just
+  to format their global location labels. The Win32 host warms that bounded
+  reader0 cache after the first stable presentation. Headless contract smokes
+  still build exact rows immediately, and an explicitly opened panel may
+  complete any remaining cache work before showing its metadata.
+  */
+  if ((app->window || app->first_reader_present_pending) &&
+      !app->reader_view_state.right_panel_open &&
+      !(app->reader.location_cache_complete &&
+        app->reader.location_cache_valid))
+  {
+    storage[0] = 0;
+    return lectern0_reader_view_text(storage);
+  }
   (void)cstr_format(storage,
                     Lectern0RecordLabelCap,
                     "%s - re10 loc %llu",
@@ -4816,6 +4840,7 @@ FUNCTION void
 lectern0_app_release(Lectern0App *app)
 {
   if (!app) { return; }
+  lectern0_cancel_location_warm(app);
   lectern0_cancel_adjacent_warm(app);
   if (app->accessibility) lectern0_accessibility_destroy(app->accessibility);
   (void)lectern0_save_state(app);
@@ -9756,8 +9781,9 @@ lectern0_reader_point_to_byte(Lectern0App *app,
                             row->content_rect.w, row->row_rect.h);
     if (!ui0_rect_contains_point(rect, x, y) || row->source_end <= row->source_start)
       continue;
-    if (index >= app->frame.style_row_count) return 0;
-    const EpubReaderFrameStyleRow *style_row = app->frame.style_rows + index;
+    if (row->style_index >= app->frame.style_row_count) return 0;
+    const EpubReaderFrameStyleRow *style_row =
+      app->frame.style_rows + row->style_index;
     TextEngineDisplaySpanRow display_row = {0};
     U64 source_byte = 0;
     S32 caret_x = 0;
@@ -9823,14 +9849,15 @@ lectern0_reader_selection_contains_point(Lectern0App *app, S32 x, S32 y)
   U64 selection_end = app->reader.active_selection.text_byte_end;
   if (selection_end <= selection_start) return 0;
   for (U32 index = 0;
-       index < app->presentation_frame.row_count &&
-       index < app->frame.style_row_count;
+       index < app->presentation_frame.row_count;
        index += 1)
   {
-    const EpubReaderFrameStyleRow *style_row =
-      app->frame.style_rows + index;
     const PresentationEngineBlockFlowRow *presentation_row =
       app->presentation_frame.rows + index;
+    if (presentation_row->style_index >= app->frame.style_row_count)
+      continue;
+    const EpubReaderFrameStyleRow *style_row =
+      app->frame.style_rows + presentation_row->style_index;
     U64 row_start = app->frame.view_byte_offset + style_row->byte_start;
     U64 row_end = app->frame.view_byte_offset + style_row->byte_end;
     if (selection_end <= row_start || selection_start >= row_end) continue;
@@ -10808,6 +10835,53 @@ lectern0_build_adjacent_page_raster(Lectern0App *app)
 }
 
 FUNCTION void
+lectern0_cancel_location_warm(Lectern0App *app)
+{
+  if (!app) return;
+  if (app->window && app->location_warm_pending)
+    (void)KillTimer(app->window, Lectern0LocationWarmTimerId);
+  app->location_warm_pending = 0;
+}
+
+FUNCTION void
+lectern0_schedule_location_warm(Lectern0App *app)
+{
+  if (!app || !app->window || !epub_reader_is_open(&app->reader) ||
+      (app->reader.location_cache_complete &&
+       app->reader.location_cache_valid))
+  {
+    lectern0_cancel_location_warm(app);
+    return;
+  }
+  app->location_warm_pending = 1;
+  if (SetTimer(app->window, Lectern0LocationWarmTimerId,
+               Lectern0LocationWarmDelayMs, 0) == 0)
+  {
+    app->location_warm_pending = 0;
+  }
+}
+
+FUNCTION B32
+lectern0_location_warm_step(Lectern0App *app)
+{
+  if (app && app->first_reader_present_pending) return 0;
+  if (!app || !app->location_warm_pending ||
+      !epub_reader_is_open(&app->reader))
+  {
+    lectern0_cancel_location_warm(app);
+    return 0;
+  }
+  U32 before = app->reader.location_next_spine_index;
+  (void)epub_reader_location_cache_ensure(&app->reader);
+  B32 complete = app->reader.location_cache_complete &&
+                 app->reader.location_cache_valid;
+  B32 progressed = app->reader.location_next_spine_index > before;
+  if (complete || !progressed)
+    lectern0_cancel_location_warm(app);
+  return progressed;
+}
+
+FUNCTION void
 lectern0_cancel_adjacent_warm(Lectern0App *app)
 {
   if (!app) return;
@@ -10960,6 +11034,8 @@ lectern0_adjacent_warm_step(Lectern0App *app)
 
   EpubReaderFrame saved_frame = app->frame;
   B32 saved_adjacent_page_ready = app->adjacent_page_ready;
+  B32 saved_presentation_complete = app->presentation_complete;
+  U64 saved_presentation_hash = app->presentation_hash;
   app->frame = app->adjacent_frame;
   app->adjacent_page_ready = 0;
   draw_command_buffer_begin(&app->draw_commands);
@@ -10969,8 +11045,24 @@ lectern0_adjacent_warm_step(Lectern0App *app)
   B32 adjacent_presentation_complete = app->presentation_complete;
   app->frame = saved_frame;
   app->adjacent_page_ready = saved_adjacent_page_ready;
-  app->presentation_hash = 0;
-  app->presentation_complete = 1;
+  UI0Rect current_content = app->reader_content_geometry.content_rect;
+  B32 current_presentation_restored =
+    lectern0_build_reader_presentation(app,
+                                       current_content.x,
+                                       current_content.y,
+                                       current_content.w,
+                                       current_content.h);
+  B32 current_presentation_matches =
+    current_presentation_restored &&
+    (saved_presentation_hash == 0 ||
+     app->presentation_hash == saved_presentation_hash);
+  app->presentation_complete =
+    saved_presentation_complete && current_presentation_matches;
+  if (!current_presentation_matches)
+  {
+    lectern0_cancel_adjacent_warm(app);
+    return 0;
+  }
   if (app->draw_commands.overflow_count != 0)
   {
     lectern0_cancel_adjacent_warm(app);
@@ -11250,6 +11342,7 @@ lectern0_note_stable_presentation(Lectern0App *app,
       epub_reader_is_open(&app->reader))
   {
     app->first_reader_present_pending = 0;
+    lectern0_schedule_location_warm(app);
     if (app->window && app->adjacent_warm_pending &&
         !app->page_repeat_active &&
         SetTimer(app->window, Lectern0AdjacentWarmTimerId,
@@ -12767,6 +12860,11 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         (void)lectern0_adjacent_warm_step(app);
         return 0;
       }
+      if (app && w_param == Lectern0LocationWarmTimerId)
+      {
+        (void)lectern0_location_warm_step(app);
+        return 0;
+      }
     } break;
 
     case Lectern0PageRepeatProbeMutationMessage:
@@ -12890,14 +12988,37 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     app.adjacent_warm_pending &&
     !app.adjacent_warm_frame_ready &&
     app.adjacent_warm_next_text_command == 0;
-  app.first_reader_present_pending = 0;
+  app.highlight_count = 1;
+  app.highlights[0] = (Lectern0Highlight){
+    .id = 1,
+    .spine_index = app.layout_key.spine_count ?
+      app.layout_key.spine_count - 1 : app.reader.active_spine_index,
+    .start_byte = 0,
+    .end_byte = 1,
+    .color_index = 0,
+    .is_highlight = 1,
+  };
+  lectern0_copy_cstr(app.highlights[0].section,
+                     ARRAY_COUNT(app.highlights[0].section),
+                     "Deferred annotation location");
+  lectern0_copy_cstr(app.highlights[0].text,
+                     ARRAY_COUNT(app.highlights[0].text),
+                     "Deferred");
+  app.annotation_revision += 1;
   U64 first_render_start = os_time_ticks();
   lectern0_render_to_buffer(&app, &buffer);
   U64 first_render_ticks = os_time_ticks() - first_render_start;
+  B32 annotation_locations_deferred =
+    app.reader_view_projection.right.row_count == 1 &&
+    app.reader_view_right_secondary[0][0] == 0 &&
+    !app.reader.location_cache_complete;
   U64 first_reader_view_ticks = app.last_render_reader_view_ticks;
   U64 first_reader_page_ticks = app.last_render_reader_page_ticks;
   U64 first_ui_adapt_ticks = app.last_render_ui_adapt_ticks;
   U64 first_execute_ticks = app.last_render_execute_ticks;
+  app.first_reader_present_pending = 0;
+  app.highlight_count = 0;
+  app.annotation_revision += 1;
   U64 second_render_start = os_time_ticks();
   lectern0_render_to_buffer(&app, &buffer);
   U64 second_render_ticks = os_time_ticks() - second_render_start;
@@ -12937,10 +13058,11 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     open_ms <= MaxOpenMilliseconds &&
     first_visible_ms <= MaxFirstVisibleMilliseconds &&
     adjacent_warm_blocked_before_present &&
+    annotation_locations_deferred &&
     lectern0_frame_presentation_is_complete(&app);
 
   fprintf(passed ? stdout : stderr,
-          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f warm_before_present=%s spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
+          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f warm_before_present=%s annotation_locations=%s spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
           passed ? "pass" : "fail",
           open_ms,
           first_render_ms,
@@ -12952,6 +13074,7 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
           first_execute_ms,
           total_ms,
           adjacent_warm_blocked_before_present ? "blocked" : "ran",
+          annotation_locations_deferred ? "deferred" : "synchronous",
           app.reader.active_spine_index,
           (unsigned long long)clamped_byte,
           (unsigned long long)app.frame.page_index,
@@ -15216,15 +15339,42 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
   lectern0_render_to_buffer(&app, &buffer);
+  U64 current_presentation_hash = app.presentation_hash;
+  U32 current_presentation_row_count = app.presentation_frame.row_count;
+  lectern0_schedule_adjacent_warm(&app);
+  B32 adjacent_warm_ran = lectern0_adjacent_warm_step(&app);
+  B32 current_presentation_preserved =
+    adjacent_warm_ran &&
+    current_presentation_hash != 0 &&
+    app.presentation_frame.valid &&
+    app.presentation_hash == current_presentation_hash &&
+    app.presentation_frame.row_count == current_presentation_row_count &&
+    lectern0_frame_presentation_is_complete(&app);
+  if (!current_presentation_preserved)
+  {
+    fprintf(stderr,
+            "lectern0_reader_view_selection_menu result=fail checkpoint=0 reason=adjacent_presentation ran=%d hash=%llu/%llu rows=%u/%u complete=%d\n",
+            adjacent_warm_ran,
+            (unsigned long long)app.presentation_hash,
+            (unsigned long long)current_presentation_hash,
+            app.presentation_frame.row_count,
+            current_presentation_row_count,
+            lectern0_frame_presentation_is_complete(&app));
+    goto cleanup;
+  }
   for (U32 index = 0;
-       index < app.presentation_frame.row_count &&
-       index < app.frame.style_row_count;
+       index < app.presentation_frame.row_count;
        index += 1)
   {
+    const PresentationEngineBlockFlowRow *presentation_row =
+      app.presentation_frame.rows + index;
+    if (presentation_row->style_index >= app.frame.style_row_count)
+      continue;
     TextEngineDisplaySpanRow display_row = {0};
     if (!lectern0_reader_display_span_row(&app,
-                                          app.frame.style_rows + index,
-                                          app.presentation_frame.rows + index,
+                                          app.frame.style_rows +
+                                            presentation_row->style_index,
+                                          presentation_row,
                                           &display_row) ||
         display_row.span_count == 0 || display_row.w <= 0)
       continue;
@@ -15245,10 +15395,12 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   }
 
   TextEngineDisplaySpanRow start_row = {0};
+  const PresentationEngineBlockFlowRow *start_presentation_row =
+    app.presentation_frame.rows + selection_rows[0];
   if (!lectern0_reader_display_span_row(
         &app,
-        app.frame.style_rows + selection_rows[0],
-        app.presentation_frame.rows + selection_rows[0],
+        app.frame.style_rows + start_presentation_row->style_index,
+        start_presentation_row,
         &start_row) || start_row.span_count == 0 ||
       start_row.spans[0].stop_count < 2)
     goto cleanup;
@@ -15259,10 +15411,12 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
                 app.presentation_frame.rows[selection_rows[0]].row_rect.h / 2;
 
   TextEngineDisplaySpanRow end_row = {0};
+  const PresentationEngineBlockFlowRow *end_presentation_row =
+    app.presentation_frame.rows + selection_rows[1];
   if (!lectern0_reader_display_span_row(
         &app,
-        app.frame.style_rows + selection_rows[1],
-        app.presentation_frame.rows + selection_rows[1],
+        app.frame.style_rows + end_presentation_row->style_index,
+        end_presentation_row,
         &end_row) || end_row.span_count == 0)
     goto cleanup;
   const TextEngineDisplaySpan *first_end_span = end_row.spans;
@@ -15305,10 +15459,12 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   for (U32 index = 0; index < ARRAY_COUNT(selection_rows); index += 1)
   {
     U32 row_index = selection_rows[index];
-    const EpubReaderFrameStyleRow *style_row =
-      app.frame.style_rows + row_index;
     const PresentationEngineBlockFlowRow *presentation_row =
       app.presentation_frame.rows + row_index;
+    if (presentation_row->style_index >= app.frame.style_row_count)
+      goto cleanup;
+    const EpubReaderFrameStyleRow *style_row =
+      app.frame.style_rows + presentation_row->style_index;
     TextEngineDisplaySpanRow display_row = {0};
     TextEngineRowRect expected_rect = {0};
     if (!lectern0_reader_display_span_row(&app, style_row, presentation_row,
@@ -15381,8 +15537,8 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   TextEngineDisplaySpanRow interaction_row = {0};
   if (!lectern0_reader_display_span_row(
         &app,
-        app.frame.style_rows + selection_rows[0],
-        app.presentation_frame.rows + selection_rows[0],
+        app.frame.style_rows + start_presentation_row->style_index,
+        start_presentation_row,
         &interaction_row) || interaction_row.span_count == 0)
     goto cleanup;
   checkpoint = 41;
@@ -15432,15 +15588,18 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   B32 found_outside_glyph = 0;
   for (U32 row_index = 0;
        !found_outside_glyph &&
-       row_index < app.frame.style_row_count &&
        row_index < app.presentation_frame.row_count;
        row_index += 1)
   {
+    const PresentationEngineBlockFlowRow *presentation_row =
+      app.presentation_frame.rows + row_index;
+    if (presentation_row->style_index >= app.frame.style_row_count)
+      continue;
     TextEngineDisplaySpanRow outside_row = {0};
     if (!lectern0_reader_display_span_row(
           &app,
-          app.frame.style_rows + row_index,
-          app.presentation_frame.rows + row_index,
+          app.frame.style_rows + presentation_row->style_index,
+          presentation_row,
           &outside_row))
     {
       continue;
@@ -15552,7 +15711,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
+            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
             checkpoint,
             selection_rows[0], selection_rows[1],
             (unsigned long long)expected_start,
@@ -17810,13 +17969,15 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     U32 justified_rows = 0;
     S32 publisher_margin_px = -1;
     for (U32 row_index = 0;
-         row_index < app.frame.style_row_count &&
          row_index < app.presentation_frame.row_count;
          row_index += 1)
     {
-      const EpubReaderFrameStyleRow *row = app.frame.style_rows + row_index;
       const PresentationEngineBlockFlowRow *presentation_row =
         app.presentation_frame.rows + row_index;
+      if (presentation_row->style_index >= app.frame.style_row_count)
+        continue;
+      const EpubReaderFrameStyleRow *row =
+        app.frame.style_rows + presentation_row->style_index;
       if (publisher_margin_px < 0 && row->line_row == 0 &&
           row->margin_top_rows > 0)
       {
