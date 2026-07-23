@@ -2464,6 +2464,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   B32 restored = 0;
   if (has_catalog_position)
   {
+    epub_reader_request_window_pagination(&app->reader);
     restored = epub_reader_set_page_containing_byte(&app->reader,
                                                     restore_spine,
                                                     restore_byte,
@@ -2472,6 +2473,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   }
   else if (app->saved.valid && _stricmp(app->saved.path, normalized_path) == 0)
   {
+    epub_reader_request_window_pagination(&app->reader);
     restored = epub_reader_set_page_containing_byte(&app->reader,
                                                     app->saved.spine_index,
                                                     app->saved.byte_offset,
@@ -12607,6 +12609,84 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 
 FUNCTION B32
 lectern0_reader_view_host_icon_raster_regression(Lectern0App *app);
+
+FUNCTION int
+lectern0_run_saved_position_first_load_smoke(const char *path,
+                                             U32 spine_index,
+                                             U64 byte_offset)
+{
+  enum
+  {
+    SmokeWidth = 1280,
+    SmokeHeight = 900,
+    MaxOpenMilliseconds = 750,
+    MaxRowsBuilt = 384,
+  };
+  Lectern0App app = {0};
+  U64 frequency = os_time_frequency();
+  U64 init_start = os_time_ticks();
+  if (!path || !path[0] || frequency == 0 ||
+      !lectern0_app_init(&app, SmokeWidth, SmokeHeight, 0, 0) ||
+      !lectern0_library_normalize_path(path,
+                                       app.saved.path,
+                                       ARRAY_COUNT(app.saved.path)))
+  {
+    fprintf(stderr,
+            "lectern0_saved_position_first_load_smoke result=fail reason=init\n");
+    lectern0_app_release(&app);
+    return 1;
+  }
+  app.saved.valid = 1;
+  app.saved.spine_index = spine_index;
+  app.saved.byte_offset = byte_offset;
+
+  U64 open_start = os_time_ticks();
+  B32 opened = lectern0_open_path(&app, path);
+  U64 open_ticks = os_time_ticks() - open_start;
+  U64 total_ticks = os_time_ticks() - init_start;
+  double open_ms = 1000.0 * (double)open_ticks / (double)frequency;
+  double total_ms = 1000.0 * (double)total_ticks / (double)frequency;
+  SourceReaderLayoutSpine *active_spine =
+    epub_reader_layout_spine(&app.reader, app.reader.active_spine_index);
+  U64 clamped_byte = app.reader.spine_text_size > 0 ?
+    MIN(byte_offset, app.reader.spine_text_size - 1) : 0;
+  B32 target_owned = app.reader.has_current_page &&
+    app.reader.current_page.spine_index == spine_index &&
+    app.reader.current_page.first_byte <= clamped_byte &&
+    app.reader.current_page.one_past_last_byte > clamped_byte;
+  B32 bounded = active_spine && app.reader.pagination.page_count > 0 &&
+    app.reader.pagination.page_count <= EPUB_READER_WINDOW_PAGE_COUNT &&
+    active_spine->page_count > 0 &&
+    active_spine->page_count <= EPUB_READER_WINDOW_PAGE_COUNT;
+  B32 passed = opened && app.frame.ready && app.frame.document_open &&
+    app.reader.active_spine_index == spine_index && target_owned && bounded &&
+    app.reader.navigation_stats.window_pagination_rebuild_count >= 1 &&
+    app.reader.navigation_stats.full_pagination_rebuild_count == 0 &&
+    app.reader.layout_stats_total.rows_built <= MaxRowsBuilt &&
+    open_ms <= MaxOpenMilliseconds;
+
+  fprintf(passed ? stdout : stderr,
+          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f total_ms=%.3f spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
+          passed ? "pass" : "fail",
+          open_ms,
+          total_ms,
+          app.reader.active_spine_index,
+          (unsigned long long)clamped_byte,
+          (unsigned long long)app.frame.page_index,
+          (unsigned long long)app.frame.page_count,
+          (unsigned long long)(active_spine ? active_spine->page_count : 0),
+          (unsigned long long)app.reader.pagination.page_count,
+          (unsigned long long)(active_spine ? active_spine->row_count : 0),
+          (unsigned long long)app.reader.layout_stats_total.rows_built,
+          (unsigned long long)app.reader.layout_stats_total.bytes_laid_out,
+          (unsigned long long)
+            app.reader.navigation_stats.window_pagination_rebuild_count,
+          (unsigned long long)
+            app.reader.navigation_stats.full_pagination_rebuild_count,
+          active_spine ? active_spine->rows_complete : 0);
+  lectern0_app_release(&app);
+  return passed ? 0 : 1;
+}
 
 FUNCTION int
 lectern0_run_headless(const char *path)
@@ -22944,7 +23024,27 @@ main(int argc, char **argv)
   B32 release_com = SUCCEEDED(com_result);
 
   int result = 0;
-  if (argc == 3 && strcmp(argv[1], "--headless") == 0)
+  if (argc == 5 &&
+      strcmp(argv[1], "--saved-position-first-load-smoke") == 0)
+  {
+    char *spine_end = 0;
+    char *byte_end = 0;
+    unsigned long parsed_spine = strtoul(argv[3], &spine_end, 10);
+    unsigned long long parsed_byte = _strtoui64(argv[4], &byte_end, 10);
+    if (!spine_end || *spine_end != 0 || parsed_spine > UINT32_MAX ||
+        !byte_end || *byte_end != 0)
+    {
+      fprintf(stderr,
+              "lectern0_saved_position_first_load_smoke result=fail reason=args\n");
+      result = 2;
+    }
+    else
+    {
+      result = lectern0_run_saved_position_first_load_smoke(
+        argv[2], (U32)parsed_spine, (U64)parsed_byte);
+    }
+  }
+  else if (argc == 3 && strcmp(argv[1], "--headless") == 0)
   {
     result = lectern0_run_headless(argv[2]);
   }
@@ -23040,7 +23140,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: lectern0.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

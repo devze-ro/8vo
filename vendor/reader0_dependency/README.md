@@ -5,7 +5,7 @@ Current pinned reader0 consumer dependency:
 - mode: `sibling-source`
 - version: `0.5.0-dev`
 - API version: `5`
-- commit: `0770b509d19cbefe86209c28045881993b65d105`
+- commit: `98a6a2ba5a4946971b9c088781cf3728aeb16b1a`
 
 This directory contains dependency metadata, not a source snapshot. Lectern0
 locates the live reader0 checkout through `LECTERN0_READER0_DIR` or
@@ -17,3 +17,6 @@ matching API/version metadata. Reader0 owns EPUB parsing, canonical pagination,
 page transitions, semantic navigation, and bounded navigation preparation.
 Lectern0 retains Win32 input and scheduling, presentation, persistence, and its
 bounded host-owned raster cache.
+
+Saved catalog and legacy positions explicitly request Reader0's bounded
+six-page restore before resolving the persisted byte.
