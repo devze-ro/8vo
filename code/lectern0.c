@@ -772,6 +772,10 @@ typedef struct Lectern0App
   U64 last_render_buffer_ticks;
   U64 last_render_accessibility_ticks;
   U64 last_render_present_ticks;
+  U64 last_render_reader_view_ticks;
+  U64 last_render_reader_page_ticks;
+  U64 last_render_ui_adapt_ticks;
+  U64 last_render_execute_ticks;
   U32 state_save_transaction_success_count;
   B32 adjacent_page_cache_used_last_render;
   Lectern0SavedState saved;
@@ -4627,6 +4631,92 @@ lectern0_build_reader_view(Lectern0App *app)
   return app->reader_view_ready;
 }
 
+FUNCTION void
+lectern0_prewarm_reader_text_pipeline(Lectern0App *app)
+{
+  if (!app || !app->render_ready) return;
+  enum { PrewarmW = 960, PrewarmH = 256 };
+  U32 *pixels = (U32 *)malloc(
+    (size_t)PrewarmW * (size_t)PrewarmH * sizeof(*pixels));
+  if (!pixels) return;
+
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, PrewarmW, PrewarmH, PrewarmW);
+  render_buffer_clear(&buffer, 0x00000000U);
+  (void)epub_reader_typography_set_view(&app->reader.typography,
+                                        22,
+                                        app->font_family,
+                                        0);
+  epub_reader_typography_set_text_mode(&app->reader.typography,
+                                       EpubReaderTextMode_ShapedV1);
+  draw_command_buffer_begin(&app->draw_commands);
+
+  struct Lectern0ReaderTextPrewarmLine
+  {
+    const char *text;
+    S32 scale;
+    DocTextStyleFlags flags;
+  };
+  struct Lectern0ReaderTextPrewarmLine lines[] =
+  {
+    {"Reader warmup heading", 24, DocTextStyleFlag_Bold},
+    {"The quick reader panel should remain responsive while search results are visible.", 22, 0},
+    {"Lectern reader paragraph repeats reader words for first-open frame coverage.", 22, 0},
+    {"Alpha Beta Gamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda.", 22, 0},
+    {"Italic prose and bold prose warm the same DirectWrite layout path.", 22, DocTextStyleFlag_Italic},
+    {"Bold reader text warms the title and section chrome path.", 22, DocTextStyleFlag_Bold},
+    {"Small punctuation, numerals 0123456789, and wraps stay inside the native renderer.", 22, 0},
+    {"Final reader warmup line keeps first real EPUB paint out of cold-start work.", 22, 0},
+  };
+
+  S32 y = 10;
+  for (U32 index = 0; index < ARRAY_COUNT(lines); index += 1)
+  {
+    struct Lectern0ReaderTextPrewarmLine line = lines[index];
+    TextEngineResolvedStyle style =
+      epub_reader_typography_style_for_doc_style(
+        &app->reader.typography,
+        line.scale,
+        0xff1f2937U,
+        0,
+        DOC_EMBEDDED_FONT_FACE_INDEX_NONE,
+        line.flags,
+        FontRasterFlag_Smooth | FontRasterFlag_Hinted);
+    FontTag render_tag =
+      font_cache_tag_from_provider(&app->render_state.text_cache,
+                                   style.provider);
+    if (draw_push_text_ex_s8(&app->draw_commands,
+                             DrawLayer_UI,
+                             str8_from_cstr(line.text),
+                             12,
+                             y,
+                             line.scale,
+                             0xff1f2937U,
+                             DrawTextOrigin_TopLeft,
+                             0,
+                             0,
+                             0,
+                             0,
+                             0,
+                             render_tag,
+                             style.raster_flags) &&
+        app->draw_commands.command_count[DrawLayer_UI] > 0)
+    {
+      DrawCommand *command =
+        &app->draw_commands.commands[DrawLayer_UI]
+          [app->draw_commands.command_count[DrawLayer_UI] - 1];
+      if (command->type == DrawCommandType_Text)
+        command->v.text.flags |= DrawTextFlag_Shaped;
+    }
+    y += 30;
+  }
+  render_execute_draw_commands(&app->render_state,
+                               &buffer,
+                               &app->draw_commands);
+  draw_command_buffer_begin(&app->draw_commands);
+  free(pixels);
+}
+
 
 
 
@@ -4707,6 +4797,12 @@ lectern0_app_init(Lectern0App *app,
   {
     render_state_init(&app->render_state, 0);
     app->render_ready = 1;
+    /*
+    Re10 performs the same hidden startup warmup before its window loop. Keep
+    DirectWrite shaping and the common book glyph path out of Lectern's first
+    visible EPUB frame as well.
+    */
+    lectern0_prewarm_reader_text_pipeline(app);
   }
   lectern0_library_set_summary_status(app);
   return 1;
@@ -9710,6 +9806,78 @@ lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
   }
 }
 
+FUNCTION B32
+lectern0_reader_selection_contains_point(Lectern0App *app, S32 x, S32 y)
+{
+  if (!app || !app->reader.has_active_selection ||
+      app->reader.active_selection.spine_index != app->frame.spine_index ||
+      !app->presentation_frame.valid)
+  {
+    return 0;
+  }
+  U64 selection_start = app->reader.active_selection.text_byte_start;
+  U64 selection_end = app->reader.active_selection.text_byte_end;
+  if (selection_end <= selection_start) return 0;
+  for (U32 index = 0;
+       index < app->presentation_frame.row_count &&
+       index < app->frame.style_row_count;
+       index += 1)
+  {
+    const EpubReaderFrameStyleRow *style_row =
+      app->frame.style_rows + index;
+    const PresentationEngineBlockFlowRow *presentation_row =
+      app->presentation_frame.rows + index;
+    U64 row_start = app->frame.view_byte_offset + style_row->byte_start;
+    U64 row_end = app->frame.view_byte_offset + style_row->byte_end;
+    if (selection_end <= row_start || selection_start >= row_end) continue;
+    TextEngineDisplaySpanRow display_row = {0};
+    TextEngineRowRect range_rect = {0};
+    if (!lectern0_reader_display_span_row(app, style_row, presentation_row,
+                                          &display_row) ||
+        !text_engine_display_span_row_range_rect_from_source_range(
+          &display_row,
+          MAX(selection_start, row_start),
+          MIN(selection_end, row_end),
+          &range_rect))
+    {
+      continue;
+    }
+    UI0Rect rect = ui0_rect(range_rect.x,
+                            presentation_row->row_rect.y,
+                            MAX(range_rect.w, 3),
+                            presentation_row->row_rect.h);
+    if (ui0_rect_contains_point(rect, x, y)) return 1;
+  }
+  return 0;
+}
+
+FUNCTION B32
+lectern0_reader_selection_popup_contains_point(const Lectern0App *app,
+                                                S32 x,
+                                                S32 y)
+{
+  if (!app ||
+      app->reader_view_state.popup != ReaderViewPopup_SelectionTools ||
+      !app->reader_view_frame.semantic_nodes)
+  {
+    return 0;
+  }
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->role == ReaderViewSemantic_Group &&
+        node->name.size == 4 && node->name.data &&
+        memcmp(node->name.data, "More", 4) == 0)
+    {
+      return ui0_rect_contains_point(node->rect, x, y);
+    }
+  }
+  return 0;
+}
+
 FUNCTION void
 lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
 {
@@ -9743,6 +9911,17 @@ lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
     }
     (void)lectern0_host_focus_set(app, app->host_pointer_armed, 0);
     return;
+  }
+  if (app->reader_view_state.popup == ReaderViewPopup_SelectionTools &&
+      !lectern0_reader_selection_popup_contains_point(app, x, y) &&
+      !lectern0_reader_selection_contains_point(app, x, y))
+  {
+    /*
+    Match the pre-extraction reader interaction: one press outside both the
+    selected glyphs and their action surface clears the concrete selection
+    while the same frame dismisses the transient popup.
+    */
+    lectern0_reader_view_escape(app);
   }
   UI0Rect exit_rect = lectern0_host_exit_rect(app);
   app->host_exit_pointer_armed =
@@ -10918,6 +11097,10 @@ FUNCTION void
 lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
 {
   if (!app || !buffer || !buffer->pixels || !app->render_ready) { return; }
+  app->last_render_reader_view_ticks = 0;
+  app->last_render_reader_page_ticks = 0;
+  app->last_render_ui_adapt_ticks = 0;
+  app->last_render_execute_ticks = 0;
   app->presentation_complete = 1;
   app->adjacent_page_cache_used_last_render = 0;
   U32 canvas_color = lectern0_reader_content_theme(app->theme).page_background;
@@ -10932,20 +11115,32 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
     lectern0_library_resolve_layout(app);
     lectern0_update_host_control_records(app);
     lectern0_draw_library(app);
+    U64 execute_start = os_time_ticks();
     render_execute_draw_commands(&app->render_state, buffer,
                                   &app->draw_commands);
+    app->last_render_execute_ticks = os_time_ticks() - execute_start;
     lectern0_reset_input(app);
     return;
   }
+  U64 reader_view_start = os_time_ticks();
   (void)lectern0_build_reader_view(app);
   lectern0_update_host_control_records(app);
+  app->last_render_reader_view_ticks =
+    os_time_ticks() - reader_view_start;
+  U64 reader_page_start = os_time_ticks();
   lectern0_draw_reader_page(app);
+  app->last_render_reader_page_ticks =
+    os_time_ticks() - reader_page_start;
+  U64 ui_adapt_start = os_time_ticks();
   if (app->reader_view_ready)
   {
     lectern0_adapt_ui0_draw(app);
     lectern0_draw_host_exit_slot(app);
   }
+  app->last_render_ui_adapt_ticks = os_time_ticks() - ui_adapt_start;
+  U64 execute_start = os_time_ticks();
   render_execute_draw_commands(&app->render_state, buffer, &app->draw_commands);
+  app->last_render_execute_ticks = os_time_ticks() - execute_start;
   lectern0_reset_input(app);
 }
 
@@ -12634,13 +12829,17 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     SmokeWidth = 1280,
     SmokeHeight = 900,
     MaxOpenMilliseconds = 750,
+    MaxFirstVisibleMilliseconds = 150,
     MaxRowsBuilt = 384,
   };
   Lectern0App app = {0};
+  U32 *pixels = (U32 *)calloc(
+    (size_t)SmokeWidth * SmokeHeight, sizeof(U32));
+  RenderBuffer buffer = {0};
   U64 frequency = os_time_frequency();
   U64 init_start = os_time_ticks();
-  if (!path || !path[0] || frequency == 0 ||
-      !lectern0_app_init(&app, SmokeWidth, SmokeHeight, 0, 0) ||
+  if (!pixels || !path || !path[0] || frequency == 0 ||
+      !lectern0_app_init(&app, SmokeWidth, SmokeHeight, 1, 0) ||
       !lectern0_library_normalize_path(path,
                                        app.saved.path,
                                        ARRAY_COUNT(app.saved.path)))
@@ -12648,8 +12847,11 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     fprintf(stderr,
             "lectern0_saved_position_first_load_smoke result=fail reason=init\n");
     lectern0_app_release(&app);
+    free(pixels);
     return 1;
   }
+  render_buffer_init(&buffer, pixels, SmokeWidth, SmokeHeight, SmokeWidth);
+  lectern0_render_to_buffer(&app, &buffer);
   app.saved.valid = 1;
   app.saved.spine_index = spine_index;
   app.saved.byte_offset = byte_offset;
@@ -12657,8 +12859,31 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
   U64 open_start = os_time_ticks();
   B32 opened = lectern0_open_path(&app, path);
   U64 open_ticks = os_time_ticks() - open_start;
+  U64 first_render_start = os_time_ticks();
+  lectern0_render_to_buffer(&app, &buffer);
+  U64 first_render_ticks = os_time_ticks() - first_render_start;
+  U64 first_reader_view_ticks = app.last_render_reader_view_ticks;
+  U64 first_reader_page_ticks = app.last_render_reader_page_ticks;
+  U64 first_ui_adapt_ticks = app.last_render_ui_adapt_ticks;
+  U64 first_execute_ticks = app.last_render_execute_ticks;
+  U64 second_render_start = os_time_ticks();
+  lectern0_render_to_buffer(&app, &buffer);
+  U64 second_render_ticks = os_time_ticks() - second_render_start;
   U64 total_ticks = os_time_ticks() - init_start;
   double open_ms = 1000.0 * (double)open_ticks / (double)frequency;
+  double first_render_ms =
+    1000.0 * (double)first_render_ticks / (double)frequency;
+  double first_visible_ms = open_ms + first_render_ms;
+  double second_render_ms =
+    1000.0 * (double)second_render_ticks / (double)frequency;
+  double first_reader_view_ms =
+    1000.0 * (double)first_reader_view_ticks / (double)frequency;
+  double first_reader_page_ms =
+    1000.0 * (double)first_reader_page_ticks / (double)frequency;
+  double first_ui_adapt_ms =
+    1000.0 * (double)first_ui_adapt_ticks / (double)frequency;
+  double first_execute_ms =
+    1000.0 * (double)first_execute_ticks / (double)frequency;
   double total_ms = 1000.0 * (double)total_ticks / (double)frequency;
   SourceReaderLayoutSpine *active_spine =
     epub_reader_layout_spine(&app.reader, app.reader.active_spine_index);
@@ -12677,12 +12902,21 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     app.reader.navigation_stats.window_pagination_rebuild_count >= 1 &&
     app.reader.navigation_stats.full_pagination_rebuild_count == 0 &&
     app.reader.layout_stats_total.rows_built <= MaxRowsBuilt &&
-    open_ms <= MaxOpenMilliseconds;
+    open_ms <= MaxOpenMilliseconds &&
+    first_visible_ms <= MaxFirstVisibleMilliseconds &&
+    lectern0_frame_presentation_is_complete(&app);
 
   fprintf(passed ? stdout : stderr,
-          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f total_ms=%.3f spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
+          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
           passed ? "pass" : "fail",
           open_ms,
+          first_render_ms,
+          first_visible_ms,
+          second_render_ms,
+          first_reader_view_ms,
+          first_reader_page_ms,
+          first_ui_adapt_ms,
+          first_execute_ms,
           total_ms,
           app.reader.active_spine_index,
           (unsigned long long)clamped_byte,
@@ -12699,6 +12933,7 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
             app.reader.navigation_stats.full_pagination_rebuild_count,
           active_spine ? active_spine->rows_complete : 0);
   lectern0_app_release(&app);
+  free(pixels);
   return passed ? 0 : 1;
 }
 
@@ -15158,34 +15393,62 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   S32 interaction_y =
     app.presentation_frame.rows[selection_rows[0]].row_rect.y +
     app.presentation_frame.rows[selection_rows[0]].row_rect.h / 2;
-  U32 outside_row_index = selection_rows[0] - 1;
-  TextEngineDisplaySpanRow outside_row = {0};
-  if (!lectern0_reader_display_span_row(
-        &app,
-        app.frame.style_rows + outside_row_index,
-        app.presentation_frame.rows + outside_row_index,
-        &outside_row) || outside_row.span_count == 0 ||
-      outside_row.spans[0].stop_count == 0)
-    goto cleanup;
   checkpoint = 43;
-  TextEngineDisplayRowStop outside_stop = outside_row.spans[0].stops[0];
-  outside_x = outside_row.x + outside_row.spans[0].x + outside_stop.x + 2;
-  S32 outside_y =
-    app.presentation_frame.rows[outside_row_index].row_rect.y +
-    app.presentation_frame.rows[outside_row_index].row_rect.h / 2;
-  /* Exercise the concrete-selection click path after the transient action
-     surface has been dismissed without changing the owned text range. */
-  app.reader_view_state.popup = ReaderViewPopup_None;
-  U64 outside_byte = 0;
-  UI0Rect outside_rect = {0};
-  if (!lectern0_reader_point_to_byte(&app, outside_x, outside_y,
-                                     &outside_byte, &outside_rect) ||
-      outside_byte >= expected_start)
+  S32 outside_y = 0;
+  B32 found_outside_glyph = 0;
+  for (U32 row_index = 0;
+       !found_outside_glyph &&
+       row_index < app.frame.style_row_count &&
+       row_index < app.presentation_frame.row_count;
+       row_index += 1)
+  {
+    TextEngineDisplaySpanRow outside_row = {0};
+    if (!lectern0_reader_display_span_row(
+          &app,
+          app.frame.style_rows + row_index,
+          app.presentation_frame.rows + row_index,
+          &outside_row))
+    {
+      continue;
+    }
+    S32 candidate_y =
+      app.presentation_frame.rows[row_index].row_rect.y +
+      app.presentation_frame.rows[row_index].row_rect.h / 2;
+    for (U32 span_index = 0;
+         !found_outside_glyph && span_index < outside_row.span_count;
+         span_index += 1)
+    {
+      const TextEngineDisplaySpan *span = outside_row.spans + span_index;
+      for (U32 stop_index = 0;
+           !found_outside_glyph && stop_index < span->stop_count;
+           stop_index += 1)
+      {
+        S32 candidate_x =
+          outside_row.x + span->x + span->stops[stop_index].x + 2;
+        if (!lectern0_reader_selection_popup_contains_point(
+              &app, candidate_x, candidate_y) &&
+            !lectern0_reader_selection_contains_point(
+              &app, candidate_x, candidate_y))
+        {
+          outside_x = candidate_x;
+          outside_y = candidate_y;
+          found_outside_glyph = 1;
+        }
+      }
+    }
+  }
+  /* A single outside click must dismiss the popup and clear its concrete
+     selection without materializing the clicked glyph as a new selection. */
+  if (!found_outside_glyph ||
+      app.reader_view_state.popup != ReaderViewPopup_SelectionTools ||
+      lectern0_reader_selection_popup_contains_point(
+        &app, outside_x, outside_y) ||
+      lectern0_reader_selection_contains_point(&app, outside_x, outside_y))
     goto cleanup;
 
   lectern0_host_pointer_press(&app, outside_x, outside_y);
-  if (!app.selection_dragging || app.reader.has_active_selection ||
-      app.selected_text[0])
+  if (app.selection_dragging || app.reader.has_active_selection ||
+      app.selected_text[0] || !app.input.escape_pressed)
     goto cleanup;
   checkpoint = 44;
   if (lectern0_host_pointer_release(&app, outside_x, outside_y) ||
@@ -15255,7 +15518,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops release=popup_safe click=clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
+            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
             checkpoint,
             selection_rows[0], selection_rows[1],
             (unsigned long long)expected_start,

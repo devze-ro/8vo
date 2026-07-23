@@ -53,7 +53,7 @@ function Invoke-SelectionMenuRun {
   if (!$PassLine) { throw "Lectern0 selection-menu pass line is missing: $Name" }
   $Match = [regex]::Match(
     $PassLine,
-    '^lectern0_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops release=popup_safe click=clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
+    '^lectern0_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
   if (!$Match.Success -or
       [UInt64]$Match.Groups[4].Value -le [UInt64]$Match.Groups[3].Value) {
     throw "Lectern0 selection-menu result is incomplete: $PassLine"
@@ -137,7 +137,7 @@ $Summary = [pscustomobject]@{
     "pointer press-drag-release",
     "two-row glyph-stop selection rectangles",
     "selection-release popup suppression",
-    "single-click selection clearing without glyph selection",
+    "single-click menu dismissal and selection clearing without glyph selection",
     "selected subrange removes its containing highlight",
     "compact viewport-clamped menu",
     "pointer highlight activation",
