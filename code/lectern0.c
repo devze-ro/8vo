@@ -696,6 +696,7 @@ typedef struct Lectern0App
 
   B32 persistence_enabled;
   B32 state_save_pending;
+  B32 first_reader_present_pending;
   B32 adjacent_warm_pending;
   B32 adjacent_warm_frame_ready;
   U32 adjacent_warm_next_text_command;
@@ -2396,6 +2397,7 @@ lectern0_recover_failed_open_to_library(Lectern0App *app)
   app->presentation_hash = 0;
   app->pagination_viewport_width = 0;
   app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
   app->selection_dragging = 0;
   app->selected_text[0] = 0;
   lectern0_image_cache_reset(&app->image_cache);
@@ -2539,6 +2541,7 @@ lectern0_open_path(Lectern0App *app, const char *path)
   if (!catalog_entry)
     lectern0_set_statusf(app, "Opened, but the library is full");
   lectern0_schedule_state_save(app);
+  app->first_reader_present_pending = app->window != 0;
   if (frame_captured) lectern0_schedule_adjacent_warm(app);
   return 1;
 }
@@ -2565,6 +2568,7 @@ lectern0_close_book(Lectern0App *app)
   app->presentation_hash = 0;
   app->pagination_viewport_width = 0;
   app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
   app->selection_dragging = 0;
   app->selected_text[0] = 0;
   lectern0_image_cache_reset(&app->image_cache);
@@ -10846,7 +10850,8 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
   app->adjacent_warm_source_spine_index = app->reader.current_page.spine_index;
   app->adjacent_warm_source_first_byte = app->reader.current_page.first_byte;
   MemoryZeroStruct(&app->adjacent_frame);
-  if (app->window && !app->page_repeat_active)
+  if (app->window && !app->page_repeat_active &&
+      !app->first_reader_present_pending)
   {
     if (SetTimer(app->window, Lectern0AdjacentWarmTimerId,
                  Lectern0AdjacentWarmDelayMs, 0) == 0)
@@ -10857,6 +10862,13 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
 FUNCTION B32
 lectern0_adjacent_warm_step(Lectern0App *app)
 {
+  /*
+  A due timer must never let speculative adjacent-page work get ahead of the
+  first visible reader frame. The normal path does not arm that timer until
+  the first stable presentation, and this guard also rejects a stale queued
+  timer message.
+  */
+  if (app && app->first_reader_present_pending) return 0;
   if (!app || !app->adjacent_warm_pending || !app->render_ready ||
       !app->adjacent_frame_storage || !epub_reader_is_open(&app->reader) ||
       !app->reader.has_current_page ||
@@ -11233,6 +11245,18 @@ lectern0_note_stable_presentation(Lectern0App *app,
       app->complete_present_sequence < UINT64_MAX)
   {
     app->complete_present_sequence += 1;
+  }
+  if (app->last_present_complete && app->first_reader_present_pending &&
+      epub_reader_is_open(&app->reader))
+  {
+    app->first_reader_present_pending = 0;
+    if (app->window && app->adjacent_warm_pending &&
+        !app->page_repeat_active &&
+        SetTimer(app->window, Lectern0AdjacentWarmTimerId,
+                 Lectern0AdjacentWarmDelayMs, 0) == 0)
+    {
+      lectern0_cancel_adjacent_warm(app);
+    }
   }
 }
 
@@ -12859,6 +12883,14 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
   U64 open_start = os_time_ticks();
   B32 opened = lectern0_open_path(&app, path);
   U64 open_ticks = os_time_ticks() - open_start;
+  app.first_reader_present_pending = 1;
+  B32 adjacent_warm_blocked_before_present =
+    app.adjacent_warm_pending &&
+    !lectern0_adjacent_warm_step(&app) &&
+    app.adjacent_warm_pending &&
+    !app.adjacent_warm_frame_ready &&
+    app.adjacent_warm_next_text_command == 0;
+  app.first_reader_present_pending = 0;
   U64 first_render_start = os_time_ticks();
   lectern0_render_to_buffer(&app, &buffer);
   U64 first_render_ticks = os_time_ticks() - first_render_start;
@@ -12904,10 +12936,11 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     app.reader.layout_stats_total.rows_built <= MaxRowsBuilt &&
     open_ms <= MaxOpenMilliseconds &&
     first_visible_ms <= MaxFirstVisibleMilliseconds &&
+    adjacent_warm_blocked_before_present &&
     lectern0_frame_presentation_is_complete(&app);
 
   fprintf(passed ? stdout : stderr,
-          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
+          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f warm_before_present=%s spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
           passed ? "pass" : "fail",
           open_ms,
           first_render_ms,
@@ -12918,6 +12951,7 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
           first_ui_adapt_ms,
           first_execute_ms,
           total_ms,
+          adjacent_warm_blocked_before_present ? "blocked" : "ran",
           app.reader.active_spine_index,
           (unsigned long long)clamped_byte,
           (unsigned long long)app.frame.page_index,
