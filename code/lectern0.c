@@ -1069,7 +1069,7 @@ lectern0_library_set_summary_status(Lectern0App *app)
   if (!app) return;
   if (app->library.entry_count == 0)
   {
-    lectern0_set_statusf(app, "Your library is empty | Add EPUBs");
+    lectern0_set_statusf(app, "Your library is empty | Add books");
     return;
   }
   U32 missing_count = 0;
@@ -5996,7 +5996,7 @@ lectern0_draw_library(Lectern0App *app)
                                0, 30, DrawTextHAlign_Left,
                                DrawTextVAlign_Center, ink);
   UI0Rect add_rect = lectern0_library_add_rect(app);
-  lectern0_library_draw_button(app, add_rect, "+  Add EPUBs", 1,
+  lectern0_library_draw_button(app, add_rect, "+  Add books", 1,
                                app->host_focus_control ==
                                  Lectern0HostControl_LibraryAdd &&
                                app->host_focus_visible);
@@ -6005,7 +6005,7 @@ lectern0_draw_library(Lectern0App *app)
   {
     (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
                                  app->render_state.text_provider,
-                                 "Adding EPUBs...", 0, 74,
+                                 "Adding books...", 0, 74,
                                  app->width, 32, 0, 14,
                                  DrawTextHAlign_Center,
                                  DrawTextVAlign_Center, secondary);
@@ -6036,12 +6036,12 @@ lectern0_draw_library(Lectern0App *app)
                                  DrawTextVAlign_Center, ink);
     (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
                                  app->render_state.text_provider,
-                                 "Add one or more EPUB files to start reading.\nBooks stay in their current folders.",
+                                 "Add one or more books to start reading.\nEPUB is currently supported; books stay in their current folders.",
                                  x + 36, y + 88, panel_width - 72, 72,
                                  4, 15, DrawTextHAlign_Center,
                                  DrawTextVAlign_Center, secondary);
     UI0Rect empty_add = lectern0_library_empty_add_rect(app);
-    lectern0_library_draw_button(app, empty_add, "Add EPUBs", 1, 0);
+    lectern0_library_draw_button(app, empty_add, "Add books", 1, 0);
     return;
   }
 
@@ -6257,7 +6257,7 @@ lectern0_update_host_control_records(Lectern0App *app)
         .role = ReaderViewSemantic_Button,
         .flags = add_flags,
         .rect = add_rect,
-        .name = {.data = "Add EPUBs", .size = 9},
+        .name = {.data = "Add books", .size = 9},
         .source_key = Lectern0HostControl_LibraryAdd,
       },
     };
@@ -6795,7 +6795,7 @@ lectern0_pick_epub_impl(Lectern0App *app)
   app->native_picker_request_count += 1;
   if (app->suppress_native_picker)
   {
-    lectern0_set_statusf(app, "Add EPUBs picker requested");
+    lectern0_set_statusf(app, "Add books picker requested");
     return 1;
   }
   if (!app->window) return 0;
@@ -19645,7 +19645,7 @@ FUNCTION int
 lectern0_run_accessibility_smoke(const char *path)
 {
   enum { Width = 1100, Height = 760 };
-  static const wchar_t *ClassName = L"Lectern0AccessibilitySmokeWindow";
+  static const wchar_t *ClassName = L"EightvoAccessibilitySmokeWindow";
   Lectern0Win32 win32 = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
   if (!pixels || !lectern0_app_init(&win32.app, Width, Height, 1, 0) ||
@@ -19672,7 +19672,7 @@ lectern0_run_accessibility_smoke(const char *path)
     lectern0_app_release(&win32.app);
     return 1;
   }
-  win32.window = CreateWindowExW(0, ClassName, L"lectern0 accessibility smoke",
+  win32.window = CreateWindowExW(0, ClassName, L"8vo accessibility smoke",
                                   WS_OVERLAPPEDWINDOW,
                                   0, 0, Width, Height,
                                   0, 0, instance, &win32);
@@ -19755,7 +19755,7 @@ lectern0_run_accessibility_smoke(const char *path)
     child_count == win32.app.reader_view_frame.semantic_node_count +
                    (long)win32.app.host_control_count &&
     SUCCEEDED(accessible->lpVtbl->get_accName(accessible, root_child, &root_name)) &&
-    root_name && wcscmp(root_name, L"lectern0 EPUB reader") == 0 &&
+    root_name && wcscmp(root_name, L"8vo reader") == 0 &&
     SUCCEEDED(accessible->lpVtbl->get_accName(accessible, contents_child,
                                               &contents_name)) &&
     contents_name && wcscmp(contents_name, L"Contents") == 0 &&
@@ -22804,7 +22804,7 @@ lectern0_run_window_internal(const char *initial_path,
   WNDCLASSW window_class = {0};
   window_class.lpfnWndProc = lectern0_win32_proc;
   window_class.hInstance = instance;
-  window_class.lpszClassName = L"Lectern0Window";
+  window_class.lpszClassName = L"EightvoWindow";
   window_class.hCursor = LoadCursorW(0, IDC_ARROW);
   window_class.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   if (!RegisterClassW(&window_class))
@@ -22820,7 +22820,7 @@ lectern0_run_window_internal(const char *initial_path,
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
   win32.window = CreateWindowExW(window_ex_style,
                                  window_class.lpszClassName,
-                                 L"lectern0 - EPUB reader",
+                                 L"8vo",
                                  window_style,
                                  page_repeat_probe_enabled ? -32000 :
                                    CW_USEDEFAULT,
@@ -23734,7 +23734,7 @@ main(int argc, char **argv)
   else if (argc == 2 && strcmp(argv[1], "--version") == 0)
   {
     fprintf(stdout,
-            "lectern0 %s reader0_api=%d ui0_api=%d readerview0_api=%d\n",
+            "8vo %s reader0_api=%d ui0_api=%d readerview0_api=%d\n",
             LECTERN0_VERSION_STRING,
             READER0_API_VERSION,
             UI0_API_VERSION,
@@ -23747,7 +23747,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: lectern0.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: 8vo.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
     result = 2;
   }
 

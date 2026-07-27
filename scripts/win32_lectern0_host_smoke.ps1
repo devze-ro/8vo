@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$Exe = Join-Path $Root "build\win32\lectern0.exe"
+$Exe = Join-Path $Root "build\win32\8vo.exe"
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
   throw "missing lectern0 executable: $Exe"
 }

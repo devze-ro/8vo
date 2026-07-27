@@ -320,8 +320,8 @@ lectern0_accessibility_get_name(IAccessible *iface, VARIANT child,
       lectern0_accessibility_from_iface(iface);
     *out_name = SysAllocString(accessibility->app &&
                                lectern0_library_active(accessibility->app) ?
-                               L"lectern0 Library" :
-                               L"lectern0 EPUB reader");
+                               L"8vo Library" :
+                               L"8vo reader");
     return *out_name ? S_OK : E_OUTOFMEMORY;
   }
   const ReaderViewSemanticNode *node = lectern0_accessibility_node(

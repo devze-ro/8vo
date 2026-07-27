@@ -1,9 +1,12 @@
-# lectern0
+# 8vo
 
-`lectern0` is the standalone EPUB-first reader application in the dev0 family.
-It is a concrete Windows host for reader0, readerview0, UI0, and
-zero_foundation. It has no re10 source dependency and does not define a generic
-document-provider layer.
+**8vo is a focused reader for your digital library.** EPUB is the first
+supported format; the product name and public interface are intentionally not
+tied to a particular file format.
+
+The current Windows application is a concrete host for the EPUB-focused
+reader0 backend, readerview0, UI0, and zero_foundation. It has no re10 source
+dependency and does not define a generic document-provider layer.
 
 Version 0.4 starts in a Lectern0-owned library rather than an empty Reader
 surface. Successfully opened EPUBs are added automatically and intentional

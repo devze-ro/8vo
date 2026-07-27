@@ -8,7 +8,7 @@ where cl >nul 2>nul
 if errorlevel 1 (
   call :find_vcvarsall
   if errorlevel 1 (
-    echo [lectern0] Failed to locate vcvarsall.bat. Install MSVC or set LECTERN0_VCVARS.
+    echo [8vo] Failed to locate vcvarsall.bat. Install MSVC or set LECTERN0_VCVARS.
     exit /b 1
   )
   call "!VCVARSALL!" x64
@@ -36,11 +36,11 @@ if errorlevel 1 exit /b 1
 
 set "SRC_UNITY=%ROOT%\code\build.c"
 set "OUT_DIR=%ROOT%\build\win32"
-set "EXE_NAME=lectern0.exe"
+set "EXE_NAME=8vo.exe"
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
 pushd "%OUT_DIR%"
-echo [lectern0] Compiling native EPUB host
+echo [8vo] Compiling native reader host
 cl /nologo /std:c11 /W4 /WX /Zi /Od /MD /DUNICODE /D_UNICODE ^
   /wd4005 /wd4127 /wd5105 /I "%ROOT%\code" /I "%ZF_ROOT%\code" ^
   /I "%LECTERN0_READER0_DIR%\code" /I "%LECTERN0_UI0_DIR%\code" ^
@@ -49,12 +49,12 @@ cl /nologo /std:c11 /W4 /WX /Zi /Od /MD /DUNICODE /D_UNICODE ^
   /link /STACK:16777216 user32.lib gdi32.lib dwrite.lib ole32.lib oleaut32.lib ^
   oleacc.lib comdlg32.lib windowscodecs.lib uuid.lib shell32.lib winmm.lib
 if errorlevel 1 (
-  echo [lectern0] Build failed.
+  echo [8vo] Build failed.
   popd
   exit /b 1
 )
 popd
-echo [lectern0] Build succeeded.
+echo [8vo] Build succeeded.
 
 if "%1"=="no_run" endlocal & exit /b 0
 if "%1"=="" (

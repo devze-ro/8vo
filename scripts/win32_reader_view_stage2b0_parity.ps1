@@ -151,7 +151,7 @@ if (!$SkipBuild) {
 }
 
 $Re10Exe = (Resolve-Path -LiteralPath (Join-Path $Re10Root "build\win32\re10.exe")).Path
-$LecternExe = (Resolve-Path -LiteralPath (Join-Path $LecternRoot "build\win32\lectern0.exe")).Path
+$LecternExe = (Resolve-Path -LiteralPath (Join-Path $LecternRoot "build\win32\8vo.exe")).Path
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

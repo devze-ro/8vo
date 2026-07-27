@@ -1,7 +1,7 @@
 param(
   [string]$OutDir = "C:\Temp\lectern0_page_repeat_queue",
   [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
-  [string]$ExePath = "build\win32\lectern0.exe",
+  [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
 )
 

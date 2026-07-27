@@ -1,7 +1,7 @@
 param(
   [string]$OutDir = "local\validation\reader-selection-menu-slice3",
   [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
-  [string]$ExePath = "build\win32\lectern0.exe",
+  [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
 )
 
