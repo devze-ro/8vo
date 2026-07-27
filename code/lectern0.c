@@ -1023,18 +1023,149 @@ lectern0_set_statusf(Lectern0App *app, const char *fmt, ...)
 }
 
 FUNCTION B32
+lectern0_legacy_data_file_name_is_supported(const char *name)
+{
+  if (!name || !name[0]) return 0;
+  if (_stricmp(name, "state.v1") == 0 ||
+      _stricmp(name, "library.v1") == 0 ||
+      _stricmp(name, "settings.v1") == 0 ||
+      _stricmp(name, "reader_annotations.txt") == 0)
+  {
+    return 1;
+  }
+  U64 length = strlen(name);
+  const char *suffix = ".v1";
+  U64 suffix_length = strlen(suffix);
+  if (length <= suffix_length ||
+      _stricmp(name + length - suffix_length, suffix) != 0)
+  {
+    return 0;
+  }
+  return _strnicmp(name, "annotations_", strlen("annotations_")) == 0 ||
+         _strnicmp(name, "thumbnail_", strlen("thumbnail_")) == 0;
+}
+
+FUNCTION B32
+lectern0_migrate_legacy_data(const char *legacy_directory,
+                             const char *app_directory)
+{
+  if (!legacy_directory || !legacy_directory[0] ||
+      !app_directory || !app_directory[0])
+  {
+    return 0;
+  }
+
+  char marker_path[Lectern0PathCap] = {0};
+  if (cstr_format(marker_path, ARRAY_COUNT(marker_path),
+                  "%s\\migration_from_lectern0.v1", app_directory) == 0)
+  {
+    return 0;
+  }
+  DWORD marker_attributes = GetFileAttributesA(marker_path);
+  if (marker_attributes != INVALID_FILE_ATTRIBUTES &&
+      !(marker_attributes & FILE_ATTRIBUTE_DIRECTORY))
+  {
+    return 1;
+  }
+
+  DWORD legacy_attributes = GetFileAttributesA(legacy_directory);
+  if (legacy_attributes == INVALID_FILE_ATTRIBUTES)
+  {
+    return GetLastError() == ERROR_FILE_NOT_FOUND ||
+           GetLastError() == ERROR_PATH_NOT_FOUND;
+  }
+  if (!(legacy_attributes & FILE_ATTRIBUTE_DIRECTORY)) return 0;
+
+  char pattern[Lectern0PathCap] = {0};
+  if (cstr_format(pattern, ARRAY_COUNT(pattern),
+                  "%s\\*", legacy_directory) == 0)
+  {
+    return 0;
+  }
+
+  WIN32_FIND_DATAA find_data = {0};
+  HANDLE find = FindFirstFileA(pattern, &find_data);
+  if (find == INVALID_HANDLE_VALUE)
+  {
+    return GetLastError() == ERROR_FILE_NOT_FOUND;
+  }
+
+  B32 migrated = 1;
+  do
+  {
+    if ((find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+        !lectern0_legacy_data_file_name_is_supported(find_data.cFileName))
+    {
+      continue;
+    }
+
+    char source_path[Lectern0PathCap] = {0};
+    char destination_path[Lectern0PathCap] = {0};
+    char temporary_path[Lectern0PathCap] = {0};
+    if (cstr_format(source_path, ARRAY_COUNT(source_path),
+                    "%s\\%s", legacy_directory, find_data.cFileName) == 0 ||
+        cstr_format(destination_path, ARRAY_COUNT(destination_path),
+                    "%s\\%s", app_directory, find_data.cFileName) == 0 ||
+        cstr_format(temporary_path, ARRAY_COUNT(temporary_path),
+                    "%s.migrating", destination_path) == 0)
+    {
+      migrated = 0;
+      break;
+    }
+
+    DWORD destination_attributes = GetFileAttributesA(destination_path);
+    if (destination_attributes != INVALID_FILE_ATTRIBUTES)
+    {
+      if (destination_attributes & FILE_ATTRIBUTE_DIRECTORY)
+      {
+        migrated = 0;
+        break;
+      }
+      continue;
+    }
+
+    (void)DeleteFileA(temporary_path);
+    if (!CopyFileA(source_path, temporary_path, TRUE) ||
+        !MoveFileExA(temporary_path, destination_path, MOVEFILE_WRITE_THROUGH))
+    {
+      (void)DeleteFileA(temporary_path);
+      migrated = 0;
+      break;
+    }
+  } while (FindNextFileA(find, &find_data));
+
+  if (migrated && GetLastError() != ERROR_NO_MORE_FILES)
+    migrated = 0;
+  (void)FindClose(find);
+  if (!migrated) return 0;
+
+  static const char marker[] = "8vo legacy data migration v1\n";
+  return os_write_entire_file_atomic(marker_path, marker, sizeof(marker) - 1);
+}
+
+FUNCTION B32
 lectern0_state_paths(Lectern0App *app)
 {
   if (!app) { return 0; }
   char local_app_data[Lectern0PathCap] = {0};
   DWORD size = GetEnvironmentVariableA("LOCALAPPDATA",
-                                      local_app_data,
-                                      (DWORD)ARRAY_COUNT(local_app_data));
+                                       local_app_data,
+                                       (DWORD)ARRAY_COUNT(local_app_data));
   if (size == 0 || size >= ARRAY_COUNT(local_app_data)) { return 0; }
-  (void)cstr_format(app->app_directory,
-                    ARRAY_COUNT(app->app_directory),
-                    "%s\\lectern0",
-                    local_app_data);
+  char app_directory[Lectern0PathCap] = {0};
+  char legacy_directory[Lectern0PathCap] = {0};
+  if (cstr_format(app_directory, ARRAY_COUNT(app_directory),
+                  "%s\\8vo", local_app_data) == 0 ||
+      cstr_format(legacy_directory, ARRAY_COUNT(legacy_directory),
+                  "%s\\lectern0", local_app_data) == 0 ||
+      !os_make_directory_chain(app_directory) ||
+      !lectern0_migrate_legacy_data(legacy_directory, app_directory) ||
+      cstr_format(app->app_directory, ARRAY_COUNT(app->app_directory),
+                  "%s", app_directory) == 0)
+  {
+    return 0;
+  }
   (void)cstr_format(app->state_path,
                     ARRAY_COUNT(app->state_path),
                     "%s\\state.v1",
@@ -1051,7 +1182,7 @@ lectern0_state_paths(Lectern0App *app)
                     ARRAY_COUNT(app->export_path),
                     "%s\\reader_annotations.txt",
                     app->app_directory);
-  return os_make_directory_chain(app->app_directory);
+  return 1;
 }
 
 FUNCTION B32
@@ -4856,6 +4987,27 @@ lectern0_app_release(Lectern0App *app)
   epub_reader_release(&app->reader);
   if (app->arena) { arena_release(app->arena); }
   MemoryZeroStruct(app);
+}
+
+FUNCTION int
+lectern0_run_data_migration_smoke(void)
+{
+  Lectern0App app = {0};
+  if (!lectern0_app_init(&app, 1000, 720, 0, 1) ||
+      !app.app_directory[0])
+  {
+    fprintf(stderr,
+            "lectern0_data_migration_smoke result=fail reason=init\n");
+    app.persistence_enabled = 0;
+    lectern0_app_release(&app);
+    return 1;
+  }
+  fprintf(stdout,
+          "lectern0_data_migration_smoke result=pass directory=%s\n",
+          app.app_directory);
+  app.persistence_enabled = 0;
+  lectern0_app_release(&app);
+  return 0;
 }
 
 FUNCTION const ReaderViewTextBinding *
@@ -23731,6 +23883,10 @@ main(int argc, char **argv)
   {
     result = lectern0_run_accessibility_smoke(argv[2]);
   }
+  else if (argc == 2 && strcmp(argv[1], "--data-migration-smoke") == 0)
+  {
+    result = lectern0_run_data_migration_smoke();
+  }
   else if (argc == 2 && strcmp(argv[1], "--version") == 0)
   {
     fprintf(stdout,
@@ -23747,7 +23903,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: 8vo.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --version]\n");
+            "usage: 8vo.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --data-migration-smoke | --version]\n");
     result = 2;
   }
 

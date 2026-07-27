@@ -8,6 +8,12 @@ The current Windows application is a concrete host for the EPUB-focused
 reader0 backend, readerview0, UI0, and zero_foundation. It has no re10 source
 dependency and does not define a generic document-provider layer.
 
+8vo stores application data under `%LOCALAPPDATA%\8vo`. On first launch it
+copies recognized state, library, settings, annotation, export, and thumbnail
+files from the former `%LOCALAPPDATA%\lectern0` directory when present. The
+legacy directory is retained, migration is atomic per file, and a completion
+marker prevents a later launch from overwriting 8vo data.
+
 Version 0.4 starts in a Lectern0-owned library rather than an empty Reader
 surface. Successfully opened EPUBs are added automatically and intentional
 multi-file import uses the native picker. The bounded, versioned catalog keeps
@@ -161,6 +167,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
 cmd /c build\win32_build.bat no_run
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_host_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_data_migration_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_library_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_lectern0_reader_view_startup_interaction_smoke.ps1
