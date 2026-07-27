@@ -27,12 +27,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Lectern0 build failed with exit code $LASTEXITCODE"
+      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Lectern0 executable: $Exe"
+  throw "missing Eightvo executable: $Exe"
 }
 
 function Convert-HexRgb {
@@ -116,14 +116,14 @@ $LogPath = Join-Path $Out "run.log"
 & $Exe --reader-view-find-active-contrast-smoke $Book $Prefix *> $LogPath
 if ($LASTEXITCODE -ne 0) {
   $Tail = (Get-Content -LiteralPath $LogPath -Tail 40) -join "`n"
-  throw "Lectern0 Find contrast smoke failed`n$Tail"
+  throw "Eightvo Find contrast smoke failed`n$Tail"
 }
 $PassLine = Get-Content -LiteralPath $LogPath | Where-Object {
-  $_ -match '^lectern0_reader_view_find_active_contrast result=pass '
+  $_ -match '^eightvo_reader_view_find_active_contrast result=pass '
 } | Select-Object -Last 1
 if (!$PassLine -or $PassLine -notmatch 'checkpoint=5 ' -or
     $PassLine -notmatch 'query=Paran active_index=2 themes=6 ') {
-  throw "Lectern0 Find contrast result is incomplete: $PassLine"
+  throw "Eightvo Find contrast result is incomplete: $PassLine"
 }
 
 $Ink = @{
@@ -148,14 +148,14 @@ $Page = @{
 }
 $Results = @()
 $Lines = Get-Content -LiteralPath $LogPath | Where-Object {
-  $_ -match '^lectern0_reader_view_find_active_contrast theme='
+  $_ -match '^eightvo_reader_view_find_active_contrast theme='
 }
 if ($Lines.Count -ne 6) { throw "expected six theme evidence lines, found $($Lines.Count)" }
 Add-Type -AssemblyName System.Drawing
 foreach ($Line in $Lines) {
   $Match = [regex]::Match(
     $Line,
-    '^lectern0_reader_view_find_active_contrast theme=([^ ]+) active=([0-9A-F]{6}) inactive=([0-9A-F]{6}) active_ranges=(\d+) inactive_ranges=(\d+) active_draws=(\d+) inactive_draws=(\d+) active_pixels=(\d+) inactive_pixels=(\d+) bmp=(.+)$')
+    '^eightvo_reader_view_find_active_contrast theme=([^ ]+) active=([0-9A-F]{6}) inactive=([0-9A-F]{6}) active_ranges=(\d+) inactive_ranges=(\d+) active_draws=(\d+) inactive_draws=(\d+) active_pixels=(\d+) inactive_pixels=(\d+) bmp=(.+)$')
   if (!$Match.Success) { throw "invalid theme evidence line: $Line" }
   $Name = $Match.Groups[1].Value
   $Active = $Match.Groups[2].Value
@@ -241,4 +241,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding ASCII -LiteralPath $SummaryPath
 Write-Host $PassLine
-Write-Host "win32_lectern0_find_active_contrast_smoke result=pass themes=6 summary=$SummaryPath"
+Write-Host "win32_eightvo_find_active_contrast_smoke result=pass themes=6 summary=$SummaryPath"

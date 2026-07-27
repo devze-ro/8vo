@@ -6,12 +6,12 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Exe = Join-Path $Root "build\win32\8vo.exe"
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing lectern0 executable: $Exe"
+  throw "missing eightvo executable: $Exe"
 }
 
 $Out = Join-Path $Root $OutDir
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
-$Epub = Join-Path $Out "lectern0_slice1.epub"
+$Epub = Join-Path $Out "eightvo_slice1.epub"
 if (Test-Path -LiteralPath $Epub) { Remove-Item -LiteralPath $Epub -Force }
 
 Add-Type -AssemblyName System.IO.Compression
@@ -47,8 +47,8 @@ try {
 <?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">lectern0-slice1</dc:identifier>
-    <dc:title>Lectern0 Slice 1</dc:title>
+    <dc:identifier id="bookid">eightvo-slice1</dc:identifier>
+    <dc:title>Eightvo Slice 1</dc:title>
     <dc:language>en</dc:language>
   </metadata>
   <manifest>
@@ -62,8 +62,8 @@ try {
   Write-ZipTextEntry $zip "OEBPS/toc.ncx" @"
 <?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-  <head><meta name="dtb:uid" content="lectern0-slice1"/></head>
-  <docTitle><text>Lectern0 Slice 4B</text></docTitle>
+  <head><meta name="dtb:uid" content="eightvo-slice1"/></head>
+  <docTitle><text>Eightvo Slice 4B</text></docTitle>
   <navMap>
     <navPoint id="nav-one" playOrder="1"><navLabel><text>Chapter One</text></navLabel><content src="chapter1.xhtml"/></navPoint>
     <navPoint id="nav-two" playOrder="2"><navLabel><text>Chapter Two target</text></navLabel><content src="chapter2.xhtml#toc-target"/></navPoint>
@@ -81,16 +81,16 @@ try {
 $output = & $Exe --headless $Epub 2>&1
 if ($LASTEXITCODE -ne 0) {
   $output | Write-Host
-  throw "lectern0 headless host smoke failed with exit code $LASTEXITCODE"
+  throw "eightvo headless host smoke failed with exit code $LASTEXITCODE"
 }
-$line = ($output | Where-Object { $_ -match '^lectern0_host_smoke result=pass ' } | Select-Object -Last 1)
+$line = ($output | Where-Object { $_ -match '^eightvo_host_smoke result=pass ' } | Select-Object -Last 1)
 if (!$line) {
   $output | Write-Host
-  throw "lectern0 headless host smoke did not report pass"
+  throw "eightvo headless host smoke did not report pass"
 }
 if ($line -notmatch 'carets=frozen18x32') {
   $output | Write-Host
-  throw "lectern0 headless host smoke did not lock the frozen page-caret bridge"
+  throw "eightvo headless host smoke did not lock the frozen page-caret bridge"
 }
 
 $missing = Join-Path $Out "missing.epub"
@@ -103,10 +103,10 @@ try {
   $ErrorActionPreference = $previousPreference
 }
 if ($missingExit -eq 0 -or
-    !($missingOutput | Where-Object { $_ -match '^lectern0_host_smoke result=fail reason=open$' })) {
+    !($missingOutput | Where-Object { $_ -match '^eightvo_host_smoke result=fail reason=open$' })) {
   $missingOutput | Write-Host
-  throw "lectern0 invalid-path host smoke did not fail visibly"
+  throw "eightvo invalid-path host smoke did not fail visibly"
 }
 
 Write-Host $line
-Write-Host "win32_lectern0_host_smoke result=pass fixture=$Epub"
+Write-Host "win32_eightvo_host_smoke result=pass fixture=$Epub"

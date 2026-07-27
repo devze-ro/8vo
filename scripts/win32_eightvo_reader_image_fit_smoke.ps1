@@ -32,12 +32,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Lectern0 build failed with exit code $LASTEXITCODE"
+      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Lectern0 executable: $Exe"
+  throw "missing Eightvo executable: $Exe"
 }
 
 function Invoke-ImageFitSmoke {
@@ -45,19 +45,19 @@ function Invoke-ImageFitSmoke {
   & $Exe --reader-image-fit-smoke $Book $Prefix *> $Log
   if ($LASTEXITCODE -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 80) -join "`n"
-    throw "Lectern0 reader image-fit smoke failed`n$Tail"
+    throw "Eightvo reader image-fit smoke failed`n$Tail"
   }
   $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^lectern0_reader_image_fit result=pass '
+    $_ -match '^eightvo_reader_image_fit result=pass '
   } | Select-Object -Last 1
   $PassPattern =
-    '^lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=1182x713 image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}) output=(.+)$'
+    '^eightvo_reader_image_fit result=pass book=gotm_new cases=4 viewport=1182x713 image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}),([0-9a-f]{16}) output=(.+)$'
   $PassMatch = [regex]::Match([string]$PassLine, $PassPattern)
   if (!$PassLine -or !$PassMatch.Success) {
     throw "reader image-fit result is incomplete: $PassLine"
   }
   $CaseLines = @(Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^lectern0_reader_image_fit_case result=pass '
+    $_ -match '^eightvo_reader_image_fit_case result=pass '
   } | ForEach-Object { [string]$_ })
   if ($CaseLines.Count -ne 4) {
     throw "expected four passing image-fit cases, got $($CaseLines.Count)"
@@ -144,8 +144,8 @@ $Summary = [pscustomobject]@{
   ownership=@{
     classification="reader0"
     canonical_visual_units="reader0"
-    media_geometry="lectern0_host_presentation"
-    aspect_fit="lectern0_host_rendering"
+    media_geometry="eightvo_host_presentation"
+    aspect_fit="eightvo_host_rendering"
     sampling="zero_foundation_area_prepared"
   }
   result=$Second.PassLine
@@ -155,4 +155,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 8 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_lectern0_reader_image_fit_smoke result=pass summary=$SummaryPath"
+Write-Host "win32_eightvo_reader_image_fit_smoke result=pass summary=$SummaryPath"

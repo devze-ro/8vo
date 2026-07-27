@@ -7,15 +7,15 @@ Current pinned reader0 consumer dependency:
 - API version: `5`
 - commit: `98a6a2ba5a4946971b9c088781cf3728aeb16b1a`
 
-This directory contains dependency metadata, not a source snapshot. Lectern0
-locates the live reader0 checkout through `LECTERN0_READER0_DIR` or
+This directory contains dependency metadata, not a source snapshot. 8vo
+locates the live reader0 checkout through `EIGHTVO_READER0_DIR` or
 `../reader0`, adds `reader0/code` to its include path, and compiles the
 supported `reader0.c` unity source exactly once.
 
 The strict dependency guard requires the exact clean reader0 commit and
 matching API/version metadata. Reader0 owns EPUB parsing, canonical pagination,
 page transitions, semantic navigation, and bounded navigation preparation.
-Lectern0 retains Win32 input and scheduling, presentation, persistence, and its
+8vo retains Win32 input and scheduling, presentation, persistence, and its
 bounded host-owned raster cache.
 
 Saved catalog and legacy positions explicitly request Reader0's bounded

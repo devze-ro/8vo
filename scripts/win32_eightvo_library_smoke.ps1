@@ -1,5 +1,5 @@
 param(
-  [string]$OutDir = "C:\Temp\lectern0_library_v1",
+  [string]$OutDir = "C:\Temp\eightvo_library_v1",
   [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
   [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
@@ -32,12 +32,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Lectern0 build failed with exit code $LASTEXITCODE"
+      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Lectern0 executable: $Exe"
+  throw "missing Eightvo executable: $Exe"
 }
 
 function Invoke-LibrarySmoke {
@@ -49,10 +49,10 @@ function Invoke-LibrarySmoke {
   & $Exe --library-smoke $Book $Prefix *> $Log
   if ($LASTEXITCODE -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 100) -join "`n"
-    throw "Lectern0 library smoke failed`n$Tail"
+    throw "Eightvo library smoke failed`n$Tail"
   }
   $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^lectern0_library_smoke result=pass '
+    $_ -match '^eightvo_library_smoke result=pass '
   } | Select-Object -Last 1
   foreach ($Token in @(
     "catalog=bounded_atomic_v1", "ordering=mru", "migration=legacy_state",
@@ -124,4 +124,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 7 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_lectern0_library_smoke result=pass repeat=2 summary=$SummaryPath"
+Write-Host "win32_eightvo_library_smoke result=pass repeat=2 summary=$SummaryPath"

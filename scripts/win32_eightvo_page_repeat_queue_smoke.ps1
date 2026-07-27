@@ -1,5 +1,5 @@
 param(
-  [string]$OutDir = "C:\Temp\lectern0_page_repeat_queue",
+  [string]$OutDir = "C:\Temp\eightvo_page_repeat_queue",
   [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
   [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
@@ -28,7 +28,7 @@ if (Test-Path -LiteralPath $Out) {
 }
 $InitialGitStatus = @(& git -C $Root status --porcelain --untracked-files=all)
 if ($InitialGitStatus.Count -ne 0) {
-  throw "final evidence requires a clean Lectern0 worktree: $($InitialGitStatus -join '; ')"
+  throw "final evidence requires a clean Eightvo worktree: $($InitialGitStatus -join '; ')"
 }
 New-Item -ItemType Directory -Path $Out | Out-Null
 
@@ -37,12 +37,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Lectern0 build failed with exit code $LASTEXITCODE"
+      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Lectern0 executable: $Exe"
+  throw "missing Eightvo executable: $Exe"
 }
 
 function Read-Metric {
@@ -82,10 +82,10 @@ function Invoke-QueueSmoke {
   }
   if ($NativeExitCode -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 100) -join "`n"
-    throw "Lectern0 Win32 page-repeat queue smoke failed`n$Tail"
+    throw "Eightvo Win32 page-repeat queue smoke failed`n$Tail"
   }
   $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^lectern0_page_repeat_win32_smoke result=pass '
+    $_ -match '^eightvo_page_repeat_win32_smoke result=pass '
   } | Select-Object -Last 1
   foreach ($Token in @(
     "viewport=1917x1137", "directions=2/2",
@@ -377,4 +377,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 7 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_lectern0_page_repeat_queue_smoke result=pass repeat=2 summary=$SummaryPath"
+Write-Host "win32_eightvo_page_repeat_queue_smoke result=pass repeat=2 summary=$SummaryPath"

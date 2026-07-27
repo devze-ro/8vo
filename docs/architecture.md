@@ -1,16 +1,17 @@
-# lectern0 architecture
+# 8vo architecture
 
 ## Concrete boundary
 
-Lectern0 is a Windows EPUB application. It owns one caller-allocated
-`EpubReader`, one bounded `EpubReaderFrameStorage`, the current layout key and
-configuration, a Win32 window/backbuffer, readerview0/UI0 frame storage,
-zero_foundation draw/render state, and versioned host persistence records.
+8vo is a format-neutral Windows reader application. EPUB is its only current
+document backend: the host owns one caller-allocated `EpubReader`, one bounded
+`EpubReaderFrameStorage`, the current layout key and configuration, a Win32
+window/backbuffer, readerview0/UI0 frame storage, zero_foundation draw/render
+state, and versioned host persistence records.
 
 The application shell is library-first: launch and Close Book resolve to a
-Lectern0-owned Library surface, while an open EPUB resolves to Readerview0's
+8vo-owned Library surface, while an open EPUB resolves to Readerview0's
 Reader surface. The library catalog is a bounded 512-entry, versioned binary
-record written through zero_foundation's atomic-file mechanism. Lectern0 owns
+record written through zero_foundation's atomic-file mechanism. 8vo owns
 normalized absolute paths, local entry IDs, file size/modified-time
 fingerprints, MRU ordering, import/remove/locate behavior, canonical-progress
 persistence, native picker use, responsive cover cards, and its bounded
@@ -31,13 +32,13 @@ two host integrations establish a real common contract.
 Each catalog entry reserves a bounded, algorithm-tagged digest field, initially
 `None`. This preserves room for a later explicit local-content fingerprint,
 but the local entry ID, normalized path, and file timestamps are deliberately
-not treated as cross-device identity. Kindle-like sync for Lectern0 and Re10
+not treated as cross-device identity. Kindle-like sync for 8vo and Re10
 will require a separately designed account, remote work identity, conflict,
 privacy, and reconciliation layer; none of that behavior is implemented here.
 
 Reader0 owns the EPUB document engine, source layout, typography, pagination,
 page transitions, bounded navigation preparation, semantic navigation,
-search/selection state, and canonical frames. Lectern0 passes its
+search/selection state, and canonical frames. 8vo passes its
 viewport-derived layout values directly to Reader0 API 5. It asks Reader0 to
 prepare at most one direction-aware window, queries up to four already
 prepared forward page ranges, and copies each range through Reader0's
@@ -46,7 +47,7 @@ mutated in application storage. Its narrow semantic adapters capture the
 resulting canonical frame, set host status, and persist the resulting
 reader-owned location.
 
-Lectern0 defensively checks a prepared result without taking over its
+8vo defensively checks a prepared result without taking over its
 ownership. Same-spine results pass Reader0's public exact-adjacency validator.
 For a cross-spine result, the active pagination cannot re-prove Reader0's
 private prepared-ring ownership, so the host requires a public
@@ -54,14 +55,14 @@ private prepared-ring ownership, so the host requires a public
 in the requested document direction. Reader0 remains solely responsible for
 proving the exact cross-spine predecessor and its bounded lifetime.
 
-Lectern0 owns when presentation warming runs: 12 ms on first-open idle work and
+8vo owns when presentation warming runs: 12 ms on first-open idle work and
 8 ms on ordinary idle work. During a held page key it permits only Reader0's
 direction-aware logical preparation after stable presentation and within the
 remaining repeat-deadline slack; page-frame construction and raster warming
 remain suspended. It warms at most four forward text pages and at most one
 cross-spine page. The
 existing one-page, image-free, 4096-by-4096-capped pixel snapshot remains an
-explicit host presentation optimization because Lectern0's software renderer
+explicit host presentation optimization because 8vo's software renderer
 does not share Re10's retained UI caches. A cross-spine page that references an
 embedded font is prepared by Reader0 but not rasterized until that spine's
 font state becomes active. The snapshot is never persisted or synchronized
@@ -71,7 +72,7 @@ typography, and theme all match.
 Win32 page-key repeat is host policy. The first physical keydown moves
 immediately, and repeat is armed only when Reader0 reports a successful page
 move and the resulting canonical frame has been captured. While that same key
-remains active, Lectern0 coalesces only its
+remains active, 8vo coalesces only its
 native repeat messages and uses monotonic wall-clock deadlines equivalent to
 Re10's 60 Hz 24/3 policy: 400 ms before the first repeat and 50 ms from each
 actual emitted repeat to the next due time. It does not render idle frames to
@@ -99,7 +100,7 @@ follow-up frame before another action can advance. Key-up, focus loss, app
 deactivation, or a Ctrl/Shift/Alt or system-key transition stops the stream;
 none clears an outstanding presentation gate, and stale
 repeats for that key are consumed until key-up. The bounded active message drain
-reserves only a real invalid-region `WM_PAINT` for Lectern0's own window, while
+reserves only a real invalid-region `WM_PAINT` for 8vo's own window, while
 dispatching auxiliary-window and null-region paints normally. Before optional
 Reader0 tail preparation, any already-queued message returns control to that
 same bounded FIFO drain; key-up or another cancellation transition therefore
@@ -143,7 +144,7 @@ bounded returned actions, and product-neutral page/content rectangles. Its
 projection/action/geometry API does not name reader0 types and has no reader0
 or direct zero_foundation dependency.
 
-Reader View text bindings carry one finite portable style identity. Lectern0
+Reader View text bindings carry one finite portable style identity. 8vo
 maps `ChromeTitle` through the accepted system-UI box raster at scale 2 and
 `MenuItem`, `ChromeMetadata`, and `Default` at scale 1. `NoteEditor` draft rows
 instead carry explicit Body typography metadata and use zero_foundation's
@@ -152,12 +153,12 @@ caret x is derived from that same shaped row. The TextArea's 25-pixel line
 advance remains layout geometry, not a font size. Find-result parent semantics
 retain Reader0's full excerpt. When its first fitted line would omit a valid
 match, the child text binding can borrow Readerview0's one-line natural-word
-window and remapped match bytes; Lectern0 still performs the concrete
+window and remapped match bytes; 8vo still performs the concrete
 full-string measurement, rasterization, highlight paint, and clipping. The
 record conveys semantic presentation only: no font pointer, callback, provider
 table, or allocation crosses the boundary.
 
-Lectern0 owns the projected TOC/search/selection meaning, settings choices,
+8vo owns the projected TOC/search/selection meaning, settings choices,
 stable bookmark/highlight/note IDs, 128-record bookmark and highlight
 capacities, native commands, and every mutation. It persists the current
 location, reading settings, and per-book annotations in separate versioned
@@ -174,10 +175,10 @@ and result keys map to their exact bounded reader0 match indices.
 Each projected annotation row carries its source heading, primary content, and
 the accepted `<kind> - re10 loc <N>` metadata. Bookmark and Highlight primary
 content is the captured excerpt; Note primary content is its persistent note
-body, matching the frozen reader. Lectern0 derives `N` from the concrete
+body, matching the frozen reader. 8vo derives `N` from the concrete
 reader0 extracted-text spine sizes as
 `1 + global_text_byte_offset / 128`. The wording is a compatibility label, not
-a re10 source dependency. Persistent note text stays in lectern0; Reader View
+a re10 source dependency. Persistent note text stays in 8vo; Reader View
 borrows it for that row frame and returns only a bounded edit-note action.
 Projection-only stable keys distinguish the Highlight row from its attached
 Note while routing both back to the same persistent host record. The version-3
@@ -199,7 +200,7 @@ maximum 128 bookmarks plus 128 Highlight/Note pairs by spine, byte, kind, and
 stable ID. This is transient presentation ordering: persisted arrays and IDs
 are not rewritten, and action keys map back to their original records.
 
-Find-row bindings preserve reader0's byte-accurate match range. Lectern0 uses
+Find-row bindings preserve reader0's byte-accurate match range. 8vo uses
 actual system-UI font measurement at scale 1 to fill a caller-owned 256-entry
 codepoint-advance table consumed by readerview0 as portable values. Basic Latin
 is pinned; the current edit/transfer text, placeholder, committed query, and
@@ -210,7 +211,7 @@ reader-highlight background from the measured prefix and match, then draws the
 complete excerpt in primary text. No fixed-width estimate, split/recolored text
 run, callback, provider table, or allocation crosses the package boundary.
 
-While the Note editor is open, Lectern0 rebuilds a separate caller-owned
+While the Note editor is open, 8vo rebuilds a separate caller-owned
 256-entry values table from the current draft, same-frame typed text, transfer
 text, and localized empty-editor placeholder. Each unique scalar is measured
 with the same system-UI face at 18 pixels used by the draw adapter; the portable
@@ -228,7 +229,7 @@ provisional Highlight and Note in one host transaction. Save, Delete, and every
 Bookmark/Highlight/Note star or row mutation change the live state only when
 the atomic annotation write succeeds; failure restores the exact record array,
 counts, next ID, stars, and revision. A failed editor mutation leaves its draft
-open. After a successful host mutation, lectern0 calls
+open. After a successful host mutation, 8vo calls
 `reader_view_close_note_editor` and then releases the editor's retained target.
 Annotation-origin Save/Delete preserve any unrelated concrete document
 selection, selected text, anchor, location, and history; selection-origin
@@ -236,7 +237,7 @@ completion releases its owned selection. Explicit Cancel applies the same
 origin-sensitive host cleanup without a persistent mutation.
 
 UI0 owns generic signal, control, token, layout, draw, text-edit records, and
-the six shared reader-chrome profiles. A narrow lectern0 adapter converts every
+the six shared reader-chrome profiles. A narrow 8vo adapter converts every
 UI0 draw operation into clipped zero_foundation draw commands and binds semantic
 typography roles to host font metrics. The generic `Filter` icon intent is
 adapted only at this Reader View boundary to the frozen re10 SlidersVertical
@@ -248,7 +249,7 @@ render EPUB content and is not a reader0 dependency.
 Zero_foundation owns arenas, file/atomic-write facilities, font providers,
 Presentation Engine API 1 block-flow geometry, draw commands, software
 rendering, the Win32 DIB graphics seam, and the caller-owned encoded-image
-decoder with its WIC backend. Lectern0 owns HWND/WndProc, DPI/input mapping,
+decoder with its WIC backend. 8vo owns HWND/WndProc, DPI/input mapping,
 the native EPUB picker, and presentation policy. Its bounded adapter resolves
 reader canonical rows, host pixel metrics, and image boxes into caller-owned
 block-flow specs, then draws only the returned row/media rectangles.
@@ -260,7 +261,7 @@ reader0's exact measurement path, and marks shaped text commands explicitly.
 This keeps pagination measurement and rasterization on the same provider
 without moving a renderer or font cache into reader0.
 
-Lectern0 also owns one bounded 64-entry image cache keyed by concrete reader0
+8vo also owns one bounded 64-entry image cache keyed by concrete reader0
 document/resource identity. It fetches encoded resource bytes through reader0,
 passes them to the explicit zero_foundation decoder, maps decoder failures into
 canonical frame image status, and attaches arena-owned BGRA8 views to the
@@ -272,15 +273,15 @@ policy, and final aspect-fit sprite/fallback presentation. Neither reader0 nor
 zero_foundation owns product cache policy.
 
 Image-only canonical rows are a distinct host-presentation case. Reader0 owns
-their classification and `visual_units`; Lectern0 allocates the full content
+their classification and `visual_units`; 8vo allocates the full content
 width and exactly `visual_units * line_height` pixels of vertical media space,
 then aspect-fits the decoded image inside that box. The 18-unit fallback is
 used only when the canonical row omits a value, matching the frozen Re10
-adapter. Loaded image-only media has no synthetic card background. Lectern0
+adapter. Loaded image-only media has no synthetic card background. 8vo
 prepares area-filtered target surfaces for shrink, linear-filtered surfaces for
 enlargement, and exact-size nearest surfaces; the prepared surface is then
 drawn one-to-one. The same policy applies to publisher in-flow images.
-Zero_foundation owns the resampling mechanism while Lectern0 owns the bounded
+Zero_foundation owns the resampling mechanism while 8vo owns the bounded
 host cache and product policy. Library thumbnails use the same area filter,
 persist as thumbnail format version 2 so legacy nearest thumbnails are
 invalidated, and use explicit area/linear sampling for their final card fit.
@@ -288,7 +289,7 @@ invalidated, and use explicit area/linear sampling for their final card fit.
 Vertical placement follows the canonical row metadata through Presentation
 Engine API 1: block top margins apply only to `line_row == 0`, while resolved
 line/image height and bottom margins advance each row. The engine owns only
-checked stacking and row-relative media rectangles. Lectern0 retains the
+checked stacking and row-relative media rectangles. 8vo retains the
 96-row/16-image storage chosen to match reader0's bounded frame and fails if
 every canonical row cannot be submitted inside the reader body.
 
@@ -302,7 +303,7 @@ presentation implementation.
 ## Viewport, responsive layout, focus, and accessibility
 
 `ReaderViewLayout.viewport_rect`, `page_surface_rect`, and `content_rect` are
-one atomic host boundary. Lectern0 uses the returned `content_rect` as the only
+one atomic host boundary. 8vo uses the returned `content_rect` as the only
 reader0 pagination and canonical-frame rectangle; `page_surface_rect` owns the
 surrounding page paint. Shared gutters and panels are resolved in that same
 state snapshot. A layout-affecting shared state change recomputes the contract
@@ -310,8 +311,8 @@ and repaginates at the current reader-owned location.
 
 The accepted toolbar is a fixed right-aligned row of eleven shared 30 by 28 px
 icon slots followed by one host slot, with a 56 px top chrome and 38 px footer.
-A 38-pixel trailing reservation belongs to lectern0 and contains its Close Book
-control. Lectern0 retains the action and return-to-Library transition, while UI0
+A 38-pixel trailing reservation belongs to 8vo and contains its Close Book
+control. 8vo retains the action and return-to-Library transition, while UI0
 paints the control as a nonquiet `IconButton` with its canonical Close icon.
 Bounds too small for the fixed reference contract fail closed.
 Distraction-free behavior remains dormant rather than becoming mandatory
@@ -319,7 +320,7 @@ shared chrome, while the host independently performs native fullscreen window
 transitions.
 
 Readerview0 owns stable portable focus IDs, popup/modal containment, roles,
-states, and pointer/keyboard/accessibility convergence. Lectern0 translates
+states, and pointer/keyboard/accessibility convergence. 8vo translates
 Win32 input and implements a host-owned MSAA `IAccessible` object over the
 current semantic records plus one explicit bounded host record for Close Book.
 The host inserts that native action between shared Find and Fullscreen and
@@ -328,7 +329,7 @@ other shared order remains driven by Reader View semantic identities. Close Book
 pointer activation requires press origin and release inside the host slot and
 is cancelled on leave or capture loss. `WM_GETOBJECT`, native object lifetime,
 screen-reader events, coordinate translation, Close Book invocation, and execution
-of returned reader actions stay in lectern0.
+of returned reader actions stay in 8vo.
 The host Close Book path retains the focused IconButton's fill, border,
 text, outer focus ring, and explicit Close icon. It clips those commands to the
 38-pixel host reservation rather than the smaller control rect; startup evidence
@@ -353,9 +354,9 @@ No PDF backend, generic document interface, library database, cloud sync,
 shared library framework, shared
 persistence, renderer, decoded-image cache, or native accessibility adapter is
 moved into readerview0. Features absent from the current re10 EPUB reader—such
-as later Kindle-gap reading controls—remain deferred until re10 and lectern0
+as later Kindle-gap reading controls—remain deferred until re10 and 8vo
 share and stabilize this Stage 1 surface. Unsupported, missing, oversized,
 corrupt, and cache-full image rows render bounded alt-text fallbacks.
 Simple-grid adoption waits for a second host that presents table cells as
-independent geometry; lectern0 does not invent a table UI merely to exercise
+independent geometry; 8vo does not invent a table UI merely to exercise
 the foundation API.

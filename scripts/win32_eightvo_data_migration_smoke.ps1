@@ -55,7 +55,7 @@ try {
 }
 
 $PassLine = $Output | Where-Object {
-  $_ -match '^lectern0_data_migration_smoke result=pass '
+  $_ -match '^eightvo_data_migration_smoke result=pass '
 } | Select-Object -Last 1
 if (!$PassLine -or
     $PassLine -notmatch [regex]::Escape("directory=$Current")) {
@@ -154,4 +154,4 @@ if (!(Test-Path -LiteralPath $RetryDestination -PathType Leaf) -or
 }
 
 Write-Host $PassLine
-Write-Host "win32_lectern0_data_migration_smoke result=pass legacy=preserved current=8vo idempotent=marker unsupported=ignored retry=verified"
+Write-Host "win32_eightvo_data_migration_smoke result=pass legacy=preserved current=8vo idempotent=marker unsupported=ignored retry=verified"

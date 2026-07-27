@@ -6,8 +6,15 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 
 function Resolve-DependencyPath {
-  param([string]$EnvironmentName, [string]$SiblingName)
+  param(
+    [string]$EnvironmentName,
+    [string]$LegacyEnvironmentName,
+    [string]$SiblingName
+  )
   $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
+  if (!$value -and $LegacyEnvironmentName) {
+    $value = [Environment]::GetEnvironmentVariable($LegacyEnvironmentName)
+  }
   if ($value) { return (Resolve-Path -LiteralPath $value).Path }
   return (Resolve-Path -LiteralPath (Join-Path $RepoRoot "..\$SiblingName")).Path
 }
@@ -51,15 +58,19 @@ function Require-Dependency {
   }
 }
 
-$reader0 = Resolve-DependencyPath "LECTERN0_READER0_DIR" "reader0"
-$ui0 = Resolve-DependencyPath "LECTERN0_UI0_DIR" "ui0"
-$readerview0 = Resolve-DependencyPath "LECTERN0_READERVIEW0_DIR" "readerview0"
-$zero = if ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
+$reader0 = Resolve-DependencyPath "EIGHTVO_READER0_DIR" "LECTERN0_READER0_DIR" "reader0"
+$ui0 = Resolve-DependencyPath "EIGHTVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
+$readerview0 = Resolve-DependencyPath `
+  "EIGHTVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
+$zero = if ($env:EIGHTVO_ZERO_FOUNDATION_DIR) {
+  (Resolve-Path -LiteralPath $env:EIGHTVO_ZERO_FOUNDATION_DIR).Path
+} elseif ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:LECTERN0_ZERO_FOUNDATION_DIR).Path
 } elseif ($env:ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:ZERO_FOUNDATION_DIR).Path
 } else {
-  Resolve-DependencyPath "LECTERN0_ZERO_FOUNDATION_DIR" "zero_foundation"
+  Resolve-DependencyPath `
+    "EIGHTVO_ZERO_FOUNDATION_DIR" "LECTERN0_ZERO_FOUNDATION_DIR" "zero_foundation"
 }
 
 Require-Dependency "reader0" $reader0 (Join-Path $RepoRoot "vendor\reader0_dependency") `
@@ -94,4 +105,4 @@ if ($currentPresentationApi -ne $requiredPresentationApi) {
   throw "zero_foundation Presentation Engine API mismatch"
 }
 
-Write-Host "lectern0 dependency status: current"
+Write-Host "eightvo dependency status: current"

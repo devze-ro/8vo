@@ -1,4 +1,4 @@
-/* Unity build for the concrete lectern0 Windows host. */
+/* Unity build for the concrete eightvo Windows host. */
 #include "base/base_core.h"
 #include "os/os_core.c"
 #include "os/os_file.c"
@@ -23,9 +23,9 @@
 #include "render/render.c"
 #include "ui0.c"
 #include "readerview0.c"
-#include "lectern0.c"
-#include "lectern0_library.c"
-#include "platform/win32/lectern0_accessibility_win32.c"
+#include "eightvo.c"
+#include "eightvo_library.c"
+#include "platform/win32/eightvo_accessibility_win32.c"
 
 #if OS_WINDOWS
 #  include "platform/win32/os_core_win32.c"
@@ -35,5 +35,5 @@
 #  include "platform/win32/os_gfx_win32.c"
 #  include "platform/win32/os_image_win32.c"
 #else
-#  error "lectern0 Slice 1 currently supports Win32 only"
+#  error "eightvo Slice 1 currently supports Win32 only"
 #endif

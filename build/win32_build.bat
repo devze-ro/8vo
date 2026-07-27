@@ -8,7 +8,7 @@ where cl >nul 2>nul
 if errorlevel 1 (
   call :find_vcvarsall
   if errorlevel 1 (
-    echo [8vo] Failed to locate vcvarsall.bat. Install MSVC or set LECTERN0_VCVARS.
+    echo [8vo] Failed to locate vcvarsall.bat. Install MSVC or set EIGHTVO_VCVARS.
     exit /b 1
   )
   call "!VCVARSALL!" x64
@@ -17,17 +17,21 @@ if errorlevel 1 (
 
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "ROOT=%%~fI"
-if not defined LECTERN0_READER0_DIR for %%I in ("%ROOT%\..\reader0") do set "LECTERN0_READER0_DIR=%%~fI"
-if not defined LECTERN0_UI0_DIR for %%I in ("%ROOT%\..\ui0") do set "LECTERN0_UI0_DIR=%%~fI"
-if not defined LECTERN0_READERVIEW0_DIR for %%I in ("%ROOT%\..\readerview0") do set "LECTERN0_READERVIEW0_DIR=%%~fI"
-if defined LECTERN0_ZERO_FOUNDATION_DIR (
-  set "ZF_ROOT=%LECTERN0_ZERO_FOUNDATION_DIR%"
+if not defined EIGHTVO_READER0_DIR if defined LECTERN0_READER0_DIR set "EIGHTVO_READER0_DIR=%LECTERN0_READER0_DIR%"
+if not defined EIGHTVO_UI0_DIR if defined LECTERN0_UI0_DIR set "EIGHTVO_UI0_DIR=%LECTERN0_UI0_DIR%"
+if not defined EIGHTVO_READERVIEW0_DIR if defined LECTERN0_READERVIEW0_DIR set "EIGHTVO_READERVIEW0_DIR=%LECTERN0_READERVIEW0_DIR%"
+if not defined EIGHTVO_ZERO_FOUNDATION_DIR if defined LECTERN0_ZERO_FOUNDATION_DIR set "EIGHTVO_ZERO_FOUNDATION_DIR=%LECTERN0_ZERO_FOUNDATION_DIR%"
+if not defined EIGHTVO_READER0_DIR for %%I in ("%ROOT%\..\reader0") do set "EIGHTVO_READER0_DIR=%%~fI"
+if not defined EIGHTVO_UI0_DIR for %%I in ("%ROOT%\..\ui0") do set "EIGHTVO_UI0_DIR=%%~fI"
+if not defined EIGHTVO_READERVIEW0_DIR for %%I in ("%ROOT%\..\readerview0") do set "EIGHTVO_READERVIEW0_DIR=%%~fI"
+if defined EIGHTVO_ZERO_FOUNDATION_DIR (
+  set "ZF_ROOT=%EIGHTVO_ZERO_FOUNDATION_DIR%"
 ) else if defined ZERO_FOUNDATION_DIR (
   set "ZF_ROOT=%ZERO_FOUNDATION_DIR%"
 ) else (
   for %%I in ("%ROOT%\..\zero_foundation") do set "ZF_ROOT=%%~fI"
 )
-set "LECTERN0_ZERO_FOUNDATION_DIR=%ZF_ROOT%"
+set "EIGHTVO_ZERO_FOUNDATION_DIR=%ZF_ROOT%"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\require_dependencies_current.ps1"
 if errorlevel 1 exit /b 1
@@ -43,8 +47,8 @@ pushd "%OUT_DIR%"
 echo [8vo] Compiling native reader host
 cl /nologo /std:c11 /W4 /WX /Zi /Od /MD /DUNICODE /D_UNICODE ^
   /wd4005 /wd4127 /wd5105 /I "%ROOT%\code" /I "%ZF_ROOT%\code" ^
-  /I "%LECTERN0_READER0_DIR%\code" /I "%LECTERN0_UI0_DIR%\code" ^
-  /I "%LECTERN0_READERVIEW0_DIR%\code" ^
+  /I "%EIGHTVO_READER0_DIR%\code" /I "%EIGHTVO_UI0_DIR%\code" ^
+  /I "%EIGHTVO_READERVIEW0_DIR%\code" ^
   /Fe"%EXE_NAME%" "%SRC_UNITY%" ^
   /link /STACK:16777216 user32.lib gdi32.lib dwrite.lib ole32.lib oleaut32.lib ^
   oleacc.lib comdlg32.lib windowscodecs.lib uuid.lib shell32.lib winmm.lib
@@ -67,7 +71,8 @@ endlocal & exit /b %EXITCODE%
 
 :find_vcvarsall
 set VCVARSALL=
-if defined LECTERN0_VCVARS set "VCVARSALL=%LECTERN0_VCVARS%"
+if defined EIGHTVO_VCVARS set "VCVARSALL=%EIGHTVO_VCVARS%"
+if not defined VCVARSALL if defined LECTERN0_VCVARS set "VCVARSALL=%LECTERN0_VCVARS%"
 if not defined VCVARSALL if defined RE10_VCVARS set "VCVARSALL=%RE10_VCVARS%"
 if not defined VCVARSALL (
   set "VSWHERE=!PF86!\Microsoft Visual Studio\Installer\vswhere.exe"

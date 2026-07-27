@@ -1,5 +1,5 @@
-#include "lectern0_version.h"
-#include "lectern0_library.h"
+#include "eightvo_version.h"
+#include "eightvo_library.h"
 #include "reader0.h"
 #include "ui0.h"
 #include "readerview0.h"
@@ -24,16 +24,16 @@
 #  error "zero_foundation presentation_engine.h must define PRESENTATION_ENGINE_API_VERSION"
 #endif
 #if PRESENTATION_ENGINE_API_VERSION != 1
-#  error "lectern0 requires Presentation Engine API 1"
+#  error "eightvo requires Presentation Engine API 1"
 #endif
 #if READER0_API_VERSION != 5
-#  error "lectern0 requires Reader0 API 5"
+#  error "eightvo requires Reader0 API 5"
 #endif
 #if UI0_API_VERSION != 91
-#  error "lectern0 requires UI0 API 91"
+#  error "eightvo requires UI0 API 91"
 #endif
 #if READERVIEW0_API_VERSION != 3
-#  error "lectern0 requires Reader View API 3"
+#  error "eightvo requires Reader View API 3"
 #endif
 
 #include <commdlg.h>
@@ -48,103 +48,103 @@
 #include <shellapi.h>
 #include <oleacc.h>
 
-#include "platform/win32/lectern0_accessibility_win32.h"
+#include "platform/win32/eightvo_accessibility_win32.h"
 
 enum
 {
-  Lectern0PathCap = 1024,
-  Lectern0StatusCap = 256,
-  Lectern0StateFileCap = 2304,
-  Lectern0ImageCacheCap = 64,
-  Lectern0BookmarkCap = 128,
-  Lectern0HighlightCap = 128,
-  Lectern0ReaderViewRightCandidateCap =
-    Lectern0BookmarkCap + Lectern0HighlightCap * 2,
-  Lectern0RecordLabelCap = 160,
-  Lectern0NoteCap = READER_VIEW_NOTE_DRAFT_CAP,
-  Lectern0SelectionTextCap = 1024,
-  Lectern0InputTextCap = 128,
-  Lectern0ClipboardCap = 2048,
-  Lectern0UrlCap = 4096,
-  Lectern0PresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
-  Lectern0PresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
-  Lectern0HostToolbarTrailingWidth = 38,
-  Lectern0HostToolbarSlotWidth = 30,
-  Lectern0ReaderViewFindPriority_History = 2,
-  Lectern0ReaderViewFindPriority_Committed = 4,
-  Lectern0ReaderViewFindPriority_Placeholder = 5,
-  Lectern0ReaderViewFindPriority_Current = 6,
-  Lectern0ReaderViewFindPriority_Pinned = 255,
-  Lectern0ReaderViewNotePixelHeight = 18,
-  Lectern0ReaderViewNoteLineHeightFallback = 25,
-  Lectern0ReaderViewNoteAdvanceFallback = 9,
-  Lectern0ReaderViewNoteTerminalCaretGap = 1,
-  Lectern0DisplayRowStopCap = 1024,
-  Lectern0DisplaySpanCap = EPUB_READER_FRAME_STYLE_FRAGMENT_CAP * 2 + 1,
-  Lectern0LibraryVisibleCardCap = 64,
-  Lectern0LibraryHostControlCap = 1 + Lectern0LibraryVisibleCardCap * 3,
-  Lectern0LibraryThumbnailCap = 48,
-  Lectern0LibraryThumbnailWidth = 256,
-  Lectern0LibraryThumbnailHeight = 384,
-  Lectern0LibraryThumbnailBudget = 24 * 1024 * 1024,
-  Lectern0LibraryThumbnailVersion = 2,
-  Lectern0PreparedImageCap = 16,
-  Lectern0PreparedImageBudget = 64 * 1024 * 1024,
-  Lectern0StateSaveTimerId = 1,
-  Lectern0StateSaveDelayMs = 250,
-  Lectern0AdjacentWarmTimerId = 2,
-  Lectern0AdjacentWarmDelayMs = 16,
-  Lectern0PresentationRetryTimerId = 3,
-  Lectern0PresentationRetryBaseDelayMs = 16,
-  Lectern0PresentationRetryMaxDelayMs = 256,
-  Lectern0LocationWarmTimerId = 4,
-  Lectern0LocationWarmDelayMs = 32,
-  Lectern0AdjacentWarmTextBudget = 4,
-  Lectern0AdjacentWarmPageCap = 4,
-  Lectern0AdjacentPagePixelCap = 4096 * 4096,
-  Lectern0AdjacentWarmIdleBudgetUs = 8000,
-  Lectern0AdjacentWarmFirstOpenBudgetUs = 12000,
-  Lectern0PageRepeatFrameRate = 60,
-  Lectern0PageRepeatInitialFrames = 24,
-  Lectern0PageRepeatIntervalFrames = 3,
+  EightvoPathCap = 1024,
+  EightvoStatusCap = 256,
+  EightvoStateFileCap = 2304,
+  EightvoImageCacheCap = 64,
+  EightvoBookmarkCap = 128,
+  EightvoHighlightCap = 128,
+  EightvoReaderViewRightCandidateCap =
+    EightvoBookmarkCap + EightvoHighlightCap * 2,
+  EightvoRecordLabelCap = 160,
+  EightvoNoteCap = READER_VIEW_NOTE_DRAFT_CAP,
+  EightvoSelectionTextCap = 1024,
+  EightvoInputTextCap = 128,
+  EightvoClipboardCap = 2048,
+  EightvoUrlCap = 4096,
+  EightvoPresentationRowCap = EPUB_READER_FRAME_STYLE_ROW_CAP,
+  EightvoPresentationMediaCap = EPUB_READER_FRAME_IMAGE_CAP,
+  EightvoHostToolbarTrailingWidth = 38,
+  EightvoHostToolbarSlotWidth = 30,
+  EightvoReaderViewFindPriority_History = 2,
+  EightvoReaderViewFindPriority_Committed = 4,
+  EightvoReaderViewFindPriority_Placeholder = 5,
+  EightvoReaderViewFindPriority_Current = 6,
+  EightvoReaderViewFindPriority_Pinned = 255,
+  EightvoReaderViewNotePixelHeight = 18,
+  EightvoReaderViewNoteLineHeightFallback = 25,
+  EightvoReaderViewNoteAdvanceFallback = 9,
+  EightvoReaderViewNoteTerminalCaretGap = 1,
+  EightvoDisplayRowStopCap = 1024,
+  EightvoDisplaySpanCap = EPUB_READER_FRAME_STYLE_FRAGMENT_CAP * 2 + 1,
+  EightvoLibraryVisibleCardCap = 64,
+  EightvoLibraryHostControlCap = 1 + EightvoLibraryVisibleCardCap * 3,
+  EightvoLibraryThumbnailCap = 48,
+  EightvoLibraryThumbnailWidth = 256,
+  EightvoLibraryThumbnailHeight = 384,
+  EightvoLibraryThumbnailBudget = 24 * 1024 * 1024,
+  EightvoLibraryThumbnailVersion = 2,
+  EightvoPreparedImageCap = 16,
+  EightvoPreparedImageBudget = 64 * 1024 * 1024,
+  EightvoStateSaveTimerId = 1,
+  EightvoStateSaveDelayMs = 250,
+  EightvoAdjacentWarmTimerId = 2,
+  EightvoAdjacentWarmDelayMs = 16,
+  EightvoPresentationRetryTimerId = 3,
+  EightvoPresentationRetryBaseDelayMs = 16,
+  EightvoPresentationRetryMaxDelayMs = 256,
+  EightvoLocationWarmTimerId = 4,
+  EightvoLocationWarmDelayMs = 32,
+  EightvoAdjacentWarmTextBudget = 4,
+  EightvoAdjacentWarmPageCap = 4,
+  EightvoAdjacentPagePixelCap = 4096 * 4096,
+  EightvoAdjacentWarmIdleBudgetUs = 8000,
+  EightvoAdjacentWarmFirstOpenBudgetUs = 12000,
+  EightvoPageRepeatFrameRate = 60,
+  EightvoPageRepeatInitialFrames = 24,
+  EightvoPageRepeatIntervalFrames = 3,
   /* Frozen Re10 Win32 reader-key cadence at the accepted extracted baseline. */
-  Lectern0Re10PageRepeatFrameRate = 60,
-  Lectern0Re10PageRepeatInitialFrames = 24,
-  Lectern0Re10PageRepeatIntervalFrames = 3,
-  Lectern0PageRepeatProbeWidth = 1917,
-  Lectern0PageRepeatProbeHeight = 1137,
-  Lectern0PageRepeatProbeTimingToleranceMs = 200,
-  Lectern0PageRepeatProbeFrameBudgetMs = 64,
-  Lectern0PageRepeatProbeIntervalToleranceMs = 34,
-  Lectern0PageRepeatProbePersistenceWaitMs = 2000,
-  Lectern0PageRepeatProbeMoveCount = 12,
-  Lectern0PageRepeatProbePageCount = Lectern0PageRepeatProbeMoveCount + 1,
-  Lectern0PageRepeatProbeBoundaryLeadPageCount = 6,
-  Lectern0PageRepeatProbeBoundarySearchCap = 64,
-  Lectern0GotmMinimumProseSpineBytes = 128,
-  Lectern0GotmMinimumProseTextBytes = 8,
-  Lectern0GotmMinimumProseTextRows = 1,
-  Lectern0PageRepeatQueueDrainCap = 32,
-  Lectern0PageRepeatProbeQueueDrainCap = Lectern0PageRepeatQueueDrainCap,
-  Lectern0PageRepeatProbeMutationMessage = WM_APP + 41,
-  Lectern0PageRepeatProbeMutationCount = 7,
+  EightvoRe10PageRepeatFrameRate = 60,
+  EightvoRe10PageRepeatInitialFrames = 24,
+  EightvoRe10PageRepeatIntervalFrames = 3,
+  EightvoPageRepeatProbeWidth = 1917,
+  EightvoPageRepeatProbeHeight = 1137,
+  EightvoPageRepeatProbeTimingToleranceMs = 200,
+  EightvoPageRepeatProbeFrameBudgetMs = 64,
+  EightvoPageRepeatProbeIntervalToleranceMs = 34,
+  EightvoPageRepeatProbePersistenceWaitMs = 2000,
+  EightvoPageRepeatProbeMoveCount = 12,
+  EightvoPageRepeatProbePageCount = EightvoPageRepeatProbeMoveCount + 1,
+  EightvoPageRepeatProbeBoundaryLeadPageCount = 6,
+  EightvoPageRepeatProbeBoundarySearchCap = 64,
+  EightvoGotmMinimumProseSpineBytes = 128,
+  EightvoGotmMinimumProseTextBytes = 8,
+  EightvoGotmMinimumProseTextRows = 1,
+  EightvoPageRepeatQueueDrainCap = 32,
+  EightvoPageRepeatProbeQueueDrainCap = EightvoPageRepeatQueueDrainCap,
+  EightvoPageRepeatProbeMutationMessage = WM_APP + 41,
+  EightvoPageRepeatProbeMutationCount = 7,
 };
 
-_Static_assert(Lectern0PageRepeatFrameRate ==
-                 Lectern0Re10PageRepeatFrameRate,
-               "Lectern0 reader repeat frame rate must match frozen Re10");
-_Static_assert(Lectern0PageRepeatInitialFrames ==
-                 Lectern0Re10PageRepeatInitialFrames,
-               "Lectern0 reader repeat first delay must match frozen Re10");
-_Static_assert(Lectern0PageRepeatIntervalFrames ==
-                 Lectern0Re10PageRepeatIntervalFrames,
-               "Lectern0 reader repeat interval must match frozen Re10");
+_Static_assert(EightvoPageRepeatFrameRate ==
+                 EightvoRe10PageRepeatFrameRate,
+               "Eightvo reader repeat frame rate must match frozen Re10");
+_Static_assert(EightvoPageRepeatInitialFrames ==
+                 EightvoRe10PageRepeatInitialFrames,
+               "Eightvo reader repeat first delay must match frozen Re10");
+_Static_assert(EightvoPageRepeatIntervalFrames ==
+                 EightvoRe10PageRepeatIntervalFrames,
+               "Eightvo reader repeat interval must match frozen Re10");
 
-#define LECTERN0_SETTINGS_MAGIC 0x4C30534554543231ull
-#define LECTERN0_ANNOTATION_MAGIC 0x4C30414E4E4F5431ull
-#define LECTERN0_LIBRARY_THUMBNAIL_MAGIC 0x4C305448554D4231ull
+#define EIGHTVO_SETTINGS_MAGIC 0x4C30534554543231ull
+#define EIGHTVO_ANNOTATION_MAGIC 0x4C30414E4E4F5431ull
+#define EIGHTVO_LIBRARY_THUMBNAIL_MAGIC 0x4C305448554D4231ull
 
-typedef struct Lectern0ImageCacheEntry
+typedef struct EightvoImageCacheEntry
 {
   DocDocumentId document_id;
   U32 resource_index;
@@ -153,9 +153,9 @@ typedef struct Lectern0ImageCacheEntry
   S32 width;
   S32 height;
   S32 stride_pixels;
-} Lectern0ImageCacheEntry;
+} EightvoImageCacheEntry;
 
-typedef struct Lectern0PreparedImage
+typedef struct EightvoPreparedImage
 {
   const U32 *source_pixels;
   U32 *pixels;
@@ -166,15 +166,15 @@ typedef struct Lectern0PreparedImage
   S32 height;
   DrawSpriteSampleKind sample_kind;
   U64 pixel_bytes;
-} Lectern0PreparedImage;
+} EightvoPreparedImage;
 
-typedef struct Lectern0ImageCache
+typedef struct EightvoImageCache
 {
   OS_ImageDecoder decoder;
   Arena *pixel_arena;
   Arena *prepared_arena;
-  Lectern0ImageCacheEntry entries[Lectern0ImageCacheCap];
-  Lectern0PreparedImage prepared_images[Lectern0PreparedImageCap];
+  EightvoImageCacheEntry entries[EightvoImageCacheCap];
+  EightvoPreparedImage prepared_images[EightvoPreparedImageCap];
   U32 entry_count;
   U32 prepared_image_count;
   U64 lookup_count;
@@ -189,9 +189,9 @@ typedef struct Lectern0ImageCache
   U64 prepared_reset_count;
   U64 prepared_fallback_count;
   B32 decoder_ready;
-} Lectern0ImageCache;
+} EightvoImageCache;
 
-typedef struct Lectern0LibraryThumbnailFile
+typedef struct EightvoLibraryThumbnailFile
 {
   U64 magic;
   U32 version;
@@ -201,9 +201,9 @@ typedef struct Lectern0LibraryThumbnailFile
   U64 entry_id;
   U64 file_size;
   U64 file_modified_time;
-} Lectern0LibraryThumbnailFile;
+} EightvoLibraryThumbnailFile;
 
-typedef struct Lectern0LibraryThumbnail
+typedef struct EightvoLibraryThumbnail
 {
   U64 entry_id;
   U64 file_size;
@@ -212,47 +212,47 @@ typedef struct Lectern0LibraryThumbnail
   S32 width;
   S32 height;
   S32 stride_pixels;
-} Lectern0LibraryThumbnail;
+} EightvoLibraryThumbnail;
 
-typedef struct Lectern0LibraryThumbnailCache
+typedef struct EightvoLibraryThumbnailCache
 {
   Arena *arena;
-  Lectern0LibraryThumbnail entries[Lectern0LibraryThumbnailCap];
+  EightvoLibraryThumbnail entries[EightvoLibraryThumbnailCap];
   U32 entry_count;
   U64 pixel_bytes;
-} Lectern0LibraryThumbnailCache;
+} EightvoLibraryThumbnailCache;
 
-typedef struct Lectern0SavedState
+typedef struct EightvoSavedState
 {
   B32 valid;
   U32 spine_index;
   U64 byte_offset;
-  char path[Lectern0PathCap];
-} Lectern0SavedState;
+  char path[EightvoPathCap];
+} EightvoSavedState;
 
-typedef enum Lectern0Theme
+typedef enum EightvoTheme
 {
-  Lectern0Theme_Dark,
-  Lectern0Theme_Light,
-  Lectern0Theme_CoralDark,
-  Lectern0Theme_CoralLight,
-  Lectern0Theme_BlueDark,
-  Lectern0Theme_BlueLight,
-  Lectern0Theme_Count,
-} Lectern0Theme;
+  EightvoTheme_Dark,
+  EightvoTheme_Light,
+  EightvoTheme_CoralDark,
+  EightvoTheme_CoralLight,
+  EightvoTheme_BlueDark,
+  EightvoTheme_BlueLight,
+  EightvoTheme_Count,
+} EightvoTheme;
 
-_Static_assert(Lectern0Theme_Count == 6,
-               "lectern0 theme persistence catalog changed");
+_Static_assert(EightvoTheme_Count == 6,
+               "eightvo theme persistence catalog changed");
 _Static_assert(UI0ThemeProfile_Count == 6,
-               "lectern0 must cover every shared UI0 profile");
-_Static_assert((U32)Lectern0ReaderViewRightCandidateCap >=
+               "eightvo must cover every shared UI0 profile");
+_Static_assert((U32)EightvoReaderViewRightCandidateCap >=
                  (U32)READER_VIEW_RIGHT_ROW_CAP,
-               "lectern0 annotation candidates must cover Reader View rows");
+               "eightvo annotation candidates must cover Reader View rows");
 _Static_assert(ReaderViewRightRow_Bookmark < ReaderViewRightRow_Highlight &&
                  ReaderViewRightRow_Highlight < ReaderViewRightRow_Note,
-               "lectern0 annotation sort requires frozen row-kind order");
+               "eightvo annotation sort requires frozen row-kind order");
 
-typedef struct Lectern0ReaderContentTheme
+typedef struct EightvoReaderContentTheme
 {
   U32 page_background;
   U32 ink;
@@ -264,9 +264,9 @@ typedef struct Lectern0ReaderContentTheme
   U32 search_match;
   U32 user_highlight;
   U32 note_marker;
-} Lectern0ReaderContentTheme;
+} EightvoReaderContentTheme;
 
-typedef struct Lectern0ReaderSpanStyle
+typedef struct EightvoReaderSpanStyle
 {
   DocTextStyleFlags flags;
   U32 scale_permille;
@@ -275,9 +275,9 @@ typedef struct Lectern0ReaderSpanStyle
   U32 font_face_index;
   U32 color;
   TextEngineResolvedStyle resolved;
-} Lectern0ReaderSpanStyle;
+} EightvoReaderSpanStyle;
 
-typedef struct Lectern0ReaderStyledRow
+typedef struct EightvoReaderStyledRow
 {
   TextEngineDisplaySpanRow display;
   U32 local_start;
@@ -289,36 +289,36 @@ typedef struct Lectern0ReaderStyledRow
   U32 justify_extra_remainder;
   S32 natural_width;
   S32 fill_h;
-} Lectern0ReaderStyledRow;
+} EightvoReaderStyledRow;
 
-typedef struct Lectern0DrawAdapterStats
+typedef struct EightvoDrawAdapterStats
 {
   U32 op_count[UI0DrawOp_Count];
   U32 unsupported_count;
   U32 note_editable_row_count;
   U32 note_caret_remap_count;
-} Lectern0DrawAdapterStats;
+} EightvoDrawAdapterStats;
 
-typedef struct Lectern0BookmarkV1
+typedef struct EightvoBookmarkV1
 {
   U64 id;
   U32 spine_index;
   U64 byte_offset;
   B32 starred;
-  char label[Lectern0RecordLabelCap];
-} Lectern0BookmarkV1;
+  char label[EightvoRecordLabelCap];
+} EightvoBookmarkV1;
 
-typedef struct Lectern0Bookmark
+typedef struct EightvoBookmark
 {
   U64 id;
   U32 spine_index;
   U64 byte_offset;
   B32 starred;
-  char label[Lectern0RecordLabelCap];
-  char excerpt[Lectern0RecordLabelCap];
-} Lectern0Bookmark;
+  char label[EightvoRecordLabelCap];
+  char excerpt[EightvoRecordLabelCap];
+} EightvoBookmark;
 
-typedef struct Lectern0HighlightV2
+typedef struct EightvoHighlightV2
 {
   U64 id;
   U32 spine_index;
@@ -327,12 +327,12 @@ typedef struct Lectern0HighlightV2
   U32 color_index;
   B32 starred;
   B32 note_starred;
-  char section[Lectern0RecordLabelCap];
-  char text[Lectern0RecordLabelCap];
-  char note[Lectern0NoteCap];
-} Lectern0HighlightV2;
+  char section[EightvoRecordLabelCap];
+  char text[EightvoRecordLabelCap];
+  char note[EightvoNoteCap];
+} EightvoHighlightV2;
 
-typedef struct Lectern0Highlight
+typedef struct EightvoHighlight
 {
   U64 id;
   U32 spine_index;
@@ -342,12 +342,12 @@ typedef struct Lectern0Highlight
   B32 is_highlight;
   B32 starred;
   B32 note_starred;
-  char section[Lectern0RecordLabelCap];
-  char text[Lectern0RecordLabelCap];
-  char note[Lectern0NoteCap];
-} Lectern0Highlight;
+  char section[EightvoRecordLabelCap];
+  char text[EightvoRecordLabelCap];
+  char note[EightvoNoteCap];
+} EightvoHighlight;
 
-typedef struct Lectern0SettingsFileV2
+typedef struct EightvoSettingsFileV2
 {
   U64 magic;
   U32 version;
@@ -355,9 +355,9 @@ typedef struct Lectern0SettingsFileV2
   U32 text_size_index;
   U32 line_spacing_index;
   U32 theme;
-} Lectern0SettingsFileV2;
+} EightvoSettingsFileV2;
 
-typedef struct Lectern0SettingsFile
+typedef struct EightvoSettingsFile
 {
   U64 magic;
   U32 version;
@@ -366,9 +366,9 @@ typedef struct Lectern0SettingsFile
   U32 line_spacing_index;
   U32 theme;
   U32 font_family_user_override;
-} Lectern0SettingsFile;
+} EightvoSettingsFile;
 
-typedef struct Lectern0AnnotationFile
+typedef struct EightvoAnnotationFile
 {
   U64 magic;
   U32 version;
@@ -377,11 +377,11 @@ typedef struct Lectern0AnnotationFile
   U32 reserved;
   U64 path_hash;
   U64 next_record_id;
-  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
-  Lectern0Highlight highlights[Lectern0HighlightCap];
-} Lectern0AnnotationFile;
+  EightvoBookmark bookmarks[EightvoBookmarkCap];
+  EightvoHighlight highlights[EightvoHighlightCap];
+} EightvoAnnotationFile;
 
-typedef struct Lectern0AnnotationFileV1
+typedef struct EightvoAnnotationFileV1
 {
   U64 magic;
   U32 version;
@@ -390,11 +390,11 @@ typedef struct Lectern0AnnotationFileV1
   U32 reserved;
   U64 path_hash;
   U64 next_record_id;
-  Lectern0BookmarkV1 bookmarks[Lectern0BookmarkCap];
-  Lectern0HighlightV2 highlights[Lectern0HighlightCap];
-} Lectern0AnnotationFileV1;
+  EightvoBookmarkV1 bookmarks[EightvoBookmarkCap];
+  EightvoHighlightV2 highlights[EightvoHighlightCap];
+} EightvoAnnotationFileV1;
 
-typedef struct Lectern0AnnotationFileV2
+typedef struct EightvoAnnotationFileV2
 {
   U64 magic;
   U32 version;
@@ -403,24 +403,24 @@ typedef struct Lectern0AnnotationFileV2
   U32 reserved;
   U64 path_hash;
   U64 next_record_id;
-  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
-  Lectern0HighlightV2 highlights[Lectern0HighlightCap];
-} Lectern0AnnotationFileV2;
+  EightvoBookmark bookmarks[EightvoBookmarkCap];
+  EightvoHighlightV2 highlights[EightvoHighlightCap];
+} EightvoAnnotationFileV2;
 
 /* Tail padding makes the V2 and V3 record sizes equal; the file version and
    explicit field migration, not a size accident, distinguish their layouts. */
-_Static_assert(sizeof(Lectern0HighlightV2) == sizeof(Lectern0Highlight),
-               "lectern0 annotation V2/V3 layout discriminator changed");
+_Static_assert(sizeof(EightvoHighlightV2) == sizeof(EightvoHighlight),
+               "eightvo annotation V2/V3 layout discriminator changed");
 
-typedef struct Lectern0Fullscreen
+typedef struct EightvoFullscreen
 {
   B32 active;
   DWORD style;
   DWORD ex_style;
   WINDOWPLACEMENT placement;
-} Lectern0Fullscreen;
+} EightvoFullscreen;
 
-typedef struct Lectern0Input
+typedef struct EightvoInput
 {
   S32 pointer_x;
   S32 pointer_y;
@@ -446,108 +446,108 @@ typedef struct Lectern0Input
   S32 move_vertical_delta;
   ReaderViewRangeMove range_move;
   B32 extend_selection;
-  char text[Lectern0InputTextCap];
+  char text[EightvoInputTextCap];
   S32 text_length;
-} Lectern0Input;
+} EightvoInput;
 
 enum
 {
-  Lectern0UI0IconRasterCacheCap = 32,
-  Lectern0UI0IconRasterMaxWidth = UI0_ICON_RASTER_MAX_WIDTH,
-  Lectern0UI0IconRasterMaxHeight = UI0_ICON_RASTER_MAX_HEIGHT,
+  EightvoUI0IconRasterCacheCap = 32,
+  EightvoUI0IconRasterMaxWidth = UI0_ICON_RASTER_MAX_WIDTH,
+  EightvoUI0IconRasterMaxHeight = UI0_ICON_RASTER_MAX_HEIGHT,
 };
 
-typedef struct Lectern0UI0IconRasterCacheEntry
+typedef struct EightvoUI0IconRasterCacheEntry
 {
   UI0IconKind icon_kind;
   S32 width;
   S32 height;
   UI0Color foreground;
   UI0Color background;
-  U32 pixels[Lectern0UI0IconRasterMaxWidth *
-             Lectern0UI0IconRasterMaxHeight];
-} Lectern0UI0IconRasterCacheEntry;
+  U32 pixels[EightvoUI0IconRasterMaxWidth *
+             EightvoUI0IconRasterMaxHeight];
+} EightvoUI0IconRasterCacheEntry;
 
-typedef enum Lectern0HostControlIdentity
+typedef enum EightvoHostControlIdentity
 {
-  Lectern0HostControl_None,
-  Lectern0HostControl_CloseBook,
-  Lectern0HostControl_ExitReader = Lectern0HostControl_CloseBook,
-  Lectern0HostControl_LibraryAdd,
-  Lectern0HostControl_LibraryBookBase = 1024,
-  Lectern0HostControl_LibraryLocateBase =
-    Lectern0HostControl_LibraryBookBase + Lectern0LibraryVisibleCardCap,
-  Lectern0HostControl_LibraryRemoveBase =
-    Lectern0HostControl_LibraryLocateBase + Lectern0LibraryVisibleCardCap,
-  Lectern0HostControl_LibraryLimit =
-    Lectern0HostControl_LibraryRemoveBase + Lectern0LibraryVisibleCardCap,
-} Lectern0HostControlIdentity;
+  EightvoHostControl_None,
+  EightvoHostControl_CloseBook,
+  EightvoHostControl_ExitReader = EightvoHostControl_CloseBook,
+  EightvoHostControl_LibraryAdd,
+  EightvoHostControl_LibraryBookBase = 1024,
+  EightvoHostControl_LibraryLocateBase =
+    EightvoHostControl_LibraryBookBase + EightvoLibraryVisibleCardCap,
+  EightvoHostControl_LibraryRemoveBase =
+    EightvoHostControl_LibraryLocateBase + EightvoLibraryVisibleCardCap,
+  EightvoHostControl_LibraryLimit =
+    EightvoHostControl_LibraryRemoveBase + EightvoLibraryVisibleCardCap,
+} EightvoHostControlIdentity;
 
-typedef enum Lectern0HostControlAction
+typedef enum EightvoHostControlAction
 {
-  Lectern0HostControlAction_None,
-  Lectern0HostControlAction_CloseBook,
-  Lectern0HostControlAction_AddEpubs,
-  Lectern0HostControlAction_OpenBook,
-  Lectern0HostControlAction_LocateBook,
-  Lectern0HostControlAction_RemoveBook,
-} Lectern0HostControlAction;
+  EightvoHostControlAction_None,
+  EightvoHostControlAction_CloseBook,
+  EightvoHostControlAction_AddBooks,
+  EightvoHostControlAction_OpenBook,
+  EightvoHostControlAction_LocateBook,
+  EightvoHostControlAction_RemoveBook,
+} EightvoHostControlAction;
 
-typedef struct Lectern0LibraryCardLayout
+typedef struct EightvoLibraryCardLayout
 {
   U64 entry_id;
   UI0Rect card_rect;
   UI0Rect cover_rect;
   UI0Rect locate_rect;
   UI0Rect remove_rect;
-  char accessibility_name[Lectern0LibraryMetadataCap * 2];
-} Lectern0LibraryCardLayout;
+  char accessibility_name[EightvoLibraryMetadataCap * 2];
+} EightvoLibraryCardLayout;
 
-typedef struct Lectern0HostControlRecord
+typedef struct EightvoHostControlRecord
 {
-  Lectern0HostControlIdentity identity;
-  Lectern0HostControlAction action;
+  EightvoHostControlIdentity identity;
+  EightvoHostControlAction action;
   U64 entry_id;
   ReaderViewSemanticNode semantic;
-} Lectern0HostControlRecord;
+} EightvoHostControlRecord;
 
-typedef struct Lectern0ReaderViewRightSource
+typedef struct EightvoReaderViewRightSource
 {
   ReaderViewKey key;
   ReaderViewRightRowKind row_kind;
   U64 record_id;
-} Lectern0ReaderViewRightSource;
+} EightvoReaderViewRightSource;
 
-typedef struct Lectern0ReaderViewRightCandidate
+typedef struct EightvoReaderViewRightCandidate
 {
   ReaderViewRightRowKind row_kind;
   U32 source_index;
   U32 spine_index;
   U64 byte_offset;
   U64 record_id;
-} Lectern0ReaderViewRightCandidate;
+} EightvoReaderViewRightCandidate;
 
-typedef enum Lectern0PresentationIdentityKind
+typedef enum EightvoPresentationIdentityKind
 {
-  Lectern0PresentationIdentity_None,
-  Lectern0PresentationIdentity_Library,
-  Lectern0PresentationIdentity_Page,
-} Lectern0PresentationIdentityKind;
+  EightvoPresentationIdentity_None,
+  EightvoPresentationIdentity_Library,
+  EightvoPresentationIdentity_Page,
+} EightvoPresentationIdentityKind;
 
 /* Pointer-free subset of the canonical Reader0 page range retained for
    presentation identity and frame validation. */
-typedef struct Lectern0CanonicalPageIdentity
+typedef struct EightvoCanonicalPageIdentity
 {
   U32 spine_index;
   U64 spine_page_index;
   U64 spine_page_count;
   U64 first_byte;
   U64 one_past_last_byte;
-} Lectern0CanonicalPageIdentity;
+} EightvoCanonicalPageIdentity;
 
-typedef struct Lectern0PresentationIdentity
+typedef struct EightvoPresentationIdentity
 {
-  Lectern0PresentationIdentityKind kind;
+  EightvoPresentationIdentityKind kind;
   DocDocumentId document_id;
   U64 document_generation;
   U64 layout_generation;
@@ -556,10 +556,10 @@ typedef struct Lectern0PresentationIdentity
   U64 reader_frame_generation;
   U64 image_visual_identity;
   U32 image_count;
-  Lectern0CanonicalPageIdentity page;
-} Lectern0PresentationIdentity;
+  EightvoCanonicalPageIdentity page;
+} EightvoPresentationIdentity;
 
-typedef struct Lectern0App
+typedef struct EightvoApp
 {
   Arena *arena;
   EpubReader reader;
@@ -569,12 +569,12 @@ typedef struct Lectern0App
   EpubReaderFrame adjacent_frame;
   EpubReaderLayoutKey layout_key;
   SourceReaderLayoutConfig layout_config;
-  Lectern0ImageCache image_cache;
-  Lectern0LibraryThumbnailCache library_thumbnail_cache;
-  PresentationEngineBlockFlowRowSpec presentation_row_specs[Lectern0PresentationRowCap];
-  PresentationEngineBlockFlowMediaSpec presentation_media_specs[Lectern0PresentationMediaCap];
-  PresentationEngineBlockFlowRow presentation_rows[Lectern0PresentationRowCap];
-  PresentationEngineBlockFlowMedia presentation_media[Lectern0PresentationMediaCap];
+  EightvoImageCache image_cache;
+  EightvoLibraryThumbnailCache library_thumbnail_cache;
+  PresentationEngineBlockFlowRowSpec presentation_row_specs[EightvoPresentationRowCap];
+  PresentationEngineBlockFlowMediaSpec presentation_media_specs[EightvoPresentationMediaCap];
+  PresentationEngineBlockFlowRow presentation_rows[EightvoPresentationRowCap];
+  PresentationEngineBlockFlowMedia presentation_media[EightvoPresentationMediaCap];
   PresentationEngineBlockFlowFrame presentation_frame;
   U64 presentation_hash;
 
@@ -587,7 +587,7 @@ typedef struct Lectern0App
   B32 last_present_complete;
   U64 complete_present_sequence;
   HWND window;
-  Lectern0Accessibility *accessibility;
+  EightvoAccessibility *accessibility;
   S32 width;
   S32 height;
 
@@ -601,18 +601,18 @@ typedef struct Lectern0App
   ReaderViewChoice reader_view_font_choices[8];
   ReaderViewChoice reader_view_size_choices[4];
   ReaderViewChoice reader_view_spacing_choices[3];
-  ReaderViewChoice reader_view_theme_choices[Lectern0Theme_Count];
+  ReaderViewChoice reader_view_theme_choices[EightvoTheme_Count];
   ReaderViewChoice reader_view_color_choices[READER_VIEW_HIGHLIGHT_COLOR_CAP];
   ReaderViewTocRow reader_view_toc_rows[READER_VIEW_TOC_ROW_CAP];
   ReaderViewFindRow reader_view_find_rows[READER_VIEW_FIND_ROW_CAP];
   ReaderViewRightRow reader_view_right_rows[READER_VIEW_RIGHT_ROW_CAP];
   char reader_view_right_secondary[READER_VIEW_RIGHT_ROW_CAP]
-                                  [Lectern0RecordLabelCap];
-  Lectern0ReaderViewRightSource
+                                  [EightvoRecordLabelCap];
+  EightvoReaderViewRightSource
     reader_view_right_sources[READER_VIEW_RIGHT_ROW_CAP];
   U32 reader_view_right_source_count;
-  Lectern0ReaderViewRightCandidate
-    reader_view_right_candidates[Lectern0ReaderViewRightCandidateCap];
+  EightvoReaderViewRightCandidate
+    reader_view_right_candidates[EightvoReaderViewRightCandidateCap];
   U32 reader_view_right_candidate_count;
   /* Exact host-owned target for a note editor opened from Annotations. */
   ReaderViewKey annotation_note_selection_key;
@@ -634,32 +634,32 @@ typedef struct Lectern0App
   ReaderViewCodepointAdvance
     note_text_advances[READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP];
   U32 note_text_advance_count;
-  char document_title[Lectern0RecordLabelCap];
+  char document_title[EightvoRecordLabelCap];
   char progress_label[64];
   char reader_view_find_status[64];
-  char selected_text[Lectern0SelectionTextCap];
+  char selected_text[EightvoSelectionTextCap];
   ReaderViewLoadState document_state;
   UI0ResolvedTheme reader_view_theme;
-  Lectern0ReaderContentTheme reader_content_theme;
-  Lectern0DrawAdapterStats draw_adapter_stats;
-  Lectern0UI0IconRasterCacheEntry
-    ui0_icon_rasters[Lectern0UI0IconRasterCacheCap];
+  EightvoReaderContentTheme reader_content_theme;
+  EightvoDrawAdapterStats draw_adapter_stats;
+  EightvoUI0IconRasterCacheEntry
+    ui0_icon_rasters[EightvoUI0IconRasterCacheCap];
   U32 ui0_icon_raster_count;
   U64 reader_view_frame_index;
   B32 reader_view_ready;
   S32 pagination_viewport_width;
   S32 pagination_viewport_height;
   S32 reader_margin_line_height;
-  Lectern0HostControlRecord
-    host_controls[Lectern0LibraryHostControlCap];
+  EightvoHostControlRecord
+    host_controls[EightvoLibraryHostControlCap];
   U32 host_control_count;
-  Lectern0HostControlIdentity host_focus_control;
+  EightvoHostControlIdentity host_focus_control;
   B32 host_focus_visible;
   B32 host_exit_pointer_armed;
-  Lectern0HostControlIdentity host_pointer_armed;
+  EightvoHostControlIdentity host_pointer_armed;
 
-  Lectern0LibraryCatalog library;
-  Lectern0LibraryCardLayout library_cards[Lectern0LibraryVisibleCardCap];
+  EightvoLibraryCatalog library;
+  EightvoLibraryCardLayout library_cards[EightvoLibraryVisibleCardCap];
   U32 library_card_count;
   U64 library_selected_entry_id;
   U64 library_locate_entry_id;
@@ -671,9 +671,9 @@ typedef struct Lectern0App
   U32 native_picker_request_count;
   U32 library_metadata_refresh_count;
 
-  Lectern0Bookmark bookmarks[Lectern0BookmarkCap];
+  EightvoBookmark bookmarks[EightvoBookmarkCap];
   U32 bookmark_count;
-  Lectern0Highlight highlights[Lectern0HighlightCap];
+  EightvoHighlight highlights[EightvoHighlightCap];
   U32 highlight_count;
   U64 next_record_id;
   U64 annotation_revision;
@@ -681,20 +681,20 @@ typedef struct Lectern0App
   B32 font_family_user_override;
   U32 text_size_index;
   U32 line_spacing_index;
-  Lectern0Theme theme;
+  EightvoTheme theme;
   B32 distraction_free;
-  Lectern0Fullscreen fullscreen;
-  TextEngineDisplaySpan reader_display_spans[Lectern0DisplaySpanCap];
-  Lectern0ReaderSpanStyle reader_span_styles[Lectern0DisplaySpanCap];
-  TextEngineDisplayRowStop reader_display_stops[Lectern0DisplayRowStopCap];
+  EightvoFullscreen fullscreen;
+  TextEngineDisplaySpan reader_display_spans[EightvoDisplaySpanCap];
+  EightvoReaderSpanStyle reader_span_styles[EightvoDisplaySpanCap];
+  TextEngineDisplayRowStop reader_display_stops[EightvoDisplayRowStopCap];
   B32 selection_dragging;
   U64 selection_anchor_byte;
   UI0Rect selection_anchor_rect;
-  char clipboard_text[Lectern0ClipboardCap];
+  char clipboard_text[EightvoClipboardCap];
   S32 clipboard_length;
   UI0TextInputTransferBuffer clipboard_transfer;
   wchar_t pending_high_surrogate;
-  Lectern0Input input;
+  EightvoInput input;
 
   B32 persistence_enabled;
   B32 state_save_pending;
@@ -719,7 +719,7 @@ typedef struct Lectern0App
   B32 adjacent_page_embedded_fonts_enabled;
   U32 adjacent_page_text_size_index;
   U32 adjacent_page_line_spacing_index;
-  Lectern0Theme adjacent_page_theme;
+  EightvoTheme adjacent_page_theme;
   B32 adjacent_page_ready;
   B32 page_repeat_active;
   S32 page_repeat_direction;
@@ -737,8 +737,8 @@ typedef struct Lectern0App
   U64 page_action_presented_count;
   U64 page_action_frame_generation;
   U64 page_action_last_stable_present_ticks;
-  Lectern0PresentationIdentity page_action_expected_identity;
-  Lectern0PresentationIdentity last_surface_identity;
+  EightvoPresentationIdentity page_action_expected_identity;
+  EightvoPresentationIdentity last_surface_identity;
   U32 page_action_overlap_count;
   U32 page_action_identity_mismatch_count;
   U32 page_action_presentation_retry_attempt;
@@ -782,25 +782,25 @@ typedef struct Lectern0App
   U64 last_render_execute_ticks;
   U32 state_save_transaction_success_count;
   B32 adjacent_page_cache_used_last_render;
-  Lectern0SavedState saved;
-  char app_directory[Lectern0PathCap];
-  char state_path[Lectern0PathCap];
-  char catalog_path[Lectern0PathCap];
-  char settings_path[Lectern0PathCap];
-  char annotations_path[Lectern0PathCap];
-  char export_path[Lectern0PathCap];
-  char current_path[Lectern0PathCap];
-  char status[Lectern0StatusCap];
-} Lectern0App;
+  EightvoSavedState saved;
+  char app_directory[EightvoPathCap];
+  char state_path[EightvoPathCap];
+  char catalog_path[EightvoPathCap];
+  char settings_path[EightvoPathCap];
+  char annotations_path[EightvoPathCap];
+  char export_path[EightvoPathCap];
+  char current_path[EightvoPathCap];
+  char status[EightvoStatusCap];
+} EightvoApp;
 
-typedef struct Lectern0PageRepeatFrameResult
+typedef struct EightvoPageRepeatFrameResult
 {
   B32 action_due;
   B32 action_emitted;
   B32 action_waiting_for_render;
-} Lectern0PageRepeatFrameResult;
+} EightvoPageRepeatFrameResult;
 
-typedef struct Lectern0PageRepeatFrameTiming
+typedef struct EightvoPageRepeatFrameTiming
 {
   U64 action_prepare_ticks;
   U64 action_emitted_ticks;
@@ -808,11 +808,11 @@ typedef struct Lectern0PageRepeatFrameTiming
   U64 render_buffer_ticks;
   U64 render_accessibility_ticks;
   U64 render_present_ticks;
-} Lectern0PageRepeatFrameTiming;
+} EightvoPageRepeatFrameTiming;
 
-typedef struct Lectern0Win32
+typedef struct EightvoWin32
 {
-  Lectern0App app;
+  EightvoApp app;
   HWND window;
   HWND page_repeat_probe_paint_window;
   U32 page_repeat_probe_aux_paint_pending_count;
@@ -820,27 +820,27 @@ typedef struct Lectern0Win32
   U32 page_repeat_probe_main_null_paint_pending_count;
   U32 page_repeat_probe_main_null_paint_dispatch_count;
   B32 page_repeat_probe_track_paints;
-} Lectern0Win32;
+} EightvoWin32;
 
-typedef enum Lectern0PageRepeatWin32ProbeKind
+typedef enum EightvoPageRepeatWin32ProbeKind
 {
-  Lectern0PageRepeatWin32Probe_Direction,
-  Lectern0PageRepeatWin32Probe_FocusLoss,
-  Lectern0PageRepeatWin32Probe_ControlModifier,
-  Lectern0PageRepeatWin32Probe_ShiftModifier,
-  Lectern0PageRepeatWin32Probe_SystemModifier,
-  Lectern0PageRepeatWin32Probe_Deactivation,
-  Lectern0PageRepeatWin32Probe_MutationGate,
-} Lectern0PageRepeatWin32ProbeKind;
+  EightvoPageRepeatWin32Probe_Direction,
+  EightvoPageRepeatWin32Probe_FocusLoss,
+  EightvoPageRepeatWin32Probe_ControlModifier,
+  EightvoPageRepeatWin32Probe_ShiftModifier,
+  EightvoPageRepeatWin32Probe_SystemModifier,
+  EightvoPageRepeatWin32Probe_Deactivation,
+  EightvoPageRepeatWin32Probe_MutationGate,
+} EightvoPageRepeatWin32ProbeKind;
 
-typedef struct Lectern0PageRepeatWin32Probe
+typedef struct EightvoPageRepeatWin32Probe
 {
   B32 enabled;
   B32 started;
   B32 stop_posted;
   B32 completed;
   B32 failed;
-  Lectern0PageRepeatWin32ProbeKind kind;
+  EightvoPageRepeatWin32ProbeKind kind;
   S32 direction;
   WPARAM key;
   U32 target_frame_move_count;
@@ -880,10 +880,10 @@ typedef struct Lectern0PageRepeatWin32Probe
   U64 move_interval_total_ticks;
   U32 move_interval_count;
   U32 observed_move_count;
-  U64 stable_present_elapsed_ticks[Lectern0PageRepeatProbePageCount];
-  U64 stable_present_transition_ticks[Lectern0PageRepeatProbeMoveCount];
+  U64 stable_present_elapsed_ticks[EightvoPageRepeatProbePageCount];
+  U64 stable_present_transition_ticks[EightvoPageRepeatProbeMoveCount];
   B32 stable_present_transition_cross_spine[
-    Lectern0PageRepeatProbeMoveCount];
+    EightvoPageRepeatProbeMoveCount];
   U32 stable_present_transition_count;
   U32 stable_present_count;
   U64 stable_present_first_delay_ticks;
@@ -892,8 +892,8 @@ typedef struct Lectern0PageRepeatWin32Probe
   U64 stable_present_interval_total_ticks;
   U32 stable_present_interval_count;
   SourceReaderPageRange start_page;
-  SourceReaderPageRange expected_pages[Lectern0PageRepeatProbePageCount];
-  SourceReaderPageRange actual_pages[Lectern0PageRepeatProbePageCount];
+  SourceReaderPageRange expected_pages[EightvoPageRepeatProbePageCount];
+  SourceReaderPageRange actual_pages[EightvoPageRepeatProbePageCount];
   U32 expected_page_count;
   U32 actual_page_count;
   U32 canonical_match_count;
@@ -951,53 +951,53 @@ typedef struct Lectern0PageRepeatWin32Probe
   B32 persistence_hold_checked;
   B32 persistence_hold_unchanged;
   B32 persistence_post_stop_advanced;
-} Lectern0PageRepeatWin32Probe;
+} EightvoPageRepeatWin32Probe;
 
-FUNCTION void lectern0_library_update_progress(Lectern0App *app);
-FUNCTION B32 lectern0_close_book(Lectern0App *app);
-FUNCTION B32 lectern0_pick_epub(Lectern0App *app);
-FUNCTION B32 lectern0_locate_library_entry(Lectern0App *app, U64 entry_id);
-FUNCTION void lectern0_schedule_adjacent_warm(Lectern0App *app);
-FUNCTION void lectern0_cancel_adjacent_warm(Lectern0App *app);
-FUNCTION B32 lectern0_adjacent_warm_step(Lectern0App *app);
-FUNCTION void lectern0_schedule_location_warm(Lectern0App *app);
-FUNCTION void lectern0_cancel_location_warm(Lectern0App *app);
-FUNCTION B32 lectern0_location_warm_step(Lectern0App *app);
-FUNCTION void lectern0_invalidate_adjacent_page(Lectern0App *app);
-FUNCTION void lectern0_stop_page_repeat(Lectern0App *app);
-FUNCTION void lectern0_cancel_page_repeat_for_modifier(Lectern0App *app);
-FUNCTION void lectern0_cancel_page_repeat_for_focus(Lectern0App *app);
-FUNCTION void lectern0_cancel_page_repeat_for_deactivation(Lectern0App *app);
-FUNCTION void lectern0_cancel_page_repeat_for_mutation(Lectern0App *app);
-FUNCTION void lectern0_page_action_note_emitted(Lectern0App *app);
-FUNCTION B32 lectern0_begin_document_mutation(Lectern0App *app);
-FUNCTION void lectern0_complete_document_mutation(Lectern0App *app,
+FUNCTION void eightvo_library_update_progress(EightvoApp *app);
+FUNCTION B32 eightvo_close_book(EightvoApp *app);
+FUNCTION B32 eightvo_pick_epub(EightvoApp *app);
+FUNCTION B32 eightvo_locate_library_entry(EightvoApp *app, U64 entry_id);
+FUNCTION void eightvo_schedule_adjacent_warm(EightvoApp *app);
+FUNCTION void eightvo_cancel_adjacent_warm(EightvoApp *app);
+FUNCTION B32 eightvo_adjacent_warm_step(EightvoApp *app);
+FUNCTION void eightvo_schedule_location_warm(EightvoApp *app);
+FUNCTION void eightvo_cancel_location_warm(EightvoApp *app);
+FUNCTION B32 eightvo_location_warm_step(EightvoApp *app);
+FUNCTION void eightvo_invalidate_adjacent_page(EightvoApp *app);
+FUNCTION void eightvo_stop_page_repeat(EightvoApp *app);
+FUNCTION void eightvo_cancel_page_repeat_for_modifier(EightvoApp *app);
+FUNCTION void eightvo_cancel_page_repeat_for_focus(EightvoApp *app);
+FUNCTION void eightvo_cancel_page_repeat_for_deactivation(EightvoApp *app);
+FUNCTION void eightvo_cancel_page_repeat_for_mutation(EightvoApp *app);
+FUNCTION void eightvo_page_action_note_emitted(EightvoApp *app);
+FUNCTION B32 eightvo_begin_document_mutation(EightvoApp *app);
+FUNCTION void eightvo_complete_document_mutation(EightvoApp *app,
                                                    B32 changed);
-FUNCTION void lectern0_page_action_clear_pending(Lectern0App *app);
-FUNCTION void lectern0_page_action_defer(Lectern0App *app,
+FUNCTION void eightvo_page_action_clear_pending(EightvoApp *app);
+FUNCTION void eightvo_page_action_defer(EightvoApp *app,
                                           WPARAM key,
                                           S32 direction,
                                           B32 arm_repeat);
-FUNCTION void lectern0_page_action_release_key(Lectern0App *app, WPARAM key);
-FUNCTION void lectern0_start_page_repeat(Lectern0App *app,
+FUNCTION void eightvo_page_action_release_key(EightvoApp *app, WPARAM key);
+FUNCTION void eightvo_start_page_repeat(EightvoApp *app,
                                          WPARAM key,
                                          S32 direction);
-FUNCTION B32 lectern0_page_repeat_step(Lectern0App *app,
+FUNCTION B32 eightvo_page_repeat_step(EightvoApp *app,
                                         U64 now_ticks,
                                         B32 *out_action_due);
-FUNCTION Lectern0PageRepeatFrameResult
-lectern0_page_repeat_frame_step(Lectern0App *app, U64 now_ticks);
-FUNCTION void lectern0_page_repeat_note_presented_frame(Lectern0App *app,
+FUNCTION EightvoPageRepeatFrameResult
+eightvo_page_repeat_frame_step(EightvoApp *app, U64 now_ticks);
+FUNCTION void eightvo_page_repeat_note_presented_frame(EightvoApp *app,
                                                          B32 complete);
-FUNCTION B32 lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app);
-FUNCTION B32 lectern0_fit_image_rect(S32 src_w, S32 src_h,
+FUNCTION B32 eightvo_page_repeat_prepare_navigation_tail(EightvoApp *app);
+FUNCTION B32 eightvo_fit_image_rect(S32 src_w, S32 src_h,
                                      S32 rect_x, S32 rect_y,
                                      S32 rect_w, S32 rect_h,
                                      S32 *out_x, S32 *out_y,
                                      S32 *out_w, S32 *out_h);
 
 FUNCTION void
-lectern0_copy_cstr(char *dst, U64 cap, const char *src)
+eightvo_copy_cstr(char *dst, U64 cap, const char *src)
 {
   if (!dst || cap == 0) { return; }
   U64 size = 0;
@@ -1013,7 +1013,7 @@ lectern0_copy_cstr(char *dst, U64 cap, const char *src)
 }
 
 FUNCTION void
-lectern0_set_statusf(Lectern0App *app, const char *fmt, ...)
+eightvo_set_statusf(EightvoApp *app, const char *fmt, ...)
 {
   if (!app || !fmt) { return; }
   va_list args;
@@ -1023,7 +1023,7 @@ lectern0_set_statusf(Lectern0App *app, const char *fmt, ...)
 }
 
 FUNCTION B32
-lectern0_legacy_data_file_name_is_supported(const char *name)
+eightvo_legacy_data_file_name_is_supported(const char *name)
 {
   if (!name || !name[0]) return 0;
   if (_stricmp(name, "state.v1") == 0 ||
@@ -1046,7 +1046,7 @@ lectern0_legacy_data_file_name_is_supported(const char *name)
 }
 
 FUNCTION B32
-lectern0_migrate_legacy_data(const char *legacy_directory,
+eightvo_migrate_legacy_data(const char *legacy_directory,
                              const char *app_directory)
 {
   if (!legacy_directory || !legacy_directory[0] ||
@@ -1055,7 +1055,7 @@ lectern0_migrate_legacy_data(const char *legacy_directory,
     return 0;
   }
 
-  char marker_path[Lectern0PathCap] = {0};
+  char marker_path[EightvoPathCap] = {0};
   if (cstr_format(marker_path, ARRAY_COUNT(marker_path),
                   "%s\\migration_from_lectern0.v1", app_directory) == 0)
   {
@@ -1076,7 +1076,7 @@ lectern0_migrate_legacy_data(const char *legacy_directory,
   }
   if (!(legacy_attributes & FILE_ATTRIBUTE_DIRECTORY)) return 0;
 
-  char pattern[Lectern0PathCap] = {0};
+  char pattern[EightvoPathCap] = {0};
   if (cstr_format(pattern, ARRAY_COUNT(pattern),
                   "%s\\*", legacy_directory) == 0)
   {
@@ -1095,14 +1095,14 @@ lectern0_migrate_legacy_data(const char *legacy_directory,
   {
     if ((find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
         (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
-        !lectern0_legacy_data_file_name_is_supported(find_data.cFileName))
+        !eightvo_legacy_data_file_name_is_supported(find_data.cFileName))
     {
       continue;
     }
 
-    char source_path[Lectern0PathCap] = {0};
-    char destination_path[Lectern0PathCap] = {0};
-    char temporary_path[Lectern0PathCap] = {0};
+    char source_path[EightvoPathCap] = {0};
+    char destination_path[EightvoPathCap] = {0};
+    char temporary_path[EightvoPathCap] = {0};
     if (cstr_format(source_path, ARRAY_COUNT(source_path),
                     "%s\\%s", legacy_directory, find_data.cFileName) == 0 ||
         cstr_format(destination_path, ARRAY_COUNT(destination_path),
@@ -1145,22 +1145,22 @@ lectern0_migrate_legacy_data(const char *legacy_directory,
 }
 
 FUNCTION B32
-lectern0_state_paths(Lectern0App *app)
+eightvo_state_paths(EightvoApp *app)
 {
   if (!app) { return 0; }
-  char local_app_data[Lectern0PathCap] = {0};
+  char local_app_data[EightvoPathCap] = {0};
   DWORD size = GetEnvironmentVariableA("LOCALAPPDATA",
                                        local_app_data,
                                        (DWORD)ARRAY_COUNT(local_app_data));
   if (size == 0 || size >= ARRAY_COUNT(local_app_data)) { return 0; }
-  char app_directory[Lectern0PathCap] = {0};
-  char legacy_directory[Lectern0PathCap] = {0};
+  char app_directory[EightvoPathCap] = {0};
+  char legacy_directory[EightvoPathCap] = {0};
   if (cstr_format(app_directory, ARRAY_COUNT(app_directory),
                   "%s\\8vo", local_app_data) == 0 ||
       cstr_format(legacy_directory, ARRAY_COUNT(legacy_directory),
                   "%s\\lectern0", local_app_data) == 0 ||
       !os_make_directory_chain(app_directory) ||
-      !lectern0_migrate_legacy_data(legacy_directory, app_directory) ||
+      !eightvo_migrate_legacy_data(legacy_directory, app_directory) ||
       cstr_format(app->app_directory, ARRAY_COUNT(app->app_directory),
                   "%s", app_directory) == 0)
   {
@@ -1186,21 +1186,21 @@ lectern0_state_paths(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_save_library(Lectern0App *app)
+eightvo_save_library(EightvoApp *app)
 {
   return app && (!app->persistence_enabled ||
                  (app->catalog_path[0] &&
-                  lectern0_library_catalog_save(&app->library,
+                  eightvo_library_catalog_save(&app->library,
                                                 app->catalog_path)));
 }
 
 FUNCTION void
-lectern0_library_set_summary_status(Lectern0App *app)
+eightvo_library_set_summary_status(EightvoApp *app)
 {
   if (!app) return;
   if (app->library.entry_count == 0)
   {
-    lectern0_set_statusf(app, "Your library is empty | Add books");
+    eightvo_set_statusf(app, "Your library is empty | Add books");
     return;
   }
   U32 missing_count = 0;
@@ -1208,42 +1208,42 @@ lectern0_library_set_summary_status(Lectern0App *app)
     missing_count += app->library.entries[index].runtime_missing ? 1u : 0u;
   if (missing_count > 0)
   {
-    lectern0_set_statusf(app, "%u book%s | %u source file%s missing",
+    eightvo_set_statusf(app, "%u book%s | %u source file%s missing",
                          app->library.entry_count,
                          app->library.entry_count == 1 ? "" : "s",
                          missing_count, missing_count == 1 ? "" : "s");
   }
   else
   {
-    lectern0_set_statusf(app, "%u book%s | most recently opened first",
+    eightvo_set_statusf(app, "%u book%s | most recently opened first",
                          app->library.entry_count,
                          app->library.entry_count == 1 ? "" : "s");
   }
 }
 
 FUNCTION void
-lectern0_migrate_saved_state_to_library(Lectern0App *app)
+eightvo_migrate_saved_state_to_library(EightvoApp *app)
 {
   if (!app || app->library.entry_count != 0 || !app->saved.valid ||
       !app->saved.path[0])
     return;
-  char normalized[Lectern0LibraryPathCap] = {0};
-  if (!lectern0_library_normalize_path(app->saved.path,
+  char normalized[EightvoLibraryPathCap] = {0};
+  if (!eightvo_library_normalize_path(app->saved.path,
                                        normalized,
                                        ARRAY_COUNT(normalized)))
     return;
-  Lectern0LibraryEntry *entry = app->library.entries;
+  EightvoLibraryEntry *entry = app->library.entries;
   MemoryZeroStruct(entry);
   entry->entry_id = 1;
-  entry->added_time = lectern0_library_now();
+  entry->added_time = eightvo_library_now();
   entry->last_opened_time = entry->added_time;
   entry->progress_spine_index = app->saved.spine_index;
   entry->progress_byte_offset = app->saved.byte_offset;
   entry->cover_resource_index = DOC_RESOURCE_INDEX_NONE;
-  lectern0_copy_cstr(entry->source_path,
+  eightvo_copy_cstr(entry->source_path,
                      ARRAY_COUNT(entry->source_path),
                      normalized);
-  lectern0_library_fallback_title(normalized,
+  eightvo_library_fallback_title(normalized,
                                   entry->title,
                                   ARRAY_COUNT(entry->title));
   OS_FileProperties properties = os_file_properties(normalized);
@@ -1257,14 +1257,14 @@ lectern0_migrate_saved_state_to_library(Lectern0App *app)
   app->library.next_entry_id = 2;
   app->library.revision += 1;
   app->library_selected_entry_id = entry->entry_id;
-  (void)lectern0_save_library(app);
+  (void)eightvo_save_library(app);
 }
 
 FUNCTION void
-lectern0_load_state(Lectern0App *app)
+eightvo_load_state(EightvoApp *app)
 {
   if (!app || !app->persistence_enabled || !app->state_path[0]) { return; }
-  char data[Lectern0StateFileCap] = {0};
+  char data[EightvoStateFileCap] = {0};
   U64 size = 0;
   if (!os_read_entire_file(app->state_path, data, sizeof(data) - 1, &size) ||
       size == 0 || size >= sizeof(data))
@@ -1278,7 +1278,7 @@ lectern0_load_state(Lectern0App *app)
   char *spine = strtok_s(0, "\r\n", &context);
   char *byte = strtok_s(0, "\r\n", &context);
   char *path = strtok_s(0, "\r\n", &context);
-  if (!version || !spine || !byte || !path || strcmp(version, "LECTERN0_STATE_V1") != 0)
+  if (!version || !spine || !byte || !path || strcmp(version, "EIGHTVO_STATE_V1") != 0)
   {
     return;
   }
@@ -1288,19 +1288,19 @@ lectern0_load_state(Lectern0App *app)
   app->saved.valid = 1;
   app->saved.spine_index = (U32)parsed_spine;
   app->saved.byte_offset = (U64)parsed_byte;
-  lectern0_copy_cstr(app->saved.path, ARRAY_COUNT(app->saved.path), path);
+  eightvo_copy_cstr(app->saved.path, ARRAY_COUNT(app->saved.path), path);
 }
 
 FUNCTION void
-lectern0_load_settings(Lectern0App *app)
+eightvo_load_settings(EightvoApp *app)
 {
   if (!app || !app->persistence_enabled || !app->settings_path[0]) { return; }
-  Lectern0SettingsFile file = {0};
+  EightvoSettingsFile file = {0};
   U64 size = 0;
   if (!os_read_entire_file(app->settings_path, &file, sizeof(file), &size) ||
-      file.magic != LECTERN0_SETTINGS_MAGIC ||
+      file.magic != EIGHTVO_SETTINGS_MAGIC ||
       !(((file.version == 1 || file.version == 2) &&
-         size == sizeof(Lectern0SettingsFileV2)) ||
+         size == sizeof(EightvoSettingsFileV2)) ||
         (file.version == 3 && size == sizeof(file))))
   {
     return;
@@ -1314,26 +1314,26 @@ lectern0_load_settings(Lectern0App *app)
   if (file.version == 1)
   {
     /* Version 1 persisted Light, Sepia, Dark as 0, 1, 2. */
-    static const Lectern0Theme legacy_theme_map[] = {
-      Lectern0Theme_Light,
-      Lectern0Theme_CoralLight,
-      Lectern0Theme_Dark,
+    static const EightvoTheme legacy_theme_map[] = {
+      EightvoTheme_Light,
+      EightvoTheme_CoralLight,
+      EightvoTheme_Dark,
     };
     if (file.theme < ARRAY_COUNT(legacy_theme_map))
       app->theme = legacy_theme_map[file.theme];
   }
-  else if (file.theme < Lectern0Theme_Count)
+  else if (file.theme < EightvoTheme_Count)
   {
-    app->theme = (Lectern0Theme)file.theme;
+    app->theme = (EightvoTheme)file.theme;
   }
 }
 
 FUNCTION B32
-lectern0_save_settings(Lectern0App *app)
+eightvo_save_settings(EightvoApp *app)
 {
   if (!app || !app->persistence_enabled || !app->settings_path[0]) { return 0; }
-  Lectern0SettingsFile file = {
-    .magic = LECTERN0_SETTINGS_MAGIC,
+  EightvoSettingsFile file = {
+    .magic = EIGHTVO_SETTINGS_MAGIC,
     .version = 3,
     .font_family = app->font_family,
     .text_size_index = app->text_size_index,
@@ -1345,7 +1345,7 @@ lectern0_save_settings(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_set_annotations_path(Lectern0App *app, const char *path)
+eightvo_set_annotations_path(EightvoApp *app, const char *path)
 {
   if (!app) { return; }
   app->annotations_path[0] = 0;
@@ -1359,7 +1359,7 @@ lectern0_set_annotations_path(Lectern0App *app, const char *path)
 }
 
 FUNCTION void
-lectern0_clear_annotations(Lectern0App *app)
+eightvo_clear_annotations(EightvoApp *app)
 {
   if (!app) { return; }
   MemoryZeroArray(app->bookmarks);
@@ -1371,11 +1371,11 @@ lectern0_clear_annotations(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_migrate_highlight_v2(Lectern0Highlight *target,
-                              const Lectern0HighlightV2 *source)
+eightvo_migrate_highlight_v2(EightvoHighlight *target,
+                              const EightvoHighlightV2 *source)
 {
   if (!target || !source) return;
-  *target = (Lectern0Highlight){
+  *target = (EightvoHighlight){
     .id = source->id,
     .spine_index = source->spine_index,
     .start_byte = source->start_byte,
@@ -1385,17 +1385,17 @@ lectern0_migrate_highlight_v2(Lectern0Highlight *target,
     .starred = source->starred,
     .note_starred = source->note_starred,
   };
-  lectern0_copy_cstr(target->section, ARRAY_COUNT(target->section),
+  eightvo_copy_cstr(target->section, ARRAY_COUNT(target->section),
                      source->section);
-  lectern0_copy_cstr(target->text, ARRAY_COUNT(target->text), source->text);
-  lectern0_copy_cstr(target->note, ARRAY_COUNT(target->note), source->note);
+  eightvo_copy_cstr(target->text, ARRAY_COUNT(target->text), source->text);
+  eightvo_copy_cstr(target->note, ARRAY_COUNT(target->note), source->note);
 }
 
 FUNCTION void
-lectern0_load_annotations(Lectern0App *app)
+eightvo_load_annotations(EightvoApp *app)
 {
   if (!app) { return; }
-  lectern0_clear_annotations(app);
+  eightvo_clear_annotations(app);
   if (!app->persistence_enabled || !app->annotations_path[0] ||
       !app->current_path[0])
   {
@@ -1403,9 +1403,9 @@ lectern0_load_annotations(Lectern0App *app)
   }
   union
   {
-    Lectern0AnnotationFile current;
-    Lectern0AnnotationFileV2 v2;
-    Lectern0AnnotationFileV1 legacy;
+    EightvoAnnotationFile current;
+    EightvoAnnotationFileV2 v2;
+    EightvoAnnotationFileV1 legacy;
   } file = {0};
   U64 size = 0;
   U64 expected_hash = u64_hash_str8(str8_from_cstr(app->current_path));
@@ -1414,10 +1414,10 @@ lectern0_load_annotations(Lectern0App *app)
     return;
   }
   if (size == sizeof(file.current) &&
-      file.current.magic == LECTERN0_ANNOTATION_MAGIC &&
+      file.current.magic == EIGHTVO_ANNOTATION_MAGIC &&
       file.current.version == 3 && file.current.path_hash == expected_hash &&
-      file.current.bookmark_count <= Lectern0BookmarkCap &&
-      file.current.highlight_count <= Lectern0HighlightCap)
+      file.current.bookmark_count <= EightvoBookmarkCap &&
+      file.current.highlight_count <= EightvoHighlightCap)
   {
     app->bookmark_count = file.current.bookmark_count;
     app->highlight_count = file.current.highlight_count;
@@ -1431,10 +1431,10 @@ lectern0_load_annotations(Lectern0App *app)
         app->highlights[index].is_highlight ? 1 : 0;
   }
   else if (size == sizeof(file.v2) &&
-           file.v2.magic == LECTERN0_ANNOTATION_MAGIC &&
+           file.v2.magic == EIGHTVO_ANNOTATION_MAGIC &&
            file.v2.version == 2 && file.v2.path_hash == expected_hash &&
-           file.v2.bookmark_count <= Lectern0BookmarkCap &&
-           file.v2.highlight_count <= Lectern0HighlightCap)
+           file.v2.bookmark_count <= EightvoBookmarkCap &&
+           file.v2.highlight_count <= EightvoHighlightCap)
   {
     app->bookmark_count = file.v2.bookmark_count;
     app->highlight_count = file.v2.highlight_count;
@@ -1442,33 +1442,33 @@ lectern0_load_annotations(Lectern0App *app)
     MemoryCopy(app->bookmarks, file.v2.bookmarks,
                sizeof(file.v2.bookmarks[0]) * file.v2.bookmark_count);
     for (U32 index = 0; index < app->highlight_count; index += 1)
-      lectern0_migrate_highlight_v2(app->highlights + index,
+      eightvo_migrate_highlight_v2(app->highlights + index,
                                     file.v2.highlights + index);
   }
   else if (size == sizeof(file.legacy) &&
-           file.legacy.magic == LECTERN0_ANNOTATION_MAGIC &&
+           file.legacy.magic == EIGHTVO_ANNOTATION_MAGIC &&
            file.legacy.version == 1 && file.legacy.path_hash == expected_hash &&
-           file.legacy.bookmark_count <= Lectern0BookmarkCap &&
-           file.legacy.highlight_count <= Lectern0HighlightCap)
+           file.legacy.bookmark_count <= EightvoBookmarkCap &&
+           file.legacy.highlight_count <= EightvoHighlightCap)
   {
     app->bookmark_count = file.legacy.bookmark_count;
     app->highlight_count = file.legacy.highlight_count;
     app->next_record_id = MAX(file.legacy.next_record_id, 1ull);
     for (U32 index = 0; index < app->bookmark_count; index += 1)
     {
-      const Lectern0BookmarkV1 *source = file.legacy.bookmarks + index;
-      Lectern0Bookmark *target = app->bookmarks + index;
+      const EightvoBookmarkV1 *source = file.legacy.bookmarks + index;
+      EightvoBookmark *target = app->bookmarks + index;
       target->id = source->id;
       target->spine_index = source->spine_index;
       target->byte_offset = source->byte_offset;
       target->starred = source->starred;
-      lectern0_copy_cstr(target->label, ARRAY_COUNT(target->label),
+      eightvo_copy_cstr(target->label, ARRAY_COUNT(target->label),
                          source->label);
-      lectern0_copy_cstr(target->excerpt, ARRAY_COUNT(target->excerpt),
+      eightvo_copy_cstr(target->excerpt, ARRAY_COUNT(target->excerpt),
                          "Bookmark");
     }
     for (U32 index = 0; index < app->highlight_count; index += 1)
-      lectern0_migrate_highlight_v2(app->highlights + index,
+      eightvo_migrate_highlight_v2(app->highlights + index,
                                     file.legacy.highlights + index);
   }
   else
@@ -1479,15 +1479,15 @@ lectern0_load_annotations(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_save_annotations(Lectern0App *app)
+eightvo_save_annotations(EightvoApp *app)
 {
   if (!app || !app->persistence_enabled || !app->annotations_path[0] ||
       !app->current_path[0])
   {
     return 0;
   }
-  Lectern0AnnotationFile file = {0};
-  file.magic = LECTERN0_ANNOTATION_MAGIC;
+  EightvoAnnotationFile file = {0};
+  file.magic = EIGHTVO_ANNOTATION_MAGIC;
   file.version = 3;
   file.bookmark_count = app->bookmark_count;
   file.highlight_count = app->highlight_count;
@@ -1501,18 +1501,18 @@ lectern0_save_annotations(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_commit_annotations(Lectern0App *app)
+eightvo_commit_annotations(EightvoApp *app)
 {
-  return app && (!app->persistence_enabled || lectern0_save_annotations(app));
+  return app && (!app->persistence_enabled || eightvo_save_annotations(app));
 }
 
 FUNCTION B32
-lectern0_save_state(Lectern0App *app)
+eightvo_save_state(EightvoApp *app)
 {
   if (app)
   {
     if (app->window && app->state_save_pending)
-      (void)KillTimer(app->window, Lectern0StateSaveTimerId);
+      (void)KillTimer(app->window, EightvoStateSaveTimerId);
     app->state_save_pending = 0;
   }
   if (!app || !app->persistence_enabled || !app->state_path[0] ||
@@ -1520,17 +1520,17 @@ lectern0_save_state(Lectern0App *app)
   {
     return 0;
   }
-  lectern0_library_update_progress(app);
-  char data[Lectern0StateFileCap] = {0};
+  eightvo_library_update_progress(app);
+  char data[EightvoStateFileCap] = {0};
   U64 size = cstr_format(data,
                          ARRAY_COUNT(data),
-                         "LECTERN0_STATE_V1\n%u\n%llu\n%s\n",
+                         "EIGHTVO_STATE_V1\n%u\n%llu\n%s\n",
                          (unsigned)app->reader.active_spine_index,
                          (unsigned long long)app->reader.view_byte_offset,
                          app->current_path);
   if (size == 0 || size >= ARRAY_COUNT(data)) { return 0; }
   B32 state_saved = os_write_entire_file_atomic(app->state_path, data, size);
-  B32 library_saved = lectern0_save_library(app);
+  B32 library_saved = eightvo_save_library(app);
   B32 transaction_saved = state_saved && library_saved;
   if (transaction_saved &&
       app->state_save_transaction_success_count < UINT32_MAX)
@@ -1541,40 +1541,40 @@ lectern0_save_state(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_schedule_state_save(Lectern0App *app)
+eightvo_schedule_state_save(EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader) || !app->current_path[0])
     return;
-  lectern0_library_update_progress(app);
+  eightvo_library_update_progress(app);
   if (!app->persistence_enabled) return;
   if (app->page_repeat_active || app->page_action_waiting_for_present ||
       app->page_action_pending)
   {
     if (app->window && app->state_save_pending)
-      (void)KillTimer(app->window, Lectern0StateSaveTimerId);
+      (void)KillTimer(app->window, EightvoStateSaveTimerId);
     app->state_save_pending = 1;
     if (app->page_repeat_persistence_deferred_count < UINT32_MAX)
       app->page_repeat_persistence_deferred_count += 1;
     return;
   }
   if (app->window &&
-      SetTimer(app->window, Lectern0StateSaveTimerId,
-               Lectern0StateSaveDelayMs, 0) != 0)
+      SetTimer(app->window, EightvoStateSaveTimerId,
+               EightvoStateSaveDelayMs, 0) != 0)
   {
     app->state_save_pending = 1;
     return;
   }
-  (void)lectern0_save_state(app);
+  (void)eightvo_save_state(app);
 }
 
 FUNCTION B32
-lectern0_image_cache_init(Lectern0ImageCache *cache)
+eightvo_image_cache_init(EightvoImageCache *cache)
 {
   if (!cache) { return 0; }
   MemoryZeroStruct(cache);
   cache->pixel_arena = arena_alloc(0);
   ArenaParams prepared_params = {
-    .reserve_size = Lectern0PreparedImageBudget + KILOBYTES(64),
+    .reserve_size = EightvoPreparedImageBudget + KILOBYTES(64),
     .commit_size = KILOBYTES(64),
   };
   cache->prepared_arena = arena_alloc(&prepared_params);
@@ -1594,7 +1594,7 @@ lectern0_image_cache_init(Lectern0ImageCache *cache)
 }
 
 FUNCTION void
-lectern0_image_cache_release(Lectern0ImageCache *cache)
+eightvo_image_cache_release(EightvoImageCache *cache)
 {
   if (!cache) { return; }
   if (cache->decoder_ready) { os_image_decoder_release(&cache->decoder); }
@@ -1604,7 +1604,7 @@ lectern0_image_cache_release(Lectern0ImageCache *cache)
 }
 
 FUNCTION void
-lectern0_image_cache_reset(Lectern0ImageCache *cache)
+eightvo_image_cache_reset(EightvoImageCache *cache)
 {
   if (!cache || !cache->pixel_arena || !cache->prepared_arena) { return; }
   arena_clear(cache->pixel_arena);
@@ -1627,7 +1627,7 @@ lectern0_image_cache_reset(Lectern0ImageCache *cache)
 }
 
 FUNCTION DrawSpriteSampleKind
-lectern0_image_sample_kind(S32 source_width,
+eightvo_image_sample_kind(S32 source_width,
                            S32 source_height,
                            S32 target_width,
                            S32 target_height)
@@ -1644,7 +1644,7 @@ lectern0_image_sample_kind(S32 source_width,
 }
 
 FUNCTION void
-lectern0_image_cache_begin_prepared(Lectern0ImageCache *cache, U64 key)
+eightvo_image_cache_begin_prepared(EightvoImageCache *cache, U64 key)
 {
   if (!cache || !cache->prepared_arena || key == 0 ||
       cache->prepared_cache_key == key)
@@ -1662,8 +1662,8 @@ lectern0_image_cache_begin_prepared(Lectern0ImageCache *cache, U64 key)
   cache->prepared_cache_key = key;
 }
 
-FUNCTION Lectern0PreparedImage *
-lectern0_image_cache_prepare(Lectern0ImageCache *cache,
+FUNCTION EightvoPreparedImage *
+eightvo_image_cache_prepare(EightvoImageCache *cache,
                              const U32 *source_pixels,
                              S32 source_width,
                              S32 source_height,
@@ -1680,14 +1680,14 @@ lectern0_image_cache_prepare(Lectern0ImageCache *cache,
   }
 
   DrawSpriteSampleKind sample_kind =
-    lectern0_image_sample_kind(source_width,
+    eightvo_image_sample_kind(source_width,
                                source_height,
                                target_width,
                                target_height);
   cache->prepared_lookup_count += 1;
   for (U32 index = 0; index < cache->prepared_image_count; index += 1)
   {
-    Lectern0PreparedImage *candidate = cache->prepared_images + index;
+    EightvoPreparedImage *candidate = cache->prepared_images + index;
     if (candidate->source_pixels == source_pixels &&
         candidate->source_width == source_width &&
         candidate->source_height == source_height &&
@@ -1705,9 +1705,9 @@ lectern0_image_cache_prepare(Lectern0ImageCache *cache,
   U64 pixel_bytes = pixel_count * sizeof(U32);
   if (pixel_count == 0 ||
       pixel_bytes / sizeof(U32) != pixel_count ||
-      pixel_bytes > Lectern0PreparedImageBudget ||
+      pixel_bytes > EightvoPreparedImageBudget ||
       cache->prepared_pixel_bytes >
-        Lectern0PreparedImageBudget - pixel_bytes ||
+        EightvoPreparedImageBudget - pixel_bytes ||
       cache->prepared_image_count >= ARRAY_COUNT(cache->prepared_images))
   {
     cache->prepared_fallback_count += 1;
@@ -1739,9 +1739,9 @@ lectern0_image_cache_prepare(Lectern0ImageCache *cache,
     return 0;
   }
 
-  Lectern0PreparedImage *prepared =
+  EightvoPreparedImage *prepared =
     cache->prepared_images + cache->prepared_image_count;
-  *prepared = (Lectern0PreparedImage){
+  *prepared = (EightvoPreparedImage){
     .source_pixels = source_pixels,
     .pixels = pixels,
     .source_width = source_width,
@@ -1759,20 +1759,20 @@ lectern0_image_cache_prepare(Lectern0ImageCache *cache,
 }
 
 FUNCTION B32
-lectern0_image_media_type_is(const char *media_type, const char *expected)
+eightvo_image_media_type_is(const char *media_type, const char *expected)
 {
   return media_type && expected && _stricmp(media_type, expected) == 0;
 }
 
-FUNCTION Lectern0ImageCacheEntry *
-lectern0_image_cache_find(Lectern0ImageCache *cache,
+FUNCTION EightvoImageCacheEntry *
+eightvo_image_cache_find(EightvoImageCache *cache,
                           DocDocumentId document_id,
                           U32 resource_index)
 {
   if (!cache) { return 0; }
   for (U32 index = 0; index < cache->entry_count; index += 1)
   {
-    Lectern0ImageCacheEntry *entry = cache->entries + index;
+    EightvoImageCacheEntry *entry = cache->entries + index;
     if (entry->document_id == document_id && entry->resource_index == resource_index)
     {
       return entry;
@@ -1782,7 +1782,7 @@ lectern0_image_cache_find(Lectern0ImageCache *cache,
 }
 
 FUNCTION EpubReaderFrameImageStatus
-lectern0_image_status_from_decode(OS_ImageDecodeStatus status)
+eightvo_image_status_from_decode(OS_ImageDecodeStatus status)
 {
   switch (status)
   {
@@ -1796,8 +1796,8 @@ lectern0_image_status_from_decode(OS_ImageDecodeStatus status)
   }
 }
 
-FUNCTION Lectern0ImageCacheEntry *
-lectern0_image_cache_get(Lectern0ImageCache *cache,
+FUNCTION EightvoImageCacheEntry *
+eightvo_image_cache_get(EightvoImageCache *cache,
                          DocEngine *engine,
                          DocDocumentId document_id,
                          U32 resource_index,
@@ -1805,8 +1805,8 @@ lectern0_image_cache_get(Lectern0ImageCache *cache,
 {
   if (!cache) { return 0; }
   cache->lookup_count += 1;
-  Lectern0ImageCacheEntry *entry =
-    lectern0_image_cache_find(cache, document_id, resource_index);
+  EightvoImageCacheEntry *entry =
+    eightvo_image_cache_find(cache, document_id, resource_index);
   if (entry)
   {
     cache->hit_count += 1;
@@ -1824,15 +1824,15 @@ lectern0_image_cache_get(Lectern0ImageCache *cache,
   }
 
   entry = cache->entries + cache->entry_count;
-  *entry = (Lectern0ImageCacheEntry){
+  *entry = (EightvoImageCacheEntry){
     .document_id = document_id,
     .resource_index = resource_index,
     .status = EpubReaderFrameImageStatus_Unavailable,
   };
   cache->entry_count += 1;
 
-  if (lectern0_image_media_type_is(media_type, "image/svg+xml") ||
-      lectern0_image_media_type_is(media_type, "image/webp"))
+  if (eightvo_image_media_type_is(media_type, "image/svg+xml") ||
+      eightvo_image_media_type_is(media_type, "image/webp"))
   {
     entry->status = EpubReaderFrameImageStatus_UnsupportedFormat;
     return entry;
@@ -1861,7 +1861,7 @@ lectern0_image_cache_get(Lectern0ImageCache *cache,
                       encoded_bytes,
                       os_image_decode_limits_default(),
                       &decoded);
-    entry->status = lectern0_image_status_from_decode(decode_status);
+    entry->status = eightvo_image_status_from_decode(decode_status);
     if (decode_status == OS_ImageDecodeStatus_Ok)
     {
       entry->pixels = decoded.pixels;
@@ -1875,7 +1875,7 @@ lectern0_image_cache_get(Lectern0ImageCache *cache,
 }
 
 FUNCTION B32
-lectern0_library_thumbnail_cache_init(Lectern0LibraryThumbnailCache *cache)
+eightvo_library_thumbnail_cache_init(EightvoLibraryThumbnailCache *cache)
 {
   if (!cache) return 0;
   MemoryZeroStruct(cache);
@@ -1888,7 +1888,7 @@ lectern0_library_thumbnail_cache_init(Lectern0LibraryThumbnailCache *cache)
 }
 
 FUNCTION void
-lectern0_library_thumbnail_cache_reset(Lectern0LibraryThumbnailCache *cache)
+eightvo_library_thumbnail_cache_reset(EightvoLibraryThumbnailCache *cache)
 {
   if (!cache || !cache->arena) return;
   arena_clear(cache->arena);
@@ -1898,7 +1898,7 @@ lectern0_library_thumbnail_cache_reset(Lectern0LibraryThumbnailCache *cache)
 }
 
 FUNCTION void
-lectern0_library_thumbnail_cache_release(Lectern0LibraryThumbnailCache *cache)
+eightvo_library_thumbnail_cache_release(EightvoLibraryThumbnailCache *cache)
 {
   if (!cache) return;
   if (cache->arena) arena_release(cache->arena);
@@ -1906,7 +1906,7 @@ lectern0_library_thumbnail_cache_release(Lectern0LibraryThumbnailCache *cache)
 }
 
 FUNCTION B32
-lectern0_library_thumbnail_path(const Lectern0App *app,
+eightvo_library_thumbnail_path(const EightvoApp *app,
                                 U64 entry_id,
                                 char *out_path,
                                 U64 out_path_cap)
@@ -1916,8 +1916,8 @@ lectern0_library_thumbnail_path(const Lectern0App *app,
                 app->app_directory, (unsigned long long)entry_id) > 0;
 }
 
-FUNCTION Lectern0LibraryThumbnail *
-lectern0_library_thumbnail_find(Lectern0LibraryThumbnailCache *cache,
+FUNCTION EightvoLibraryThumbnail *
+eightvo_library_thumbnail_find(EightvoLibraryThumbnailCache *cache,
                                 U64 entry_id,
                                 U64 file_size,
                                 U64 file_modified_time)
@@ -1925,7 +1925,7 @@ lectern0_library_thumbnail_find(Lectern0LibraryThumbnailCache *cache,
   if (!cache) return 0;
   for (U32 index = 0; index < cache->entry_count; index += 1)
   {
-    Lectern0LibraryThumbnail *entry = cache->entries + index;
+    EightvoLibraryThumbnail *entry = cache->entries + index;
     if (entry->entry_id == entry_id && entry->file_size == file_size &&
         entry->file_modified_time == file_modified_time)
       return entry;
@@ -1933,31 +1933,31 @@ lectern0_library_thumbnail_find(Lectern0LibraryThumbnailCache *cache,
   return 0;
 }
 
-FUNCTION Lectern0LibraryThumbnail *
-lectern0_library_thumbnail_load(Lectern0App *app,
-                                const Lectern0LibraryEntry *book)
+FUNCTION EightvoLibraryThumbnail *
+eightvo_library_thumbnail_load(EightvoApp *app,
+                                const EightvoLibraryEntry *book)
 {
   if (!app || !book ||
-      !(book->metadata_flags & Lectern0LibraryMetadata_Cover))
+      !(book->metadata_flags & EightvoLibraryMetadata_Cover))
     return 0;
-  Lectern0LibraryThumbnail *cached = lectern0_library_thumbnail_find(
+  EightvoLibraryThumbnail *cached = eightvo_library_thumbnail_find(
     &app->library_thumbnail_cache, book->entry_id, book->file_size,
     book->file_modified_time);
   if (cached) return cached;
-  Lectern0LibraryThumbnailCache *cache = &app->library_thumbnail_cache;
+  EightvoLibraryThumbnailCache *cache = &app->library_thumbnail_cache;
   if (!cache->arena || cache->entry_count >= ARRAY_COUNT(cache->entries))
     return 0;
 
-  char path[Lectern0PathCap] = {0};
-  if (!lectern0_library_thumbnail_path(app, book->entry_id,
+  char path[EightvoPathCap] = {0};
+  if (!eightvo_library_thumbnail_path(app, book->entry_id,
                                        path, ARRAY_COUNT(path)))
     return 0;
   OS_FileProperties properties = os_file_properties(path);
   if (!properties.exists || properties.is_directory ||
-      properties.size < sizeof(Lectern0LibraryThumbnailFile) ||
-      properties.size > sizeof(Lectern0LibraryThumbnailFile) +
-        (U64)Lectern0LibraryThumbnailWidth *
-        (U64)Lectern0LibraryThumbnailHeight * sizeof(U32))
+      properties.size < sizeof(EightvoLibraryThumbnailFile) ||
+      properties.size > sizeof(EightvoLibraryThumbnailFile) +
+        (U64)EightvoLibraryThumbnailWidth *
+        (U64)EightvoLibraryThumbnailHeight * sizeof(U32))
     return 0;
   Arena *temp = arena_alloc(0);
   U8 *file_data = temp ? PUSH_ARRAY(temp, U8, properties.size) : 0;
@@ -1969,16 +1969,16 @@ lectern0_library_thumbnail_load(Lectern0App *app,
     if (temp) arena_release(temp);
     return 0;
   }
-  Lectern0LibraryThumbnailFile *header =
-    (Lectern0LibraryThumbnailFile *)file_data;
-  if (header->magic != LECTERN0_LIBRARY_THUMBNAIL_MAGIC ||
-      header->version != Lectern0LibraryThumbnailVersion ||
+  EightvoLibraryThumbnailFile *header =
+    (EightvoLibraryThumbnailFile *)file_data;
+  if (header->magic != EIGHTVO_LIBRARY_THUMBNAIL_MAGIC ||
+      header->version != EightvoLibraryThumbnailVersion ||
       header->entry_id != book->entry_id ||
       header->file_size != book->file_size ||
       header->file_modified_time != book->file_modified_time ||
       header->width == 0 || header->height == 0 ||
-      header->width > Lectern0LibraryThumbnailWidth ||
-      header->height > Lectern0LibraryThumbnailHeight)
+      header->width > EightvoLibraryThumbnailWidth ||
+      header->height > EightvoLibraryThumbnailHeight)
   {
     arena_release(temp);
     return 0;
@@ -1986,7 +1986,7 @@ lectern0_library_thumbnail_load(Lectern0App *app,
   U64 pixel_count = (U64)header->width * (U64)header->height;
   U64 pixel_bytes = pixel_count * sizeof(U32);
   if (sizeof(*header) + pixel_bytes != size ||
-      cache->pixel_bytes + pixel_bytes > Lectern0LibraryThumbnailBudget)
+      cache->pixel_bytes + pixel_bytes > EightvoLibraryThumbnailBudget)
   {
     arena_release(temp);
     return 0;
@@ -1998,8 +1998,8 @@ lectern0_library_thumbnail_load(Lectern0App *app,
     return 0;
   }
   MemoryCopy(pixels, header + 1, pixel_bytes);
-  Lectern0LibraryThumbnail *result = cache->entries + cache->entry_count;
-  *result = (Lectern0LibraryThumbnail){
+  EightvoLibraryThumbnail *result = cache->entries + cache->entry_count;
+  *result = (EightvoLibraryThumbnail){
     .entry_id = book->entry_id,
     .file_size = book->file_size,
     .file_modified_time = book->file_modified_time,
@@ -2015,27 +2015,27 @@ lectern0_library_thumbnail_load(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_library_thumbnail_write(Lectern0App *app,
-                                 const Lectern0LibraryEntry *book,
-                                 const Lectern0ImageCacheEntry *source)
+eightvo_library_thumbnail_write(EightvoApp *app,
+                                 const EightvoLibraryEntry *book,
+                                 const EightvoImageCacheEntry *source)
 {
   if (!app || !book || !source || !source->pixels || source->width <= 0 ||
       source->height <= 0 || source->stride_pixels < source->width)
     return 0;
   S32 width = source->width;
   S32 height = source->height;
-  if (width > Lectern0LibraryThumbnailWidth)
+  if (width > EightvoLibraryThumbnailWidth)
   {
-    height = MAX(1, (S32)(((S64)height * Lectern0LibraryThumbnailWidth) / width));
-    width = Lectern0LibraryThumbnailWidth;
+    height = MAX(1, (S32)(((S64)height * EightvoLibraryThumbnailWidth) / width));
+    width = EightvoLibraryThumbnailWidth;
   }
-  if (height > Lectern0LibraryThumbnailHeight)
+  if (height > EightvoLibraryThumbnailHeight)
   {
-    width = MAX(1, (S32)(((S64)width * Lectern0LibraryThumbnailHeight) / height));
-    height = Lectern0LibraryThumbnailHeight;
+    width = MAX(1, (S32)(((S64)width * EightvoLibraryThumbnailHeight) / height));
+    height = EightvoLibraryThumbnailHeight;
   }
   U64 pixel_count = (U64)width * (U64)height;
-  U64 size = sizeof(Lectern0LibraryThumbnailFile) + pixel_count * sizeof(U32);
+  U64 size = sizeof(EightvoLibraryThumbnailFile) + pixel_count * sizeof(U32);
   Arena *arena = arena_alloc(0);
   U8 *data = arena ? PUSH_ARRAY(arena, U8, size) : 0;
   if (!data)
@@ -2043,10 +2043,10 @@ lectern0_library_thumbnail_write(Lectern0App *app,
     if (arena) arena_release(arena);
     return 0;
   }
-  Lectern0LibraryThumbnailFile *file = (Lectern0LibraryThumbnailFile *)data;
-  *file = (Lectern0LibraryThumbnailFile){
-    .magic = LECTERN0_LIBRARY_THUMBNAIL_MAGIC,
-    .version = Lectern0LibraryThumbnailVersion,
+  EightvoLibraryThumbnailFile *file = (EightvoLibraryThumbnailFile *)data;
+  *file = (EightvoLibraryThumbnailFile){
+    .magic = EIGHTVO_LIBRARY_THUMBNAIL_MAGIC,
+    .version = EightvoLibraryThumbnailVersion,
     .width = (U32)width,
     .height = (U32)height,
     .entry_id = book->entry_id,
@@ -2062,7 +2062,7 @@ lectern0_library_thumbnail_write(Lectern0App *app,
         source->width,
         source->height,
         source->stride_pixels,
-        lectern0_image_sample_kind(source->width,
+        eightvo_image_sample_kind(source->width,
                                    source->height,
                                    width,
                                    height)))
@@ -2070,17 +2070,17 @@ lectern0_library_thumbnail_write(Lectern0App *app,
     arena_release(arena);
     return 0;
   }
-  char path[Lectern0PathCap] = {0};
-  B32 result = lectern0_library_thumbnail_path(app, book->entry_id,
+  char path[EightvoPathCap] = {0};
+  B32 result = eightvo_library_thumbnail_path(app, book->entry_id,
                                                path, ARRAY_COUNT(path)) &&
     os_write_entire_file_atomic(path, data, size);
   arena_release(arena);
-  if (result) lectern0_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
+  if (result) eightvo_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
   return result;
 }
 
 FUNCTION void
-lectern0_library_copy_string8(char *dst, U64 cap, String8 source)
+eightvo_library_copy_string8(char *dst, U64 cap, String8 source)
 {
   if (!dst || cap == 0) return;
   U64 size = MIN(source.size, cap - 1);
@@ -2089,12 +2089,12 @@ lectern0_library_copy_string8(char *dst, U64 cap, String8 source)
 }
 
 FUNCTION void
-lectern0_library_update_progress(Lectern0App *app)
+eightvo_library_update_progress(EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader) || !app->current_path[0])
     return;
-  Lectern0LibraryEntry *entry =
-    lectern0_library_catalog_find_path(&app->library, app->current_path);
+  EightvoLibraryEntry *entry =
+    eightvo_library_catalog_find_path(&app->library, app->current_path);
   if (!entry) return;
   entry->progress_spine_index = app->reader.active_spine_index;
   entry->progress_byte_offset = app->reader.view_byte_offset;
@@ -2104,7 +2104,7 @@ lectern0_library_update_progress(Lectern0App *app)
                                 epub_reader_document_id(&app->reader),
                                 entry->progress_spine_index,
                                 &href) == DocError_Ok)
-    lectern0_library_copy_string8(entry->progress_spine_href,
+    eightvo_library_copy_string8(entry->progress_spine_href,
                                   ARRAY_COUNT(entry->progress_spine_href), href);
   EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
   entry->progress_percent = location.available ? (U32)MIN(location.percent, 100ull) : 0;
@@ -2112,8 +2112,8 @@ lectern0_library_update_progress(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_library_refresh_open_document_metadata(Lectern0App *app,
-                                                 Lectern0LibraryEntry *entry)
+eightvo_library_refresh_open_document_metadata(EightvoApp *app,
+                                                 EightvoLibraryEntry *entry)
 {
   if (!app || !entry || !entry->source_path[0] ||
       !epub_reader_is_open(&app->reader)) return 0;
@@ -2122,17 +2122,17 @@ lectern0_library_refresh_open_document_metadata(Lectern0App *app,
 
   String8 title = {0};
   String8 author = {0};
-  entry->metadata_flags = Lectern0LibraryMetadata_Inspected;
+  entry->metadata_flags = EightvoLibraryMetadata_Inspected;
   if (doc_engine_get_title(epub_reader_engine(&app->reader),
                            epub_reader_document_id(&app->reader),
                            &title) == DocError_Ok && title.size > 0)
   {
-    lectern0_library_copy_string8(entry->title, ARRAY_COUNT(entry->title), title);
-    entry->metadata_flags |= Lectern0LibraryMetadata_Title;
+    eightvo_library_copy_string8(entry->title, ARRAY_COUNT(entry->title), title);
+    entry->metadata_flags |= EightvoLibraryMetadata_Title;
   }
   else
   {
-    lectern0_library_fallback_title(entry->source_path,
+    eightvo_library_fallback_title(entry->source_path,
                                     entry->title,
                                     ARRAY_COUNT(entry->title));
   }
@@ -2140,8 +2140,8 @@ lectern0_library_refresh_open_document_metadata(Lectern0App *app,
                             epub_reader_document_id(&app->reader),
                             &author) == DocError_Ok && author.size > 0)
   {
-    lectern0_library_copy_string8(entry->author, ARRAY_COUNT(entry->author), author);
-    entry->metadata_flags |= Lectern0LibraryMetadata_Author;
+    eightvo_library_copy_string8(entry->author, ARRAY_COUNT(entry->author), author);
+    entry->metadata_flags |= EightvoLibraryMetadata_Author;
   }
   else
   {
@@ -2163,25 +2163,25 @@ lectern0_library_refresh_open_document_metadata(Lectern0App *app,
           (resource.flags & DocResourceFlag_Cover))
       {
         char media_type[64] = {0};
-        lectern0_library_copy_string8(media_type, ARRAY_COUNT(media_type),
+        eightvo_library_copy_string8(media_type, ARRAY_COUNT(media_type),
                                       resource.media_type);
-        Lectern0ImageCacheEntry *decoded = lectern0_image_cache_get(
+        EightvoImageCacheEntry *decoded = eightvo_image_cache_get(
           &app->image_cache, engine, document_id, resource.resource_index,
           media_type);
         if (decoded && decoded->status == EpubReaderFrameImageStatus_Loaded &&
-            lectern0_library_thumbnail_write(app, entry, decoded))
+            eightvo_library_thumbnail_write(app, entry, decoded))
         {
           entry->cover_resource_index = resource.resource_index;
-          entry->metadata_flags |= Lectern0LibraryMetadata_Cover;
+          entry->metadata_flags |= EightvoLibraryMetadata_Cover;
         }
         break;
       }
     }
   }
-  if (!(entry->metadata_flags & Lectern0LibraryMetadata_Cover))
+  if (!(entry->metadata_flags & EightvoLibraryMetadata_Cover))
   {
-    char thumbnail_path[Lectern0PathCap] = {0};
-    if (lectern0_library_thumbnail_path(app, entry->entry_id, thumbnail_path,
+    char thumbnail_path[EightvoPathCap] = {0};
+    if (eightvo_library_thumbnail_path(app, entry->entry_id, thumbnail_path,
                                         ARRAY_COUNT(thumbnail_path)))
       (void)os_file_delete(thumbnail_path);
   }
@@ -2189,54 +2189,54 @@ lectern0_library_refresh_open_document_metadata(Lectern0App *app,
   return 1;
 }
 
-FUNCTION Lectern0LibraryEntry *
-lectern0_library_record_open_document(Lectern0App *app,
+FUNCTION EightvoLibraryEntry *
+eightvo_library_record_open_document(EightvoApp *app,
                                       const char *normalized_path)
 {
   if (!app || !normalized_path || !normalized_path[0] ||
       !epub_reader_is_open(&app->reader))
     return 0;
   OS_FileProperties properties = os_file_properties(normalized_path);
-  Lectern0LibraryEntry *existing = app->library_locate_entry_id ?
-    lectern0_library_catalog_find_id(&app->library,
+  EightvoLibraryEntry *existing = app->library_locate_entry_id ?
+    eightvo_library_catalog_find_id(&app->library,
                                      app->library_locate_entry_id) :
-    lectern0_library_catalog_find_path(&app->library, normalized_path);
+    eightvo_library_catalog_find_path(&app->library, normalized_path);
   B32 source_changed = existing &&
     (existing->file_size != properties.size ||
      existing->file_modified_time != properties.modified_time);
   B32 created = 0;
-  Lectern0LibraryEntry *entry = lectern0_library_catalog_upsert(
-    &app->library, normalized_path, properties, lectern0_library_now(),
+  EightvoLibraryEntry *entry = eightvo_library_catalog_upsert(
+    &app->library, normalized_path, properties, eightvo_library_now(),
     app->library_locate_entry_id, &created);
   app->library_locate_entry_id = 0;
   if (!entry) return 0;
   B32 metadata_current =
-    (entry->metadata_flags & Lectern0LibraryMetadata_Inspected) != 0;
+    (entry->metadata_flags & EightvoLibraryMetadata_Inspected) != 0;
   B32 thumbnail_current =
-    !(entry->metadata_flags & Lectern0LibraryMetadata_Cover) ||
-    lectern0_library_thumbnail_load(app, entry) != 0;
+    !(entry->metadata_flags & EightvoLibraryMetadata_Cover) ||
+    eightvo_library_thumbnail_load(app, entry) != 0;
   if (created || source_changed || !metadata_current || !thumbnail_current)
-    (void)lectern0_library_refresh_open_document_metadata(app, entry);
+    (void)eightvo_library_refresh_open_document_metadata(app, entry);
   app->library_selected_entry_id = entry->entry_id;
-  lectern0_library_catalog_sort(&app->library);
-  return lectern0_library_catalog_find_id(&app->library,
+  eightvo_library_catalog_sort(&app->library);
+  return eightvo_library_catalog_find_id(&app->library,
                                           app->library_selected_entry_id);
 }
 
 FUNCTION void
-lectern0_library_hydrate_startup_entry(Lectern0App *app)
+eightvo_library_hydrate_startup_entry(EightvoApp *app)
 {
   if (!app || !app->persistence_enabled || app->library.entry_count == 0)
     return;
-  Lectern0LibraryEntry *entry = lectern0_library_catalog_find_id(
+  EightvoLibraryEntry *entry = eightvo_library_catalog_find_id(
     &app->library, app->library_selected_entry_id);
   if (!entry || entry->runtime_missing)
     return;
   B32 metadata_inspected =
-    (entry->metadata_flags & Lectern0LibraryMetadata_Inspected) != 0;
+    (entry->metadata_flags & EightvoLibraryMetadata_Inspected) != 0;
   B32 thumbnail_current =
-    !(entry->metadata_flags & Lectern0LibraryMetadata_Cover) ||
-    lectern0_library_thumbnail_load(app, entry) != 0;
+    !(entry->metadata_flags & EightvoLibraryMetadata_Cover) ||
+    eightvo_library_thumbnail_load(app, entry) != 0;
   if (metadata_inspected && thumbnail_current) return;
 
   EpubReaderOpenTransition transition = {0};
@@ -2245,17 +2245,17 @@ lectern0_library_hydrate_startup_entry(Lectern0App *app)
     &transition);
   if (open_result == EpubReaderResult_Ok)
   {
-    (void)lectern0_library_refresh_open_document_metadata(app, entry);
+    (void)eightvo_library_refresh_open_document_metadata(app, entry);
     B32 changed = 0;
     (void)epub_reader_close(&app->reader, &changed);
-    lectern0_image_cache_reset(&app->image_cache);
-    (void)lectern0_save_library(app);
+    eightvo_image_cache_reset(&app->image_cache);
+    (void)eightvo_save_library(app);
   }
   (void)transition;
 }
 
 FUNCTION void
-lectern0_attach_frame_images(Lectern0App *app)
+eightvo_attach_frame_images(EightvoApp *app)
 {
   if (!app || !app->frame.ready || !app->frame.document_open) { return; }
   DocEngine *engine = epub_reader_engine(&app->reader);
@@ -2268,15 +2268,15 @@ lectern0_attach_frame_images(Lectern0App *app)
       EpubReaderFrameImageStatus_MissingResource;
     if (!image->has_resource) { continue; }
 
-    Lectern0ImageCacheEntry *entry =
-      lectern0_image_cache_get(&app->image_cache,
+    EightvoImageCacheEntry *entry =
+      eightvo_image_cache_get(&app->image_cache,
                                engine,
                                document_id,
                                image->resource_index,
                                image->media_type);
     if (!entry)
     {
-      image->status = app->image_cache.entry_count >= Lectern0ImageCacheCap ?
+      image->status = app->image_cache.entry_count >= EightvoImageCacheCap ?
         EpubReaderFrameImageStatus_CacheFull :
         EpubReaderFrameImageStatus_Unavailable;
       continue;
@@ -2293,7 +2293,7 @@ lectern0_attach_frame_images(Lectern0App *app)
 }
 
 FUNCTION U32
-lectern0_reader_margin_unit_permille(S32 line_height,
+eightvo_reader_margin_unit_permille(S32 line_height,
                                      S32 margin_line_height)
 {
   if (line_height <= 0) { return 1000; }
@@ -2304,7 +2304,7 @@ lectern0_reader_margin_unit_permille(S32 line_height,
 }
 
 FUNCTION B32
-lectern0_update_layout_inputs(Lectern0App *app)
+eightvo_update_layout_inputs(EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) { return 0; }
   U32 spine_count = 0;
@@ -2328,7 +2328,7 @@ lectern0_update_layout_inputs(Lectern0App *app)
       .bounds = ui0_rect(0, 0, app->width, app->height),
       .features = ReaderViewFeature_Paging | ReaderViewFeature_Progress,
       .document_flags = ReaderViewDocument_Open,
-      .host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth,
+      .host_toolbar_trailing_width = EightvoHostToolbarTrailingWidth,
     };
     if (!reader_view_resolve_layout(&app->reader_view_state,
                                     &initial_layout_input,
@@ -2378,7 +2378,7 @@ lectern0_update_layout_inputs(Lectern0App *app)
   }
   S32 line_height = base_line_height + line_spacing_extra[spacing_index];
   U32 margin_unit_permille =
-    lectern0_reader_margin_unit_permille(line_height, base_line_height);
+    eightvo_reader_margin_unit_permille(line_height, base_line_height);
   app->reader_margin_line_height = base_line_height;
 
   app->layout_key = (EpubReaderLayoutKey){
@@ -2419,7 +2419,7 @@ lectern0_update_layout_inputs(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_capture_frame(Lectern0App *app)
+eightvo_capture_frame(EightvoApp *app)
 {
   if (!app) return 0;
   if (app->capture_frame_fail_count > 0)
@@ -2435,7 +2435,7 @@ lectern0_capture_frame(Lectern0App *app)
     app->capture_frame_failed_since_mutation = 1;
     return 0;
   }
-  lectern0_attach_frame_images(app);
+  eightvo_attach_frame_images(app);
   app->frame_capture_generation += 1;
   if (app->frame_capture_generation == 0)
     app->frame_capture_generation = 1;
@@ -2444,7 +2444,7 @@ lectern0_capture_frame(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_frame_text_rows_are_complete(const EpubReaderFrame *frame,
+eightvo_frame_text_rows_are_complete(const EpubReaderFrame *frame,
                                       U32 *out_gap_start,
                                       U32 *out_gap_end)
 {
@@ -2491,12 +2491,12 @@ lectern0_frame_text_rows_are_complete(const EpubReaderFrame *frame,
 }
 
 FUNCTION B32
-lectern0_repaginate(Lectern0App *app)
+eightvo_repaginate(EightvoApp *app)
 {
-  if (!lectern0_begin_document_mutation(app)) return 0;
-  if (!lectern0_update_layout_inputs(app)) { return 0; }
-  lectern0_cancel_adjacent_warm(app);
-  lectern0_invalidate_adjacent_page(app);
+  if (!eightvo_begin_document_mutation(app)) return 0;
+  if (!eightvo_update_layout_inputs(app)) { return 0; }
+  eightvo_cancel_adjacent_warm(app);
+  eightvo_invalidate_adjacent_page(app);
   B32 reused = 0;
   if (!epub_reader_rebuild_pagination(&app->reader,
                                       app->layout_key,
@@ -2506,24 +2506,24 @@ lectern0_repaginate(Lectern0App *app)
     return 0;
   }
   (void)reused;
-  B32 frame_captured = lectern0_capture_frame(app);
-  lectern0_complete_document_mutation(app, 1);
+  B32 frame_captured = eightvo_capture_frame(app);
+  eightvo_complete_document_mutation(app, 1);
   if (!frame_captured) { return 0; }
-  lectern0_set_statusf(app,
+  eightvo_set_statusf(app,
                        "Page %llu/%llu | section %u/%u",
                        (unsigned long long)app->frame.page_index,
                        (unsigned long long)app->frame.page_count,
                        (unsigned)(app->frame.spine_index + 1),
                        (unsigned)app->frame.section_count);
-  lectern0_schedule_adjacent_warm(app);
+  eightvo_schedule_adjacent_warm(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_recover_failed_open_to_library(Lectern0App *app)
+eightvo_recover_failed_open_to_library(EightvoApp *app)
 {
   if (!app) return 0;
-  lectern0_cancel_location_warm(app);
+  eightvo_cancel_location_warm(app);
   B32 changed = 0;
   if (epub_reader_is_open(&app->reader))
     (void)epub_reader_close(&app->reader, &changed);
@@ -2538,47 +2538,47 @@ lectern0_recover_failed_open_to_library(Lectern0App *app)
   app->first_reader_present_pending = 0;
   app->selection_dragging = 0;
   app->selected_text[0] = 0;
-  lectern0_image_cache_reset(&app->image_cache);
+  eightvo_image_cache_reset(&app->image_cache);
   reader_view_state_init(&app->reader_view_state);
   app->reader_view_ready = 0;
   app->host_focus_control = app->library.entry_count > 0 ?
-    (Lectern0HostControlIdentity)Lectern0HostControl_LibraryBookBase :
-    Lectern0HostControl_LibraryAdd;
+    (EightvoHostControlIdentity)EightvoHostControl_LibraryBookBase :
+    EightvoHostControl_LibraryAdd;
   app->host_focus_visible = 1;
-  lectern0_complete_document_mutation(app, 1);
+  eightvo_complete_document_mutation(app, 1);
   return !epub_reader_is_open(&app->reader);
 }
 
 FUNCTION B32
-lectern0_open_path(Lectern0App *app, const char *path)
+eightvo_open_path(EightvoApp *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
-  if (!lectern0_begin_document_mutation(app)) return 0;
-  lectern0_cancel_location_warm(app);
-  lectern0_cancel_adjacent_warm(app);
-  lectern0_invalidate_adjacent_page(app);
-  char normalized_path[Lectern0LibraryPathCap] = {0};
-  if (!lectern0_library_normalize_path(path,
+  if (!eightvo_begin_document_mutation(app)) return 0;
+  eightvo_cancel_location_warm(app);
+  eightvo_cancel_adjacent_warm(app);
+  eightvo_invalidate_adjacent_page(app);
+  char normalized_path[EightvoLibraryPathCap] = {0};
+  if (!eightvo_library_normalize_path(path,
                                        normalized_path,
                                        ARRAY_COUNT(normalized_path)))
   {
-    lectern0_set_statusf(app, "Open failed: path encoding");
+    eightvo_set_statusf(app, "Open failed: path encoding");
     app->library_locate_entry_id = 0;
     return 0;
   }
-  Lectern0LibraryEntry *restore_entry = app->library_locate_entry_id ?
-    lectern0_library_catalog_find_id(&app->library,
+  EightvoLibraryEntry *restore_entry = app->library_locate_entry_id ?
+    eightvo_library_catalog_find_id(&app->library,
                                      app->library_locate_entry_id) :
-    lectern0_library_catalog_find_path(&app->library, normalized_path);
+    eightvo_library_catalog_find_path(&app->library, normalized_path);
   U32 restore_spine = restore_entry ? restore_entry->progress_spine_index : 0;
   U64 restore_byte = restore_entry ? restore_entry->progress_byte_offset : 0;
   B32 has_catalog_position = restore_entry != 0;
   app->document_state = ReaderViewLoad_Loading;
-  lectern0_set_statusf(app, "Opening EPUB...");
+  eightvo_set_statusf(app, "Opening EPUB...");
   if (app->current_path[0])
   {
-    (void)lectern0_save_state(app);
-    (void)lectern0_save_annotations(app);
+    (void)eightvo_save_state(app);
+    (void)eightvo_save_annotations(app);
   }
   B32 reader_was_open = epub_reader_is_open(&app->reader);
   DocDocumentId previous_document_id = epub_reader_document_id(&app->reader);
@@ -2591,12 +2591,12 @@ lectern0_open_path(Lectern0App *app, const char *path)
                      &transition);
   if (open_result != EpubReaderResult_Ok)
   {
-    lectern0_set_statusf(app, "Open failed: %s", epub_reader_result_code(open_result));
+    eightvo_set_statusf(app, "Open failed: %s", epub_reader_result_code(open_result));
     B32 reader_changed = reader_was_open != epub_reader_is_open(&app->reader) ||
       previous_document_id != epub_reader_document_id(&app->reader) ||
       previous_document_generation != app->reader.document_generation;
     if (reader_changed)
-      (void)lectern0_recover_failed_open_to_library(app);
+      (void)eightvo_recover_failed_open_to_library(app);
     else
       app->document_state = reader_was_open ?
         ReaderViewLoad_Ready : ReaderViewLoad_Error;
@@ -2604,20 +2604,20 @@ lectern0_open_path(Lectern0App *app, const char *path)
     return 0;
   }
   if (!epub_reader_refresh_active_spine(&app->reader) ||
-      !lectern0_update_layout_inputs(app))
+      !eightvo_update_layout_inputs(app))
   {
-    (void)lectern0_recover_failed_open_to_library(app);
-    lectern0_set_statusf(app, "Open failed: layout");
+    (void)eightvo_recover_failed_open_to_library(app);
+    eightvo_set_statusf(app, "Open failed: layout");
     app->library_locate_entry_id = 0;
     return 0;
   }
 
-  lectern0_image_cache_reset(&app->image_cache);
-  lectern0_copy_cstr(app->current_path,
+  eightvo_image_cache_reset(&app->image_cache);
+  eightvo_copy_cstr(app->current_path,
                      ARRAY_COUNT(app->current_path),
                      normalized_path);
-  lectern0_set_annotations_path(app, normalized_path);
-  lectern0_load_annotations(app);
+  eightvo_set_annotations_path(app, normalized_path);
+  eightvo_load_annotations(app);
   reader_view_state_reset_document(&app->reader_view_state,
                                    (UI0U64)epub_reader_document_id(&app->reader));
   B32 restored = 0;
@@ -2647,20 +2647,20 @@ lectern0_open_path(Lectern0App *app, const char *path)
                                         app->layout_config,
                                         &reused))
     {
-      (void)lectern0_recover_failed_open_to_library(app);
-      lectern0_set_statusf(app, "Open failed: pagination");
+      (void)eightvo_recover_failed_open_to_library(app);
+      eightvo_set_statusf(app, "Open failed: pagination");
       app->library_locate_entry_id = 0;
       return 0;
     }
   }
   app->document_state = ReaderViewLoad_Ready;
-  B32 frame_captured = lectern0_capture_frame(app);
-  lectern0_complete_document_mutation(app, 1);
-  Lectern0LibraryEntry *catalog_entry =
-    lectern0_library_record_open_document(app, normalized_path);
+  B32 frame_captured = eightvo_capture_frame(app);
+  eightvo_complete_document_mutation(app, 1);
+  EightvoLibraryEntry *catalog_entry =
+    eightvo_library_record_open_document(app, normalized_path);
   if (frame_captured)
   {
-    lectern0_set_statusf(app,
+    eightvo_set_statusf(app,
                          "%s | page %llu/%llu | section %u/%u",
                          restored ? "Restored" : "Opened",
                          (unsigned long long)app->frame.page_index,
@@ -2670,39 +2670,39 @@ lectern0_open_path(Lectern0App *app, const char *path)
   }
   else
   {
-    lectern0_set_statusf(app, "Opened; frame recovery pending");
+    eightvo_set_statusf(app, "Opened; frame recovery pending");
   }
   (void)transition;
-  app->host_focus_control = Lectern0HostControl_None;
+  app->host_focus_control = EightvoHostControl_None;
   app->host_focus_visible = 0;
-  app->host_pointer_armed = Lectern0HostControl_None;
+  app->host_pointer_armed = EightvoHostControl_None;
   app->host_exit_pointer_armed = 0;
   if (!catalog_entry)
-    lectern0_set_statusf(app, "Opened, but the library is full");
-  lectern0_schedule_state_save(app);
+    eightvo_set_statusf(app, "Opened, but the library is full");
+  eightvo_schedule_state_save(app);
   app->first_reader_present_pending = app->window != 0;
-  if (frame_captured) lectern0_schedule_adjacent_warm(app);
+  if (frame_captured) eightvo_schedule_adjacent_warm(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_close_book(Lectern0App *app)
+eightvo_close_book(EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return 0;
-  if (!lectern0_begin_document_mutation(app)) return 0;
-  lectern0_stop_page_repeat(app);
-  lectern0_cancel_location_warm(app);
-  lectern0_cancel_adjacent_warm(app);
-  lectern0_invalidate_adjacent_page(app);
-  (void)lectern0_save_state(app);
-  (void)lectern0_save_annotations(app);
+  if (!eightvo_begin_document_mutation(app)) return 0;
+  eightvo_stop_page_repeat(app);
+  eightvo_cancel_location_warm(app);
+  eightvo_cancel_adjacent_warm(app);
+  eightvo_invalidate_adjacent_page(app);
+  (void)eightvo_save_state(app);
+  (void)eightvo_save_annotations(app);
   B32 changed = 0;
   if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok || !changed)
     return 0;
   app->current_path[0] = 0;
   app->annotations_path[0] = 0;
   app->document_state = ReaderViewLoad_Empty;
-  lectern0_library_catalog_refresh_missing(&app->library);
+  eightvo_library_catalog_refresh_missing(&app->library);
   MemoryZeroStruct(&app->frame);
   MemoryZeroStruct(&app->presentation_frame);
   app->presentation_hash = 0;
@@ -2711,34 +2711,34 @@ lectern0_close_book(Lectern0App *app)
   app->first_reader_present_pending = 0;
   app->selection_dragging = 0;
   app->selected_text[0] = 0;
-  lectern0_image_cache_reset(&app->image_cache);
-  lectern0_clear_annotations(app);
+  eightvo_image_cache_reset(&app->image_cache);
+  eightvo_clear_annotations(app);
   reader_view_state_init(&app->reader_view_state);
   app->reader_view_ready = 0;
   app->host_focus_control = app->library.entry_count > 0 ?
-    (Lectern0HostControlIdentity)Lectern0HostControl_LibraryBookBase :
-    Lectern0HostControl_LibraryAdd;
+    (EightvoHostControlIdentity)EightvoHostControl_LibraryBookBase :
+    EightvoHostControl_LibraryAdd;
   app->host_focus_visible = 1;
-  app->host_pointer_armed = Lectern0HostControl_None;
-  lectern0_library_set_summary_status(app);
-  (void)lectern0_save_library(app);
-  lectern0_complete_document_mutation(app, 1);
+  app->host_pointer_armed = EightvoHostControl_None;
+  eightvo_library_set_summary_status(app);
+  (void)eightvo_save_library(app);
+  eightvo_complete_document_mutation(app, 1);
   return 1;
 }
 
 FUNCTION EpubReaderResult
-lectern0_move_page(Lectern0App *app, S32 direction)
+eightvo_move_page(EightvoApp *app, S32 direction)
 {
   if (!app || !epub_reader_is_open(&app->reader))
   {
-    if (app) { lectern0_set_statusf(app, "Open an EPUB first"); }
+    if (app) { eightvo_set_statusf(app, "Open a book first"); }
     return EpubReaderResult_NotOpen;
   }
-  if (!lectern0_begin_document_mutation(app))
+  if (!eightvo_begin_document_mutation(app))
     return EpubReaderResult_InvalidInput;
-  if (!lectern0_update_layout_inputs(app))
+  if (!eightvo_update_layout_inputs(app))
   {
-    lectern0_set_statusf(app, "Page move failed: layout");
+    eightvo_set_statusf(app, "Page move failed: layout");
     return EpubReaderResult_DocError;
   }
 
@@ -2751,28 +2751,28 @@ lectern0_move_page(Lectern0App *app, S32 direction)
                                                    &change);
   if (result == EpubReaderResult_Boundary)
   {
-    lectern0_set_statusf(app, direction < 0 ? "Beginning of book" : "End of book");
+    eightvo_set_statusf(app, direction < 0 ? "Beginning of book" : "End of book");
     return result;
   }
   B32 reader_changed = result == EpubReaderResult_Ok && change.changed;
-  if (reader_changed) lectern0_schedule_state_save(app);
+  if (reader_changed) eightvo_schedule_state_save(app);
   B32 frame_captured = result == EpubReaderResult_Ok && change.changed &&
-    lectern0_capture_frame(app);
-  lectern0_complete_document_mutation(app, reader_changed);
+    eightvo_capture_frame(app);
+  eightvo_complete_document_mutation(app, reader_changed);
   B32 canonical_page_valid = frame_captured &&
     app->reader.has_current_page &&
     app->reader.current_page.spine_page_count > 0 &&
     app->frame.ready && app->frame.document_open;
   if (!canonical_page_valid)
   {
-    lectern0_set_statusf(app,
+    eightvo_set_statusf(app,
                          "Page move failed: %s (%d)",
                          epub_reader_result_code(result),
                          (int)change.diagnostic);
     return result == EpubReaderResult_Ok ? EpubReaderResult_DocError : result;
   }
 
-  lectern0_set_statusf(app,
+  eightvo_set_statusf(app,
                        "Page %llu/%llu | section %u/%u",
                        (unsigned long long)(
                          app->reader.current_page.spine_page_index + 1),
@@ -2780,33 +2780,33 @@ lectern0_move_page(Lectern0App *app, S32 direction)
                          app->reader.current_page.spine_page_count,
                        (unsigned)(app->frame.spine_index + 1),
                        (unsigned)app->frame.section_count);
-  lectern0_schedule_adjacent_warm(app);
+  eightvo_schedule_adjacent_warm(app);
   return EpubReaderResult_Ok;
 }
 
 FUNCTION EpubReaderResult
-lectern0_finish_semantic_navigation(Lectern0App *app,
+eightvo_finish_semantic_navigation(EightvoApp *app,
                                     EpubReaderResult result,
                                     const char *operation)
 {
   if (!app || !operation) { return EpubReaderResult_InvalidInput; }
   if (result != EpubReaderResult_Ok)
   {
-    lectern0_set_statusf(app,
+    eightvo_set_statusf(app,
                          "%s failed: %s",
                          operation,
                          epub_reader_result_code(result));
     return result;
   }
-  lectern0_schedule_state_save(app);
-  B32 frame_captured = lectern0_capture_frame(app);
-  lectern0_complete_document_mutation(app, 1);
+  eightvo_schedule_state_save(app);
+  B32 frame_captured = eightvo_capture_frame(app);
+  eightvo_complete_document_mutation(app, 1);
   if (!frame_captured)
   {
-    lectern0_set_statusf(app, "%s failed: frame", operation);
+    eightvo_set_statusf(app, "%s failed: frame", operation);
     return EpubReaderResult_DocError;
   }
-  lectern0_set_statusf(app,
+  eightvo_set_statusf(app,
                        "%s | page %llu/%llu | section %u/%u",
                        operation,
                        (unsigned long long)app->frame.page_index,
@@ -2817,7 +2817,7 @@ lectern0_finish_semantic_navigation(Lectern0App *app,
 }
 
 FUNCTION EpubReaderResult
-lectern0_navigate_to_nav_point(Lectern0App *app,
+eightvo_navigate_to_nav_point(EightvoApp *app,
                                U32 nav_index,
                                EpubReaderNavPointResult *out_navigation)
 {
@@ -2825,14 +2825,14 @@ lectern0_navigate_to_nav_point(Lectern0App *app,
   if (!app || !out_navigation) { return EpubReaderResult_InvalidInput; }
   if (!epub_reader_is_open(&app->reader))
   {
-    lectern0_set_statusf(app, "Open an EPUB first");
+    eightvo_set_statusf(app, "Open a book first");
     return EpubReaderResult_NotOpen;
   }
-  if (!lectern0_begin_document_mutation(app))
+  if (!eightvo_begin_document_mutation(app))
     return EpubReaderResult_InvalidInput;
-  if (!lectern0_update_layout_inputs(app))
+  if (!eightvo_update_layout_inputs(app))
   {
-    lectern0_set_statusf(app, "Contents failed: layout");
+    eightvo_set_statusf(app, "Contents failed: layout");
     return EpubReaderResult_DocError;
   }
   EpubReaderResult result =
@@ -2842,11 +2842,11 @@ lectern0_navigate_to_nav_point(Lectern0App *app,
                                       app->layout_config,
                                       (EpubReaderNavigationOptions){0},
                                       out_navigation);
-  return lectern0_finish_semantic_navigation(app, result, "Contents");
+  return eightvo_finish_semantic_navigation(app, result, "Contents");
 }
 
 FUNCTION EpubReaderResult
-lectern0_navigate_to_search_match(Lectern0App *app,
+eightvo_navigate_to_search_match(EightvoApp *app,
                                   U32 match_index,
                                   EpubReaderSearchNavigationResult *out_navigation)
 {
@@ -2854,14 +2854,14 @@ lectern0_navigate_to_search_match(Lectern0App *app,
   if (!app || !out_navigation) { return EpubReaderResult_InvalidInput; }
   if (!epub_reader_is_open(&app->reader))
   {
-    lectern0_set_statusf(app, "Open an EPUB first");
+    eightvo_set_statusf(app, "Open a book first");
     return EpubReaderResult_NotOpen;
   }
-  if (!lectern0_begin_document_mutation(app))
+  if (!eightvo_begin_document_mutation(app))
     return EpubReaderResult_InvalidInput;
-  if (!lectern0_update_layout_inputs(app))
+  if (!eightvo_update_layout_inputs(app))
   {
-    lectern0_set_statusf(app, "Find failed: layout");
+    eightvo_set_statusf(app, "Find failed: layout");
     return EpubReaderResult_DocError;
   }
   EpubReaderResult result =
@@ -2871,11 +2871,11 @@ lectern0_navigate_to_search_match(Lectern0App *app,
                                          app->layout_config,
                                          (EpubReaderNavigationOptions){0},
                                          out_navigation);
-  return lectern0_finish_semantic_navigation(app, result, "Find");
+  return eightvo_finish_semantic_navigation(app, result, "Find");
 }
 
 FUNCTION ReaderViewText
-lectern0_reader_view_text(const char *text)
+eightvo_reader_view_text(const char *text)
 {
   ReaderViewText result = {0};
   if (text)
@@ -2887,7 +2887,7 @@ lectern0_reader_view_text(const char *text)
 }
 
 FUNCTION ReaderViewText
-lectern0_reader_view_bytes(const char *text, U64 size)
+eightvo_reader_view_bytes(const char *text, U64 size)
 {
   ReaderViewText result = {0};
   if (text && size <= (U64)INT32_MAX)
@@ -2899,7 +2899,7 @@ lectern0_reader_view_bytes(const char *text, U64 size)
 }
 
 FUNCTION void
-lectern0_copy_bytes(char *dst, U64 cap, const U8 *src, U64 size)
+eightvo_copy_bytes(char *dst, U64 cap, const U8 *src, U64 size)
 {
   if (!dst || cap == 0) { return; }
   U64 copy_size = MIN(size, cap - 1);
@@ -2908,7 +2908,7 @@ lectern0_copy_bytes(char *dst, U64 cap, const U8 *src, U64 size)
 }
 
 FUNCTION const char *
-lectern0_current_section_label(const Lectern0App *app)
+eightvo_current_section_label(const EightvoApp *app)
 {
   if (!app) { return ""; }
   for (U32 index = 0; index < app->frame.section_item_count; index += 1)
@@ -2920,7 +2920,7 @@ lectern0_current_section_label(const Lectern0App *app)
 }
 
 FUNCTION S32
-lectern0_bookmark_index(const Lectern0App *app, U64 id)
+eightvo_bookmark_index(const EightvoApp *app, U64 id)
 {
   if (!app || id == 0) { return -1; }
   for (U32 index = 0; index < app->bookmark_count; index += 1)
@@ -2929,12 +2929,12 @@ lectern0_bookmark_index(const Lectern0App *app, U64 id)
 }
 
 FUNCTION S32
-lectern0_current_bookmark_index(const Lectern0App *app)
+eightvo_current_bookmark_index(const EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) { return -1; }
   for (U32 index = 0; index < app->bookmark_count; index += 1)
   {
-    const Lectern0Bookmark *bookmark = app->bookmarks + index;
+    const EightvoBookmark *bookmark = app->bookmarks + index;
     if (bookmark->spine_index == app->reader.active_spine_index &&
         bookmark->byte_offset == app->reader.view_byte_offset)
       return (S32)index;
@@ -2943,7 +2943,7 @@ lectern0_current_bookmark_index(const Lectern0App *app)
 }
 
 FUNCTION S32
-lectern0_highlight_index(const Lectern0App *app, U64 id)
+eightvo_highlight_index(const EightvoApp *app, U64 id)
 {
   if (!app || id == 0) { return -1; }
   for (U32 index = 0; index < app->highlight_count; index += 1)
@@ -2952,7 +2952,7 @@ lectern0_highlight_index(const Lectern0App *app, U64 id)
 }
 
 FUNCTION S32
-lectern0_selection_highlight_index(const Lectern0App *app)
+eightvo_selection_highlight_index(const EightvoApp *app)
 {
   if (!app || !app->reader.has_active_selection) { return -1; }
   DocSelection selection = app->reader.active_selection;
@@ -2960,7 +2960,7 @@ lectern0_selection_highlight_index(const Lectern0App *app)
   U64 best_size = UINT64_MAX;
   for (U32 index = 0; index < app->highlight_count; index += 1)
   {
-    const Lectern0Highlight *highlight = app->highlights + index;
+    const EightvoHighlight *highlight = app->highlights + index;
     if (highlight->spine_index == selection.spine_index &&
         highlight->start_byte <= selection.text_byte_start &&
         highlight->end_byte >= selection.text_byte_end &&
@@ -2978,89 +2978,89 @@ lectern0_selection_highlight_index(const Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_remove_bookmark_at(Lectern0App *app, U32 index)
+eightvo_remove_bookmark_at(EightvoApp *app, U32 index)
 {
   if (!app || index >= app->bookmark_count) return 0;
-  Lectern0Bookmark removed = app->bookmarks[index];
+  EightvoBookmark removed = app->bookmarks[index];
   U64 saved_revision = app->annotation_revision;
   for (U32 at = index + 1; at < app->bookmark_count; at += 1)
     app->bookmarks[at - 1] = app->bookmarks[at];
   app->bookmark_count -= 1;
   MemoryZeroStruct(app->bookmarks + app->bookmark_count);
   app->annotation_revision += 1;
-  if (lectern0_commit_annotations(app)) return 1;
+  if (eightvo_commit_annotations(app)) return 1;
   for (U32 at = app->bookmark_count; at > index; at -= 1)
     app->bookmarks[at] = app->bookmarks[at - 1];
   app->bookmarks[index] = removed;
   app->bookmark_count += 1;
   app->annotation_revision = saved_revision;
-  lectern0_set_statusf(app, "Bookmark remove failed");
+  eightvo_set_statusf(app, "Bookmark remove failed");
   return 0;
 }
 
 FUNCTION B32
-lectern0_remove_highlight_record_at(Lectern0App *app, U32 index)
+eightvo_remove_highlight_record_at(EightvoApp *app, U32 index)
 {
   if (!app || index >= app->highlight_count) return 0;
-  Lectern0Highlight removed = app->highlights[index];
+  EightvoHighlight removed = app->highlights[index];
   U64 saved_revision = app->annotation_revision;
   for (U32 at = index + 1; at < app->highlight_count; at += 1)
     app->highlights[at - 1] = app->highlights[at];
   app->highlight_count -= 1;
   MemoryZeroStruct(app->highlights + app->highlight_count);
   app->annotation_revision += 1;
-  if (lectern0_commit_annotations(app)) return 1;
+  if (eightvo_commit_annotations(app)) return 1;
   for (U32 at = app->highlight_count; at > index; at -= 1)
     app->highlights[at] = app->highlights[at - 1];
   app->highlights[index] = removed;
   app->highlight_count += 1;
   app->annotation_revision = saved_revision;
-  lectern0_set_statusf(app, "Annotation delete failed");
+  eightvo_set_statusf(app, "Annotation delete failed");
   return 0;
 }
 
 FUNCTION B32
-lectern0_remove_highlight_identity_at(Lectern0App *app, U32 index)
+eightvo_remove_highlight_identity_at(EightvoApp *app, U32 index)
 {
   if (!app || index >= app->highlight_count ||
       !app->highlights[index].is_highlight)
     return 0;
   if (app->highlights[index].note[0] == 0)
-    return lectern0_remove_highlight_record_at(app, index);
-  Lectern0Highlight saved = app->highlights[index];
+    return eightvo_remove_highlight_record_at(app, index);
+  EightvoHighlight saved = app->highlights[index];
   U64 saved_revision = app->annotation_revision;
   app->highlights[index].is_highlight = 0;
   app->highlights[index].starred = 0;
   app->annotation_revision += 1;
-  if (lectern0_commit_annotations(app)) return 1;
+  if (eightvo_commit_annotations(app)) return 1;
   app->highlights[index] = saved;
   app->annotation_revision = saved_revision;
-  lectern0_set_statusf(app, "Highlight remove failed");
+  eightvo_set_statusf(app, "Highlight remove failed");
   return 0;
 }
 
 FUNCTION B32
-lectern0_delete_note_at_index(Lectern0App *app, U32 index)
+eightvo_delete_note_at_index(EightvoApp *app, U32 index)
 {
   if (!app || index >= app->highlight_count ||
       app->highlights[index].note[0] == 0)
     return 0;
   if (!app->highlights[index].is_highlight)
-    return lectern0_remove_highlight_record_at(app, index);
-  Lectern0Highlight saved = app->highlights[index];
+    return eightvo_remove_highlight_record_at(app, index);
+  EightvoHighlight saved = app->highlights[index];
   U64 saved_revision = app->annotation_revision;
   app->highlights[index].note[0] = 0;
   app->highlights[index].note_starred = 0;
   app->annotation_revision += 1;
-  if (lectern0_commit_annotations(app)) return 1;
+  if (eightvo_commit_annotations(app)) return 1;
   app->highlights[index] = saved;
   app->annotation_revision = saved_revision;
-  lectern0_set_statusf(app, "Note delete failed");
+  eightvo_set_statusf(app, "Note delete failed");
   return 0;
 }
 
 FUNCTION void
-lectern0_prepare_bookmark_excerpt(const Lectern0App *app,
+eightvo_prepare_bookmark_excerpt(const EightvoApp *app,
                                   char *out_excerpt,
                                   U64 excerpt_cap)
 {
@@ -3068,7 +3068,7 @@ lectern0_prepare_bookmark_excerpt(const Lectern0App *app,
   out_excerpt[0] = 0;
   if (!app || !app->frame.visible_text.str || app->frame.visible_text.size == 0)
   {
-    lectern0_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
+    eightvo_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
     return;
   }
   const U8 *text = app->frame.visible_text.str;
@@ -3092,59 +3092,59 @@ lectern0_prepare_bookmark_excerpt(const Lectern0App *app,
   }
   out_excerpt[out_size] = 0;
   if (out_size == 0)
-    lectern0_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
+    eightvo_copy_cstr(out_excerpt, excerpt_cap, "Bookmark");
 }
 
 FUNCTION B32
-lectern0_toggle_current_bookmark(Lectern0App *app)
+eightvo_toggle_current_bookmark(EightvoApp *app)
 {
   if (!app || !epub_reader_is_open(&app->reader)) { return 0; }
-  S32 existing = lectern0_current_bookmark_index(app);
+  S32 existing = eightvo_current_bookmark_index(app);
   if (existing >= 0)
   {
-    if (!lectern0_remove_bookmark_at(app, (U32)existing)) return 0;
-    lectern0_set_statusf(app, "Bookmark removed");
+    if (!eightvo_remove_bookmark_at(app, (U32)existing)) return 0;
+    eightvo_set_statusf(app, "Bookmark removed");
     return 1;
   }
-  if (app->bookmark_count >= Lectern0BookmarkCap) return 0;
+  if (app->bookmark_count >= EightvoBookmarkCap) return 0;
   U32 saved_count = app->bookmark_count;
   U64 saved_next_record_id = app->next_record_id;
   U64 saved_revision = app->annotation_revision;
-  Lectern0Bookmark *bookmark = app->bookmarks + app->bookmark_count++;
+  EightvoBookmark *bookmark = app->bookmarks + app->bookmark_count++;
   MemoryZeroStruct(bookmark);
   bookmark->id = app->next_record_id++;
   bookmark->spine_index = app->reader.active_spine_index;
   bookmark->byte_offset = app->reader.view_byte_offset;
-  const char *section = lectern0_current_section_label(app);
+  const char *section = eightvo_current_section_label(app);
   if (section && section[0])
-    lectern0_copy_cstr(bookmark->label, ARRAY_COUNT(bookmark->label), section);
+    eightvo_copy_cstr(bookmark->label, ARRAY_COUNT(bookmark->label), section);
   else
     (void)cstr_format(bookmark->label, ARRAY_COUNT(bookmark->label),
                       "Page %llu", (unsigned long long)app->frame.page_index);
-  lectern0_prepare_bookmark_excerpt(app, bookmark->excerpt,
+  eightvo_prepare_bookmark_excerpt(app, bookmark->excerpt,
                                     ARRAY_COUNT(bookmark->excerpt));
   app->annotation_revision += 1;
-  if (!lectern0_commit_annotations(app))
+  if (!eightvo_commit_annotations(app))
   {
     app->bookmark_count = saved_count;
     app->next_record_id = saved_next_record_id;
     app->annotation_revision = saved_revision;
     MemoryZeroStruct(app->bookmarks + saved_count);
-    lectern0_set_statusf(app, "Bookmark add failed");
+    eightvo_set_statusf(app, "Bookmark add failed");
     return 0;
   }
-  lectern0_set_statusf(app, "Bookmark added");
+  eightvo_set_statusf(app, "Bookmark added");
   return 1;
 }
 
 FUNCTION B32
-lectern0_toggle_highlight_star_at(Lectern0App *app, U32 index, B32 note)
+eightvo_toggle_highlight_star_at(EightvoApp *app, U32 index, B32 note)
 {
   if (!app || index >= app->highlight_count ||
       (note && app->highlights[index].note[0] == 0) ||
       (!note && !app->highlights[index].is_highlight))
     return 0;
-  Lectern0Highlight saved = app->highlights[index];
+  EightvoHighlight saved = app->highlights[index];
   U64 saved_revision = app->annotation_revision;
   if (note)
     app->highlights[index].note_starred =
@@ -3152,39 +3152,39 @@ lectern0_toggle_highlight_star_at(Lectern0App *app, U32 index, B32 note)
   else
     app->highlights[index].starred = !app->highlights[index].starred;
   app->annotation_revision += 1;
-  if (lectern0_commit_annotations(app)) return 1;
+  if (eightvo_commit_annotations(app)) return 1;
   app->highlights[index] = saved;
   app->annotation_revision = saved_revision;
-  lectern0_set_statusf(app, note ? "Note star failed" :
+  eightvo_set_statusf(app, note ? "Note star failed" :
                                    "Highlight star failed");
   return 0;
 }
 
 FUNCTION EpubReaderResult
-lectern0_navigate_to_location(Lectern0App *app,
+eightvo_navigate_to_location(EightvoApp *app,
                               U32 spine_index,
                               U64 byte_offset,
                               EpubReaderNavigationReason reason)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
-  if (!lectern0_begin_document_mutation(app))
+  if (!eightvo_begin_document_mutation(app))
     return EpubReaderResult_InvalidInput;
-  if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
+  if (!eightvo_update_layout_inputs(app)) return EpubReaderResult_DocError;
   EpubReaderNavigationResult navigation = {0};
   EpubReaderResult result = epub_reader_navigate_to_location(
     &app->reader, spine_index, byte_offset, reason,
     app->layout_key, app->layout_config,
     (EpubReaderNavigationOptions){0}, &navigation);
-  return lectern0_finish_semantic_navigation(app, result, "Navigate");
+  return eightvo_finish_semantic_navigation(app, result, "Navigate");
 }
 
 FUNCTION EpubReaderResult
-lectern0_move_history(Lectern0App *app, B32 forward)
+eightvo_move_history(EightvoApp *app, B32 forward)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
-  if (!lectern0_begin_document_mutation(app))
+  if (!eightvo_begin_document_mutation(app))
     return EpubReaderResult_InvalidInput;
-  if (!lectern0_update_layout_inputs(app)) return EpubReaderResult_DocError;
+  if (!eightvo_update_layout_inputs(app)) return EpubReaderResult_DocError;
   EpubReaderNavigationEntry current = {0};
   EpubReaderNavigationEntry target = {0};
   if (!epub_reader_history_begin(&app->reader, forward, &current, &target))
@@ -3200,12 +3200,12 @@ lectern0_move_history(Lectern0App *app, B32 forward)
     (EpubReaderNavigationOptions){.suppress_history = 1}, &navigation);
   epub_reader_history_finish(&app->reader, forward, current, target,
                              result == EpubReaderResult_Ok);
-  return lectern0_finish_semantic_navigation(app, result,
+  return eightvo_finish_semantic_navigation(app, result,
                                              forward ? "Forward" : "Back");
 }
 
 FUNCTION EpubReaderResult
-lectern0_seek_location(Lectern0App *app, U64 location_index)
+eightvo_seek_location(EightvoApp *app, U64 location_index)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
   U32 spine_index = 0;
@@ -3216,20 +3216,20 @@ lectern0_seek_location(Lectern0App *app, U64 location_index)
                                    &location_count))
     return EpubReaderResult_Boundary;
   (void)location_count;
-  return lectern0_navigate_to_location(app, spine_index, byte_offset,
+  return eightvo_navigate_to_location(app, spine_index, byte_offset,
                                        EpubReaderNavigationReason_Location);
 }
 
 FUNCTION B32
-lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
+eightvo_set_highlight_color(EightvoApp *app, U32 color_index)
 {
   if (!app || !app->reader.has_active_selection) { return 0; }
-  S32 existing = lectern0_selection_highlight_index(app);
+  S32 existing = eightvo_selection_highlight_index(app);
   U32 saved_count = app->highlight_count;
   U64 saved_next_record_id = app->next_record_id;
   U64 saved_revision = app->annotation_revision;
-  Lectern0Highlight saved = {0};
-  Lectern0Highlight *highlight = 0;
+  EightvoHighlight saved = {0};
+  EightvoHighlight *highlight = 0;
   if (existing >= 0)
   {
     highlight = app->highlights + existing;
@@ -3237,22 +3237,22 @@ lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
   }
   else
   {
-    if (app->highlight_count >= Lectern0HighlightCap) return 0;
+    if (app->highlight_count >= EightvoHighlightCap) return 0;
     highlight = app->highlights + app->highlight_count++;
     MemoryZeroStruct(highlight);
     highlight->id = app->next_record_id++;
     highlight->spine_index = app->reader.active_selection.spine_index;
     highlight->start_byte = app->reader.active_selection.text_byte_start;
     highlight->end_byte = app->reader.active_selection.text_byte_end;
-    lectern0_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
-                       lectern0_current_section_label(app));
-    lectern0_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
+    eightvo_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
+                       eightvo_current_section_label(app));
+    eightvo_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
                        app->selected_text);
   }
   highlight->is_highlight = 1;
   highlight->color_index = color_index % READER_VIEW_HIGHLIGHT_COLOR_CAP;
   app->annotation_revision += 1;
-  if (!lectern0_commit_annotations(app))
+  if (!eightvo_commit_annotations(app))
   {
     if (existing >= 0) *highlight = saved;
     else
@@ -3262,15 +3262,15 @@ lectern0_set_highlight_color(Lectern0App *app, U32 color_index)
       MemoryZeroStruct(app->highlights + saved_count);
     }
     app->annotation_revision = saved_revision;
-    lectern0_set_statusf(app, "Highlight save failed");
+    eightvo_set_statusf(app, "Highlight save failed");
     return 0;
   }
-  lectern0_set_statusf(app, "Highlight saved");
+  eightvo_set_statusf(app, "Highlight saved");
   return 1;
 }
 
 FUNCTION B32
-lectern0_save_note_at_index(Lectern0App *app,
+eightvo_save_note_at_index(EightvoApp *app,
                             U32 index,
                             ReaderViewText note)
 {
@@ -3278,38 +3278,38 @@ lectern0_save_note_at_index(Lectern0App *app,
       note.size >= (UI0S32)ARRAY_COUNT(app->highlights[index].note) ||
       (note.size > 0 && !note.data))
     return 0;
-  Lectern0Highlight *highlight = app->highlights + index;
-  Lectern0Highlight saved = *highlight;
+  EightvoHighlight *highlight = app->highlights + index;
+  EightvoHighlight saved = *highlight;
   U64 saved_revision = app->annotation_revision;
-  lectern0_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
+  eightvo_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
                       (const U8 *)note.data, (U64)note.size);
   app->annotation_revision += 1;
-  if (!lectern0_commit_annotations(app))
+  if (!eightvo_commit_annotations(app))
   {
     *highlight = saved;
     app->annotation_revision = saved_revision;
-    lectern0_set_statusf(app, "Note save failed");
+    eightvo_set_statusf(app, "Note save failed");
     return 0;
   }
-  lectern0_set_statusf(app, "Note saved");
+  eightvo_set_statusf(app, "Note saved");
   return 1;
 }
 
 FUNCTION B32
-lectern0_save_selection_note(Lectern0App *app, ReaderViewText note)
+eightvo_save_selection_note(EightvoApp *app, ReaderViewText note)
 {
   if (!app || !app->reader.has_active_selection || note.size < 0 ||
-      note.size >= Lectern0NoteCap || (note.size > 0 && !note.data))
+      note.size >= EightvoNoteCap || (note.size > 0 && !note.data))
     return 0;
-  S32 index = lectern0_selection_highlight_index(app);
+  S32 index = eightvo_selection_highlight_index(app);
   if (index >= 0)
-    return lectern0_save_note_at_index(app, (U32)index, note);
-  if (app->highlight_count >= Lectern0HighlightCap) return 0;
+    return eightvo_save_note_at_index(app, (U32)index, note);
+  if (app->highlight_count >= EightvoHighlightCap) return 0;
 
   U32 saved_count = app->highlight_count;
   U64 saved_next_record_id = app->next_record_id;
   U64 saved_revision = app->annotation_revision;
-  Lectern0Highlight *highlight = app->highlights + app->highlight_count++;
+  EightvoHighlight *highlight = app->highlights + app->highlight_count++;
   MemoryZeroStruct(highlight);
   highlight->id = app->next_record_id++;
   highlight->spine_index = app->reader.active_selection.spine_index;
@@ -3317,87 +3317,87 @@ lectern0_save_selection_note(Lectern0App *app, ReaderViewText note)
   highlight->end_byte = app->reader.active_selection.text_byte_end;
   highlight->color_index = 0;
   highlight->is_highlight = 1;
-  lectern0_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
-                     lectern0_current_section_label(app));
-  lectern0_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
+  eightvo_copy_cstr(highlight->section, ARRAY_COUNT(highlight->section),
+                     eightvo_current_section_label(app));
+  eightvo_copy_cstr(highlight->text, ARRAY_COUNT(highlight->text),
                      app->selected_text);
-  lectern0_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
+  eightvo_copy_bytes(highlight->note, ARRAY_COUNT(highlight->note),
                       (const U8 *)note.data, (U64)note.size);
   app->annotation_revision += 1;
-  if (!lectern0_commit_annotations(app))
+  if (!eightvo_commit_annotations(app))
   {
     app->highlight_count = saved_count;
     app->next_record_id = saved_next_record_id;
     app->annotation_revision = saved_revision;
     MemoryZeroStruct(app->highlights + saved_count);
-    lectern0_set_statusf(app, "Note save failed");
+    eightvo_set_statusf(app, "Note save failed");
     return 0;
   }
-  lectern0_set_statusf(app, "Note saved");
+  eightvo_set_statusf(app, "Note saved");
   return 1;
 }
 
 FUNCTION ReaderViewSurfaceStatus
-lectern0_reader_view_status(ReaderViewLoadState state, const char *message)
+eightvo_reader_view_status(ReaderViewLoadState state, const char *message)
 {
   ReaderViewSurfaceStatus result = {0};
   result.state = state;
-  result.message = lectern0_reader_view_text(message);
+  result.message = eightvo_reader_view_text(message);
   return result;
 }
 
 FUNCTION UI0ThemeProfile
-lectern0_theme_profile(Lectern0Theme theme)
+eightvo_theme_profile(EightvoTheme theme)
 {
-  if (theme < 0 || theme >= Lectern0Theme_Count)
-    theme = Lectern0Theme_Dark;
+  if (theme < 0 || theme >= EightvoTheme_Count)
+    theme = EightvoTheme_Dark;
   return ui0_theme_profile_for_kind((UI0ThemeProfileKind)theme);
 }
 
-FUNCTION Lectern0ReaderContentTheme
-lectern0_reader_content_theme(Lectern0Theme theme)
+FUNCTION EightvoReaderContentTheme
+eightvo_reader_content_theme(EightvoTheme theme)
 {
-  Lectern0ReaderContentTheme result = {0};
+  EightvoReaderContentTheme result = {0};
   switch (theme)
   {
-    case Lectern0Theme_Light:
-      result = (Lectern0ReaderContentTheme){
+    case EightvoTheme_Light:
+      result = (EightvoReaderContentTheme){
         0x00FFFDF9U, 0x001B1A18U, 0x0047423BU, 0x007A7368U,
         0x00D95618U, 0x00FFE7D4U, 0x00D8D7D4U, 0x00F6B36FU,
         0x00FFF2A6U, 0x00D95618U,
       };
       break;
-    case Lectern0Theme_CoralDark:
-      result = (Lectern0ReaderContentTheme){
+    case EightvoTheme_CoralDark:
+      result = (EightvoReaderContentTheme){
         0x00464644U, 0x00F5EBDDU, 0x00DED4C8U, 0x00C2B6ACU,
         0x00E85D56U, 0x0063423EU, 0x0062605EU, 0x009A3034U,
         0x00524A25U, 0x00E85D56U,
       };
       break;
-    case Lectern0Theme_CoralLight:
-      result = (Lectern0ReaderContentTheme){
+    case EightvoTheme_CoralLight:
+      result = (EightvoReaderContentTheme){
         0x00F3E8DBU, 0x00333230U, 0x0053514FU, 0x006F6D68U,
         0x00E85D56U, 0x00F3C2B9U, 0x00D4D0CCU, 0x00EE9B94U,
         0x00F4DFA3U, 0x00E85D56U,
       };
       break;
-    case Lectern0Theme_BlueDark:
-      result = (Lectern0ReaderContentTheme){
+    case EightvoTheme_BlueDark:
+      result = (EightvoReaderContentTheme){
         0x000D1824U, 0x00EAF0F7U, 0x00B8C7D8U, 0x007E8FA3U,
         0x007C93FFU, 0x00345F91U, 0x003D454EU, 0x004F64BFU,
         0x004D4A16U, 0x007C93FFU,
       };
       break;
-    case Lectern0Theme_BlueLight:
-      result = (Lectern0ReaderContentTheme){
+    case EightvoTheme_BlueLight:
+      result = (EightvoReaderContentTheme){
         0x00FFFDF9U, 0x00121A22U, 0x00334252U, 0x006E7680U,
         0x00365CE7U, 0x00E6EEFFU, 0x00D6DADFU, 0x008BAEFFU,
         0x00FFF2A6U, 0x00365CE7U,
       };
       break;
-    case Lectern0Theme_Dark:
+    case EightvoTheme_Dark:
     default:
-      result = (Lectern0ReaderContentTheme){
+      result = (EightvoReaderContentTheme){
         0x00181716U, 0x00F2F0EAU, 0x00C9C4BAU, 0x008D877BU,
         0x00F26A1BU, 0x004D3424U, 0x004A4947U, 0x008F430FU,
         0x004D4A16U, 0x00F26A1BU,
@@ -3408,7 +3408,7 @@ lectern0_reader_content_theme(Lectern0Theme theme)
 }
 
 FUNCTION void
-lectern0_prepare_selected_text(Lectern0App *app)
+eightvo_prepare_selected_text(EightvoApp *app)
 {
   if (!app) { return; }
   app->selected_text[0] = 0;
@@ -3420,12 +3420,12 @@ lectern0_prepare_selected_text(Lectern0App *app)
   U64 end = MIN(app->reader.active_selection.text_byte_end,
                 app->reader.spine_text.size);
   if (end <= start) return;
-  lectern0_copy_bytes(app->selected_text, ARRAY_COUNT(app->selected_text),
+  eightvo_copy_bytes(app->selected_text, ARRAY_COUNT(app->selected_text),
                       app->reader.spine_text.str + start, end - start);
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_settings(Lectern0App *app)
+eightvo_prepare_reader_view_settings(EightvoApp *app)
 {
   static const U32 families[] = {
     FontProviderBookContentFamily_Georgia,
@@ -3445,7 +3445,7 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
     ReaderViewChoice *choice = app->reader_view_font_choices + font_count++;
     *choice = (ReaderViewChoice){
       .key = 1000ull + family,
-      .label = lectern0_reader_view_text(
+      .label = eightvo_reader_view_text(
         epub_reader_typography_family_label(&app->reader.typography, family)),
       .flags = ReaderViewChoice_Enabled |
         (family == app->font_family ? ReaderViewChoice_Selected : 0),
@@ -3456,7 +3456,7 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
     app->font_family = FontProviderBookContentFamily_Georgia;
     app->reader_view_font_choices[0] = (ReaderViewChoice){
       .key = 1000ull + FontProviderBookContentFamily_Georgia,
-      .label = lectern0_reader_view_text("Georgia"),
+      .label = eightvo_reader_view_text("Georgia"),
       .flags = ReaderViewChoice_Enabled | ReaderViewChoice_Selected,
     };
     font_count = 1;
@@ -3465,7 +3465,7 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
   {
     app->reader_view_size_choices[index] = (ReaderViewChoice){
       .key = 2000ull + index,
-      .label = lectern0_reader_view_text(size_labels[index]),
+      .label = eightvo_reader_view_text(size_labels[index]),
       .flags = ReaderViewChoice_Enabled |
         (index == app->text_size_index ? ReaderViewChoice_Selected : 0),
     };
@@ -3474,26 +3474,26 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
   {
     app->reader_view_spacing_choices[index] = (ReaderViewChoice){
       .key = 3000ull + index,
-      .label = lectern0_reader_view_text(spacing_labels[index]),
+      .label = eightvo_reader_view_text(spacing_labels[index]),
       .flags = ReaderViewChoice_Enabled |
         (index == app->line_spacing_index ? ReaderViewChoice_Selected : 0),
     };
   }
-  for (U32 index = 0; index < Lectern0Theme_Count; index += 1)
+  for (U32 index = 0; index < EightvoTheme_Count; index += 1)
   {
     UI0ThemeProfile profile =
       ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
     app->reader_view_theme_choices[index] = (ReaderViewChoice){
       .key = 4000ull + index,
-      .label = lectern0_reader_view_text(profile.label),
+      .label = eightvo_reader_view_text(profile.label),
       .flags = ReaderViewChoice_Enabled |
         (index == (U32)app->theme ? ReaderViewChoice_Selected : 0),
     };
   }
   app->reader_view_settings[0] = (ReaderViewSettingControl){
     .kind = ReaderViewSetting_FontFamily,
-    .label = lectern0_reader_view_text("Font"),
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .label = eightvo_reader_view_text("Font"),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .choices = {
       .items = app->reader_view_font_choices,
       .count = (UI0S32)font_count,
@@ -3502,8 +3502,8 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
   };
   app->reader_view_settings[1] = (ReaderViewSettingControl){
     .kind = ReaderViewSetting_FontSize,
-    .label = lectern0_reader_view_text("Size"),
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .label = eightvo_reader_view_text("Size"),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .choices = {
       .items = app->reader_view_size_choices,
       .count = (UI0S32)ARRAY_COUNT(app->reader_view_size_choices),
@@ -3512,8 +3512,8 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
   };
   app->reader_view_settings[2] = (ReaderViewSettingControl){
     .kind = ReaderViewSetting_LineSpacing,
-    .label = lectern0_reader_view_text("Spacing"),
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .label = eightvo_reader_view_text("Spacing"),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .choices = {
       .items = app->reader_view_spacing_choices,
       .count = (UI0S32)ARRAY_COUNT(app->reader_view_spacing_choices),
@@ -3522,8 +3522,8 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
   };
   app->reader_view_settings[3] = (ReaderViewSettingControl){
     .kind = ReaderViewSetting_Theme,
-    .label = lectern0_reader_view_text("Theme"),
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .label = eightvo_reader_view_text("Theme"),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .choices = {
       .items = app->reader_view_theme_choices,
       .count = (UI0S32)ARRAY_COUNT(app->reader_view_theme_choices),
@@ -3533,7 +3533,7 @@ lectern0_prepare_reader_view_settings(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_toc(Lectern0App *app)
+eightvo_prepare_reader_view_toc(EightvoApp *app)
 {
   U32 count = MIN(app->frame.section_item_count,
                   (U32)READER_VIEW_TOC_ROW_CAP);
@@ -3543,14 +3543,14 @@ lectern0_prepare_reader_view_toc(Lectern0App *app)
     app->reader_view_toc_rows[index] = (ReaderViewTocRow){
       .key = (ReaderViewKey)source->nav_index + 1,
       .depth = source->depth,
-      .label = lectern0_reader_view_bytes(source->label, source->label_length),
-      .detail = lectern0_reader_view_bytes(source->detail, source->detail_length),
+      .label = eightvo_reader_view_bytes(source->label, source->label_length),
+      .detail = eightvo_reader_view_bytes(source->detail, source->detail_length),
       .flags = ReaderViewRow_Enabled |
         (source->active ? ReaderViewRow_Current | ReaderViewRow_Selected : 0),
     };
   }
   app->reader_view_projection.toc = (ReaderViewTocProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .rows = app->reader_view_toc_rows,
     .row_count = (UI0S32)count,
     .total_count = app->frame.section_item_total_count,
@@ -3558,7 +3558,7 @@ lectern0_prepare_reader_view_toc(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_find(Lectern0App *app)
+eightvo_prepare_reader_view_find(EightvoApp *app)
 {
   U32 count = MIN(app->frame.search_item_count,
                   (U32)READER_VIEW_FIND_ROW_CAP);
@@ -3586,9 +3586,9 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
     const EpubReaderFrameSearchItem *source = app->frame.search_items + index;
     app->reader_view_find_rows[index] = (ReaderViewFindRow){
       .key = 0x100000ull + index,
-      .section = lectern0_reader_view_bytes(source->section_label,
+      .section = eightvo_reader_view_bytes(source->section_label,
                                              source->section_label_length),
-      .excerpt = lectern0_reader_view_bytes(source->snippet,
+      .excerpt = eightvo_reader_view_bytes(source->snippet,
                                              source->snippet_length),
       .match_start = source->match_start_in_snippet,
       .match_size = source->match_size_in_snippet,
@@ -3598,9 +3598,9 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
     };
   }
   app->reader_view_projection.find = (ReaderViewFindProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready,
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready,
                                           app->reader_view_find_status),
-    .committed_query = lectern0_reader_view_bytes(
+    .committed_query = eightvo_reader_view_bytes(
       (const char *)app->frame.search_query.str, app->frame.search_query.size),
     .rows = app->reader_view_find_rows,
     .row_count = (UI0S32)count,
@@ -3615,7 +3615,7 @@ lectern0_prepare_reader_view_find(Lectern0App *app)
 }
 
 FUNCTION U64
-lectern0_reader_location_for_position(Lectern0App *app,
+eightvo_reader_location_for_position(EightvoApp *app,
                                       U32 spine_index,
                                       U64 byte_offset)
 {
@@ -3642,12 +3642,12 @@ lectern0_reader_location_for_position(Lectern0App *app,
   for (U32 index = 0; index < spine_index; index += 1)
     global_byte += reader->location_spine_text_sizes[index];
   global_byte += byte_offset;
-  enum { Lectern0LocationBytes = 128 };
-  return global_byte / Lectern0LocationBytes + 1;
+  enum { EightvoLocationBytes = 128 };
+  return global_byte / EightvoLocationBytes + 1;
 }
 
 FUNCTION ReaderViewText
-lectern0_reader_view_right_secondary(Lectern0App *app,
+eightvo_reader_view_right_secondary(EightvoApp *app,
                                      U32 row_index,
                                      const char *kind,
                                      U32 spine_index,
@@ -3669,21 +3669,21 @@ lectern0_reader_view_right_secondary(Lectern0App *app,
         app->reader.location_cache_valid))
   {
     storage[0] = 0;
-    return lectern0_reader_view_text(storage);
+    return eightvo_reader_view_text(storage);
   }
   (void)cstr_format(storage,
-                    Lectern0RecordLabelCap,
+                    EightvoRecordLabelCap,
                     "%s - re10 loc %llu",
                     kind,
-                    (unsigned long long)lectern0_reader_location_for_position(
+                    (unsigned long long)eightvo_reader_location_for_position(
                       app, spine_index, byte_offset));
-  return lectern0_reader_view_text(storage);
+  return eightvo_reader_view_text(storage);
 }
 
 FUNCTION UI0Color
-lectern0_reader_view_rail_color(const Lectern0App *app, U32 color_index)
+eightvo_reader_view_rail_color(const EightvoApp *app, U32 color_index)
 {
-  B32 dark = app && lectern0_theme_profile(app->theme).appearance ==
+  B32 dark = app && eightvo_theme_profile(app->theme).appearance ==
                       UI0AppearanceMode_Dark;
   switch (color_index)
   {
@@ -3703,7 +3703,7 @@ lectern0_reader_view_rail_color(const Lectern0App *app, U32 color_index)
 }
 
 FUNCTION ReaderViewKey
-lectern0_reader_view_right_key(Lectern0App *app,
+eightvo_reader_view_right_key(EightvoApp *app,
                                ReaderViewRightRowKind row_kind,
                                U64 record_id)
 {
@@ -3739,7 +3739,7 @@ lectern0_reader_view_right_key(Lectern0App *app,
 }
 
 FUNCTION ReaderViewKey
-lectern0_reader_view_register_right_source(Lectern0App *app,
+eightvo_reader_view_register_right_source(EightvoApp *app,
                                             ReaderViewRightRowKind row_kind,
                                             U64 record_id)
 {
@@ -3747,10 +3747,10 @@ lectern0_reader_view_register_right_source(Lectern0App *app,
               READER_VIEW_RIGHT_ROW_CAP)
     return 0;
   ReaderViewKey key =
-    lectern0_reader_view_right_key(app, row_kind, record_id);
+    eightvo_reader_view_right_key(app, row_kind, record_id);
   if (key == 0) return 0;
   app->reader_view_right_sources[app->reader_view_right_source_count++] =
-    (Lectern0ReaderViewRightSource){
+    (EightvoReaderViewRightSource){
       .key = key,
       .row_kind = row_kind,
       .record_id = record_id,
@@ -3758,8 +3758,8 @@ lectern0_reader_view_register_right_source(Lectern0App *app,
   return key;
 }
 
-FUNCTION const Lectern0ReaderViewRightSource *
-lectern0_reader_view_right_source(const Lectern0App *app,
+FUNCTION const EightvoReaderViewRightSource *
+eightvo_reader_view_right_source(const EightvoApp *app,
                                   ReaderViewKey key,
                                   ReaderViewRightRowKind row_kind)
 {
@@ -3768,7 +3768,7 @@ lectern0_reader_view_right_source(const Lectern0App *app,
        index < app->reader_view_right_source_count;
        index += 1)
   {
-    const Lectern0ReaderViewRightSource *source =
+    const EightvoReaderViewRightSource *source =
       app->reader_view_right_sources + index;
     if (source->key == key && source->row_kind == row_kind)
       return source;
@@ -3777,9 +3777,9 @@ lectern0_reader_view_right_source(const Lectern0App *app,
 }
 
 FUNCTION S32
-lectern0_reader_view_right_candidate_compare(
-  const Lectern0ReaderViewRightCandidate *left,
-  const Lectern0ReaderViewRightCandidate *right)
+eightvo_reader_view_right_candidate_compare(
+  const EightvoReaderViewRightCandidate *left,
+  const EightvoReaderViewRightCandidate *right)
 {
   if (!left || !right) return 0;
   if (left->spine_index != right->spine_index)
@@ -3796,8 +3796,8 @@ lectern0_reader_view_right_candidate_compare(
 }
 
 FUNCTION B32
-lectern0_reader_view_push_right_candidate(
-  Lectern0App *app,
+eightvo_reader_view_push_right_candidate(
+  EightvoApp *app,
   ReaderViewRightRowKind row_kind,
   U32 source_index,
   U32 spine_index,
@@ -3806,10 +3806,10 @@ lectern0_reader_view_push_right_candidate(
 {
   if (!app || record_id == 0 ||
       app->reader_view_right_candidate_count >=
-        Lectern0ReaderViewRightCandidateCap)
+        EightvoReaderViewRightCandidateCap)
     return 0;
   app->reader_view_right_candidates[app->reader_view_right_candidate_count++] =
-    (Lectern0ReaderViewRightCandidate){
+    (EightvoReaderViewRightCandidate){
       .row_kind = row_kind,
       .source_index = source_index,
       .spine_index = spine_index,
@@ -3820,18 +3820,18 @@ lectern0_reader_view_push_right_candidate(
 }
 
 FUNCTION void
-lectern0_reader_view_sort_right_candidates(Lectern0App *app)
+eightvo_reader_view_sort_right_candidates(EightvoApp *app)
 {
   if (!app) return;
   for (U32 index = 1;
        index < app->reader_view_right_candidate_count;
        index += 1)
   {
-    Lectern0ReaderViewRightCandidate candidate =
+    EightvoReaderViewRightCandidate candidate =
       app->reader_view_right_candidates[index];
     U32 insert = index;
     while (insert > 0 &&
-           lectern0_reader_view_right_candidate_compare(
+           eightvo_reader_view_right_candidate_compare(
              &candidate,
              app->reader_view_right_candidates + insert - 1) < 0)
     {
@@ -3844,7 +3844,7 @@ lectern0_reader_view_sort_right_candidates(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_right_rows(Lectern0App *app)
+eightvo_prepare_reader_view_right_rows(EightvoApp *app)
 {
   if (!app) return;
   U32 count = 0;
@@ -3871,52 +3871,52 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
   for (U32 index = 0; index < app->bookmark_count; index += 1)
   {
     if (!show_bookmarks) continue;
-    const Lectern0Bookmark *bookmark = app->bookmarks + index;
-    (void)lectern0_reader_view_push_right_candidate(
+    const EightvoBookmark *bookmark = app->bookmarks + index;
+    (void)eightvo_reader_view_push_right_candidate(
       app, ReaderViewRightRow_Bookmark, index,
       bookmark->spine_index, bookmark->byte_offset, bookmark->id);
   }
   for (U32 index = 0; index < app->highlight_count; index += 1)
   {
-    const Lectern0Highlight *highlight = app->highlights + index;
+    const EightvoHighlight *highlight = app->highlights + index;
     B32 has_note = highlight->note[0] != 0;
     if (highlight->is_highlight && show_highlights)
-      (void)lectern0_reader_view_push_right_candidate(
+      (void)eightvo_reader_view_push_right_candidate(
         app, ReaderViewRightRow_Highlight, index,
         highlight->spine_index, highlight->start_byte, highlight->id);
     if (has_note && show_notes)
-      (void)lectern0_reader_view_push_right_candidate(
+      (void)eightvo_reader_view_push_right_candidate(
         app, ReaderViewRightRow_Note, index,
         highlight->spine_index, highlight->start_byte, highlight->id);
   }
-  lectern0_reader_view_sort_right_candidates(app);
+  eightvo_reader_view_sort_right_candidates(app);
   for (U32 candidate_index = 0;
        candidate_index < app->reader_view_right_candidate_count &&
        count < READER_VIEW_RIGHT_ROW_CAP;
        candidate_index += 1)
   {
-    const Lectern0ReaderViewRightCandidate *candidate =
+    const EightvoReaderViewRightCandidate *candidate =
       app->reader_view_right_candidates + candidate_index;
     U32 row_index = count++;
-    ReaderViewKey key = lectern0_reader_view_register_right_source(
+    ReaderViewKey key = eightvo_reader_view_register_right_source(
       app, candidate->row_kind, candidate->record_id);
     if (candidate->row_kind == ReaderViewRightRow_Bookmark)
     {
-      const Lectern0Bookmark *bookmark =
+      const EightvoBookmark *bookmark =
         app->bookmarks + candidate->source_index;
       app->reader_view_right_rows[row_index] = (ReaderViewRightRow){
         .key = key,
         .kind = ReaderViewRightRow_Bookmark,
-        .section = lectern0_reader_view_text(bookmark->label),
-        .primary = lectern0_reader_view_text(bookmark->excerpt),
-        .secondary = lectern0_reader_view_right_secondary(
+        .section = eightvo_reader_view_text(bookmark->label),
+        .primary = eightvo_reader_view_text(bookmark->excerpt),
+        .secondary = eightvo_reader_view_right_secondary(
           app, row_index, "Bookmark", bookmark->spine_index,
           bookmark->byte_offset),
         .rail_color = 0,
         /* A bookmark is itself the starred state in the frozen re10 model;
            invoking its inline star removes the bookmark. */
         .flags = ReaderViewRow_Enabled | ReaderViewRow_Starred |
-          (lectern0_current_bookmark_index(app) ==
+          (eightvo_current_bookmark_index(app) ==
              (S32)candidate->source_index ? ReaderViewRow_Current : 0),
         .actions = ReaderViewRightAction_Activate |
                    ReaderViewRightAction_ToggleStar |
@@ -3924,7 +3924,7 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
       };
       continue;
     }
-    const Lectern0Highlight *highlight =
+    const EightvoHighlight *highlight =
       app->highlights + candidate->source_index;
     B32 note = candidate->row_kind == ReaderViewRightRow_Note;
     B32 attached = note && row_index > 0 &&
@@ -3935,14 +3935,14 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
     app->reader_view_right_rows[row_index] = (ReaderViewRightRow){
       .key = key,
       .kind = candidate->row_kind,
-      .section = lectern0_reader_view_text(highlight->section),
-      .primary = lectern0_reader_view_text(
+      .section = eightvo_reader_view_text(highlight->section),
+      .primary = eightvo_reader_view_text(
         note ? highlight->note : highlight->text),
-      .secondary = lectern0_reader_view_right_secondary(
+      .secondary = eightvo_reader_view_right_secondary(
         app, row_index, note ? "Note" : "Highlight",
         highlight->spine_index, highlight->start_byte),
       .color_key = 5000ull + highlight->color_index,
-      .rail_color = lectern0_reader_view_rail_color(
+      .rail_color = eightvo_reader_view_rail_color(
         app, highlight->color_index),
       .flags = ReaderViewRow_Enabled |
         (note ? (highlight->note_starred ? ReaderViewRow_Starred : 0) :
@@ -3955,7 +3955,7 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
     };
   }
   app->reader_view_projection.right = (ReaderViewRightProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .rows = app->reader_view_right_rows,
     .row_count = (UI0S32)count,
     .total_count = app->reader_view_right_candidate_count,
@@ -3972,7 +3972,7 @@ lectern0_prepare_reader_view_right_rows(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_reader_view_clear_annotation_note_target(Lectern0App *app)
+eightvo_reader_view_clear_annotation_note_target(EightvoApp *app)
 {
   if (!app) return;
   app->annotation_note_selection_key = 0;
@@ -3984,14 +3984,14 @@ lectern0_reader_view_clear_annotation_note_target(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_reader_view_prepare_annotation_note_selection(
-  Lectern0App *app,
+eightvo_reader_view_prepare_annotation_note_selection(
+  EightvoApp *app,
   ReaderViewSelectionProjection *out_selection)
 {
   if (!app || !out_selection) return 0;
   if (app->reader_view_state.popup != ReaderViewPopup_NoteEditor)
   {
-    lectern0_reader_view_clear_annotation_note_target(app);
+    eightvo_reader_view_clear_annotation_note_target(app);
     return 0;
   }
   if (app->annotation_note_selection_key == 0 ||
@@ -4001,10 +4001,10 @@ lectern0_reader_view_prepare_annotation_note_selection(
   {
     return 0;
   }
-  S32 index = lectern0_highlight_index(
+  S32 index = eightvo_highlight_index(
     app, app->annotation_note_highlight_id);
   if (index < 0) return 0;
-  const Lectern0Highlight *highlight = app->highlights + index;
+  const EightvoHighlight *highlight = app->highlights + index;
   if (highlight->spine_index != app->annotation_note_spine_index ||
       highlight->start_byte != app->annotation_note_start_byte ||
       highlight->end_byte != app->annotation_note_end_byte ||
@@ -4013,10 +4013,10 @@ lectern0_reader_view_prepare_annotation_note_selection(
     return 0;
   }
   *out_selection = (ReaderViewSelectionProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .selection_key = app->annotation_note_selection_key,
     .revision = app->annotation_revision,
-    .selected_text = lectern0_reader_view_text(highlight->text),
+    .selected_text = eightvo_reader_view_text(highlight->text),
     .note_text = reader_view_note_draft(&app->reader_view_state),
     .flags = ReaderViewSelection_Active |
              ReaderViewSelection_CanEditNote |
@@ -4026,19 +4026,19 @@ lectern0_reader_view_prepare_annotation_note_selection(
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_selection(Lectern0App *app)
+eightvo_prepare_reader_view_selection(EightvoApp *app)
 {
   static const char *color_labels[] = {"Yellow", "Pink", "Blue", "Orange"};
   ReaderViewSelectionProjection selection = {
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
   };
-  if (lectern0_reader_view_prepare_annotation_note_selection(
+  if (eightvo_reader_view_prepare_annotation_note_selection(
         app, &selection))
   {
     app->reader_view_projection.selection = selection;
     return;
   }
-  lectern0_prepare_selected_text(app);
+  eightvo_prepare_selected_text(app);
   /* The concrete selection may update on every drag move, but Reader View
      must not publish/open its action surface until the host owns the release. */
   if (app->reader.has_active_selection && app->selected_text[0] &&
@@ -4049,7 +4049,7 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
     selection.selection_key = u64_hash_bytes(key_parts, sizeof(key_parts));
     if (selection.selection_key == 0) selection.selection_key = 1;
     selection.revision = app->annotation_revision;
-    selection.selected_text = lectern0_reader_view_text(app->selected_text);
+    selection.selected_text = eightvo_reader_view_text(app->selected_text);
     selection.flags = ReaderViewSelection_Active |
                       ReaderViewSelection_CanCopy |
                       ReaderViewSelection_CanHighlight |
@@ -4058,11 +4058,11 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
                       ReaderViewSelection_CanWebLookup |
                       ReaderViewSelection_CanTranslate;
     selection.anchor_rect = app->selection_anchor_rect;
-    S32 highlight_index = lectern0_selection_highlight_index(app);
+    S32 highlight_index = eightvo_selection_highlight_index(app);
     if (highlight_index >= 0)
     {
-      const Lectern0Highlight *highlight = app->highlights + highlight_index;
-      selection.note_text = lectern0_reader_view_text(highlight->note);
+      const EightvoHighlight *highlight = app->highlights + highlight_index;
+      selection.note_text = eightvo_reader_view_text(highlight->note);
       selection.flags |= ReaderViewSelection_CanEditNote;
       if (highlight->is_highlight)
       {
@@ -4075,11 +4075,11 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
     {
       app->reader_view_color_choices[index] = (ReaderViewChoice){
         .key = 5000ull + index,
-        .label = lectern0_reader_view_text(color_labels[index]),
+        .label = eightvo_reader_view_text(color_labels[index]),
         .flags = ReaderViewChoice_Enabled |
           (selection.current_color_key == 5000ull + index ?
             ReaderViewChoice_Selected : 0),
-        .visual_color = lectern0_reader_view_rail_color(app, index),
+        .visual_color = eightvo_reader_view_rail_color(app, index),
       };
     }
     selection.highlight_colors = (ReaderViewChoiceControl){
@@ -4092,7 +4092,7 @@ lectern0_prepare_reader_view_selection(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_prepare_reader_view_projection(Lectern0App *app)
+eightvo_prepare_reader_view_projection(EightvoApp *app)
 {
   if (!app) { return; }
   ReaderViewProjection projection = {0};
@@ -4128,7 +4128,7 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
       projection.document_flags |= ReaderViewDocument_CanGoBack;
     if (app->frame.history_forward_count > 0)
       projection.document_flags |= ReaderViewDocument_CanGoForward;
-    S32 bookmark_index = lectern0_current_bookmark_index(app);
+    S32 bookmark_index = eightvo_current_bookmark_index(app);
     if (bookmark_index >= 0)
     {
       projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
@@ -4138,34 +4138,34 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
   if (app->fullscreen.active)
     projection.document_flags |= ReaderViewDocument_Fullscreen;
   if (open)
-    projection.content = lectern0_reader_view_status(ReaderViewLoad_Ready, 0);
+    projection.content = eightvo_reader_view_status(ReaderViewLoad_Ready, 0);
   else if (app->document_state == ReaderViewLoad_Loading)
-    projection.content = lectern0_reader_view_status(ReaderViewLoad_Loading,
+    projection.content = eightvo_reader_view_status(ReaderViewLoad_Loading,
                                                       app->status);
   else if (app->document_state == ReaderViewLoad_Error)
-    projection.content = lectern0_reader_view_status(ReaderViewLoad_Error,
+    projection.content = eightvo_reader_view_status(ReaderViewLoad_Error,
                                                       app->status);
   else
-    projection.content = lectern0_reader_view_status(
-      ReaderViewLoad_Empty, "Open an EPUB to begin reading.");
+    projection.content = eightvo_reader_view_status(
+      ReaderViewLoad_Empty, "Open a book to begin reading.");
   projection.labels = reader_view_default_english_labels();
-  projection.labels.annotations = lectern0_reader_view_text("Annotations");
+  projection.labels.annotations = eightvo_reader_view_text("Annotations");
   projection.labels.highlights =
-    lectern0_reader_view_text("All Highlight Colors");
-  projection.chrome_title = lectern0_reader_view_text("EPUB Reader");
+    eightvo_reader_view_text("All Highlight Colors");
+  projection.chrome_title = eightvo_reader_view_text("Reader");
   app->document_title[0] = 0;
   if (open)
   {
-    lectern0_copy_cstr(app->document_title,
+    eightvo_copy_cstr(app->document_title,
                       ARRAY_COUNT(app->document_title),
-                      lectern0_current_section_label(app));
+                      eightvo_current_section_label(app));
   }
-  projection.document_title = lectern0_reader_view_text(app->document_title);
+  projection.document_title = eightvo_reader_view_text(app->document_title);
   app->reader_view_projection = projection;
 
-  lectern0_prepare_reader_view_settings(app);
+  eightvo_prepare_reader_view_settings(app);
   app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .items = app->reader_view_settings,
     .count = READER_VIEW_SETTING_CAP,
   };
@@ -4189,7 +4189,7 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
                         "Page %llu",
                         (unsigned long long)app->frame.page_index);
     app->reader_view_projection.progress = (ReaderViewProgressProjection){
-      .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+      .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
       .location_index = location.available ?
                         (location.location_index > 0 ?
                           location.location_index - 1 : 0) :
@@ -4200,20 +4200,20 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
       .page_index = app->frame.page_count > 0 && app->frame.page_index > 0 ?
                     app->frame.page_index - 1 : 0,
       .page_count = app->frame.page_count,
-      .chapter = lectern0_reader_view_text(lectern0_current_section_label(app)),
-      .label = lectern0_reader_view_text(app->progress_label),
+      .chapter = eightvo_reader_view_text(eightvo_current_section_label(app)),
+      .label = eightvo_reader_view_text(app->progress_label),
       .can_seek = location.available,
     };
-    lectern0_prepare_reader_view_toc(app);
-    lectern0_prepare_reader_view_find(app);
-    lectern0_prepare_reader_view_right_rows(app);
-    lectern0_prepare_reader_view_selection(app);
+    eightvo_prepare_reader_view_toc(app);
+    eightvo_prepare_reader_view_find(app);
+    eightvo_prepare_reader_view_right_rows(app);
+    eightvo_prepare_reader_view_selection(app);
   }
   else
   {
     ReaderViewSurfaceStatus unavailable =
-      lectern0_reader_view_status(ReaderViewLoad_Unavailable,
-                                  "Open an EPUB first");
+      eightvo_reader_view_status(ReaderViewLoad_Unavailable,
+                                  "Open a book first");
     app->reader_view_projection.progress.status = unavailable;
     app->reader_view_projection.toc.status = unavailable;
     app->reader_view_projection.find.status = unavailable;
@@ -4227,13 +4227,13 @@ lectern0_prepare_reader_view_projection(Lectern0App *app)
     app->reader_view_projection.selection.status = unavailable;
   }
 
-  UI0ThemeProfile profile = lectern0_theme_profile(app->theme);
+  UI0ThemeProfile profile = eightvo_theme_profile(app->theme);
   app->reader_view_theme = profile.resolved;
-  app->reader_content_theme = lectern0_reader_content_theme(app->theme);
+  app->reader_content_theme = eightvo_reader_content_theme(app->theme);
 }
 
 FUNCTION B32
-lectern0_reader_view_focus_is(const Lectern0App *app,
+eightvo_reader_view_focus_is(const EightvoApp *app,
                               ReaderViewSemanticRole role)
 {
   if (!app || !app->reader_view_frame.semantic_nodes ||
@@ -4252,7 +4252,7 @@ lectern0_reader_view_focus_is(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_view_focus_control_is(const Lectern0App *app,
+eightvo_reader_view_focus_control_is(const EightvoApp *app,
                                       ReaderViewSemanticControl control)
 {
   if (!app || !app->reader_view_frame.semantic_nodes ||
@@ -4273,46 +4273,46 @@ lectern0_reader_view_focus_control_is(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_view_text_editing(const Lectern0App *app)
+eightvo_reader_view_text_editing(const EightvoApp *app)
 {
   if (!app) return 0;
   return (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
           (app->reader_view_state.pending_left_panel_focus ==
              ReaderViewLeftPanel_Find ||
-           lectern0_reader_view_focus_control_is(
+           eightvo_reader_view_focus_control_is(
              app, ReaderViewSemanticControl_FindInput))) ||
          (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
-          lectern0_reader_view_focus_is(app, ReaderViewSemantic_TextArea));
+          eightvo_reader_view_focus_is(app, ReaderViewSemantic_TextArea));
 }
 
 FUNCTION B32
-lectern0_reader_view_space_activates_focus(const Lectern0App *app)
+eightvo_reader_view_space_activates_focus(const EightvoApp *app)
 {
   return app && app->reader_view_state.focus_id != 0 &&
-         !lectern0_reader_view_text_editing(app);
+         !eightvo_reader_view_text_editing(app);
 }
 
 FUNCTION B32
-lectern0_reader_view_horizontal_move_is_shared(const Lectern0App *app)
+eightvo_reader_view_horizontal_move_is_shared(const EightvoApp *app)
 {
-  return lectern0_reader_view_text_editing(app) ||
-         lectern0_reader_view_focus_control_is(
+  return eightvo_reader_view_text_editing(app) ||
+         eightvo_reader_view_focus_control_is(
            app, ReaderViewSemanticControl_Progress);
 }
 
 FUNCTION void
-lectern0_reader_view_open_find_from_shortcut(Lectern0App *app)
+eightvo_reader_view_open_find_from_shortcut(EightvoApp *app)
 {
   if (!app) return;
   app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
   app->reader_view_state.most_recent_panel = ReaderViewPanel_Left;
   app->reader_view_state.pending_left_panel_focus = ReaderViewLeftPanel_Find;
-  app->host_focus_control = Lectern0HostControl_None;
+  app->host_focus_control = EightvoHostControl_None;
   app->host_focus_visible = 0;
 }
 
 FUNCTION ReaderViewInput
-lectern0_reader_view_input(Lectern0App *app)
+eightvo_reader_view_input(EightvoApp *app)
 {
   ReaderViewInput result = {0};
   /* Escape is a keyboard transition. The frozen filter popup returns to a
@@ -4332,7 +4332,7 @@ lectern0_reader_view_input(Lectern0App *app)
   if (app->input.focus_next_pressed) result.ui.flags |= UI0Input_FocusNextPressed;
   if (app->input.focus_prev_pressed) result.ui.flags |= UI0Input_FocusPrevPressed;
   result.escape_pressed = app->input.escape_pressed;
-  B32 editing = lectern0_reader_view_text_editing(app);
+  B32 editing = eightvo_reader_view_text_editing(app);
   if (!editing)
   {
     result.move_horizontal_delta = app->input.move_delta;
@@ -4376,7 +4376,7 @@ lectern0_reader_view_input(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_reader_view_escape(Lectern0App *app)
+eightvo_reader_view_escape(EightvoApp *app)
 {
   if (!app) return;
   if (app->reader_view_state.popup == ReaderViewPopup_SelectionTools)
@@ -4389,7 +4389,7 @@ lectern0_reader_view_escape(Lectern0App *app)
 }
 
 FUNCTION S32
-lectern0_reader_view_measure_find_text(const char *text, U64 size)
+eightvo_reader_view_measure_find_text(const char *text, U64 size)
 {
   if (!text || size == 0) return 0;
   S32 advance = font_measure_text_width_s8(
@@ -4398,7 +4398,7 @@ lectern0_reader_view_measure_find_text(const char *text, U64 size)
 }
 
 FUNCTION void
-lectern0_reader_view_remember_find_scalar(Lectern0App *app,
+eightvo_reader_view_remember_find_scalar(EightvoApp *app,
                                            U32 scalar,
                                            const char *text,
                                            U32 size,
@@ -4416,7 +4416,7 @@ lectern0_reader_view_remember_find_scalar(Lectern0App *app,
     if (app->find_text_advances[index].codepoint == scalar)
     {
       if (app->find_text_advance_priority[index] !=
-          Lectern0ReaderViewFindPriority_Pinned)
+          EightvoReaderViewFindPriority_Pinned)
       {
         if (app->find_text_advance_last_seen[index] != generation)
         {
@@ -4443,7 +4443,7 @@ lectern0_reader_view_remember_find_scalar(Lectern0App *app,
     {
       U8 candidate_priority = app->find_text_advance_priority[index];
       U64 last_seen = app->find_text_advance_last_seen[index];
-      if (candidate_priority == Lectern0ReaderViewFindPriority_Pinned)
+      if (candidate_priority == EightvoReaderViewFindPriority_Pinned)
         continue;
       if (last_seen != generation &&
           (candidate == UINT32_MAX || last_seen < oldest_generation))
@@ -4460,7 +4460,7 @@ lectern0_reader_view_remember_find_scalar(Lectern0App *app,
            index += 1)
       {
         U8 candidate_priority = app->find_text_advance_priority[index];
-        if (candidate_priority != Lectern0ReaderViewFindPriority_Pinned &&
+        if (candidate_priority != EightvoReaderViewFindPriority_Pinned &&
             candidate_priority < priority &&
             candidate_priority < lowest_priority)
         {
@@ -4475,7 +4475,7 @@ lectern0_reader_view_remember_find_scalar(Lectern0App *app,
 
   app->find_text_advances[entry_index] = (ReaderViewCodepointAdvance){
     .codepoint = scalar,
-    .advance = lectern0_reader_view_measure_find_text(text, size),
+    .advance = eightvo_reader_view_measure_find_text(text, size),
   };
   app->find_text_advance_last_seen[entry_index] = generation;
   app->find_text_advance_priority[entry_index] = priority;
@@ -4484,7 +4484,7 @@ lectern0_reader_view_remember_find_scalar(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_reader_view_remember_find_text(Lectern0App *app,
+eightvo_reader_view_remember_find_text(EightvoApp *app,
                                          const char *text,
                                          U64 size,
                                          U64 generation,
@@ -4499,7 +4499,7 @@ lectern0_reader_view_remember_find_text(Lectern0App *app,
     if (decode.valid && decode.scalar != (U32)'\r' &&
         decode.scalar != (U32)'\n')
     {
-      lectern0_reader_view_remember_find_scalar(
+      eightvo_reader_view_remember_find_scalar(
         app, decode.scalar, text + at, advance, generation, priority);
     }
     at += advance;
@@ -4507,7 +4507,7 @@ lectern0_reader_view_remember_find_text(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_reader_view_initialize_find_text_metrics(Lectern0App *app)
+eightvo_reader_view_initialize_find_text_metrics(EightvoApp *app)
 {
   if (!app || app->find_text_metrics_initialized) return;
   const FontProvider *provider = font_provider_system_ui();
@@ -4515,7 +4515,7 @@ lectern0_reader_view_initialize_find_text_metrics(Lectern0App *app)
   if (provider && provider->fallback_codepoint != 0)
     fallback[0] = (char)provider->fallback_codepoint;
   app->find_text_fallback_advance =
-    lectern0_reader_view_measure_find_text(fallback, 1);
+    eightvo_reader_view_measure_find_text(fallback, 1);
   if (app->find_text_fallback_advance <= 0)
   {
     FontTextMetrics metrics = font_metrics_for_size(provider, 1);
@@ -4524,19 +4524,19 @@ lectern0_reader_view_initialize_find_text_metrics(Lectern0App *app)
   for (U32 scalar = 0x20u; scalar <= 0x7eu; scalar += 1)
   {
     char byte = (char)scalar;
-    lectern0_reader_view_remember_find_scalar(
-      app, scalar, &byte, 1, 0, Lectern0ReaderViewFindPriority_Pinned);
+    eightvo_reader_view_remember_find_scalar(
+      app, scalar, &byte, 1, 0, EightvoReaderViewFindPriority_Pinned);
   }
   app->find_text_metrics_initialized = 1;
 }
 
 FUNCTION ReaderViewFindTextMetrics
-lectern0_reader_view_find_text_metrics(Lectern0App *app,
+eightvo_reader_view_find_text_metrics(EightvoApp *app,
                                         const ReaderViewInput *input)
 {
   ReaderViewFindTextMetrics result = {0};
   if (!app) return result;
-  lectern0_reader_view_initialize_find_text_metrics(app);
+  eightvo_reader_view_initialize_find_text_metrics(app);
   app->find_text_metrics_generation += 1;
   if (app->find_text_metrics_generation == 0)
   {
@@ -4544,7 +4544,7 @@ lectern0_reader_view_find_text_metrics(Lectern0App *app,
     for (U32 index = 0; index < app->find_text_advance_count; index += 1)
     {
       if (app->find_text_advance_priority[index] !=
-          Lectern0ReaderViewFindPriority_Pinned)
+          EightvoReaderViewFindPriority_Pinned)
         app->find_text_advance_last_seen[index] = 0;
     }
   }
@@ -4554,25 +4554,25 @@ lectern0_reader_view_find_text_metrics(Lectern0App *app,
   if (state->find_query_length > 0 &&
       state->find_query_length < READER_VIEW_FIND_QUERY_CAP)
   {
-    lectern0_reader_view_remember_find_text(
+    eightvo_reader_view_remember_find_text(
       app, state->find_query, (U64)state->find_query_length,
-      generation, Lectern0ReaderViewFindPriority_Current);
+      generation, EightvoReaderViewFindPriority_Current);
   }
   if (app->reader_view_projection.labels.find_placeholder.size > 0)
   {
     ReaderViewText placeholder =
       app->reader_view_projection.labels.find_placeholder;
-    lectern0_reader_view_remember_find_text(
+    eightvo_reader_view_remember_find_text(
       app, placeholder.data, (U64)placeholder.size,
-      generation, Lectern0ReaderViewFindPriority_Placeholder);
+      generation, EightvoReaderViewFindPriority_Placeholder);
   }
   if (input)
   {
     if (input->find_text.text && input->find_text.text_len > 0)
     {
-      lectern0_reader_view_remember_find_text(
+      eightvo_reader_view_remember_find_text(
         app, input->find_text.text, (U64)input->find_text.text_len,
-        generation, Lectern0ReaderViewFindPriority_Current);
+        generation, EightvoReaderViewFindPriority_Current);
     }
     const UI0TextInputTransferBuffer *buffers[2] = {
       input->find_text.transfer_buffer,
@@ -4584,9 +4584,9 @@ lectern0_reader_view_find_text_metrics(Lectern0App *app,
       if (buffer && buffer->data && buffer->length &&
           *buffer->length > 0 && *buffer->length < buffer->cap)
       {
-        lectern0_reader_view_remember_find_text(
+        eightvo_reader_view_remember_find_text(
           app, buffer->data, (U64)*buffer->length,
-          generation, Lectern0ReaderViewFindPriority_Current);
+          generation, EightvoReaderViewFindPriority_Current);
       }
     }
   }
@@ -4594,24 +4594,24 @@ lectern0_reader_view_find_text_metrics(Lectern0App *app,
   {
     ReaderViewText committed =
       app->reader_view_projection.find.committed_query;
-    lectern0_reader_view_remember_find_text(
+    eightvo_reader_view_remember_find_text(
       app, committed.data, (U64)committed.size,
-      generation, Lectern0ReaderViewFindPriority_Committed);
+      generation, EightvoReaderViewFindPriority_Committed);
   }
   if (state->find_history.text_size > 0 &&
       state->find_history.text_size <= ARRAY_COUNT(state->find_history_text))
   {
-    lectern0_reader_view_remember_find_text(
+    eightvo_reader_view_remember_find_text(
       app, state->find_history_text, state->find_history.text_size,
-      generation, Lectern0ReaderViewFindPriority_History);
+      generation, EightvoReaderViewFindPriority_History);
   }
   if (state->find_history.scratch_size > 0 &&
       state->find_history.scratch_size <=
         ARRAY_COUNT(state->find_history_scratch))
   {
-    lectern0_reader_view_remember_find_text(
+    eightvo_reader_view_remember_find_text(
       app, state->find_history_scratch, state->find_history.scratch_size,
-      generation, Lectern0ReaderViewFindPriority_History);
+      generation, EightvoReaderViewFindPriority_History);
   }
 
   result.advances = app->find_text_advances;
@@ -4621,17 +4621,17 @@ lectern0_reader_view_find_text_metrics(Lectern0App *app,
 }
 
 FUNCTION S32
-lectern0_reader_view_measure_note_text(const char *text, U64 size)
+eightvo_reader_view_measure_note_text(const char *text, U64 size)
 {
   if (!text || size == 0) return 0;
   S32 advance = font_measure_text_width_s8(
     font_provider_system_ui(), str8((U8 *)text, size),
-    Lectern0ReaderViewNotePixelHeight);
+    EightvoReaderViewNotePixelHeight);
   return MIN(MAX(advance, 0), 0x100000);
 }
 
 FUNCTION void
-lectern0_reader_view_remember_note_scalar(Lectern0App *app,
+eightvo_reader_view_remember_note_scalar(EightvoApp *app,
                                            U32 scalar,
                                            const char *text,
                                            U32 size)
@@ -4652,12 +4652,12 @@ lectern0_reader_view_remember_note_scalar(Lectern0App *app,
   app->note_text_advances[app->note_text_advance_count++] =
     (ReaderViewCodepointAdvance){
       .codepoint = scalar,
-      .advance = lectern0_reader_view_measure_note_text(text, size),
+      .advance = eightvo_reader_view_measure_note_text(text, size),
     };
 }
 
 FUNCTION void
-lectern0_reader_view_remember_note_text(Lectern0App *app,
+eightvo_reader_view_remember_note_text(EightvoApp *app,
                                          ReaderViewText text)
 {
   if (!app || !text.data || text.size <= 0) return;
@@ -4669,7 +4669,7 @@ lectern0_reader_view_remember_note_text(Lectern0App *app,
     if (decode.valid && decode.scalar != (U32)'\r' &&
         decode.scalar != (U32)'\n')
     {
-      lectern0_reader_view_remember_note_scalar(
+      eightvo_reader_view_remember_note_scalar(
         app, decode.scalar, text.data + at, advance);
     }
     at += advance;
@@ -4677,7 +4677,7 @@ lectern0_reader_view_remember_note_text(Lectern0App *app,
 }
 
 FUNCTION ReaderViewNoteTextMetrics
-lectern0_reader_view_note_text_metrics(Lectern0App *app,
+eightvo_reader_view_note_text_metrics(EightvoApp *app,
                                         const ReaderViewInput *input)
 {
   ReaderViewNoteTextMetrics result = {0};
@@ -4686,15 +4686,15 @@ lectern0_reader_view_note_text_metrics(Lectern0App *app,
 
   const FontProvider *provider = font_provider_system_ui();
   FontTextMetrics font_metrics = font_metrics_for_size(
-    provider, Lectern0ReaderViewNotePixelHeight);
-  S32 fallback_advance = lectern0_reader_view_measure_note_text("?", 1);
+    provider, EightvoReaderViewNotePixelHeight);
+  S32 fallback_advance = eightvo_reader_view_measure_note_text("?", 1);
   result.advances = app->note_text_advances;
   result.fallback_advance = fallback_advance > 0 ?
-    fallback_advance : Lectern0ReaderViewNoteAdvanceFallback;
-  result.pixel_height = Lectern0ReaderViewNotePixelHeight;
+    fallback_advance : EightvoReaderViewNoteAdvanceFallback;
+  result.pixel_height = EightvoReaderViewNotePixelHeight;
   result.line_height = font_metrics.line_advance_px > 0 ?
     MAX(font_metrics.line_advance_px, result.pixel_height) :
-    Lectern0ReaderViewNoteLineHeightFallback;
+    EightvoReaderViewNoteLineHeightFallback;
 
   MemoryZeroArray(app->note_text_advances);
   app->note_text_advance_count = 0;
@@ -4703,13 +4703,13 @@ lectern0_reader_view_note_text_metrics(Lectern0App *app,
     /* Current state first, then text arriving in this build, then transfer
        text, and finally the empty-editor placeholder. Missing values use the
        explicit fallback when the bounded table is full. */
-    lectern0_reader_view_remember_note_text(
+    eightvo_reader_view_remember_note_text(
       app, reader_view_note_draft(&app->reader_view_state));
     if (input)
     {
       if (input->note_text.text && input->note_text.text_len > 0)
       {
-        lectern0_reader_view_remember_note_text(
+        eightvo_reader_view_remember_note_text(
           app, (ReaderViewText){input->note_text.text,
                                 input->note_text.text_len});
       }
@@ -4718,11 +4718,11 @@ lectern0_reader_view_note_text_metrics(Lectern0App *app,
       if (transfer && transfer->data && transfer->length &&
           *transfer->length > 0 && *transfer->length < transfer->cap)
       {
-        lectern0_reader_view_remember_note_text(
+        eightvo_reader_view_remember_note_text(
           app, (ReaderViewText){transfer->data, *transfer->length});
       }
     }
-    lectern0_reader_view_remember_note_text(
+    eightvo_reader_view_remember_note_text(
       app, app->reader_view_projection.labels.note_placeholder);
   }
   result.advance_count = (UI0S32)app->note_text_advance_count;
@@ -4730,15 +4730,15 @@ lectern0_reader_view_note_text_metrics(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_build_reader_view(Lectern0App *app)
+eightvo_build_reader_view(EightvoApp *app)
 {
   if (!app) { return 0; }
-  lectern0_prepare_reader_view_projection(app);
+  eightvo_prepare_reader_view_projection(app);
   ReaderViewLayoutInput layout_input = {
     .bounds = ui0_rect(0, 0, app->width, app->height),
     .features = app->reader_view_projection.features,
     .document_flags = app->reader_view_projection.document_flags,
-    .host_toolbar_trailing_width = Lectern0HostToolbarTrailingWidth,
+    .host_toolbar_trailing_width = EightvoHostToolbarTrailingWidth,
   };
   ReaderViewLayout resolved_layout = {0};
   if (!reader_view_resolve_layout(&app->reader_view_state,
@@ -4764,14 +4764,14 @@ lectern0_build_reader_view(Lectern0App *app)
   {
     app->reader_view_layout = resolved_layout;
     app->reader_content_geometry = resolved_geometry;
-    if (viewport_changed && !lectern0_repaginate(app))
+    if (viewport_changed && !eightvo_repaginate(app))
     {
       app->reader_view_ready = 0;
       return 0;
     }
-    if (viewport_changed) lectern0_prepare_reader_view_projection(app);
+    if (viewport_changed) eightvo_prepare_reader_view_projection(app);
   }
-  ReaderViewInput input = lectern0_reader_view_input(app);
+  ReaderViewInput input = eightvo_reader_view_input(app);
   ReaderViewBuildInput build = {
     .frame_index = ++app->reader_view_frame_index,
     .state = &app->reader_view_state,
@@ -4780,9 +4780,9 @@ lectern0_build_reader_view(Lectern0App *app)
     .input = &input,
     .theme = &app->reader_view_theme,
     .find_text_metrics =
-      lectern0_reader_view_find_text_metrics(app, &input),
+      eightvo_reader_view_find_text_metrics(app, &input),
     .note_text_metrics =
-      lectern0_reader_view_note_text_metrics(app, &input),
+      eightvo_reader_view_note_text_metrics(app, &input),
   };
   app->reader_view_ready = reader_view_build(&build,
                                              &app->reader_view_storage,
@@ -4791,7 +4791,7 @@ lectern0_build_reader_view(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_prewarm_reader_text_pipeline(Lectern0App *app)
+eightvo_prewarm_reader_text_pipeline(EightvoApp *app)
 {
   if (!app || !app->render_ready) return;
   enum { PrewarmW = 960, PrewarmH = 256 };
@@ -4810,17 +4810,17 @@ lectern0_prewarm_reader_text_pipeline(Lectern0App *app)
                                        EpubReaderTextMode_ShapedV1);
   draw_command_buffer_begin(&app->draw_commands);
 
-  struct Lectern0ReaderTextPrewarmLine
+  struct EightvoReaderTextPrewarmLine
   {
     const char *text;
     S32 scale;
     DocTextStyleFlags flags;
   };
-  struct Lectern0ReaderTextPrewarmLine lines[] =
+  struct EightvoReaderTextPrewarmLine lines[] =
   {
     {"Reader warmup heading", 24, DocTextStyleFlag_Bold},
     {"The quick reader panel should remain responsive while search results are visible.", 22, 0},
-    {"Lectern reader paragraph repeats reader words for first-open frame coverage.", 22, 0},
+    {"8vo reader paragraph repeats reader words for first-open frame coverage.", 22, 0},
     {"Alpha Beta Gamma Delta Epsilon Zeta Eta Theta Iota Kappa Lambda.", 22, 0},
     {"Italic prose and bold prose warm the same DirectWrite layout path.", 22, DocTextStyleFlag_Italic},
     {"Bold reader text warms the title and section chrome path.", 22, DocTextStyleFlag_Bold},
@@ -4831,7 +4831,7 @@ lectern0_prewarm_reader_text_pipeline(Lectern0App *app)
   S32 y = 10;
   for (U32 index = 0; index < ARRAY_COUNT(lines); index += 1)
   {
-    struct Lectern0ReaderTextPrewarmLine line = lines[index];
+    struct EightvoReaderTextPrewarmLine line = lines[index];
     TextEngineResolvedStyle style =
       epub_reader_typography_style_for_doc_style(
         &app->reader.typography,
@@ -4880,7 +4880,7 @@ lectern0_prewarm_reader_text_pipeline(Lectern0App *app)
 
 
 FUNCTION B32
-lectern0_app_init(Lectern0App *app,
+eightvo_app_init(EightvoApp *app,
                   S32 width,
                   S32 height,
                   B32 graphical,
@@ -4894,12 +4894,12 @@ lectern0_app_init(Lectern0App *app,
   app->font_family = FontProviderBookContentFamily_Georgia;
   app->text_size_index = 3;
   app->line_spacing_index = 0;
-  app->theme = Lectern0Theme_Light;
+  app->theme = EightvoTheme_Light;
   app->document_state = ReaderViewLoad_Empty;
   app->next_record_id = 1;
   app->clipboard_transfer.data = app->clipboard_text;
   app->clipboard_transfer.length = &app->clipboard_length;
-  app->clipboard_transfer.cap = Lectern0ClipboardCap;
+  app->clipboard_transfer.cap = EightvoClipboardCap;
   reader_view_state_init(&app->reader_view_state);
   app->arena = arena_alloc(0);
   if (!app->arena) { return 0; }
@@ -4912,12 +4912,12 @@ lectern0_app_init(Lectern0App *app,
     return 0;
   }
 
-  if (persistence_enabled && lectern0_state_paths(app))
+  if (persistence_enabled && eightvo_state_paths(app))
   {
-    lectern0_load_state(app);
-    lectern0_load_settings(app);
-    (void)lectern0_library_catalog_load(&app->library, app->catalog_path);
-    lectern0_migrate_saved_state_to_library(app);
+    eightvo_load_state(app);
+    eightvo_load_settings(app);
+    (void)eightvo_library_catalog_load(&app->library, app->catalog_path);
+    eightvo_migrate_saved_state_to_library(app);
   }
   if (app->library.entry_count > 0)
     app->library_selected_entry_id = app->library.entries[0].entry_id;
@@ -4935,22 +4935,22 @@ lectern0_app_init(Lectern0App *app,
     app->arena = 0;
     return 0;
   }
-  if (!lectern0_image_cache_init(&app->image_cache))
+  if (!eightvo_image_cache_init(&app->image_cache))
   {
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
     return 0;
   }
-  if (!lectern0_library_thumbnail_cache_init(&app->library_thumbnail_cache))
+  if (!eightvo_library_thumbnail_cache_init(&app->library_thumbnail_cache))
   {
-    lectern0_image_cache_release(&app->image_cache);
+    eightvo_image_cache_release(&app->image_cache);
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
     return 0;
   }
-  lectern0_library_hydrate_startup_entry(app);
+  eightvo_library_hydrate_startup_entry(app);
 
   if (graphical)
   {
@@ -4958,60 +4958,60 @@ lectern0_app_init(Lectern0App *app,
     app->render_ready = 1;
     /*
     Re10 performs the same hidden startup warmup before its window loop. Keep
-    DirectWrite shaping and the common book glyph path out of Lectern's first
+    DirectWrite shaping and the common book glyph path out of 8vo's first
     visible EPUB frame as well.
     */
-    lectern0_prewarm_reader_text_pipeline(app);
+    eightvo_prewarm_reader_text_pipeline(app);
   }
-  lectern0_library_set_summary_status(app);
+  eightvo_library_set_summary_status(app);
   return 1;
 }
 
 FUNCTION void
-lectern0_app_release(Lectern0App *app)
+eightvo_app_release(EightvoApp *app)
 {
   if (!app) { return; }
-  lectern0_cancel_location_warm(app);
-  lectern0_cancel_adjacent_warm(app);
-  if (app->accessibility) lectern0_accessibility_destroy(app->accessibility);
-  (void)lectern0_save_state(app);
-  (void)lectern0_save_library(app);
-  (void)lectern0_save_settings(app);
-  (void)lectern0_save_annotations(app);
+  eightvo_cancel_location_warm(app);
+  eightvo_cancel_adjacent_warm(app);
+  if (app->accessibility) eightvo_accessibility_destroy(app->accessibility);
+  (void)eightvo_save_state(app);
+  (void)eightvo_save_library(app);
+  (void)eightvo_save_settings(app);
+  (void)eightvo_save_annotations(app);
   if (app->gfx_ready) { os_gfx_release(&app->gfx); }
   if (app->render_ready) { render_state_release(&app->render_state); }
   free(app->adjacent_page_pixels);
   app->adjacent_page_pixels = 0;
-  lectern0_library_thumbnail_cache_release(&app->library_thumbnail_cache);
-  lectern0_image_cache_release(&app->image_cache);
+  eightvo_library_thumbnail_cache_release(&app->library_thumbnail_cache);
+  eightvo_image_cache_release(&app->image_cache);
   epub_reader_release(&app->reader);
   if (app->arena) { arena_release(app->arena); }
   MemoryZeroStruct(app);
 }
 
 FUNCTION int
-lectern0_run_data_migration_smoke(void)
+eightvo_run_data_migration_smoke(void)
 {
-  Lectern0App app = {0};
-  if (!lectern0_app_init(&app, 1000, 720, 0, 1) ||
+  EightvoApp app = {0};
+  if (!eightvo_app_init(&app, 1000, 720, 0, 1) ||
       !app.app_directory[0])
   {
     fprintf(stderr,
-            "lectern0_data_migration_smoke result=fail reason=init\n");
+            "eightvo_data_migration_smoke result=fail reason=init\n");
     app.persistence_enabled = 0;
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   fprintf(stdout,
-          "lectern0_data_migration_smoke result=pass directory=%s\n",
+          "eightvo_data_migration_smoke result=pass directory=%s\n",
           app.app_directory);
   app.persistence_enabled = 0;
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION const ReaderViewTextBinding *
-lectern0_reader_view_binding(const Lectern0App *app, UI0ID id)
+eightvo_reader_view_binding(const EightvoApp *app, UI0ID id)
 {
   if (!app || !app->reader_view_frame.text_bindings) return 0;
   for (UI0S32 index = 0;
@@ -5026,7 +5026,7 @@ lectern0_reader_view_binding(const Lectern0App *app, UI0ID id)
 }
 
 FUNCTION B32
-lectern0_reader_view_text_is(ReaderViewText text, const char *expected)
+eightvo_reader_view_text_is(ReaderViewText text, const char *expected)
 {
   if (!expected || text.size < 0) return 0;
   U64 size = strlen(expected);
@@ -5035,13 +5035,13 @@ lectern0_reader_view_text_is(ReaderViewText text, const char *expected)
 }
 
 FUNCTION U32
-lectern0_draw_color(UI0Color color)
+eightvo_draw_color(UI0Color color)
 {
   return color & 0x00FFFFFFU;
 }
 
 FUNCTION B32
-lectern0_ui0_rect_visible(UI0Rect rect, UI0Rect clip)
+eightvo_ui0_rect_visible(UI0Rect rect, UI0Rect clip)
 {
   return rect.w > 0 && rect.h > 0 && clip.w > 0 && clip.h > 0 &&
          MAX(rect.x, clip.x) < MIN(rect.x + rect.w, clip.x + clip.w) &&
@@ -5049,7 +5049,7 @@ lectern0_ui0_rect_visible(UI0Rect rect, UI0Rect clip)
 }
 
 FUNCTION UI0Rect
-lectern0_ui0_rect_intersect(UI0Rect a, UI0Rect b)
+eightvo_ui0_rect_intersect(UI0Rect a, UI0Rect b)
 {
   UI0Rect result = {0};
   S32 x0 = MAX(a.x, b.x);
@@ -5062,15 +5062,15 @@ lectern0_ui0_rect_intersect(UI0Rect a, UI0Rect b)
 }
 
 FUNCTION void
-lectern0_draw_ui0_rect_border_clipped(Lectern0App *app,
+eightvo_draw_ui0_rect_border_clipped(EightvoApp *app,
                                       UI0Rect rect,
                                       UI0Rect clip,
                                       UI0Color color)
 {
   if (!app || rect.w <= 1 || rect.h <= 1 ||
-      !lectern0_ui0_rect_visible(rect, clip))
+      !eightvo_ui0_rect_visible(rect, clip))
     return;
-  U32 resolved = lectern0_draw_color(color);
+  U32 resolved = eightvo_draw_color(color);
   (void)draw_push_line_clipped(&app->draw_commands, DrawLayer_UI,
                                rect.x, rect.y,
                                rect.x + rect.w - 1, rect.y,
@@ -5094,7 +5094,7 @@ lectern0_draw_ui0_rect_border_clipped(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_ui0_border_matches_fill(const UI0DrawCommand *border,
+eightvo_ui0_border_matches_fill(const UI0DrawCommand *border,
                                   const UI0DrawCommand *fill)
 {
   return border && fill && border->op == UI0DrawOp_ControlBorder &&
@@ -5106,44 +5106,44 @@ lectern0_ui0_border_matches_fill(const UI0DrawCommand *border,
 }
 
 FUNCTION U32
-lectern0_ui0_border_color_for_fill(const ReaderViewFrame *frame,
+eightvo_ui0_border_color_for_fill(const ReaderViewFrame *frame,
                                    const UI0DrawCommand *fill)
 {
   if (!frame || !frame->draw_commands || !fill) return 0;
-  if (fill->stroke_color) return lectern0_draw_color(fill->stroke_color);
+  if (fill->stroke_color) return eightvo_draw_color(fill->stroke_color);
   for (UI0S32 index = 0; index < frame->draw_command_count; index += 1)
   {
     const UI0DrawCommand *candidate = frame->draw_commands + index;
-    if (lectern0_ui0_border_matches_fill(candidate, fill))
-      return lectern0_draw_color(candidate->color);
+    if (eightvo_ui0_border_matches_fill(candidate, fill))
+      return eightvo_draw_color(candidate->color);
   }
-  return lectern0_draw_color(fill->color);
+  return eightvo_draw_color(fill->color);
 }
 
 FUNCTION void
-lectern0_draw_ui0_control_fill(Lectern0App *app,
+eightvo_draw_ui0_control_fill(EightvoApp *app,
                                const UI0DrawCommand *command)
 {
   if (!app || !command ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
+      !eightvo_ui0_rect_visible(command->rect, command->clip_rect)) return;
   UI0Rect rect = command->rect;
   UI0Rect clip = command->clip_rect;
   S32 radius = MAX(command->corner_radius, 0);
   if (command->flags & UI0DrawFlag_CornerMask)
   {
-    clip = lectern0_ui0_rect_intersect(command->rect, command->clip_rect);
+    clip = eightvo_ui0_rect_intersect(command->rect, command->clip_rect);
     B32 round_top = (command->flags & UI0DrawFlag_RoundTop) != 0;
     B32 round_bottom = (command->flags & UI0DrawFlag_RoundBottom) != 0;
     if (!round_top && !round_bottom)
     {
       (void)draw_push_rect_clipped(&app->draw_commands, DrawLayer_UI,
                                    rect.x, rect.y, rect.w, rect.h,
-                                   lectern0_draw_color(command->color),
+                                   eightvo_draw_color(command->color),
                                    clip.x, clip.y, clip.w, clip.h);
-      U32 border = lectern0_ui0_border_color_for_fill(&app->reader_view_frame,
+      U32 border = eightvo_ui0_border_color_for_fill(&app->reader_view_frame,
                                                        command);
-      if (border && border != lectern0_draw_color(command->color))
-        lectern0_draw_ui0_rect_border_clipped(
+      if (border && border != eightvo_draw_color(command->color))
+        eightvo_draw_ui0_rect_border_clipped(
           app, rect, clip, (UI0Color)border);
       return;
     }
@@ -5154,8 +5154,8 @@ lectern0_draw_ui0_control_fill(Lectern0App *app,
       rect.h += radius;
     }
   }
-  U32 fill = lectern0_draw_color(command->color);
-  U32 border = lectern0_ui0_border_color_for_fill(&app->reader_view_frame,
+  U32 fill = eightvo_draw_color(command->color);
+  U32 border = eightvo_ui0_border_color_for_fill(&app->reader_view_frame,
                                                    command);
   (void)draw_push_rounded_rect_clipped(&app->draw_commands, DrawLayer_UI,
                                        rect.x, rect.y, rect.w, rect.h, radius,
@@ -5164,7 +5164,7 @@ lectern0_draw_ui0_control_fill(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_set_last_text_style(DrawCommandBuffer *buffer,
+eightvo_set_last_text_style(DrawCommandBuffer *buffer,
                              FontFaceStyleFlags style_flags)
 {
   if (!buffer || buffer->command_count[DrawLayer_UI] == 0) return;
@@ -5175,7 +5175,7 @@ lectern0_set_last_text_style(DrawCommandBuffer *buffer,
 }
 
 FUNCTION U32
-lectern0_reader_view_utf8_next_byte(const char *text,
+eightvo_reader_view_utf8_next_byte(const char *text,
                                     U32 text_length,
                                     U32 at)
 {
@@ -5199,7 +5199,7 @@ lectern0_reader_view_utf8_next_byte(const char *text,
 }
 
 FUNCTION U32
-lectern0_reader_view_find_line_end(const char *text,
+eightvo_reader_view_find_line_end(const char *text,
                                    U32 text_length,
                                    U32 start,
                                    S32 max_width)
@@ -5211,7 +5211,7 @@ lectern0_reader_view_find_line_end(const char *text,
   for (U32 at = start;
        at < text_length && boundary_count < ARRAY_COUNT(boundaries); )
   {
-    U32 next = lectern0_reader_view_utf8_next_byte(text, text_length, at);
+    U32 next = eightvo_reader_view_utf8_next_byte(text, text_length, at);
     if (next <= at || next > text_length) next = at + 1;
     boundaries[boundary_count++] = next;
     at = next;
@@ -5247,8 +5247,8 @@ lectern0_reader_view_find_line_end(const char *text,
 }
 
 FUNCTION B32
-lectern0_draw_reader_view_find_excerpt(
-  Lectern0App *app,
+eightvo_draw_reader_view_find_excerpt(
+  EightvoApp *app,
   const UI0DrawCommand *command,
   const ReaderViewTextBinding *binding)
 {
@@ -5266,14 +5266,14 @@ lectern0_draw_reader_view_find_excerpt(
     highlight_clip.h += 1;
   }
   UI0Rect text_rect =
-    lectern0_ui0_rect_intersect(command->rect, highlight_clip);
+    eightvo_ui0_rect_intersect(command->rect, highlight_clip);
   if (text_rect.w <= 0 || text_rect.h <= 0) return 1;
 
   const char *text = binding->text.data;
   U32 text_length = (U32)binding->text.size;
   U32 cursor = 0;
   while (cursor < text_length && text[cursor] == ' ') cursor += 1;
-  U32 line_end = lectern0_reader_view_find_line_end(
+  U32 line_end = eightvo_reader_view_find_line_end(
     text, text_length, cursor, text_rect.w);
   U32 draw_end = line_end;
   while (draw_end > cursor && text[draw_end - 1] == ' ') draw_end -= 1;
@@ -5293,7 +5293,7 @@ lectern0_draw_reader_view_find_excerpt(
     S32 match_width = font_measure_text_width_s8(
       font_provider_system_ui(),
       str8((U8 *)text + match_start, match_end - match_start), 1);
-    UI0Rect highlight = lectern0_ui0_rect_intersect(
+    UI0Rect highlight = eightvo_ui0_rect_intersect(
       ui0_rect(text_rect.x + pre_width,
                baseline - metrics.ascent_px - 1,
                MAX(match_width, 1),
@@ -5301,16 +5301,16 @@ lectern0_draw_reader_view_find_excerpt(
       highlight_clip);
     if (highlight.w > 0 && highlight.h > 0)
     {
-      Lectern0ReaderContentTheme theme =
-        lectern0_reader_content_theme(app->theme);
+      EightvoReaderContentTheme theme =
+        eightvo_reader_content_theme(app->theme);
       (void)draw_push_rect(&app->draw_commands, DrawLayer_UI,
                            highlight.x, highlight.y,
                            highlight.w, highlight.h,
                            theme.user_highlight);
     }
   }
-  Lectern0ReaderContentTheme theme =
-    lectern0_reader_content_theme(app->theme);
+  EightvoReaderContentTheme theme =
+    eightvo_reader_content_theme(app->theme);
   (void)draw_push_text_clipped_baseline_s8(
     &app->draw_commands, DrawLayer_UI,
     str8((U8 *)text + cursor, draw_end - cursor),
@@ -5320,8 +5320,8 @@ lectern0_draw_reader_view_find_excerpt(
 }
 
 FUNCTION B32
-lectern0_reader_view_note_binding_source_range(
-  const Lectern0App *app,
+eightvo_reader_view_note_binding_source_range(
+  const EightvoApp *app,
   const ReaderViewTextBinding *binding,
   U64 *out_start,
   U64 *out_end)
@@ -5346,8 +5346,8 @@ lectern0_reader_view_note_binding_source_range(
 }
 
 FUNCTION B32
-lectern0_draw_reader_view_note_editable_row(
-  Lectern0App *app,
+eightvo_draw_reader_view_note_editable_row(
+  EightvoApp *app,
   const UI0DrawCommand *command,
   const UI0DrawCommand *caret_command,
   const ReaderViewTextBinding *binding,
@@ -5360,7 +5360,7 @@ lectern0_draw_reader_view_note_editable_row(
       binding->style != ReaderViewTextStyle_NoteEditor ||
       command->rect.w <= 0 || command->rect.h <= 0 ||
       command->clip_rect.w <= 0 || command->clip_rect.h <= 0 ||
-      !lectern0_reader_view_note_binding_source_range(
+      !eightvo_reader_view_note_binding_source_range(
         app, binding, &source_start, &source_end))
   {
     return 0;
@@ -5368,13 +5368,13 @@ lectern0_draw_reader_view_note_editable_row(
 
   S32 pixel_height = command->has_typography_role &&
                      command->typography_line_height > 0 ?
-    command->typography_line_height : Lectern0ReaderViewNotePixelHeight;
+    command->typography_line_height : EightvoReaderViewNotePixelHeight;
   Scratch scratch = scratch_begin(0, 0);
   TextEngineResolvedStyle style = text_engine_resolved_style_make(
     font_provider_system_ui(),
     (FontTag){0},
     pixel_height,
-    lectern0_draw_color(command->color),
+    eightvo_draw_color(command->color),
     0,
     FontRasterFlag_Smooth | FontRasterFlag_Hinted);
   TextEngineSourceRange source_range =
@@ -5390,7 +5390,7 @@ lectern0_draw_reader_view_note_editable_row(
     command->rect.x,
     command->rect.y,
     command->rect.h,
-    Lectern0ReaderViewNoteTerminalCaretGap) &&
+    EightvoReaderViewNoteTerminalCaretGap) &&
     text_engine_editable_row_push_text_span_s8(
       &app->draw_commands,
       DrawLayer_UI,
@@ -5420,7 +5420,7 @@ lectern0_draw_reader_view_note_editable_row(
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_semantic_node(const Lectern0App *app, UI0ID id)
+eightvo_reader_view_semantic_node(const EightvoApp *app, UI0ID id)
 {
   if (!app || !id || !app->reader_view_frame.semantic_nodes) return 0;
   for (UI0S32 index = 0;
@@ -5435,16 +5435,16 @@ lectern0_reader_view_semantic_node(const Lectern0App *app, UI0ID id)
 }
 
 FUNCTION void
-lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
+eightvo_draw_ui0_text(EightvoApp *app, const UI0DrawCommand *command)
 {
   if (!app || !command || command->rect.w <= 0 || command->rect.h <= 0 ||
       command->clip_rect.w <= 0 || command->clip_rect.h <= 0) return;
   const ReaderViewTextBinding *binding =
-    lectern0_reader_view_binding(app, command->source_id);
+    eightvo_reader_view_binding(app, command->source_id);
   if (!binding || !binding->text.data || binding->text.size <= 0) return;
-  if (lectern0_draw_reader_view_find_excerpt(app, command, binding)) return;
+  if (eightvo_draw_reader_view_find_excerpt(app, command, binding)) return;
   char label[READER_VIEW_NOTE_DRAFT_CAP] = {0};
-  lectern0_copy_bytes(label, ARRAY_COUNT(label),
+  eightvo_copy_bytes(label, ARRAY_COUNT(label),
                       (const U8 *)binding->text.data, (U64)binding->text.size);
   String8 text = str8_from_cstr(label);
   const FontProvider *provider = font_provider_system_ui();
@@ -5454,13 +5454,13 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
     scale = command->has_typography_role &&
             command->typography_role == UI0TypographyRole_Body &&
             command->typography_line_height > 0 ?
-      command->typography_line_height : Lectern0ReaderViewNotePixelHeight;
+      command->typography_line_height : EightvoReaderViewNotePixelHeight;
   }
   FontTextMetrics metrics = font_metrics_for_size(provider, scale);
   const ReaderViewSemanticNode *node =
-    lectern0_reader_view_semantic_node(app, command->source_id);
+    eightvo_reader_view_semantic_node(app, command->source_id);
   const ReaderViewSemanticNode *parent = node ?
-    lectern0_reader_view_semantic_node(app, node->parent_id) : 0;
+    eightvo_reader_view_semantic_node(app, node->parent_id) : 0;
   if (app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
       parent && parent->control == ReaderViewSemanticControl_FindRow)
   {
@@ -5469,7 +5469,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
     (void)draw_push_text_clipped_baseline_s8(
       &app->draw_commands, DrawLayer_UI, text,
       text_x, command->rect.y + metrics.ascent_px,
-      scale, lectern0_draw_color(command->color),
+      scale, eightvo_draw_color(command->color),
       command->clip_rect.x, command->clip_rect.y,
       command->clip_rect.w, command->clip_rect.h);
     return;
@@ -5503,7 +5503,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
         (void)draw_push_text_clipped_baseline_s8(
           &app->draw_commands, DrawLayer_UI, text,
           command->rect.x, status_baseline,
-          scale, lectern0_draw_color(command->color),
+          scale, eightvo_draw_color(command->color),
           command->clip_rect.x, command->clip_rect.y,
           command->clip_rect.w, command->clip_rect.h);
       }
@@ -5523,7 +5523,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
   }
   UI0Rect horizontal = ui0_rect(command->rect.x, command->clip_rect.y,
                                 command->rect.w, command->clip_rect.h);
-  UI0Rect clip = lectern0_ui0_rect_intersect(horizontal, command->clip_rect);
+  UI0Rect clip = eightvo_ui0_rect_intersect(horizontal, command->clip_rect);
   if (clip.w <= 0 || clip.h <= 0) return;
   {
     DrawTextVAlign v_align = DrawTextVAlign_Center;
@@ -5546,7 +5546,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
                              DrawTextHAlign_Left,
                              v_align,
                              DrawTextBoxOverflow_Truncate,
-                             lectern0_draw_color(command->color),
+                             eightvo_draw_color(command->color),
                              0);
     for (U16 command_index = first_command_index;
          command_index < app->draw_commands.command_count[DrawLayer_UI];
@@ -5564,7 +5564,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
                                          text_command->v.text.clip_w,
                                          command->clip_rect.h);
       UI0Rect resolved_clip =
-        lectern0_ui0_rect_intersect(text_horizontal, command->clip_rect);
+        eightvo_ui0_rect_intersect(text_horizontal, command->clip_rect);
       text_command->v.text.clip_x = resolved_clip.x;
       text_command->v.text.clip_y = resolved_clip.y;
       text_command->v.text.clip_w = resolved_clip.w;
@@ -5575,7 +5575,7 @@ lectern0_draw_ui0_text(Lectern0App *app, const UI0DrawCommand *command)
 }
 
 FUNCTION void
-lectern0_draw_ui0_line(Lectern0App *app, UI0Rect clip,
+eightvo_draw_ui0_line(EightvoApp *app, UI0Rect clip,
                        S32 x0, S32 y0, S32 x1, S32 y1,
                        S32 width, U32 color)
 {
@@ -5584,17 +5584,17 @@ lectern0_draw_ui0_line(Lectern0App *app, UI0Rect clip,
                                      clip.x, clip.y, clip.w, clip.h);
 }
 
-typedef struct Lectern0ReaderFilterSegment
+typedef struct EightvoReaderFilterSegment
 {
   F32 x0;
   F32 y0;
   F32 x1;
   F32 y1;
-} Lectern0ReaderFilterSegment;
+} EightvoReaderFilterSegment;
 
 FUNCTION F64
-lectern0_reader_filter_distance_sq(F64 px, F64 py,
-                                   const Lectern0ReaderFilterSegment *segment)
+eightvo_reader_filter_distance_sq(F64 px, F64 py,
+                                   const EightvoReaderFilterSegment *segment)
 {
   F64 vx = (F64)segment->x1 - (F64)segment->x0;
   F64 vy = (F64)segment->y1 - (F64)segment->y0;
@@ -5613,9 +5613,9 @@ lectern0_reader_filter_distance_sq(F64 px, F64 py,
 }
 
 FUNCTION B32
-lectern0_reader_filter_sample_covered(F64 x, F64 y)
+eightvo_reader_filter_sample_covered(F64 x, F64 y)
 {
-  static const Lectern0ReaderFilterSegment segments[] = {
+  static const EightvoReaderFilterSegment segments[] = {
     {4.0f, 21.0f, 4.0f, 14.0f},
     {4.0f, 10.0f, 4.0f, 3.0f},
     {12.0f, 21.0f, 12.0f, 12.0f},
@@ -5627,13 +5627,13 @@ lectern0_reader_filter_sample_covered(F64 x, F64 y)
     {18.0f, 16.0f, 22.0f, 16.0f},
   };
   for (U32 index = 0; index < ARRAY_COUNT(segments); index += 1)
-    if (lectern0_reader_filter_distance_sq(x, y, segments + index) <= 1.0)
+    if (eightvo_reader_filter_distance_sq(x, y, segments + index) <= 1.0)
       return 1;
   return 0;
 }
 
 FUNCTION U32
-lectern0_reader_filter_blend(U32 foreground, U32 background, U32 alpha)
+eightvo_reader_filter_blend(U32 foreground, U32 background, U32 alpha)
 {
   alpha = MIN(alpha, 255u);
   U32 inverse = 255u - alpha;
@@ -5650,7 +5650,7 @@ lectern0_reader_filter_blend(U32 foreground, U32 background, U32 alpha)
 }
 
 FUNCTION B32
-lectern0_reader_filter_rasterize_rgb32(S32 width, S32 height,
+eightvo_reader_filter_rasterize_rgb32(S32 width, S32 height,
                                        U32 foreground, U32 background,
                                        U32 *pixels, S32 stride_pixels)
 {
@@ -5677,34 +5677,34 @@ lectern0_reader_filter_rasterize_rgb32(S32 width, S32 height,
           {
             F64 source_x = ((px - x_pad) / side) * 24.0;
             F64 source_y = ((py - y_pad) / side) * 24.0;
-            covered += lectern0_reader_filter_sample_covered(source_x,
+            covered += eightvo_reader_filter_sample_covered(source_x,
                                                               source_y) ? 1u : 0u;
           }
         }
       }
       U32 alpha = (covered * 255u + sample_count / 2u) / sample_count;
       pixels[(U64)y * (U64)stride_pixels + (U64)x] =
-        lectern0_reader_filter_blend(foreground, background, alpha);
+        eightvo_reader_filter_blend(foreground, background, alpha);
     }
   }
   return 1;
 }
 
 FUNCTION const U32 *
-lectern0_ui0_icon_raster(Lectern0App *app,
+eightvo_ui0_icon_raster(EightvoApp *app,
                          const UI0DrawCommand *command)
 {
-  Lectern0UI0IconRasterCacheEntry *entry = 0;
+  EightvoUI0IconRasterCacheEntry *entry = 0;
   if (!app || !command || command->op != UI0DrawOp_Icon ||
       command->rect.w <= 0 || command->rect.h <= 0 ||
-      command->rect.w > Lectern0UI0IconRasterMaxWidth ||
-      command->rect.h > Lectern0UI0IconRasterMaxHeight)
+      command->rect.w > EightvoUI0IconRasterMaxWidth ||
+      command->rect.h > EightvoUI0IconRasterMaxHeight)
   {
     return 0;
   }
   for (U32 index = 0; index < app->ui0_icon_raster_count; index += 1)
   {
-    Lectern0UI0IconRasterCacheEntry *candidate =
+    EightvoUI0IconRasterCacheEntry *candidate =
       app->ui0_icon_rasters + index;
     if (candidate->icon_kind == command->icon_kind &&
         candidate->width == command->rect.w &&
@@ -5715,23 +5715,23 @@ lectern0_ui0_icon_raster(Lectern0App *app,
       return candidate->pixels;
     }
   }
-  if (app->ui0_icon_raster_count >= Lectern0UI0IconRasterCacheCap) { return 0; }
+  if (app->ui0_icon_raster_count >= EightvoUI0IconRasterCacheCap) { return 0; }
   entry = app->ui0_icon_rasters + app->ui0_icon_raster_count;
   /* The frozen re10 benchmark renders this generic intent with its established
      24x24 SlidersVertical geometry. Keep that exact host-boundary raster while
      all other icons continue through UI0's portable rasterizer. */
   B32 rasterized = command->icon_kind == UI0IconKind_Filter ?
-    lectern0_reader_filter_rasterize_rgb32(
+    eightvo_reader_filter_rasterize_rgb32(
       command->rect.w, command->rect.h,
       command->color, command->stroke_color,
-      entry->pixels, Lectern0UI0IconRasterMaxWidth) :
+      entry->pixels, EightvoUI0IconRasterMaxWidth) :
     ui0_icon_rasterize_rgb32(command->icon_kind,
                              command->rect.w,
                              command->rect.h,
                              command->color,
                              command->stroke_color,
                              entry->pixels,
-                             Lectern0UI0IconRasterMaxWidth);
+                             EightvoUI0IconRasterMaxWidth);
   if (!rasterized)
   {
     return 0;
@@ -5746,11 +5746,11 @@ lectern0_ui0_icon_raster(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
+eightvo_draw_ui0_icon(EightvoApp *app, const UI0DrawCommand *command)
 {
   if (!app || !command ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
-  const U32 *pixels = lectern0_ui0_icon_raster(app, command);
+      !eightvo_ui0_rect_visible(command->rect, command->clip_rect)) return;
+  const U32 *pixels = eightvo_ui0_icon_raster(app, command);
   if (!pixels)
   {
     app->draw_adapter_stats.unsupported_count += 1;
@@ -5761,7 +5761,7 @@ lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
                                  pixels,
                                  command->rect.w,
                                  command->rect.h,
-                                 Lectern0UI0IconRasterMaxWidth,
+                                 EightvoUI0IconRasterMaxWidth,
                                  command->rect.x,
                                  command->rect.y,
                                  command->rect.w,
@@ -5773,11 +5773,11 @@ lectern0_draw_ui0_icon(Lectern0App *app, const UI0DrawCommand *command)
 }
 
 FUNCTION void
-lectern0_draw_ui0_check_mark(Lectern0App *app,
+eightvo_draw_ui0_check_mark(EightvoApp *app,
                              const UI0DrawCommand *command)
 {
   if (!app || !command ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect)) return;
+      !eightvo_ui0_rect_visible(command->rect, command->clip_rect)) return;
   UI0Rect r = command->rect;
   S32 x0 = r.x + MAX(1, r.w / 10);
   S32 y0 = r.y + (r.h * 5) / 10;
@@ -5786,32 +5786,32 @@ lectern0_draw_ui0_check_mark(Lectern0App *app,
   S32 x2 = r.x + r.w - MAX(1, r.w / 10);
   S32 y2 = r.y + MAX(1, r.h / 5);
   S32 width = MAX(2, (r.h + 2) / 4);
-  U32 color = lectern0_draw_color(command->color);
-  lectern0_draw_ui0_line(app, command->clip_rect, x0, y0, x1, y1,
+  U32 color = eightvo_draw_color(command->color);
+  eightvo_draw_ui0_line(app, command->clip_rect, x0, y0, x1, y1,
                          width, color);
-  lectern0_draw_ui0_line(app, command->clip_rect, x1, y1, x2, y2,
+  eightvo_draw_ui0_line(app, command->clip_rect, x1, y1, x2, y2,
                          width, color);
 }
 
 FUNCTION void
-lectern0_draw_ui0_focus_ring(Lectern0App *app,
+eightvo_draw_ui0_focus_ring(EightvoApp *app,
                              const UI0DrawCommand *command)
 {
   if (!app || !command ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect))
+      !eightvo_ui0_rect_visible(command->rect, command->clip_rect))
     return;
   UI0Rect rect = command->rect;
   UI0Rect clip = command->clip_rect;
   S32 radius = MAX(command->corner_radius, 0);
-  U32 color = lectern0_draw_color(command->color);
+  U32 color = eightvo_draw_color(command->color);
   if ((command->flags & UI0DrawFlag_CornerMask) != 0)
   {
-    clip = lectern0_ui0_rect_intersect(rect, clip);
+    clip = eightvo_ui0_rect_intersect(rect, clip);
     B32 round_top = (command->flags & UI0DrawFlag_RoundTop) != 0;
     B32 round_bottom = (command->flags & UI0DrawFlag_RoundBottom) != 0;
     if (!round_top && !round_bottom)
     {
-      lectern0_draw_ui0_rect_border_clipped(app, rect, clip, command->color);
+      eightvo_draw_ui0_rect_border_clipped(app, rect, clip, command->color);
       return;
     }
     if (round_top && !round_bottom) rect.h += radius;
@@ -5828,11 +5828,11 @@ lectern0_draw_ui0_focus_ring(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_draw_ui0_indicator_border(Lectern0App *app,
+eightvo_draw_ui0_indicator_border(EightvoApp *app,
                                    const UI0DrawCommand *command)
 {
   if (!app || !command ||
-      !lectern0_ui0_rect_visible(command->rect, command->clip_rect))
+      !eightvo_ui0_rect_visible(command->rect, command->clip_rect))
     return;
   if (command->source_kind == UI0ControlKind_Checkbox)
   {
@@ -5841,19 +5841,19 @@ lectern0_draw_ui0_indicator_border(Lectern0App *app,
       command->rect.x, command->rect.y,
       command->rect.w, command->rect.h,
       MAX(command->corner_radius, 0), 1,
-      lectern0_draw_color(command->color),
+      eightvo_draw_color(command->color),
       command->clip_rect.x, command->clip_rect.y,
       command->clip_rect.w, command->clip_rect.h);
   }
   else
   {
-    lectern0_draw_ui0_rect_border_clipped(
+    eightvo_draw_ui0_rect_border_clipped(
       app, command->rect, command->clip_rect, command->color);
   }
 }
 
 FUNCTION void
-lectern0_adapt_ui0_draw(Lectern0App *app)
+eightvo_adapt_ui0_draw(EightvoApp *app)
 {
   if (!app) { return; }
   const UI0DrawCommand *note_caret_command = 0;
@@ -5867,7 +5867,7 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
       app->reader_view_frame.draw_commands + index;
     if (candidate->op != UI0DrawOp_TextCaret) continue;
     const ReaderViewTextBinding *binding =
-      lectern0_reader_view_binding(app, candidate->source_id);
+      eightvo_reader_view_binding(app, candidate->source_id);
     if (binding && binding->style == ReaderViewTextStyle_NoteEditor)
     {
       note_caret_command = candidate;
@@ -5883,13 +5883,13 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
     const UI0DrawCommand *source_command =
       app->reader_view_frame.draw_commands + index;
     UI0DrawCommand command = *source_command;
-    U32 color = lectern0_draw_color(command.color);
+    U32 color = eightvo_draw_color(command.color);
     if (command.op >= 0 && command.op < UI0DrawOp_Count)
       app->draw_adapter_stats.op_count[command.op] += 1;
     switch (command.op)
     {
       case UI0DrawOp_ControlFill:
-        lectern0_draw_ui0_control_fill(app, &command);
+        eightvo_draw_ui0_control_fill(app, &command);
         break;
 
       case UI0DrawOp_ControlBorder:
@@ -5929,7 +5929,7 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
                                              command.rect.h,
                                              MAX(command.corner_radius, 0),
                                              color,
-                                             lectern0_draw_color(
+                                             eightvo_draw_color(
                                                command.stroke_color ?
                                                  command.stroke_color :
                                                  command.color),
@@ -5940,32 +5940,32 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
       } break;
 
       case UI0DrawOp_IndicatorBorder:
-        lectern0_draw_ui0_indicator_border(app, &command);
+        eightvo_draw_ui0_indicator_border(app, &command);
         break;
 
       case UI0DrawOp_FocusRing:
-        lectern0_draw_ui0_focus_ring(app, &command);
+        eightvo_draw_ui0_focus_ring(app, &command);
         break;
 
       case UI0DrawOp_Text:
       {
         const ReaderViewTextBinding *binding =
-          lectern0_reader_view_binding(app, command.source_id);
-        if (!lectern0_draw_reader_view_note_editable_row(
+          eightvo_reader_view_binding(app, command.source_id);
+        if (!eightvo_draw_reader_view_note_editable_row(
               app, &command, note_caret_command, binding,
               &note_caret_x, &note_caret_x_valid))
         {
-          lectern0_draw_ui0_text(app, &command);
+          eightvo_draw_ui0_text(app, &command);
         }
       }
         break;
 
       case UI0DrawOp_Icon:
-        lectern0_draw_ui0_icon(app, &command);
+        eightvo_draw_ui0_icon(app, &command);
         break;
 
       case UI0DrawOp_CheckMark:
-        lectern0_draw_ui0_check_mark(app, &command);
+        eightvo_draw_ui0_check_mark(app, &command);
         break;
 
       case UI0DrawOp_SegmentJoin:
@@ -5976,7 +5976,7 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
           command.rect.x = note_caret_x;
           app->draw_adapter_stats.note_caret_remap_count += 1;
         }
-        if (lectern0_ui0_rect_visible(command.rect, command.clip_rect))
+        if (eightvo_ui0_rect_visible(command.rect, command.clip_rect))
           (void)draw_push_rect_clipped(&app->draw_commands, DrawLayer_UI,
                                        command.rect.x, command.rect.y,
                                        command.rect.w, command.rect.h, color,
@@ -5993,13 +5993,13 @@ lectern0_adapt_ui0_draw(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_library_active(const Lectern0App *app)
+eightvo_library_active(const EightvoApp *app)
 {
   return app && !epub_reader_is_open(&app->reader);
 }
 
 FUNCTION UI0Rect
-lectern0_library_add_rect(const Lectern0App *app)
+eightvo_library_add_rect(const EightvoApp *app)
 {
   if (!app || app->width <= 0) return (UI0Rect){0};
   S32 width = app->width < 520 ? 132 : 148;
@@ -6007,7 +6007,7 @@ lectern0_library_add_rect(const Lectern0App *app)
 }
 
 FUNCTION UI0Rect
-lectern0_library_empty_add_rect(const Lectern0App *app)
+eightvo_library_empty_add_rect(const EightvoApp *app)
 {
   if (!app) return (UI0Rect){0};
   S32 panel_width = MIN(MAX(app->width - 48, 260), 560);
@@ -6018,7 +6018,7 @@ lectern0_library_empty_add_rect(const Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_library_resolve_layout(Lectern0App *app)
+eightvo_library_resolve_layout(EightvoApp *app)
 {
   if (!app) return;
   app->library_card_count = 0;
@@ -6057,10 +6057,10 @@ lectern0_library_resolve_layout(Lectern0App *app)
             app->library_scroll_y;
     if (y + card_height < viewport_top || y > app->height) continue;
     if (app->library_card_count >= ARRAY_COUNT(app->library_cards)) break;
-    Lectern0LibraryEntry *entry = app->library.entries + index;
-    Lectern0LibraryCardLayout *card =
+    EightvoLibraryEntry *entry = app->library.entries + index;
+    EightvoLibraryCardLayout *card =
       app->library_cards + app->library_card_count;
-    *card = (Lectern0LibraryCardLayout){
+    *card = (EightvoLibraryCardLayout){
       .entry_id = entry->entry_id,
       .card_rect = ui0_rect(x, y, card_width, card_height),
       .cover_rect = ui0_rect(x, y, card_width, cover_height),
@@ -6077,7 +6077,7 @@ lectern0_library_resolve_layout(Lectern0App *app)
     }
     const char *author = entry->author[0] ? entry->author : "Unknown author";
     char last_opened[64] = {0};
-    (void)lectern0_library_format_last_opened(entry->last_opened_time,
+    (void)eightvo_library_format_last_opened(entry->last_opened_time,
                                               last_opened,
                                               ARRAY_COUNT(last_opened));
     (void)cstr_format(card->accessibility_name,
@@ -6090,8 +6090,8 @@ lectern0_library_resolve_layout(Lectern0App *app)
   }
 }
 
-FUNCTION Lectern0LibraryCardLayout *
-lectern0_library_card_for_entry(Lectern0App *app, U64 entry_id)
+FUNCTION EightvoLibraryCardLayout *
+eightvo_library_card_for_entry(EightvoApp *app, U64 entry_id)
 {
   if (!app || entry_id == 0) return 0;
   for (U32 index = 0; index < app->library_card_count; index += 1)
@@ -6101,14 +6101,14 @@ lectern0_library_card_for_entry(Lectern0App *app, U64 entry_id)
 }
 
 FUNCTION void
-lectern0_library_draw_button(Lectern0App *app,
+eightvo_library_draw_button(EightvoApp *app,
                              UI0Rect rect,
                              const char *label,
                              B32 primary,
                              B32 focused)
 {
   if (!app || rect.w <= 0 || rect.h <= 0) return;
-  B32 dark = lectern0_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
+  B32 dark = eightvo_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
   U32 accent = dark ? 0x00D9B98CU : 0x006F4B2EU;
   U32 fill = primary ? accent : (dark ? 0x00312E2AU : 0x00FFFDF9U);
   U32 border = primary ? accent : (dark ? 0x006A6258U : 0x00B8AFA4U);
@@ -6128,10 +6128,10 @@ lectern0_library_draw_button(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_draw_library(Lectern0App *app)
+eightvo_draw_library(EightvoApp *app)
 {
   if (!app) return;
-  B32 dark = lectern0_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
+  B32 dark = eightvo_theme_profile(app->theme).appearance == UI0AppearanceMode_Dark;
   U32 background = dark ? 0x001A1917U : 0x00F7F3EDU;
   U32 surface = dark ? 0x00252220U : 0x00FFFDF9U;
   U32 ink = dark ? 0x00F4EEE5U : 0x00241D18U;
@@ -6147,10 +6147,10 @@ lectern0_draw_library(Lectern0App *app)
                                MAX(app->width - 240, 100), 56,
                                0, 30, DrawTextHAlign_Left,
                                DrawTextVAlign_Center, ink);
-  UI0Rect add_rect = lectern0_library_add_rect(app);
-  lectern0_library_draw_button(app, add_rect, "+  Add books", 1,
+  UI0Rect add_rect = eightvo_library_add_rect(app);
+  eightvo_library_draw_button(app, add_rect, "+  Add books", 1,
                                app->host_focus_control ==
-                                 Lectern0HostControl_LibraryAdd &&
+                                 EightvoHostControl_LibraryAdd &&
                                app->host_focus_visible);
 
   if (app->library_import_in_progress)
@@ -6188,28 +6188,28 @@ lectern0_draw_library(Lectern0App *app)
                                  DrawTextVAlign_Center, ink);
     (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
                                  app->render_state.text_provider,
-                                 "Add one or more books to start reading.\nEPUB is currently supported; books stay in their current folders.",
+                                 "Add books to start reading.\nEPUB is supported; files stay in place.",
                                  x + 36, y + 88, panel_width - 72, 72,
                                  4, 15, DrawTextHAlign_Center,
                                  DrawTextVAlign_Center, secondary);
-    UI0Rect empty_add = lectern0_library_empty_add_rect(app);
-    lectern0_library_draw_button(app, empty_add, "Add books", 1, 0);
+    UI0Rect empty_add = eightvo_library_empty_add_rect(app);
+    eightvo_library_draw_button(app, empty_add, "Add books", 1, 0);
     return;
   }
 
   for (U32 card_index = 0; card_index < app->library_card_count; card_index += 1)
   {
-    Lectern0LibraryCardLayout *card = app->library_cards + card_index;
-    Lectern0LibraryEntry *entry =
-      lectern0_library_catalog_find_id(&app->library, card->entry_id);
+    EightvoLibraryCardLayout *card = app->library_cards + card_index;
+    EightvoLibraryEntry *entry =
+      eightvo_library_catalog_find_id(&app->library, card->entry_id);
     if (!entry) continue;
     B32 selected = app->library_selected_entry_id == entry->entry_id;
     B32 focused = app->host_focus_control ==
-      (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+      (EightvoHostControlIdentity)(EightvoHostControl_LibraryBookBase +
                                      card_index) &&
       app->host_focus_visible;
-    Lectern0HostControlIdentity card_identity =
-      (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+    EightvoHostControlIdentity card_identity =
+      (EightvoHostControlIdentity)(EightvoHostControl_LibraryBookBase +
                                      card_index);
     B32 hovered = ui0_rect_contains_point(card->card_rect,
                                            app->input.pointer_x,
@@ -6250,15 +6250,15 @@ lectern0_draw_library(Lectern0App *app)
                                  card->card_rect.x, card->card_rect.y,
                                  card->card_rect.w, card->card_rect.h,
                                  10, card_fill, card_border);
-    Lectern0LibraryThumbnail *thumbnail =
-      lectern0_library_thumbnail_load(app, entry);
+    EightvoLibraryThumbnail *thumbnail =
+      eightvo_library_thumbnail_load(app, entry);
     if (thumbnail)
     {
       S32 fit_x = 0;
       S32 fit_y = 0;
       S32 fit_w = 0;
       S32 fit_h = 0;
-      if (lectern0_fit_image_rect(thumbnail->width, thumbnail->height,
+      if (eightvo_fit_image_rect(thumbnail->width, thumbnail->height,
                                   card->cover_rect.x + 8,
                                   card->cover_rect.y + 8,
                                   card->cover_rect.w - 16,
@@ -6271,7 +6271,7 @@ lectern0_draw_library(Lectern0App *app)
           thumbnail->width,
           thumbnail->height,
           thumbnail->stride_pixels,
-          lectern0_image_sample_kind(thumbnail->width,
+          eightvo_image_sample_kind(thumbnail->width,
                                      thumbnail->height,
                                      fit_w,
                                      fit_h),
@@ -6321,7 +6321,7 @@ lectern0_draw_library(Lectern0App *app)
                              DrawTextBoxOverflow_Truncate, secondary, 0);
     char info[96] = {0};
     if (entry->runtime_missing)
-      lectern0_copy_cstr(info, ARRAY_COUNT(info), "Source file missing");
+      eightvo_copy_cstr(info, ARRAY_COUNT(info), "Source file missing");
     else
       (void)cstr_format(info, ARRAY_COUNT(info), "%u%% read",
                         entry->progress_percent);
@@ -6334,7 +6334,7 @@ lectern0_draw_library(Lectern0App *app)
     if (!entry->runtime_missing)
     {
       char last_opened[64] = {0};
-      if (lectern0_library_format_last_opened(entry->last_opened_time,
+      if (eightvo_library_format_last_opened(entry->last_opened_time,
                                               last_opened,
                                               ARRAY_COUNT(last_opened)))
         (void)draw_push_text_in_rect(&app->draw_commands, DrawLayer_UI,
@@ -6347,13 +6347,13 @@ lectern0_draw_library(Lectern0App *app)
     }
     if (entry->runtime_missing)
     {
-      lectern0_library_draw_button(app, card->locate_rect, "Locate", 0,
+      eightvo_library_draw_button(app, card->locate_rect, "Locate", 0,
         app->host_focus_control ==
-          (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryLocateBase +
+          (EightvoHostControlIdentity)(EightvoHostControl_LibraryLocateBase +
                                          card_index) && app->host_focus_visible);
-      lectern0_library_draw_button(app, card->remove_rect, "Remove", 0,
+      eightvo_library_draw_button(app, card->remove_rect, "Remove", 0,
         app->host_focus_control ==
-          (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryRemoveBase +
+          (EightvoHostControlIdentity)(EightvoHostControl_LibraryRemoveBase +
                                          card_index) && app->host_focus_visible);
     }
     if (focused)
@@ -6367,7 +6367,7 @@ lectern0_draw_library(Lectern0App *app)
 }
 
 FUNCTION UI0Rect
-lectern0_host_exit_rect(const Lectern0App *app)
+eightvo_host_exit_rect(const EightvoApp *app)
 {
   if (!app || !app->reader_view_ready) return (UI0Rect){0};
   UI0Rect host = app->reader_view_layout.host_toolbar_trailing_rect;
@@ -6377,11 +6377,11 @@ lectern0_host_exit_rect(const Lectern0App *app)
                   host.y + MAX((host.h - height) / 2, 0), width, height);
 }
 
-FUNCTION Lectern0HostControlRecord *
-lectern0_host_control_record(Lectern0App *app,
-                             Lectern0HostControlIdentity identity)
+FUNCTION EightvoHostControlRecord *
+eightvo_host_control_record(EightvoApp *app,
+                             EightvoHostControlIdentity identity)
 {
-  if (!app || identity <= Lectern0HostControl_None)
+  if (!app || identity <= EightvoHostControl_None)
     return 0;
   for (U32 index = 0; index < app->host_control_count; index += 1)
     if (app->host_controls[index].identity == identity)
@@ -6390,27 +6390,27 @@ lectern0_host_control_record(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_update_host_control_records(Lectern0App *app)
+eightvo_update_host_control_records(EightvoApp *app)
 {
   if (!app) return;
   app->host_control_count = 0;
-  if (lectern0_library_active(app))
+  if (eightvo_library_active(app))
   {
-    UI0Rect add_rect = lectern0_library_add_rect(app);
+    UI0Rect add_rect = eightvo_library_add_rect(app);
     ReaderViewSemanticFlags add_flags =
       ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
-    if (app->host_focus_control == Lectern0HostControl_LibraryAdd)
+    if (app->host_focus_control == EightvoHostControl_LibraryAdd)
       add_flags |= ReaderViewSemantic_Focused;
-    app->host_controls[app->host_control_count++] = (Lectern0HostControlRecord){
-      .identity = Lectern0HostControl_LibraryAdd,
-      .action = Lectern0HostControlAction_AddEpubs,
+    app->host_controls[app->host_control_count++] = (EightvoHostControlRecord){
+      .identity = EightvoHostControl_LibraryAdd,
+      .action = EightvoHostControlAction_AddBooks,
       .semantic = {
-        .id = ui0_id_from_string("lectern0.library.add"),
+        .id = ui0_id_from_string("eightvo.library.add"),
         .role = ReaderViewSemantic_Button,
         .flags = add_flags,
         .rect = add_rect,
         .name = {.data = "Add books", .size = 9},
-        .source_key = Lectern0HostControl_LibraryAdd,
+        .source_key = EightvoHostControl_LibraryAdd,
       },
     };
     for (U32 card_index = 0;
@@ -6418,21 +6418,21 @@ lectern0_update_host_control_records(Lectern0App *app)
            app->host_control_count < ARRAY_COUNT(app->host_controls);
          card_index += 1)
     {
-      Lectern0LibraryCardLayout *card = app->library_cards + card_index;
-      Lectern0LibraryEntry *entry =
-        lectern0_library_catalog_find_id(&app->library, card->entry_id);
+      EightvoLibraryCardLayout *card = app->library_cards + card_index;
+      EightvoLibraryEntry *entry =
+        eightvo_library_catalog_find_id(&app->library, card->entry_id);
       if (!entry) continue;
-      Lectern0HostControlIdentity book_identity =
-        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+      EightvoHostControlIdentity book_identity =
+        (EightvoHostControlIdentity)(EightvoHostControl_LibraryBookBase +
                                        card_index);
       ReaderViewSemanticFlags book_flags =
         ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
       if (app->host_focus_control == book_identity)
         book_flags |= ReaderViewSemantic_Focused;
       app->host_controls[app->host_control_count++] =
-        (Lectern0HostControlRecord){
+        (EightvoHostControlRecord){
           .identity = book_identity,
-          .action = Lectern0HostControlAction_OpenBook,
+          .action = EightvoHostControlAction_OpenBook,
           .entry_id = entry->entry_id,
           .semantic = {
             .id = ui0_id_from_u64(entry->entry_id),
@@ -6445,11 +6445,11 @@ lectern0_update_host_control_records(Lectern0App *app)
           },
         };
       if (!entry->runtime_missing) continue;
-      Lectern0HostControlIdentity locate_identity =
-        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryLocateBase +
+      EightvoHostControlIdentity locate_identity =
+        (EightvoHostControlIdentity)(EightvoHostControl_LibraryLocateBase +
                                        card_index);
-      Lectern0HostControlIdentity remove_identity =
-        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryRemoveBase +
+      EightvoHostControlIdentity remove_identity =
+        (EightvoHostControlIdentity)(EightvoHostControl_LibraryRemoveBase +
                                        card_index);
       ReaderViewSemanticFlags locate_flags =
         ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
@@ -6459,23 +6459,23 @@ lectern0_update_host_control_records(Lectern0App *app)
       if (app->host_focus_control == remove_identity)
         remove_flags |= ReaderViewSemantic_Focused;
       app->host_controls[app->host_control_count++] =
-        (Lectern0HostControlRecord){
+        (EightvoHostControlRecord){
           .identity = locate_identity,
-          .action = Lectern0HostControlAction_LocateBook,
+          .action = EightvoHostControlAction_LocateBook,
           .entry_id = entry->entry_id,
           .semantic = {
             .id = ui0_id_from_u64(entry->entry_id ^ 0x4C4F43415445ull),
             .role = ReaderViewSemantic_Button,
             .flags = locate_flags,
             .rect = card->locate_rect,
-            .name = {.data = "Locate missing EPUB", .size = 19},
+            .name = {.data = "Locate missing file", .size = 19},
             .source_key = entry->entry_id,
           },
         };
       app->host_controls[app->host_control_count++] =
-        (Lectern0HostControlRecord){
+        (EightvoHostControlRecord){
           .identity = remove_identity,
-          .action = Lectern0HostControlAction_RemoveBook,
+          .action = EightvoHostControlAction_RemoveBook,
           .entry_id = entry->entry_id,
           .semantic = {
             .id = ui0_id_from_u64(entry->entry_id ^ 0x52454D4F5645ull),
@@ -6487,20 +6487,20 @@ lectern0_update_host_control_records(Lectern0App *app)
           },
         };
     }
-    if (app->host_focus_control != Lectern0HostControl_None &&
-        !lectern0_host_control_record(app, app->host_focus_control))
+    if (app->host_focus_control != EightvoHostControl_None &&
+        !eightvo_host_control_record(app, app->host_focus_control))
     {
       app->host_focus_control = app->library_card_count > 0 ?
-        Lectern0HostControl_LibraryBookBase : Lectern0HostControl_LibraryAdd;
+        EightvoHostControl_LibraryBookBase : EightvoHostControl_LibraryAdd;
       app->host_focus_visible = 1;
-      lectern0_update_host_control_records(app);
+      eightvo_update_host_control_records(app);
     }
     return;
   }
-  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  UI0Rect exit_rect = eightvo_host_exit_rect(app);
   if (exit_rect.w <= 0 || exit_rect.h <= 0)
   {
-    app->host_focus_control = Lectern0HostControl_None;
+    app->host_focus_control = EightvoHostControl_None;
     app->host_focus_visible = 0;
     app->host_exit_pointer_armed = 0;
     return;
@@ -6521,103 +6521,103 @@ lectern0_update_host_control_records(Lectern0App *app)
   }
   ReaderViewSemanticFlags flags =
     ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable;
-  if (app->host_focus_control == Lectern0HostControl_ExitReader)
+  if (app->host_focus_control == EightvoHostControl_ExitReader)
     flags |= ReaderViewSemantic_Focused;
-  app->host_controls[0] = (Lectern0HostControlRecord){
-    .identity = Lectern0HostControl_ExitReader,
-    .action = Lectern0HostControlAction_CloseBook,
+  app->host_controls[0] = (EightvoHostControlRecord){
+    .identity = EightvoHostControl_ExitReader,
+    .action = EightvoHostControlAction_CloseBook,
     .semantic = {
-      .id = ui0_id_from_string("lectern0.reader.close_book"),
+      .id = ui0_id_from_string("eightvo.reader.close_book"),
       .parent_id = toolbar_id,
       .role = ReaderViewSemantic_Button,
       .flags = flags,
       .rect = exit_rect,
       .name = {.data = "Close Book", .size = 10},
       .control = ReaderViewSemanticControl_None,
-      .source_key = Lectern0HostControl_ExitReader,
+      .source_key = EightvoHostControl_ExitReader,
     },
   };
   app->host_control_count = 1;
 }
 
 FUNCTION B32
-lectern0_host_focus_set(Lectern0App *app,
-                        Lectern0HostControlIdentity identity,
+eightvo_host_focus_set(EightvoApp *app,
+                        EightvoHostControlIdentity identity,
                         B32 visible)
 {
   if (!app) return 0;
-  if (identity != Lectern0HostControl_None &&
-      !lectern0_host_control_record(app, identity))
+  if (identity != EightvoHostControl_None &&
+      !eightvo_host_control_record(app, identity))
     return 0;
   app->host_focus_control = identity;
-  app->host_focus_visible = identity != Lectern0HostControl_None && visible;
-  if (identity != Lectern0HostControl_None)
+  app->host_focus_visible = identity != EightvoHostControl_None && visible;
+  if (identity != EightvoHostControl_None)
   {
     app->reader_view_state.focus_id = 0;
     app->reader_view_state.focus_visible = 0;
     app->reader_view_state.pending_accessibility_focus_id = 0;
   }
-  lectern0_update_host_control_records(app);
+  eightvo_update_host_control_records(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_library_remove_entry(Lectern0App *app, U64 entry_id)
+eightvo_library_remove_entry(EightvoApp *app, U64 entry_id)
 {
   if (!app || entry_id == 0) return 0;
-  char thumbnail_path[Lectern0PathCap] = {0};
-  if (lectern0_library_thumbnail_path(app, entry_id, thumbnail_path,
+  char thumbnail_path[EightvoPathCap] = {0};
+  if (eightvo_library_thumbnail_path(app, entry_id, thumbnail_path,
                                       ARRAY_COUNT(thumbnail_path)))
     (void)os_file_delete(thumbnail_path);
-  if (!lectern0_library_catalog_remove(&app->library, entry_id)) return 0;
-  lectern0_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
+  if (!eightvo_library_catalog_remove(&app->library, entry_id)) return 0;
+  eightvo_library_thumbnail_cache_reset(&app->library_thumbnail_cache);
   app->library_selected_entry_id = app->library.entry_count > 0 ?
     app->library.entries[0].entry_id : 0;
   app->host_focus_control = app->library.entry_count > 0 ?
-    Lectern0HostControl_LibraryBookBase : Lectern0HostControl_LibraryAdd;
+    EightvoHostControl_LibraryBookBase : EightvoHostControl_LibraryAdd;
   app->host_focus_visible = 1;
-  lectern0_set_statusf(app, "Removed from library; source file was not deleted");
-  return lectern0_save_library(app);
+  eightvo_set_statusf(app, "Removed from library; source file was not deleted");
+  return eightvo_save_library(app);
 }
 
 FUNCTION B32
-lectern0_host_control_invoke(Lectern0App *app,
-                             Lectern0HostControlIdentity identity)
+eightvo_host_control_invoke(EightvoApp *app,
+                             EightvoHostControlIdentity identity)
 {
-  Lectern0HostControlRecord *record =
-    lectern0_host_control_record(app, identity);
+  EightvoHostControlRecord *record =
+    eightvo_host_control_record(app, identity);
   if (!app || !record) return 0;
   switch (record->action)
   {
-    case Lectern0HostControlAction_CloseBook:
-      return lectern0_close_book(app);
-    case Lectern0HostControlAction_AddEpubs:
-      return lectern0_pick_epub(app);
-    case Lectern0HostControlAction_OpenBook:
+    case EightvoHostControlAction_CloseBook:
+      return eightvo_close_book(app);
+    case EightvoHostControlAction_AddBooks:
+      return eightvo_pick_epub(app);
+    case EightvoHostControlAction_OpenBook:
     {
-      Lectern0LibraryEntry *entry =
-        lectern0_library_catalog_find_id(&app->library, record->entry_id);
+      EightvoLibraryEntry *entry =
+        eightvo_library_catalog_find_id(&app->library, record->entry_id);
       if (!entry) return 0;
       app->library_selected_entry_id = entry->entry_id;
       if (entry->runtime_missing)
       {
-        lectern0_set_statusf(app, "Source file missing; use Locate or Remove");
+        eightvo_set_statusf(app, "Source file missing; use Locate or Remove");
         return 1;
       }
-      return lectern0_open_path(app, entry->source_path);
+      return eightvo_open_path(app, entry->source_path);
     }
-    case Lectern0HostControlAction_LocateBook:
-      return lectern0_locate_library_entry(app, record->entry_id);
-    case Lectern0HostControlAction_RemoveBook:
-      return lectern0_library_remove_entry(app, record->entry_id);
-    case Lectern0HostControlAction_None:
+    case EightvoHostControlAction_LocateBook:
+      return eightvo_locate_library_entry(app, record->entry_id);
+    case EightvoHostControlAction_RemoveBook:
+      return eightvo_library_remove_entry(app, record->entry_id);
+    case EightvoHostControlAction_None:
     default:
       return 0;
   }
 }
 
 FUNCTION B32
-lectern0_host_focus_neighbors(const Lectern0App *app,
+eightvo_host_focus_neighbors(const EightvoApp *app,
                               UI0ID *out_before,
                               UI0ID *out_after)
 {
@@ -6654,7 +6654,7 @@ lectern0_host_focus_neighbors(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
+eightvo_host_keyboard_tab(EightvoApp *app, B32 reverse)
 {
   enum { OpenOrderCount = 2, ReferenceOrderCount = 13 };
   static const ReaderViewSemanticControl open_order[OpenOrderCount] = {
@@ -6678,7 +6678,7 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
       ReaderViewSemanticControl_Progress,
     };
   if (!app || app->reader_view_state.popup != ReaderViewPopup_None) return 0;
-  if (lectern0_library_active(app))
+  if (eightvo_library_active(app))
   {
     if (app->host_control_count == 0) return 0;
     S32 current = -1;
@@ -6689,10 +6689,10 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
       (reverse ? current - 1 : current + 1);
     while (target < 0) target += (S32)app->host_control_count;
     target %= (S32)app->host_control_count;
-    Lectern0HostControlRecord *record = app->host_controls + target;
+    EightvoHostControlRecord *record = app->host_controls + target;
     app->library_selected_entry_id = record->entry_id ?
       record->entry_id : app->library_selected_entry_id;
-    return lectern0_host_focus_set(app, record->identity, 1);
+    return eightvo_host_focus_set(app, record->identity, 1);
   }
 
   ReaderViewSemanticControl current_shared = ReaderViewSemanticControl_None;
@@ -6715,9 +6715,9 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
   for (S32 index = 0; index < order_count; index += 1)
   {
     if ((order[index] == ReaderViewSemanticControl_None &&
-         app->host_focus_control == Lectern0HostControl_ExitReader) ||
+         app->host_focus_control == EightvoHostControl_ExitReader) ||
         (order[index] != ReaderViewSemanticControl_None &&
-         app->host_focus_control == Lectern0HostControl_None &&
+         app->host_focus_control == EightvoHostControl_None &&
          order[index] == current_shared))
     {
       current_index = index;
@@ -6744,7 +6744,7 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
     target_index %= order_count;
     ReaderViewSemanticControl target = order[target_index];
     if (target == ReaderViewSemanticControl_None)
-      return lectern0_host_focus_set(app, Lectern0HostControl_ExitReader, 1);
+      return eightvo_host_focus_set(app, EightvoHostControl_ExitReader, 1);
     for (UI0S32 index = 0;
          index < app->reader_view_frame.semantic_node_count;
          index += 1)
@@ -6754,7 +6754,7 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
       if (node->control == target &&
           (node->flags & ReaderViewSemantic_Focusable) != 0)
       {
-        (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+        (void)eightvo_host_focus_set(app, EightvoHostControl_None, 0);
         return reader_view_accessibility_focus(&app->reader_view_state,
                                                node->id);
       }
@@ -6764,50 +6764,50 @@ lectern0_host_keyboard_tab(Lectern0App *app, B32 reverse)
 }
 
 FUNCTION B32
-lectern0_host_keyboard_activate(Lectern0App *app)
+eightvo_host_keyboard_activate(EightvoApp *app)
 {
-  if (!app || app->host_focus_control == Lectern0HostControl_None) return 0;
-  return lectern0_host_control_invoke(app, app->host_focus_control);
+  if (!app || app->host_focus_control == EightvoHostControl_None) return 0;
+  return eightvo_host_control_invoke(app, app->host_focus_control);
 }
 
 FUNCTION void
-lectern0_host_pointer_move(Lectern0App *app, S32 x, S32 y)
+eightvo_host_pointer_move(EightvoApp *app, S32 x, S32 y)
 {
   if (!app) return;
   app->input.pointer_x = x;
   app->input.pointer_y = y;
-  if (lectern0_library_active(app) &&
-      app->host_pointer_armed != Lectern0HostControl_None)
+  if (eightvo_library_active(app) &&
+      app->host_pointer_armed != EightvoHostControl_None)
   {
-    Lectern0HostControlRecord *record =
-      lectern0_host_control_record(app, app->host_pointer_armed);
+    EightvoHostControlRecord *record =
+      eightvo_host_control_record(app, app->host_pointer_armed);
     UI0Rect rect = record ? record->semantic.rect : (UI0Rect){0};
     if (app->library.entry_count == 0 &&
-        app->host_pointer_armed == Lectern0HostControl_LibraryAdd)
+        app->host_pointer_armed == EightvoHostControl_LibraryAdd)
     {
-      UI0Rect empty = lectern0_library_empty_add_rect(app);
+      UI0Rect empty = eightvo_library_empty_add_rect(app);
       if (ui0_rect_contains_point(empty, x, y)) return;
     }
     if (!record || !ui0_rect_contains_point(rect, x, y))
-      app->host_pointer_armed = Lectern0HostControl_None;
+      app->host_pointer_armed = EightvoHostControl_None;
     return;
   }
-  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  UI0Rect exit_rect = eightvo_host_exit_rect(app);
   if (app->host_exit_pointer_armed &&
       (exit_rect.w <= 0 || !ui0_rect_contains_point(exit_rect, x, y)))
     app->host_exit_pointer_armed = 0;
 }
 
 FUNCTION void
-lectern0_host_pointer_cancel(Lectern0App *app)
+eightvo_host_pointer_cancel(EightvoApp *app)
 {
   if (!app) return;
   B32 cancel_active = app->input.pointer_down ||
-                      app->host_pointer_armed != Lectern0HostControl_None ||
+                      app->host_pointer_armed != EightvoHostControl_None ||
                       app->host_exit_pointer_armed ||
                       app->selection_dragging;
   app->host_exit_pointer_armed = 0;
-  app->host_pointer_armed = Lectern0HostControl_None;
+  app->host_pointer_armed = EightvoHostControl_None;
   app->input.pointer_down = 0;
   app->input.pointer_pressed = 0;
   app->input.pointer_selection_release = 0;
@@ -6820,9 +6820,9 @@ lectern0_host_pointer_cancel(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_draw_host_exit_slot(Lectern0App *app)
+eightvo_draw_host_exit_slot(EightvoApp *app)
 {
-  UI0Rect rect = lectern0_host_exit_rect(app);
+  UI0Rect rect = eightvo_host_exit_rect(app);
   if (!app || rect.w <= 0 || rect.h <= 0) return;
   B32 hovered = ui0_rect_contains_point(rect,
                                         app->input.pointer_x,
@@ -6830,13 +6830,13 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
   UI0ControlStateFlags state = hovered ? UI0ControlState_Hovered : 0;
   if (hovered && app->input.pointer_down && app->host_exit_pointer_armed)
     state |= UI0ControlState_Pressed | UI0ControlState_Active;
-  if (app->host_focus_control == Lectern0HostControl_ExitReader)
+  if (app->host_focus_control == EightvoHostControl_ExitReader)
   {
     state |= UI0ControlState_Focused;
     if (app->host_focus_visible) state |= UI0ControlState_FocusVisible;
   }
   UI0ControlRecord control = {
-    .id = ui0_id_from_string("lectern0.reader.close_book"),
+    .id = ui0_id_from_string("eightvo.reader.close_book"),
     .kind = UI0ControlKind_IconButton,
     .root = UI0RootKind_Normal,
     .state = state,
@@ -6876,30 +6876,30 @@ lectern0_draw_host_exit_slot(Lectern0App *app)
            candidate_index += 1)
       {
         const UI0DrawCommand *candidate = draw.commands + candidate_index;
-        if (lectern0_ui0_border_matches_fill(candidate, &command))
+        if (eightvo_ui0_border_matches_fill(candidate, &command))
         {
           command.stroke_color = candidate->color;
           break;
         }
       }
-      lectern0_draw_ui0_control_fill(app, &command);
+      eightvo_draw_ui0_control_fill(app, &command);
     }
     else if (command.op == UI0DrawOp_Icon)
     {
-      lectern0_draw_ui0_icon(app, &command);
+      eightvo_draw_ui0_icon(app, &command);
     }
     else if (command.op == UI0DrawOp_FocusRing)
     {
-      lectern0_draw_ui0_focus_ring(app, &command);
+      eightvo_draw_ui0_focus_ring(app, &command);
     }
   }
 }
 
 FUNCTION B32
-lectern0_pick_epub_paths(Lectern0App *app,
+eightvo_pick_epub_paths(EightvoApp *app,
                          B32 allow_multiple,
-                         char paths[Lectern0LibraryImportPathCap]
-                                   [Lectern0LibraryPathCap],
+                         char paths[EightvoLibraryImportPathCap]
+                                   [EightvoLibraryPathCap],
                          U32 *out_count)
 {
   if (out_count) *out_count = 0;
@@ -6920,18 +6920,18 @@ lectern0_pick_epub_paths(Lectern0App *app,
   if (!next[0])
   {
     if (WideCharToMultiByte(CP_UTF8, 0, first, -1, paths[0],
-                            Lectern0LibraryPathCap, 0, 0) <= 0)
+                            EightvoLibraryPathCap, 0, 0) <= 0)
       return 0;
     *out_count = 1;
     return 1;
   }
   U32 count = 0;
-  while (next[0] && count < Lectern0LibraryImportPathCap)
+  while (next[0] && count < EightvoLibraryImportPathCap)
   {
-    wchar_t joined[Lectern0LibraryPathCap] = {0};
+    wchar_t joined[EightvoLibraryPathCap] = {0};
     if (swprintf_s(joined, ARRAY_COUNT(joined), L"%ls\\%ls", first, next) <= 0 ||
         WideCharToMultiByte(CP_UTF8, 0, joined, -1, paths[count],
-                            Lectern0LibraryPathCap, 0, 0) <= 0)
+                            EightvoLibraryPathCap, 0, 0) <= 0)
       return 0;
     count += 1;
     next += wcslen(next) + 1;
@@ -6941,20 +6941,20 @@ lectern0_pick_epub_paths(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_pick_epub_impl(Lectern0App *app)
+eightvo_pick_epub_impl(EightvoApp *app)
 {
   if (!app) return 0;
   app->native_picker_request_count += 1;
   if (app->suppress_native_picker)
   {
-    lectern0_set_statusf(app, "Add books picker requested");
+    eightvo_set_statusf(app, "Add books picker requested");
     return 1;
   }
   if (!app->window) return 0;
-  char paths[Lectern0LibraryImportPathCap][Lectern0LibraryPathCap] = {0};
+  char paths[EightvoLibraryImportPathCap][EightvoLibraryPathCap] = {0};
   U32 path_count = 0;
-  B32 library_was_active = lectern0_library_active(app);
-  if (!lectern0_pick_epub_paths(app, 1, paths, &path_count)) return 0;
+  B32 library_was_active = eightvo_library_active(app);
+  if (!eightvo_pick_epub_paths(app, 1, paths, &path_count)) return 0;
   app->library_import_in_progress = 1;
   if (app->window)
   {
@@ -6963,93 +6963,93 @@ lectern0_pick_epub_impl(Lectern0App *app)
   }
   U32 imported = 0;
   for (U32 index = 0; index < path_count; index += 1)
-    if (lectern0_open_path(app, paths[index])) imported += 1;
+    if (eightvo_open_path(app, paths[index])) imported += 1;
   if (library_was_active && epub_reader_is_open(&app->reader))
-    (void)lectern0_close_book(app);
+    (void)eightvo_close_book(app);
   else if (!library_was_active && imported > 1)
-    (void)lectern0_open_path(app, paths[0]);
+    (void)eightvo_open_path(app, paths[0]);
   app->library_import_in_progress = 0;
-  lectern0_library_catalog_refresh_missing(&app->library);
+  eightvo_library_catalog_refresh_missing(&app->library);
   if (library_was_active)
-    lectern0_set_statusf(app, imported == 1 ? "Added 1 EPUB" :
-                         "Added %u EPUBs", imported);
+    eightvo_set_statusf(app, imported == 1 ? "Added 1 book" :
+                         "Added %u books", imported);
   return imported > 0;
 }
 
 FUNCTION B32
-lectern0_pick_epub(Lectern0App *app)
+eightvo_pick_epub(EightvoApp *app)
 {
-  if (!lectern0_begin_document_mutation(app)) return 0;
+  if (!eightvo_begin_document_mutation(app)) return 0;
   B32 was_open = epub_reader_is_open(&app->reader);
   DocDocumentId document_id = epub_reader_document_id(&app->reader);
   U64 document_generation = app->reader.document_generation;
   app->page_action_internal_dispatch = 1;
-  B32 result = lectern0_pick_epub_impl(app);
+  B32 result = eightvo_pick_epub_impl(app);
   app->page_action_internal_dispatch = 0;
   B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
     document_id != epub_reader_document_id(&app->reader) ||
     document_generation != app->reader.document_generation;
-  lectern0_complete_document_mutation(
+  eightvo_complete_document_mutation(
     app, !app->suppress_native_picker && reader_changed);
   return result;
 }
 
 FUNCTION B32
-lectern0_locate_library_entry_impl(Lectern0App *app, U64 entry_id)
+eightvo_locate_library_entry_impl(EightvoApp *app, U64 entry_id)
 {
-  Lectern0LibraryEntry *entry =
-    lectern0_library_catalog_find_id(app ? &app->library : 0, entry_id);
+  EightvoLibraryEntry *entry =
+    eightvo_library_catalog_find_id(app ? &app->library : 0, entry_id);
   if (!entry || !app->window) return 0;
-  char paths[Lectern0LibraryImportPathCap][Lectern0LibraryPathCap] = {0};
+  char paths[EightvoLibraryImportPathCap][EightvoLibraryPathCap] = {0};
   U32 count = 0;
-  if (!lectern0_pick_epub_paths(app, 0, paths, &count) || count != 1) return 0;
-  char normalized[Lectern0LibraryPathCap] = {0};
-  if (!lectern0_library_normalize_path(paths[0], normalized,
+  if (!eightvo_pick_epub_paths(app, 0, paths, &count) || count != 1) return 0;
+  char normalized[EightvoLibraryPathCap] = {0};
+  if (!eightvo_library_normalize_path(paths[0], normalized,
                                        ARRAY_COUNT(normalized)))
     return 0;
-  Lectern0LibraryEntry *duplicate =
-    lectern0_library_catalog_find_path(&app->library, normalized);
+  EightvoLibraryEntry *duplicate =
+    eightvo_library_catalog_find_path(&app->library, normalized);
   U64 duplicate_id = duplicate && duplicate->entry_id != entry_id ?
     duplicate->entry_id : 0;
   app->library_locate_entry_id = entry_id;
-  if (!lectern0_open_path(app, normalized))
+  if (!eightvo_open_path(app, normalized))
   {
     app->library_locate_entry_id = 0;
     return 0;
   }
   if (duplicate_id)
   {
-    char thumbnail_path[Lectern0PathCap] = {0};
-    if (lectern0_library_thumbnail_path(app, duplicate_id, thumbnail_path,
+    char thumbnail_path[EightvoPathCap] = {0};
+    if (eightvo_library_thumbnail_path(app, duplicate_id, thumbnail_path,
                                         ARRAY_COUNT(thumbnail_path)))
       (void)os_file_delete(thumbnail_path);
-    (void)lectern0_library_catalog_remove(&app->library, duplicate_id);
+    (void)eightvo_library_catalog_remove(&app->library, duplicate_id);
   }
   app->library_selected_entry_id = entry_id;
-  lectern0_library_catalog_sort(&app->library);
-  (void)lectern0_save_library(app);
+  eightvo_library_catalog_sort(&app->library);
+  (void)eightvo_save_library(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_locate_library_entry(Lectern0App *app, U64 entry_id)
+eightvo_locate_library_entry(EightvoApp *app, U64 entry_id)
 {
-  if (!lectern0_begin_document_mutation(app)) return 0;
+  if (!eightvo_begin_document_mutation(app)) return 0;
   B32 was_open = epub_reader_is_open(&app->reader);
   DocDocumentId document_id = epub_reader_document_id(&app->reader);
   U64 document_generation = app->reader.document_generation;
   app->page_action_internal_dispatch = 1;
-  B32 result = lectern0_locate_library_entry_impl(app, entry_id);
+  B32 result = eightvo_locate_library_entry_impl(app, entry_id);
   app->page_action_internal_dispatch = 0;
   B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
     document_id != epub_reader_document_id(&app->reader) ||
     document_generation != app->reader.document_generation;
-  lectern0_complete_document_mutation(app, reader_changed);
+  eightvo_complete_document_mutation(app, reader_changed);
   return result;
 }
 
 FUNCTION B32
-lectern0_set_clipboard_text(Lectern0App *app, ReaderViewText text)
+eightvo_set_clipboard_text(EightvoApp *app, ReaderViewText text)
 {
   if (!app || text.size < 0 || (text.size > 0 && !text.data) ||
       !OpenClipboard(app->window))
@@ -7080,7 +7080,7 @@ lectern0_set_clipboard_text(Lectern0App *app, ReaderViewText text)
 }
 
 FUNCTION B32
-lectern0_get_clipboard_text(Lectern0App *app)
+eightvo_get_clipboard_text(EightvoApp *app)
 {
   if (!app || !OpenClipboard(app->window)) return 0;
   app->clipboard_length = 0;
@@ -7106,7 +7106,7 @@ lectern0_get_clipboard_text(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_append_input_wchar(Lectern0App *app, wchar_t value)
+eightvo_append_input_wchar(EightvoApp *app, wchar_t value)
 {
   if (!app) return;
   wchar_t units[2] = {0};
@@ -7131,7 +7131,7 @@ lectern0_append_input_wchar(Lectern0App *app, wchar_t value)
   int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
                                  units, unit_count, encoded,
                                  ARRAY_COUNT(encoded), 0, 0);
-  if (size > 0 && app->input.text_length + size < Lectern0InputTextCap)
+  if (size > 0 && app->input.text_length + size < EightvoInputTextCap)
   {
     MemoryCopy(app->input.text + app->input.text_length, encoded, (U64)size);
     app->input.text_length += size;
@@ -7139,25 +7139,25 @@ lectern0_append_input_wchar(Lectern0App *app, wchar_t value)
   }
 }
 
-typedef enum Lectern0ReaderKeyRoute
+typedef enum EightvoReaderKeyRoute
 {
-  Lectern0ReaderKeyRoute_None,
-  Lectern0ReaderKeyRoute_Handled,
-  Lectern0ReaderKeyRoute_CloseRequested,
-} Lectern0ReaderKeyRoute;
+  EightvoReaderKeyRoute_None,
+  EightvoReaderKeyRoute_Handled,
+  EightvoReaderKeyRoute_CloseRequested,
+} EightvoReaderKeyRoute;
 
 FUNCTION B32
-lectern0_page_direction_for_key(Lectern0App *app,
+eightvo_page_direction_for_key(EightvoApp *app,
                                 WPARAM key,
                                 S32 *out_direction)
 {
   if (out_direction) { *out_direction = 0; }
   if (!app || !out_direction || !epub_reader_is_open(&app->reader) ||
-      lectern0_reader_view_text_editing(app))
+      eightvo_reader_view_text_editing(app))
   {
     return 0;
   }
-  if (lectern0_reader_view_horizontal_move_is_shared(app) &&
+  if (eightvo_reader_view_horizontal_move_is_shared(app) &&
       (key == VK_LEFT || key == VK_RIGHT))
   {
     return 0;
@@ -7169,7 +7169,7 @@ lectern0_page_direction_for_key(Lectern0App *app,
     return 1;
   }
   if (app->reader_view_state.focus_id == 0 &&
-      app->host_focus_control == Lectern0HostControl_None)
+      app->host_focus_control == EightvoHostControl_None)
   {
     if (key == VK_LEFT || key == VK_PRIOR)
     {
@@ -7177,7 +7177,7 @@ lectern0_page_direction_for_key(Lectern0App *app,
       return 1;
     }
     if ((key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE) &&
-        !lectern0_reader_view_space_activates_focus(app))
+        !eightvo_reader_view_space_activates_focus(app))
     {
       *out_direction = 1;
       return 1;
@@ -7187,7 +7187,7 @@ lectern0_page_direction_for_key(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_page_repeat_should_coalesce_keydown(Lectern0App *app,
+eightvo_page_repeat_should_coalesce_keydown(EightvoApp *app,
                                               WPARAM key,
                                               LPARAM l_param,
                                               S32 *out_direction)
@@ -7195,7 +7195,7 @@ lectern0_page_repeat_should_coalesce_keydown(Lectern0App *app,
   S32 direction = 0;
   if (out_direction) { *out_direction = 0; }
   if ((l_param & (1LL << 30)) == 0 ||
-      !lectern0_page_direction_for_key(app, key, &direction) ||
+      !eightvo_page_direction_for_key(app, key, &direction) ||
       !app->page_repeat_active || app->page_repeat_key != key ||
       app->page_repeat_direction != direction)
   {
@@ -7205,10 +7205,10 @@ lectern0_page_repeat_should_coalesce_keydown(Lectern0App *app,
   return 1;
 }
 
-FUNCTION Lectern0CanonicalPageIdentity
-lectern0_canonical_page_identity(SourceReaderPageRange page)
+FUNCTION EightvoCanonicalPageIdentity
+eightvo_canonical_page_identity(SourceReaderPageRange page)
 {
-  return (Lectern0CanonicalPageIdentity){
+  return (EightvoCanonicalPageIdentity){
     .spine_index = page.spine_index,
     .spine_page_index = page.spine_page_index,
     .spine_page_count = page.spine_page_count,
@@ -7218,8 +7218,8 @@ lectern0_canonical_page_identity(SourceReaderPageRange page)
 }
 
 FUNCTION B32
-lectern0_canonical_page_identity_equal(Lectern0CanonicalPageIdentity a,
-                                        Lectern0CanonicalPageIdentity b)
+eightvo_canonical_page_identity_equal(EightvoCanonicalPageIdentity a,
+                                        EightvoCanonicalPageIdentity b)
 {
   /* Ordinals, totals, and row indexes belong to the bounded pagination owner
      that produced the range. They can change when the same physical page is
@@ -7231,7 +7231,7 @@ lectern0_canonical_page_identity_equal(Lectern0CanonicalPageIdentity a,
 }
 
 FUNCTION U64
-lectern0_frame_image_visual_identity(const EpubReaderFrame *frame,
+eightvo_frame_image_visual_identity(const EpubReaderFrame *frame,
                                       B32 *out_valid)
 {
   if (out_valid) *out_valid = 0;
@@ -7267,9 +7267,9 @@ lectern0_frame_image_visual_identity(const EpubReaderFrame *frame,
 }
 
 FUNCTION B32
-lectern0_frame_matches_canonical_page(
-  const Lectern0App *app,
-  Lectern0CanonicalPageIdentity page,
+eightvo_frame_matches_canonical_page(
+  const EightvoApp *app,
+  EightvoCanonicalPageIdentity page,
   U64 document_id,
   U64 document_generation)
 {
@@ -7295,22 +7295,22 @@ lectern0_frame_matches_canonical_page(
      is bound to it by document/spine/page identity plus the visual-unit and
      image-placement signature below. */
   B32 image_identity_valid = 0;
-  (void)lectern0_frame_image_visual_identity(&app->frame,
+  (void)eightvo_frame_image_visual_identity(&app->frame,
                                               &image_identity_valid);
   return app->frame.visible_text.size == 0 &&
     app->frame.image_count > 0 && image_identity_valid;
 }
 
 FUNCTION B32
-lectern0_capture_presentation_identity(const Lectern0App *app,
-                                        Lectern0PresentationIdentity *out)
+eightvo_capture_presentation_identity(const EightvoApp *app,
+                                        EightvoPresentationIdentity *out)
 {
   if (out) MemoryZeroStruct(out);
   if (!app || !out) return 0;
   out->frame_generation = app->page_action_frame_generation;
   if (!epub_reader_is_open(&app->reader))
   {
-    out->kind = Lectern0PresentationIdentity_Library;
+    out->kind = EightvoPresentationIdentity_Library;
     return 1;
   }
   if (!app->reader.has_current_page || app->reader.document_id == 0 ||
@@ -7321,12 +7321,12 @@ lectern0_capture_presentation_identity(const Lectern0App *app,
   {
     return 0;
   }
-  out->kind = Lectern0PresentationIdentity_Page;
+  out->kind = EightvoPresentationIdentity_Page;
   out->document_id = epub_reader_document_id(&app->reader);
   out->document_generation = app->reader.document_generation;
   out->layout_generation = epub_reader_layout_key_generation(app->layout_key);
-  out->page = lectern0_canonical_page_identity(app->reader.current_page);
-  if (lectern0_frame_matches_canonical_page(
+  out->page = eightvo_canonical_page_identity(app->reader.current_page);
+  if (eightvo_frame_matches_canonical_page(
         app, out->page, out->document_id, out->document_generation))
   {
     out->frame_capture_generation = app->frame_capture_generation;
@@ -7335,7 +7335,7 @@ lectern0_capture_presentation_identity(const Lectern0App *app,
     if (out->image_count > 0)
     {
       B32 image_identity_valid = 0;
-      out->image_visual_identity = lectern0_frame_image_visual_identity(
+      out->image_visual_identity = eightvo_frame_image_visual_identity(
         &app->frame, &image_identity_valid);
       if (!image_identity_valid) return 0;
     }
@@ -7345,29 +7345,29 @@ lectern0_capture_presentation_identity(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_capture_rendered_presentation_identity(
-  const Lectern0App *app,
-  Lectern0PresentationIdentity *out)
+eightvo_capture_rendered_presentation_identity(
+  const EightvoApp *app,
+  EightvoPresentationIdentity *out)
 {
-  if (!lectern0_capture_presentation_identity(app, out)) return 0;
-  if (out->kind == Lectern0PresentationIdentity_Library) return 1;
+  if (!eightvo_capture_presentation_identity(app, out)) return 0;
+  if (out->kind == EightvoPresentationIdentity_Library) return 1;
   return out->frame_capture_generation > 0 &&
     out->reader_frame_generation != 0 &&
-    lectern0_frame_matches_canonical_page(
+    eightvo_frame_matches_canonical_page(
       app, out->page, out->document_id, out->document_generation) &&
     (out->image_count == 0 || out->image_visual_identity != 0);
 }
 
 FUNCTION B32
-lectern0_presentation_identity_equal(Lectern0PresentationIdentity a,
-                                      Lectern0PresentationIdentity b)
+eightvo_presentation_identity_equal(EightvoPresentationIdentity a,
+                                      EightvoPresentationIdentity b)
 {
-  if (a.kind == Lectern0PresentationIdentity_None || a.kind != b.kind ||
+  if (a.kind == EightvoPresentationIdentity_None || a.kind != b.kind ||
       a.frame_generation == 0 || a.frame_generation != b.frame_generation)
   {
     return 0;
   }
-  if (a.kind == Lectern0PresentationIdentity_Library) return 1;
+  if (a.kind == EightvoPresentationIdentity_Library) return 1;
   return a.document_id == b.document_id &&
     a.document_generation == b.document_generation &&
     a.layout_generation == b.layout_generation &&
@@ -7377,13 +7377,13 @@ lectern0_presentation_identity_equal(Lectern0PresentationIdentity a,
     (a.image_count == 0 ||
      (a.image_count == b.image_count &&
       a.image_visual_identity == b.image_visual_identity)) &&
-    lectern0_canonical_page_identity_equal(a.page, b.page);
+    eightvo_canonical_page_identity_equal(a.page, b.page);
 }
 
 /* External document mutations never pass an outstanding presentation. One
    directional keyboard tap alone may occupy the explicit pending slot. */
 FUNCTION B32
-lectern0_begin_document_mutation(Lectern0App *app)
+eightvo_begin_document_mutation(EightvoApp *app)
 {
   if (!app) return 0;
   if (!app->window || app->page_action_internal_dispatch)
@@ -7395,26 +7395,26 @@ lectern0_begin_document_mutation(Lectern0App *app)
   {
     if (app->page_action_mutation_drop_count < UINT32_MAX)
       app->page_action_mutation_drop_count += 1;
-    lectern0_cancel_page_repeat_for_mutation(app);
+    eightvo_cancel_page_repeat_for_mutation(app);
     return 0;
   }
   if (app->page_repeat_active || app->page_action_pending)
-    lectern0_cancel_page_repeat_for_mutation(app);
+    eightvo_cancel_page_repeat_for_mutation(app);
   app->capture_frame_failed_since_mutation = 0;
   return 1;
 }
 
 FUNCTION void
-lectern0_complete_document_mutation(Lectern0App *app, B32 changed)
+eightvo_complete_document_mutation(EightvoApp *app, B32 changed)
 {
   if (!app || !changed || !app->window || app->page_action_internal_dispatch)
     return;
-  lectern0_page_action_note_emitted(app);
+  eightvo_page_action_note_emitted(app);
   (void)InvalidateRect(app->window, 0, FALSE);
 }
 
 FUNCTION U64
-lectern0_frame_non_whitespace_byte_count(const EpubReaderFrame *frame)
+eightvo_frame_non_whitespace_byte_count(const EpubReaderFrame *frame)
 {
   if (!frame || !frame->visible_text.str) return 0;
   U64 count = 0;
@@ -7428,7 +7428,7 @@ lectern0_frame_non_whitespace_byte_count(const EpubReaderFrame *frame)
 }
 
 FUNCTION B32
-lectern0_gotm_word_scalar(U32 scalar)
+eightvo_gotm_word_scalar(U32 scalar)
 {
   if ((scalar >= (U32)'a' && scalar <= (U32)'z') ||
       (scalar >= (U32)'A' && scalar <= (U32)'Z') ||
@@ -7449,14 +7449,14 @@ lectern0_gotm_word_scalar(U32 scalar)
 }
 
 FUNCTION B32
-lectern0_gotm_word_connector(U32 scalar)
+eightvo_gotm_word_connector(U32 scalar)
 {
   return scalar == (U32)'\'' || scalar == (U32)'-' ||
     scalar == 0x2010u || scalar == 0x2011u || scalar == 0x2019u;
 }
 
 FUNCTION B32
-lectern0_utf8_previous_scalar(String8 text,
+eightvo_utf8_previous_scalar(String8 text,
                               U64 byte_offset,
                               U64 *out_byte_offset,
                               U32 *out_scalar)
@@ -7484,7 +7484,7 @@ lectern0_utf8_previous_scalar(String8 text,
    around a canonical range start. A page may start at a word, but never after
    another word scalar or after an in-word apostrophe/hyphen. */
 FUNCTION B32
-lectern0_gotm_page_start_is_word_boundary(String8 spine_text,
+eightvo_gotm_page_start_is_word_boundary(String8 spine_text,
                                            U64 first_byte)
 {
   if (!spine_text.str || first_byte > spine_text.size) return 0;
@@ -7492,42 +7492,42 @@ lectern0_gotm_page_start_is_word_boundary(String8 spine_text,
   if ((spine_text.str[first_byte] & 0xc0u) == 0x80u) return 0;
   BaseUnicodeDecode current = base_unicode_utf8_decode(spine_text, first_byte);
   if (!current.valid || current.advance == 0) return 0;
-  if (lectern0_gotm_word_connector(current.scalar))
+  if (eightvo_gotm_word_connector(current.scalar))
   {
     U32 previous_scalar = 0;
     BaseUnicodeDecode next = base_unicode_utf8_decode(
       spine_text, first_byte + current.advance);
-    if (lectern0_utf8_previous_scalar(spine_text,
+    if (eightvo_utf8_previous_scalar(spine_text,
                                       first_byte,
                                       0,
                                       &previous_scalar) &&
-        lectern0_gotm_word_scalar(previous_scalar) && next.valid &&
-        next.advance > 0 && lectern0_gotm_word_scalar(next.scalar))
+        eightvo_gotm_word_scalar(previous_scalar) && next.valid &&
+        next.advance > 0 && eightvo_gotm_word_scalar(next.scalar))
     {
       return 0;
     }
     return 1;
   }
-  if (!lectern0_gotm_word_scalar(current.scalar)) return 1;
+  if (!eightvo_gotm_word_scalar(current.scalar)) return 1;
 
   U64 previous_at = 0;
   U32 previous_scalar = 0;
-  if (!lectern0_utf8_previous_scalar(spine_text,
+  if (!eightvo_utf8_previous_scalar(spine_text,
                                      first_byte,
                                      &previous_at,
                                      &previous_scalar))
   {
     return 0;
   }
-  if (lectern0_gotm_word_scalar(previous_scalar)) return 0;
-  if (lectern0_gotm_word_connector(previous_scalar))
+  if (eightvo_gotm_word_scalar(previous_scalar)) return 0;
+  if (eightvo_gotm_word_connector(previous_scalar))
   {
     U32 before_connector = 0;
-    if (lectern0_utf8_previous_scalar(spine_text,
+    if (eightvo_utf8_previous_scalar(spine_text,
                                       previous_at,
                                       0,
                                       &before_connector) &&
-        lectern0_gotm_word_scalar(before_connector))
+        eightvo_gotm_word_scalar(before_connector))
     {
       return 0;
     }
@@ -7539,7 +7539,7 @@ lectern0_gotm_page_start_is_word_boundary(String8 spine_text,
    smokes lock the fixture size and SHA-256; this is not production policy for
    arbitrary publisher pages, where a one-character page can be legitimate. */
 FUNCTION B32
-lectern0_gotm_navigation_frame_is_canonical_nonempty(const Lectern0App *app,
+eightvo_gotm_navigation_frame_is_canonical_nonempty(const EightvoApp *app,
                                                       B32 *out_orphan_text,
                                                       B32 *out_invalid_word_start,
                                                       U64 *out_text_bytes,
@@ -7556,13 +7556,13 @@ lectern0_gotm_navigation_frame_is_canonical_nonempty(const Lectern0App *app,
       app->reader.current_page.one_past_last_byte ||
       app->reader.current_page.spine_index != app->reader.active_spine_index ||
       !app->frame.ready || !app->frame.document_open ||
-      !lectern0_frame_text_rows_are_complete(&app->frame, 0, 0))
+      !eightvo_frame_text_rows_are_complete(&app->frame, 0, 0))
   {
     return 0;
   }
-  Lectern0CanonicalPageIdentity canonical_page =
-    lectern0_canonical_page_identity(app->reader.current_page);
-  if (!lectern0_frame_matches_canonical_page(
+  EightvoCanonicalPageIdentity canonical_page =
+    eightvo_canonical_page_identity(app->reader.current_page);
+  if (!eightvo_frame_matches_canonical_page(
         app,
         canonical_page,
         epub_reader_document_id(&app->reader),
@@ -7570,15 +7570,15 @@ lectern0_gotm_navigation_frame_is_canonical_nonempty(const Lectern0App *app,
   {
     return 0;
   }
-  U64 text_bytes = lectern0_frame_non_whitespace_byte_count(&app->frame);
+  U64 text_bytes = eightvo_frame_non_whitespace_byte_count(&app->frame);
   U32 text_rows = app->frame.style_row_count;
   B32 long_form_text = app->frame.image_count == 0 &&
-    app->reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes;
+    app->reader.spine_text.size >= EightvoGotmMinimumProseSpineBytes;
   B32 orphan_text = long_form_text &&
-    (text_bytes < Lectern0GotmMinimumProseTextBytes ||
-     text_rows < Lectern0GotmMinimumProseTextRows);
+    (text_bytes < EightvoGotmMinimumProseTextBytes ||
+     text_rows < EightvoGotmMinimumProseTextRows);
   B32 invalid_word_start = long_form_text &&
-    !lectern0_gotm_page_start_is_word_boundary(
+    !eightvo_gotm_page_start_is_word_boundary(
       app->reader.spine_text, app->reader.current_page.first_byte);
   if (out_orphan_text) *out_orphan_text = orphan_text;
   if (out_invalid_word_start) *out_invalid_word_start = invalid_word_start;
@@ -7588,7 +7588,7 @@ lectern0_gotm_navigation_frame_is_canonical_nonempty(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_page_repeat_modifier_key(WPARAM key)
+eightvo_page_repeat_modifier_key(WPARAM key)
 {
   return key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
     key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT ||
@@ -7596,7 +7596,7 @@ lectern0_page_repeat_modifier_key(WPARAM key)
 }
 
 FUNCTION B32
-lectern0_page_repeat_consume_cancelled_keydown(Lectern0App *app,
+eightvo_page_repeat_consume_cancelled_keydown(EightvoApp *app,
                                                 WPARAM key,
                                                 LPARAM l_param)
 {
@@ -7611,24 +7611,24 @@ lectern0_page_repeat_consume_cancelled_keydown(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_page_action_cancel_presentation_retry(Lectern0App *app)
+eightvo_page_action_cancel_presentation_retry(EightvoApp *app)
 {
   if (!app) return;
   if (app->window)
-    (void)KillTimer(app->window, Lectern0PresentationRetryTimerId);
+    (void)KillTimer(app->window, EightvoPresentationRetryTimerId);
   app->page_action_presentation_retry_attempt = 0;
 }
 
 FUNCTION void
-lectern0_page_action_schedule_presentation_retry(Lectern0App *app)
+eightvo_page_action_schedule_presentation_retry(EightvoApp *app)
 {
   if (!app || !app->window || !app->page_action_waiting_for_present) return;
   U32 shift = MIN(app->page_action_presentation_retry_attempt, 4u);
-  U32 delay_ms = Lectern0PresentationRetryBaseDelayMs << shift;
-  delay_ms = MIN(delay_ms, (U32)Lectern0PresentationRetryMaxDelayMs);
-  (void)KillTimer(app->window, Lectern0PresentationRetryTimerId);
+  U32 delay_ms = EightvoPresentationRetryBaseDelayMs << shift;
+  delay_ms = MIN(delay_ms, (U32)EightvoPresentationRetryMaxDelayMs);
+  (void)KillTimer(app->window, EightvoPresentationRetryTimerId);
   if (SetTimer(app->window,
-               Lectern0PresentationRetryTimerId,
+               EightvoPresentationRetryTimerId,
                delay_ms,
                0) != 0)
   {
@@ -7646,7 +7646,7 @@ lectern0_page_action_schedule_presentation_retry(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_page_action_note_emitted(Lectern0App *app)
+eightvo_page_action_note_emitted(EightvoApp *app)
 {
   if (!app) return;
   if (app->page_action_waiting_for_present)
@@ -7655,15 +7655,15 @@ lectern0_page_action_note_emitted(Lectern0App *app)
       app->page_action_overlap_count += 1;
     return;
   }
-  lectern0_page_action_cancel_presentation_retry(app);
+  eightvo_page_action_cancel_presentation_retry(app);
   app->page_action_frame_generation += 1;
   if (app->page_action_frame_generation == 0)
     app->page_action_frame_generation = 1;
   MemoryZeroStruct(&app->page_action_expected_identity);
-  (void)lectern0_capture_presentation_identity(
+  (void)eightvo_capture_presentation_identity(
     app, &app->page_action_expected_identity);
   if (app->page_action_expected_identity.kind ==
-        Lectern0PresentationIdentity_Page &&
+        EightvoPresentationIdentity_Page &&
       app->capture_frame_failed_since_mutation)
   {
     app->page_action_expected_identity.frame_capture_generation =
@@ -7678,12 +7678,12 @@ lectern0_page_action_note_emitted(Lectern0App *app)
   if (app->page_action_emitted_count < UINT64_MAX)
     app->page_action_emitted_count += 1;
   if (app->window && app->state_save_pending)
-    (void)KillTimer(app->window, Lectern0StateSaveTimerId);
-  lectern0_cancel_adjacent_warm(app);
+    (void)KillTimer(app->window, EightvoStateSaveTimerId);
+  eightvo_cancel_adjacent_warm(app);
 }
 
 FUNCTION void
-lectern0_page_action_clear_pending(Lectern0App *app)
+eightvo_page_action_clear_pending(EightvoApp *app)
 {
   if (!app) return;
   app->page_action_pending = 0;
@@ -7693,7 +7693,7 @@ lectern0_page_action_clear_pending(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_page_action_defer(Lectern0App *app,
+eightvo_page_action_defer(EightvoApp *app,
                            WPARAM key,
                            S32 direction,
                            B32 arm_repeat)
@@ -7706,13 +7706,13 @@ lectern0_page_action_defer(Lectern0App *app,
   if (app->page_repeat_active)
   {
     WPARAM cancelled_key = app->page_repeat_key;
-    lectern0_stop_page_repeat(app);
+    eightvo_stop_page_repeat(app);
     app->page_repeat_cancelled_key = cancelled_key;
   }
 }
 
 FUNCTION void
-lectern0_page_action_release_key(Lectern0App *app, WPARAM key)
+eightvo_page_action_release_key(EightvoApp *app, WPARAM key)
 {
   if (!app) return;
   if (app->page_action_pending && key == app->page_action_pending_key)
@@ -7721,14 +7721,14 @@ lectern0_page_action_release_key(Lectern0App *app, WPARAM key)
   {
     if (app->page_repeat_keyup_cancel_count < UINT32_MAX)
       app->page_repeat_keyup_cancel_count += 1;
-    lectern0_stop_page_repeat(app);
+    eightvo_stop_page_repeat(app);
   }
   if (key == app->page_repeat_cancelled_key)
     app->page_repeat_cancelled_key = 0;
 }
 
 FUNCTION void
-lectern0_stop_page_repeat(Lectern0App *app)
+eightvo_stop_page_repeat(EightvoApp *app)
 {
   if (!app) return;
   B32 was_active = app->page_repeat_active;
@@ -7746,75 +7746,75 @@ lectern0_stop_page_repeat(Lectern0App *app)
   {
     if (app->page_repeat_persistence_rescheduled_count < UINT32_MAX)
       app->page_repeat_persistence_rescheduled_count += 1;
-    lectern0_schedule_state_save(app);
+    eightvo_schedule_state_save(app);
   }
   if (was_active && !app->page_action_waiting_for_present &&
       !app->page_action_pending && epub_reader_is_open(&app->reader))
-    lectern0_schedule_adjacent_warm(app);
+    eightvo_schedule_adjacent_warm(app);
 }
 
 FUNCTION void
-lectern0_cancel_page_repeat(Lectern0App *app, U32 *counter)
+eightvo_cancel_page_repeat(EightvoApp *app, U32 *counter)
 {
   if (!app) return;
-  lectern0_page_action_clear_pending(app);
+  eightvo_page_action_clear_pending(app);
   if (!app->page_repeat_active) return;
   WPARAM cancelled_key = app->page_repeat_key;
-  lectern0_stop_page_repeat(app);
+  eightvo_stop_page_repeat(app);
   app->page_repeat_cancelled_key = cancelled_key;
   if (counter && *counter < UINT32_MAX) *counter += 1;
 }
 
 FUNCTION void
-lectern0_cancel_page_repeat_for_modifier(Lectern0App *app)
+eightvo_cancel_page_repeat_for_modifier(EightvoApp *app)
 {
   if (!app) return;
-  lectern0_cancel_page_repeat(app, &app->page_repeat_modifier_cancel_count);
+  eightvo_cancel_page_repeat(app, &app->page_repeat_modifier_cancel_count);
 }
 
 FUNCTION void
-lectern0_cancel_page_repeat_for_focus(Lectern0App *app)
+eightvo_cancel_page_repeat_for_focus(EightvoApp *app)
 {
   if (!app) return;
-  lectern0_cancel_page_repeat(app, &app->page_repeat_focus_cancel_count);
+  eightvo_cancel_page_repeat(app, &app->page_repeat_focus_cancel_count);
 }
 
 FUNCTION void
-lectern0_cancel_page_repeat_for_deactivation(Lectern0App *app)
+eightvo_cancel_page_repeat_for_deactivation(EightvoApp *app)
 {
   if (!app) return;
-  lectern0_cancel_page_repeat(app,
+  eightvo_cancel_page_repeat(app,
                               &app->page_repeat_deactivate_cancel_count);
 }
 
 FUNCTION void
-lectern0_cancel_page_repeat_for_mutation(Lectern0App *app)
+eightvo_cancel_page_repeat_for_mutation(EightvoApp *app)
 {
   if (!app) return;
-  lectern0_cancel_page_repeat(app, &app->page_repeat_mutation_cancel_count);
+  eightvo_cancel_page_repeat(app, &app->page_repeat_mutation_cancel_count);
 }
 
 FUNCTION U64
-lectern0_page_repeat_delay_ticks(U32 frame_count)
+eightvo_page_repeat_delay_ticks(U32 frame_count)
 {
   U64 frequency = os_time_frequency();
-  U64 whole_ticks = frequency / Lectern0PageRepeatFrameRate;
-  U64 remainder_ticks = frequency % Lectern0PageRepeatFrameRate;
+  U64 whole_ticks = frequency / EightvoPageRepeatFrameRate;
+  U64 remainder_ticks = frequency % EightvoPageRepeatFrameRate;
   U64 delay_ticks = whole_ticks * frame_count +
-    (remainder_ticks * frame_count + Lectern0PageRepeatFrameRate - 1) /
-      Lectern0PageRepeatFrameRate;
+    (remainder_ticks * frame_count + EightvoPageRepeatFrameRate - 1) /
+      EightvoPageRepeatFrameRate;
   return delay_ticks ? delay_ticks : 1;
 }
 
 FUNCTION void
-lectern0_begin_page_repeat(Lectern0App *app,
+eightvo_begin_page_repeat(EightvoApp *app,
                            WPARAM key,
                            S32 direction)
 {
   if (!app || direction == 0 || !app->page_action_waiting_for_present) return;
   U64 now_ticks = os_time_ticks();
   U64 initial_delay_ticks =
-    lectern0_page_repeat_delay_ticks(Lectern0PageRepeatInitialFrames);
+    eightvo_page_repeat_delay_ticks(EightvoPageRepeatInitialFrames);
   app->page_repeat_active = 1;
   app->page_repeat_direction = direction < 0 ? -1 : 1;
   app->page_repeat_key = key;
@@ -7847,12 +7847,12 @@ lectern0_begin_page_repeat(Lectern0App *app,
   /* The accepted immediate action already owns the independent presentation
      gate. Releasing or cancelling repeat must not clear that action gate. */
   if (app->window && app->state_save_pending)
-    (void)KillTimer(app->window, Lectern0StateSaveTimerId);
-  lectern0_cancel_adjacent_warm(app);
+    (void)KillTimer(app->window, EightvoStateSaveTimerId);
+  eightvo_cancel_adjacent_warm(app);
 }
 
 FUNCTION B32
-lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app)
+eightvo_page_repeat_prepare_navigation_tail(EightvoApp *app)
 {
   if (!app || !app->page_repeat_navigation_prepare_pending) return 0;
 
@@ -7962,17 +7962,17 @@ lectern0_page_repeat_prepare_navigation_tail(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_start_page_repeat(Lectern0App *app,
+eightvo_start_page_repeat(EightvoApp *app,
                            WPARAM key,
                            S32 direction)
 {
   if (!app || !app->window || direction == 0) return;
-  lectern0_stop_page_repeat(app);
-  lectern0_begin_page_repeat(app, key, direction);
+  eightvo_stop_page_repeat(app);
+  eightvo_begin_page_repeat(app, key, direction);
 }
 
 FUNCTION B32
-lectern0_page_repeat_step(Lectern0App *app,
+eightvo_page_repeat_step(EightvoApp *app,
                            U64 now_ticks,
                            B32 *out_action_due)
 {
@@ -7983,12 +7983,12 @@ lectern0_page_repeat_step(Lectern0App *app,
     return 0;
   }
   S32 current_direction = 0;
-  if (!lectern0_page_direction_for_key(app,
+  if (!eightvo_page_direction_for_key(app,
                                        app->page_repeat_key,
                                        &current_direction) ||
       current_direction != app->page_repeat_direction)
   {
-    lectern0_stop_page_repeat(app);
+    eightvo_stop_page_repeat(app);
     return 0;
   }
 
@@ -8004,29 +8004,29 @@ lectern0_page_repeat_step(Lectern0App *app,
 
   U64 action_emitted_ticks = os_time_ticks();
   B32 had_page = app->reader.has_current_page;
-  Lectern0CanonicalPageIdentity before_page =
-    lectern0_canonical_page_identity(app->reader.current_page);
+  EightvoCanonicalPageIdentity before_page =
+    eightvo_canonical_page_identity(app->reader.current_page);
   app->page_action_internal_dispatch = 1;
-  EpubReaderResult result = lectern0_move_page(
+  EpubReaderResult result = eightvo_move_page(
     app, app->page_repeat_direction);
   app->page_action_internal_dispatch = 0;
   B32 reader_changed = app->reader.has_current_page &&
-    (!had_page || !lectern0_canonical_page_identity_equal(
-      before_page, lectern0_canonical_page_identity(app->reader.current_page)));
+    (!had_page || !eightvo_canonical_page_identity_equal(
+      before_page, eightvo_canonical_page_identity(app->reader.current_page)));
   if (result != EpubReaderResult_Ok)
   {
-    lectern0_stop_page_repeat(app);
+    eightvo_stop_page_repeat(app);
     if (reader_changed)
     {
-      lectern0_page_action_note_emitted(app);
+      eightvo_page_action_note_emitted(app);
       if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
     }
     return reader_changed;
   }
   app->page_repeat_last_action_emitted_ticks = action_emitted_ticks;
-  lectern0_page_action_note_emitted(app);
+  eightvo_page_action_note_emitted(app);
   U64 interval_ticks =
-    lectern0_page_repeat_delay_ticks(Lectern0PageRepeatIntervalFrames);
+    eightvo_page_repeat_delay_ticks(EightvoPageRepeatIntervalFrames);
   app->page_repeat_next_move_ticks =
     action_emitted_ticks > UINT64_MAX - interval_ticks ?
       UINT64_MAX : action_emitted_ticks + interval_ticks;
@@ -8036,12 +8036,12 @@ lectern0_page_repeat_step(Lectern0App *app,
   return 1;
 }
 
-FUNCTION Lectern0PageRepeatFrameResult
-lectern0_page_repeat_frame_step(Lectern0App *app, U64 now_ticks)
+FUNCTION EightvoPageRepeatFrameResult
+eightvo_page_repeat_frame_step(EightvoApp *app, U64 now_ticks)
 {
-  Lectern0PageRepeatFrameResult result = {0};
+  EightvoPageRepeatFrameResult result = {0};
   result.action_emitted =
-    lectern0_page_repeat_step(app, now_ticks, &result.action_due);
+    eightvo_page_repeat_step(app, now_ticks, &result.action_due);
   result.action_waiting_for_render =
     result.action_due && !result.action_emitted && app &&
     app->page_action_waiting_for_present;
@@ -8049,23 +8049,23 @@ lectern0_page_repeat_frame_step(Lectern0App *app, U64 now_ticks)
 }
 
 FUNCTION void
-lectern0_page_repeat_note_presented_frame(Lectern0App *app, B32 complete)
+eightvo_page_repeat_note_presented_frame(EightvoApp *app, B32 complete)
 {
   if (!app || !app->page_action_waiting_for_present) return;
   if (!complete)
   {
-    lectern0_page_action_schedule_presentation_retry(app);
+    eightvo_page_action_schedule_presentation_retry(app);
     return;
   }
-  if (!lectern0_presentation_identity_equal(
+  if (!eightvo_presentation_identity_equal(
         app->page_action_expected_identity, app->last_surface_identity))
   {
     if (app->page_action_identity_mismatch_count < UINT32_MAX)
       app->page_action_identity_mismatch_count += 1;
-    lectern0_page_action_schedule_presentation_retry(app);
+    eightvo_page_action_schedule_presentation_retry(app);
     return;
   }
-  lectern0_page_action_cancel_presentation_retry(app);
+  eightvo_page_action_cancel_presentation_retry(app);
   app->page_action_waiting_for_present = 0;
   MemoryZeroStruct(&app->page_action_expected_identity);
   app->page_action_last_stable_present_ticks = os_time_ticks();
@@ -8083,26 +8083,26 @@ lectern0_page_repeat_note_presented_frame(Lectern0App *app, B32 complete)
     S32 direction = app->page_action_pending_direction;
     B32 arm_repeat = app->page_action_pending_arm_repeat;
     B32 had_page = app->reader.has_current_page;
-    Lectern0CanonicalPageIdentity before_page =
-      lectern0_canonical_page_identity(app->reader.current_page);
+    EightvoCanonicalPageIdentity before_page =
+      eightvo_canonical_page_identity(app->reader.current_page);
     app->page_action_internal_dispatch = 1;
-    EpubReaderResult result = lectern0_move_page(app, direction);
+    EpubReaderResult result = eightvo_move_page(app, direction);
     app->page_action_internal_dispatch = 0;
     B32 reader_changed = app->reader.has_current_page &&
-      (!had_page || !lectern0_canonical_page_identity_equal(
+      (!had_page || !eightvo_canonical_page_identity_equal(
         before_page,
-        lectern0_canonical_page_identity(app->reader.current_page)));
-    lectern0_page_action_clear_pending(app);
+        eightvo_canonical_page_identity(app->reader.current_page)));
+    eightvo_page_action_clear_pending(app);
     if (result == EpubReaderResult_Ok)
     {
-      lectern0_page_action_note_emitted(app);
-      if (arm_repeat) lectern0_start_page_repeat(app, key, direction);
+      eightvo_page_action_note_emitted(app);
+      if (arm_repeat) eightvo_start_page_repeat(app, key, direction);
       if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
       return;
     }
     if (reader_changed)
     {
-      lectern0_page_action_note_emitted(app);
+      eightvo_page_action_note_emitted(app);
       if (app->window) (void)InvalidateRect(app->window, 0, FALSE);
       return;
     }
@@ -8135,22 +8135,22 @@ lectern0_page_repeat_note_presented_frame(Lectern0App *app, B32 complete)
     {
       if (app->page_repeat_persistence_rescheduled_count < UINT32_MAX)
         app->page_repeat_persistence_rescheduled_count += 1;
-      lectern0_schedule_state_save(app);
+      eightvo_schedule_state_save(app);
     }
     if (epub_reader_is_open(&app->reader))
-      lectern0_schedule_adjacent_warm(app);
+      eightvo_schedule_adjacent_warm(app);
   }
 }
 
-FUNCTION Lectern0ReaderKeyRoute
-lectern0_reader_view_route_keydown_ex(Lectern0App *app,
+FUNCTION EightvoReaderKeyRoute
+eightvo_reader_view_route_keydown_ex(EightvoApp *app,
                                       WPARAM key,
                                       B32 shift,
                                       B32 *out_page_move_succeeded)
 {
   if (out_page_move_succeeded) *out_page_move_succeeded = 0;
-  if (!app) return Lectern0ReaderKeyRoute_None;
-  B32 editing = lectern0_reader_view_text_editing(app);
+  if (!app) return EightvoReaderKeyRoute_None;
+  B32 editing = eightvo_reader_view_text_editing(app);
   if (editing && key == VK_BACK)
     app->input.backspace_pressed = 1;
   else if (editing && key == VK_DELETE)
@@ -8158,7 +8158,7 @@ lectern0_reader_view_route_keydown_ex(Lectern0App *app,
   else if (editing && key == VK_RETURN)
   {
     if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor)
-      lectern0_append_input_wchar(app, L'\n');
+      eightvo_append_input_wchar(app, L'\n');
     else
       app->input.commit_pressed = 1;
   }
@@ -8173,7 +8173,7 @@ lectern0_reader_view_route_keydown_ex(Lectern0App *app,
     app->input.extend_selection = shift;
   }
   else if (!editing &&
-           lectern0_reader_view_horizontal_move_is_shared(app) &&
+           eightvo_reader_view_horizontal_move_is_shared(app) &&
            (key == VK_LEFT || key == VK_RIGHT))
   {
     app->input.move_delta = key == VK_LEFT ? -1 : 1;
@@ -8182,7 +8182,7 @@ lectern0_reader_view_route_keydown_ex(Lectern0App *app,
            (key == VK_LEFT || key == VK_RIGHT))
   {
     EpubReaderResult move =
-      lectern0_move_page(app, key == VK_LEFT ? -1 : 1);
+      eightvo_move_page(app, key == VK_LEFT ? -1 : 1);
     if (out_page_move_succeeded && move == EpubReaderResult_Ok)
       *out_page_move_succeeded = 1;
   }
@@ -8204,37 +8204,37 @@ lectern0_reader_view_route_keydown_ex(Lectern0App *app,
       ReaderViewRangeMove_First : ReaderViewRangeMove_Last;
   }
   else if (!editing &&
-           app->host_focus_control == Lectern0HostControl_ExitReader &&
+           app->host_focus_control == EightvoHostControl_ExitReader &&
            (key == VK_RETURN || key == VK_SPACE))
   {
-    return lectern0_host_keyboard_activate(app) ?
-      Lectern0ReaderKeyRoute_CloseRequested :
-      Lectern0ReaderKeyRoute_Handled;
+    return eightvo_host_keyboard_activate(app) ?
+      EightvoReaderKeyRoute_CloseRequested :
+      EightvoReaderKeyRoute_Handled;
   }
   else if (!editing && app->reader_view_state.focus_id == 0 &&
-           app->host_focus_control == Lectern0HostControl_None &&
+           app->host_focus_control == EightvoHostControl_None &&
            (key == VK_LEFT || key == VK_PRIOR))
   {
-    EpubReaderResult move = lectern0_move_page(app, -1);
+    EpubReaderResult move = eightvo_move_page(app, -1);
     if (out_page_move_succeeded && move == EpubReaderResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_SPACE &&
-           lectern0_reader_view_space_activates_focus(app))
+           eightvo_reader_view_space_activates_focus(app))
   {
     app->input.activate_pressed = 1;
   }
   else if (!editing && app->reader_view_state.focus_id == 0 &&
-           app->host_focus_control == Lectern0HostControl_None &&
+           app->host_focus_control == EightvoHostControl_None &&
            (key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE))
   {
-    EpubReaderResult move = lectern0_move_page(app, 1);
+    EpubReaderResult move = eightvo_move_page(app, 1);
     if (out_page_move_succeeded && move == EpubReaderResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_TAB)
   {
-    if (!lectern0_host_keyboard_tab(app, shift))
+    if (!eightvo_host_keyboard_tab(app, shift))
     {
       if (shift) app->input.focus_prev_pressed = 1;
       else app->input.focus_next_pressed = 1;
@@ -8247,26 +8247,26 @@ lectern0_reader_view_route_keydown_ex(Lectern0App *app,
   }
   else
   {
-    return Lectern0ReaderKeyRoute_None;
+    return EightvoReaderKeyRoute_None;
   }
-  return Lectern0ReaderKeyRoute_Handled;
+  return EightvoReaderKeyRoute_Handled;
 }
 
-FUNCTION Lectern0ReaderKeyRoute
-lectern0_reader_view_route_keydown(Lectern0App *app,
+FUNCTION EightvoReaderKeyRoute
+eightvo_reader_view_route_keydown(EightvoApp *app,
                                    WPARAM key,
                                    B32 shift)
 {
-  return lectern0_reader_view_route_keydown_ex(app, key, shift, 0);
+  return eightvo_reader_view_route_keydown_ex(app, key, shift, 0);
 }
 
 FUNCTION B32
-lectern0_launch_lookup(Lectern0App *app,
+eightvo_launch_lookup(EightvoApp *app,
                        const char *prefix,
                        ReaderViewText text)
 {
   if (!app || !prefix || text.size <= 0 || !text.data) return 0;
-  char url[Lectern0UrlCap] = {0};
+  char url[EightvoUrlCap] = {0};
   U64 at = cstr_format(url, ARRAY_COUNT(url), "%s", prefix);
   static const char hex[] = "0123456789ABCDEF";
   for (UI0S32 index = 0; index < text.size && at + 4 < ARRAY_COUNT(url); index += 1)
@@ -8291,16 +8291,16 @@ lectern0_launch_lookup(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_export_annotations(Lectern0App *app)
+eightvo_export_annotations(EightvoApp *app)
 {
   if (!app || !app->export_path[0]) return 0;
   char data[65536] = {0};
   U64 size = cstr_format(data, ARRAY_COUNT(data),
-                         "lectern0 reader annotations\nBook: %s\n\n",
+                         "eightvo reader annotations\nBook: %s\n\n",
                          app->document_title[0] ? app->document_title : app->current_path);
   for (U32 index = 0; index < app->bookmark_count && size < ARRAY_COUNT(data); index += 1)
   {
-    const Lectern0Bookmark *item = app->bookmarks + index;
+    const EightvoBookmark *item = app->bookmarks + index;
     size += cstr_format(data + size, ARRAY_COUNT(data) - size,
                         "Bookmark %llu | %s | spine %u byte %llu%s\n",
                         (unsigned long long)item->id, item->label,
@@ -8309,7 +8309,7 @@ lectern0_export_annotations(Lectern0App *app)
   }
   for (U32 index = 0; index < app->highlight_count && size < ARRAY_COUNT(data); index += 1)
   {
-    const Lectern0Highlight *item = app->highlights + index;
+    const EightvoHighlight *item = app->highlights + index;
     if (item->is_highlight)
       size += cstr_format(data + size, ARRAY_COUNT(data) - size,
                           "Highlight %llu | %s | %s\n",
@@ -8323,17 +8323,17 @@ lectern0_export_annotations(Lectern0App *app)
   }
   B32 result = size < ARRAY_COUNT(data) &&
     os_write_entire_file_atomic(app->export_path, data, size);
-  lectern0_set_statusf(app, result ? "Annotations exported: %s" :
+  eightvo_set_statusf(app, result ? "Annotations exported: %s" :
                                      "Annotation export failed",
                        result ? app->export_path : "");
   return result;
 }
 
 FUNCTION B32
-lectern0_set_fullscreen(Lectern0App *app, B32 active)
+eightvo_set_fullscreen(EightvoApp *app, B32 active)
 {
   if (!app || !app->window || app->fullscreen.active == active) return app != 0;
-  if (!lectern0_begin_document_mutation(app)) return 0;
+  if (!eightvo_begin_document_mutation(app)) return 0;
   if (active)
   {
     app->fullscreen.style = (DWORD)GetWindowLongPtrW(app->window, GWL_STYLE);
@@ -8361,17 +8361,17 @@ lectern0_set_fullscreen(Lectern0App *app, B32 active)
                  SWP_NOZORDER | SWP_NOOWNERZORDER);
   }
   app->fullscreen.active = active;
-  lectern0_complete_document_mutation(app, 1);
+  eightvo_complete_document_mutation(app, 1);
   return 1;
 }
 
 FUNCTION B32
-lectern0_apply_setting(Lectern0App *app,
+eightvo_apply_setting(EightvoApp *app,
                        ReaderViewSettingKind kind,
                        ReaderViewKey key)
 {
   if (!app) return 0;
-  if (!lectern0_begin_document_mutation(app)) return 0;
+  if (!eightvo_begin_document_mutation(app)) return 0;
   B32 repaginate = 0;
   switch (kind)
   {
@@ -8396,26 +8396,26 @@ lectern0_apply_setting(Lectern0App *app,
       repaginate = 1;
       break;
     case ReaderViewSetting_Theme:
-      if (key < 4000 || key >= 4000 + Lectern0Theme_Count) return 0;
-      app->theme = (Lectern0Theme)(key - 4000);
+      if (key < 4000 || key >= 4000 + EightvoTheme_Count) return 0;
+      app->theme = (EightvoTheme)(key - 4000);
       break;
     default: return 0;
   }
-  (void)lectern0_save_settings(app);
+  (void)eightvo_save_settings(app);
   if (repaginate && epub_reader_is_open(&app->reader))
   {
     app->page_action_internal_dispatch = 1;
-    B32 result = lectern0_repaginate(app);
+    B32 result = eightvo_repaginate(app);
     app->page_action_internal_dispatch = 0;
-    lectern0_complete_document_mutation(app, 1);
+    eightvo_complete_document_mutation(app, 1);
     return result;
   }
-  lectern0_complete_document_mutation(app, 1);
+  eightvo_complete_document_mutation(app, 1);
   return 1;
 }
 
 FUNCTION void
-lectern0_select_highlight(Lectern0App *app, const Lectern0Highlight *highlight)
+eightvo_select_highlight(EightvoApp *app, const EightvoHighlight *highlight)
 {
   if (!app || !highlight) return;
   DocSelection selection = {
@@ -8427,8 +8427,8 @@ lectern0_select_highlight(Lectern0App *app, const Lectern0Highlight *highlight)
 }
 
 FUNCTION B32
-lectern0_reader_view_open_annotation_note(Lectern0App *app,
-                                           const Lectern0Highlight *highlight)
+eightvo_reader_view_open_annotation_note(EightvoApp *app,
+                                           const EightvoHighlight *highlight)
 {
   if (!app || !highlight || highlight->id == 0 ||
       highlight->end_byte <= highlight->start_byte ||
@@ -8443,11 +8443,11 @@ lectern0_reader_view_open_annotation_note(Lectern0App *app,
     highlight->id,
   };
   ReaderViewSelectionProjection selection = {
-    .status = lectern0_reader_view_status(ReaderViewLoad_Ready, 0),
+    .status = eightvo_reader_view_status(ReaderViewLoad_Ready, 0),
     .selection_key = u64_hash_bytes(values, sizeof(values)),
     .revision = app->annotation_revision,
-    .selected_text = lectern0_reader_view_text(highlight->text),
-    .note_text = lectern0_reader_view_text(highlight->note),
+    .selected_text = eightvo_reader_view_text(highlight->text),
+    .note_text = eightvo_reader_view_text(highlight->note),
     .flags = ReaderViewSelection_Active |
              ReaderViewSelection_CanEditNote |
              ReaderViewSelection_CanDeleteNote,
@@ -8467,7 +8467,7 @@ lectern0_reader_view_open_annotation_note(Lectern0App *app,
 }
 
 FUNCTION S32
-lectern0_reader_view_note_editor_highlight_index(const Lectern0App *app)
+eightvo_reader_view_note_editor_highlight_index(const EightvoApp *app)
 {
   if (!app) return -1;
   if (app->annotation_note_selection_key != 0)
@@ -8479,10 +8479,10 @@ lectern0_reader_view_note_editor_highlight_index(const Lectern0App *app)
     {
       return -1;
     }
-    S32 index = lectern0_highlight_index(
+    S32 index = eightvo_highlight_index(
       app, app->annotation_note_highlight_id);
     if (index < 0) return -1;
-    const Lectern0Highlight *highlight = app->highlights + index;
+    const EightvoHighlight *highlight = app->highlights + index;
     if (highlight->spine_index != app->annotation_note_spine_index ||
         highlight->start_byte != app->annotation_note_start_byte ||
         highlight->end_byte != app->annotation_note_end_byte)
@@ -8491,26 +8491,26 @@ lectern0_reader_view_note_editor_highlight_index(const Lectern0App *app)
     }
     return index;
   }
-  return lectern0_selection_highlight_index(app);
+  return eightvo_selection_highlight_index(app);
 }
 
 FUNCTION void
-lectern0_reader_view_finish_note_editor(Lectern0App *app)
+eightvo_reader_view_finish_note_editor(EightvoApp *app)
 {
   if (!app) return;
   B32 annotation_origin = app->annotation_note_selection_key != 0;
-  lectern0_reader_view_clear_annotation_note_target(app);
+  eightvo_reader_view_clear_annotation_note_target(app);
   if (!annotation_origin)
   {
     epub_reader_clear_selection(&app->reader);
     app->selected_text[0] = 0;
     app->selection_anchor_rect = (UI0Rect){0};
   }
-  (void)lectern0_capture_frame(app);
+  (void)eightvo_capture_frame(app);
 }
 
 FUNCTION B32
-lectern0_reader_view_set_find_query(Lectern0App *app, ReaderViewText query)
+eightvo_reader_view_set_find_query(EightvoApp *app, ReaderViewText query)
 {
   if (!app || query.size < 0 || (query.size > 0 && !query.data) ||
       (U64)query.size >= ARRAY_COUNT(app->reader_view_state.find_query))
@@ -8529,187 +8529,187 @@ lectern0_reader_view_set_find_query(Lectern0App *app, ReaderViewText query)
 }
 
 FUNCTION void
-lectern0_apply_reader_view_action(Lectern0App *app,
+eightvo_apply_reader_view_action(EightvoApp *app,
                                   const ReaderViewAction *action)
 {
   if (!app || !action) return;
   switch (action->kind)
   {
-    case ReaderViewAction_Open: (void)lectern0_pick_epub(app); break;
-    case ReaderViewAction_PreviousPage: (void)lectern0_move_page(app, -1); break;
-    case ReaderViewAction_NextPage: (void)lectern0_move_page(app, 1); break;
-    case ReaderViewAction_HistoryBack: (void)lectern0_move_history(app, 0); break;
-    case ReaderViewAction_HistoryForward: (void)lectern0_move_history(app, 1); break;
-    case ReaderViewAction_SeekLocation: (void)lectern0_seek_location(app, action->value); break;
+    case ReaderViewAction_Open: (void)eightvo_pick_epub(app); break;
+    case ReaderViewAction_PreviousPage: (void)eightvo_move_page(app, -1); break;
+    case ReaderViewAction_NextPage: (void)eightvo_move_page(app, 1); break;
+    case ReaderViewAction_HistoryBack: (void)eightvo_move_history(app, 0); break;
+    case ReaderViewAction_HistoryForward: (void)eightvo_move_history(app, 1); break;
+    case ReaderViewAction_SeekLocation: (void)eightvo_seek_location(app, action->value); break;
     case ReaderViewAction_SelectSetting:
-      (void)lectern0_apply_setting(app, action->setting_kind, action->key);
+      (void)eightvo_apply_setting(app, action->setting_kind, action->key);
       break;
     case ReaderViewAction_ToggleBookmark:
-      (void)lectern0_toggle_current_bookmark(app);
+      (void)eightvo_toggle_current_bookmark(app);
       break;
     case ReaderViewAction_FindChanged:
     {
-      if (!lectern0_begin_document_mutation(app)) break;
-      if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      if (!eightvo_begin_document_mutation(app)) break;
+      if (!eightvo_reader_view_set_find_query(app, action->text)) break;
       app->page_action_internal_dispatch = 1;
       if (action->text.size == 0)
       {
         epub_reader_clear_search(&app->reader);
-        (void)lectern0_capture_frame(app);
+        (void)eightvo_capture_frame(app);
       }
       else
       {
-        (void)lectern0_capture_frame(app);
+        (void)eightvo_capture_frame(app);
       }
       app->page_action_internal_dispatch = 0;
-      lectern0_complete_document_mutation(app, 1);
+      eightvo_complete_document_mutation(app, 1);
     } break;
     case ReaderViewAction_FindCommitted:
     {
-      if (!lectern0_begin_document_mutation(app)) break;
-      if (!lectern0_reader_view_set_find_query(app, action->text)) break;
+      if (!eightvo_begin_document_mutation(app)) break;
+      if (!eightvo_reader_view_set_find_query(app, action->text)) break;
       app->page_action_internal_dispatch = 1;
       if (action->text.size == 0)
       {
         epub_reader_clear_search(&app->reader);
-        (void)lectern0_capture_frame(app);
+        (void)eightvo_capture_frame(app);
       }
       else if (epub_reader_rebuild_search(
                  &app->reader,
                  str8((U8 *)action->text.data, (U64)action->text.size)))
       {
         if (app->reader.search_match_count > 0)
-          (void)lectern0_navigate_to_search_match(
+          (void)eightvo_navigate_to_search_match(
             app,
             app->reader.search_has_active ? app->reader.search_active_index : 0,
             &(EpubReaderSearchNavigationResult){0});
         else
-          (void)lectern0_capture_frame(app);
+          (void)eightvo_capture_frame(app);
       }
       else
       {
-        (void)lectern0_capture_frame(app);
+        (void)eightvo_capture_frame(app);
       }
       app->page_action_internal_dispatch = 0;
-      lectern0_complete_document_mutation(app, 1);
+      eightvo_complete_document_mutation(app, 1);
     } break;
     case ReaderViewAction_FindPrevious:
     case ReaderViewAction_FindNext:
     {
-      if (!lectern0_begin_document_mutation(app)) break;
+      if (!eightvo_begin_document_mutation(app)) break;
       app->page_action_internal_dispatch = 1;
       if (epub_reader_search_step(&app->reader,
             action->kind == ReaderViewAction_FindPrevious ? -1 : 1))
-        (void)lectern0_navigate_to_search_match(
+        (void)eightvo_navigate_to_search_match(
           app, app->reader.search_active_index,
           &(EpubReaderSearchNavigationResult){0});
       else
-        (void)lectern0_capture_frame(app);
+        (void)eightvo_capture_frame(app);
       app->page_action_internal_dispatch = 0;
-      lectern0_complete_document_mutation(app, 1);
+      eightvo_complete_document_mutation(app, 1);
     } break;
     case ReaderViewAction_ActivateTocRow:
       if (action->key > 0 && action->key - 1 <= 0xffffffffull)
-        (void)lectern0_navigate_to_nav_point(
+        (void)eightvo_navigate_to_nav_point(
           app, (U32)(action->key - 1), &(EpubReaderNavPointResult){0});
       break;
     case ReaderViewAction_ActivateFindRow:
       if (action->key >= 0x100000ull &&
           action->key - 0x100000ull <= 0xffffffffull)
-        (void)lectern0_navigate_to_search_match(
+        (void)eightvo_navigate_to_search_match(
           app, (U32)(action->key - 0x100000ull),
           &(EpubReaderSearchNavigationResult){0});
       break;
     case ReaderViewAction_ActivateRightRow:
     {
-      const Lectern0ReaderViewRightSource *source =
-        lectern0_reader_view_right_source(
+      const EightvoReaderViewRightSource *source =
+        eightvo_reader_view_right_source(
           app, action->key, action->right_row_kind);
       S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
-        lectern0_bookmark_index(app, source->record_id) : -1;
+        eightvo_bookmark_index(app, source->record_id) : -1;
       S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
-        lectern0_highlight_index(app, source->record_id) : -1;
+        eightvo_highlight_index(app, source->record_id) : -1;
       if (bookmark >= 0)
-        (void)lectern0_navigate_to_location(app,
+        (void)eightvo_navigate_to_location(app,
           app->bookmarks[bookmark].spine_index,
           app->bookmarks[bookmark].byte_offset,
           EpubReaderNavigationReason_Bookmark);
       else if (highlight >= 0)
-        (void)lectern0_navigate_to_location(app,
+        (void)eightvo_navigate_to_location(app,
           app->highlights[highlight].spine_index,
           app->highlights[highlight].start_byte,
           EpubReaderNavigationReason_Annotation);
     } break;
     case ReaderViewAction_ToggleRightRowStar:
     {
-      const Lectern0ReaderViewRightSource *source =
-        lectern0_reader_view_right_source(
+      const EightvoReaderViewRightSource *source =
+        eightvo_reader_view_right_source(
           app, action->key, action->right_row_kind);
       S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
-        lectern0_bookmark_index(app, source->record_id) : -1;
+        eightvo_bookmark_index(app, source->record_id) : -1;
       S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
-        lectern0_highlight_index(app, source->record_id) : -1;
+        eightvo_highlight_index(app, source->record_id) : -1;
       if (bookmark >= 0)
-        (void)lectern0_remove_bookmark_at(app, (U32)bookmark);
+        (void)eightvo_remove_bookmark_at(app, (U32)bookmark);
       else if (highlight >= 0 && source->row_kind == ReaderViewRightRow_Note)
-        (void)lectern0_toggle_highlight_star_at(
+        (void)eightvo_toggle_highlight_star_at(
           app, (U32)highlight, 1);
       else if (highlight >= 0)
-        (void)lectern0_toggle_highlight_star_at(
+        (void)eightvo_toggle_highlight_star_at(
           app, (U32)highlight, 0);
     } break;
     case ReaderViewAction_EditRightRowNote:
     {
-      const Lectern0ReaderViewRightSource *source =
-        lectern0_reader_view_right_source(
+      const EightvoReaderViewRightSource *source =
+        eightvo_reader_view_right_source(
           app, action->key, action->right_row_kind);
       S32 highlight = source && source->row_kind == ReaderViewRightRow_Note ?
-        lectern0_highlight_index(app, source->record_id) : -1;
+        eightvo_highlight_index(app, source->record_id) : -1;
       if (highlight >= 0)
-        (void)lectern0_reader_view_open_annotation_note(
+        (void)eightvo_reader_view_open_annotation_note(
           app, app->highlights + highlight);
     } break;
     case ReaderViewAction_DeleteRightRow:
     {
-      const Lectern0ReaderViewRightSource *source =
-        lectern0_reader_view_right_source(
+      const EightvoReaderViewRightSource *source =
+        eightvo_reader_view_right_source(
           app, action->key, action->right_row_kind);
       S32 bookmark = source && source->row_kind == ReaderViewRightRow_Bookmark ?
-        lectern0_bookmark_index(app, source->record_id) : -1;
+        eightvo_bookmark_index(app, source->record_id) : -1;
       S32 highlight = source && source->row_kind != ReaderViewRightRow_Bookmark ?
-        lectern0_highlight_index(app, source->record_id) : -1;
+        eightvo_highlight_index(app, source->record_id) : -1;
       if (bookmark >= 0)
-        (void)lectern0_remove_bookmark_at(app, (U32)bookmark);
+        (void)eightvo_remove_bookmark_at(app, (U32)bookmark);
       else if (highlight >= 0 && source->row_kind == ReaderViewRightRow_Note)
-        (void)lectern0_delete_note_at_index(app, (U32)highlight);
+        (void)eightvo_delete_note_at_index(app, (U32)highlight);
       else if (highlight >= 0)
-        (void)lectern0_remove_highlight_identity_at(app, (U32)highlight);
+        (void)eightvo_remove_highlight_identity_at(app, (U32)highlight);
     } break;
-    case ReaderViewAction_ExportRightRows: (void)lectern0_export_annotations(app); break;
+    case ReaderViewAction_ExportRightRows: (void)eightvo_export_annotations(app); break;
     case ReaderViewAction_SetHighlightColor:
       if (action->auxiliary_key >= 5000)
-        (void)lectern0_set_highlight_color(app,
+        (void)eightvo_set_highlight_color(app,
                                            (U32)(action->auxiliary_key - 5000));
       break;
     case ReaderViewAction_RemoveHighlight:
     {
-      S32 index = lectern0_selection_highlight_index(app);
+      S32 index = eightvo_selection_highlight_index(app);
       if (index >= 0)
-        (void)lectern0_remove_highlight_identity_at(app, (U32)index);
+        (void)eightvo_remove_highlight_identity_at(app, (U32)index);
     } break;
     case ReaderViewAction_CopySelection:
-      (void)lectern0_set_clipboard_text(app, action->text);
+      (void)eightvo_set_clipboard_text(app, action->text);
       break;
     case ReaderViewAction_DictionarySelection:
-      (void)lectern0_launch_lookup(app,
+      (void)eightvo_launch_lookup(app,
         "https://www.google.com/search?q=define%3A", action->text);
       break;
     case ReaderViewAction_WebLookupSelection:
-      (void)lectern0_launch_lookup(app,
+      (void)eightvo_launch_lookup(app,
         "https://www.google.com/search?q=", action->text);
       break;
     case ReaderViewAction_TranslateSelection:
-      (void)lectern0_launch_lookup(app,
+      (void)eightvo_launch_lookup(app,
         "https://translate.google.com/?sl=auto&tl=en&text=", action->text);
       break;
     case ReaderViewAction_SaveNote:
@@ -8718,29 +8718,29 @@ lectern0_apply_reader_view_action(Lectern0App *app,
           action->value == app->reader_view_state.note_source_revision &&
           action->value == app->annotation_revision)
       {
-        S32 index = lectern0_reader_view_note_editor_highlight_index(app);
+        S32 index = eightvo_reader_view_note_editor_highlight_index(app);
         B32 saved = index >= 0 ?
-          lectern0_save_note_at_index(app, (U32)index, action->text) :
+          eightvo_save_note_at_index(app, (U32)index, action->text) :
           (app->annotation_note_selection_key == 0 &&
-           lectern0_save_selection_note(app, action->text));
+           eightvo_save_selection_note(app, action->text));
         if (saved &&
             reader_view_close_note_editor(&app->reader_view_state))
         {
-          lectern0_reader_view_finish_note_editor(app);
+          eightvo_reader_view_finish_note_editor(app);
         }
       }
       break;
     case ReaderViewAction_DeleteNote:
     {
-      S32 index = lectern0_reader_view_note_editor_highlight_index(app);
+      S32 index = eightvo_reader_view_note_editor_highlight_index(app);
       if (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
           action->key == app->reader_view_state.note_selection_key &&
           action->value == app->reader_view_state.note_source_revision &&
           action->value == app->annotation_revision && index >= 0)
       {
-        if (lectern0_delete_note_at_index(app, (U32)index) &&
+        if (eightvo_delete_note_at_index(app, (U32)index) &&
             reader_view_close_note_editor(&app->reader_view_state))
-          lectern0_reader_view_finish_note_editor(app);
+          eightvo_reader_view_finish_note_editor(app);
       }
     } break;
     case ReaderViewAction_CancelNote:
@@ -8748,10 +8748,10 @@ lectern0_apply_reader_view_action(Lectern0App *app,
          annotation target and only a selection-origin editor's selection. */
       if (action->key == app->reader_view_state.note_selection_key &&
           action->value == app->reader_view_state.note_source_revision)
-        lectern0_reader_view_finish_note_editor(app);
+        eightvo_reader_view_finish_note_editor(app);
       break;
     case ReaderViewAction_ToggleFullscreen:
-      (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
+      (void)eightvo_set_fullscreen(app, !app->fullscreen.active);
       break;
     case ReaderViewAction_ToggleDistractionFree:
       app->distraction_free = !app->distraction_free;
@@ -8763,7 +8763,7 @@ lectern0_apply_reader_view_action(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_apply_reader_view_actions(Lectern0App *app)
+eightvo_apply_reader_view_actions(EightvoApp *app)
 {
   if (!app || !app->reader_view_frame.actions) return;
   ReaderViewAction actions[READER_VIEW_ACTION_CAP];
@@ -8774,11 +8774,11 @@ lectern0_apply_reader_view_actions(Lectern0App *app)
                (U64)count * sizeof(actions[0]));
   app->reader_view_frame.action_count = 0;
   for (UI0S32 index = 0; index < count; index += 1)
-    lectern0_apply_reader_view_action(app, actions + index);
+    eightvo_apply_reader_view_action(app, actions + index);
 }
 
 FUNCTION EpubReaderFrameImage *
-lectern0_image_for_row(EpubReaderFrame *frame, U32 row)
+eightvo_image_for_row(EpubReaderFrame *frame, U32 row)
 {
   if (!frame) { return 0; }
   for (U32 index = 0; index < frame->image_count; index += 1)
@@ -8789,7 +8789,7 @@ lectern0_image_for_row(EpubReaderFrame *frame, U32 row)
 }
 
 FUNCTION U64
-lectern0_text_chunk_end(String8 text, U64 start)
+eightvo_text_chunk_end(String8 text, U64 start)
 {
   if (!text.str || start >= text.size) { return start; }
   U64 limit = MIN(start + (U64)ZF_DRAW_TEXT_CAP - 1, text.size);
@@ -8816,7 +8816,7 @@ lectern0_text_chunk_end(String8 text, U64 start)
 }
 
 FUNCTION DocTextStyleFlags
-lectern0_reader_block_style_flags(const EpubReaderFrameStyleRow *row)
+eightvo_reader_block_style_flags(const EpubReaderFrameStyleRow *row)
 {
   DocTextStyleFlags result = row ? row->block_style_flags : 0;
   if (row &&
@@ -8830,7 +8830,7 @@ lectern0_reader_block_style_flags(const EpubReaderFrameStyleRow *row)
 }
 
 FUNCTION DocTextStyleFlags
-lectern0_reader_apply_text_style_flags(DocTextStyleFlags base,
+eightvo_reader_apply_text_style_flags(DocTextStyleFlags base,
                                        DocTextStyleFlags incoming)
 {
   DocTextStyleFlags result =
@@ -8862,7 +8862,7 @@ lectern0_reader_apply_text_style_flags(DocTextStyleFlags base,
 }
 
 FUNCTION void
-lectern0_reader_segment_style(const Lectern0App *app,
+eightvo_reader_segment_style(const EightvoApp *app,
                               const EpubReaderFrameStyleRow *row,
                               U32 row_size,
                               U32 segment_start,
@@ -8875,7 +8875,7 @@ lectern0_reader_segment_style(const Lectern0App *app,
                               B32 *out_has_text_color)
 {
   U32 segment_end = row_size;
-  DocTextStyleFlags flags = lectern0_reader_block_style_flags(row);
+  DocTextStyleFlags flags = eightvo_reader_block_style_flags(row);
   U32 font_scale_permille = 1000;
   U32 font_family_hint = row ? row->font_family_hint : 0;
   U32 font_face_index = row ? row->font_face_index :
@@ -8904,7 +8904,7 @@ lectern0_reader_segment_style(const Lectern0App *app,
 
       if (fragment_start <= segment_start && segment_start < fragment_end)
       {
-        flags = lectern0_reader_apply_text_style_flags(flags, fragment->flags);
+        flags = eightvo_reader_apply_text_style_flags(flags, fragment->flags);
         if (fragment->font_scale_permille != 0)
           font_scale_permille = fragment->font_scale_permille;
         if (fragment->font_family_hint != 0)
@@ -8937,7 +8937,7 @@ lectern0_reader_segment_style(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_push_reader_text_chunks(Lectern0App *app,
+eightvo_push_reader_text_chunks(EightvoApp *app,
                                  String8 text,
                                  DocTextStyleFlags style_flags,
                                  U32 font_family_hint,
@@ -8962,7 +8962,7 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
   U64 at = 0;
   while (at < text.size)
   {
-    U64 end = lectern0_text_chunk_end(text, at);
+    U64 end = eightvo_text_chunk_end(text, at);
     if (end <= at) { return 0; }
     String8 chunk = str8(text.str + at, end - at);
     B32 pushed = draw_push_text_ex_s8(&app->draw_commands,
@@ -9005,7 +9005,7 @@ lectern0_push_reader_text_chunks(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_fit_image_rect(S32 src_w,
+eightvo_fit_image_rect(S32 src_w,
                         S32 src_h,
                         S32 rect_x,
                         S32 rect_y,
@@ -9036,7 +9036,7 @@ lectern0_fit_image_rect(S32 src_w,
   return 1;
 }
 
-typedef struct Lectern0PresentationRowMetrics
+typedef struct EightvoPresentationRowMetrics
 {
   S32 scale_px;
   S32 line_height_px;
@@ -9044,17 +9044,17 @@ typedef struct Lectern0PresentationRowMetrics
   S32 margin_after_px;
   S32 content_left_px;
   S32 content_right_px;
-} Lectern0PresentationRowMetrics;
+} EightvoPresentationRowMetrics;
 
-typedef struct Lectern0PresentationImageBox
+typedef struct EightvoPresentationImageBox
 {
   S32 x_offset_px;
   S32 width_px;
   S32 height_px;
-} Lectern0PresentationImageBox;
+} EightvoPresentationImageBox;
 
 FUNCTION B32
-lectern0_resolve_scaled_px(S32 base_px,
+eightvo_resolve_scaled_px(S32 base_px,
                            U32 permille,
                            S32 minimum_px,
                            S32 *out_px)
@@ -9068,7 +9068,7 @@ lectern0_resolve_scaled_px(S32 base_px,
 }
 
 FUNCTION B32
-lectern0_resolve_nonnegative_product(S32 value,
+eightvo_resolve_nonnegative_product(S32 value,
                                      S32 unit_px,
                                      S32 *out_px)
 {
@@ -9080,9 +9080,9 @@ lectern0_resolve_nonnegative_product(S32 value,
 }
 
 FUNCTION B32
-lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
+eightvo_resolve_presentation_row_metrics(const EightvoApp *app,
                                           const EpubReaderFrameStyleRow *row,
-                                          Lectern0PresentationRowMetrics *out_metrics)
+                                          EightvoPresentationRowMetrics *out_metrics)
 {
   if (out_metrics) { MemoryZeroStruct(out_metrics); }
   if (!app || !row || !out_metrics || app->layout_key.char_advance <= 0 ||
@@ -9091,14 +9091,14 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
     return 0;
   }
 
-  Lectern0PresentationRowMetrics metrics = {0};
+  EightvoPresentationRowMetrics metrics = {0};
   if (row->block_kind == DocTextBlockKind_Heading &&
       (row->font_scale_permille == 0 || row->font_scale_permille == 1000))
   {
     metrics.scale_px = app->layout_key.text_scale +
       (row->heading_level <= 1 ? 4 : 2);
   }
-  else if (!lectern0_resolve_scaled_px(app->layout_key.text_scale,
+  else if (!eightvo_resolve_scaled_px(app->layout_key.text_scale,
                                        row->font_scale_permille,
                                        12,
                                        &metrics.scale_px))
@@ -9106,21 +9106,21 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
     return 0;
   }
   if (metrics.scale_px > INT32_MAX - 4 ||
-      !lectern0_resolve_scaled_px(app->layout_key.line_height,
+      !eightvo_resolve_scaled_px(app->layout_key.line_height,
                                   row->line_height_permille ?
                                     row->line_height_permille : 1000,
                                   metrics.scale_px + 4,
                                   &metrics.line_height_px) ||
-      !lectern0_resolve_nonnegative_product(row->margin_top_rows,
+      !eightvo_resolve_nonnegative_product(row->margin_top_rows,
                                             app->reader_margin_line_height,
                                             &metrics.margin_before_px) ||
-      !lectern0_resolve_nonnegative_product(row->margin_bottom_rows,
+      !eightvo_resolve_nonnegative_product(row->margin_bottom_rows,
                                             app->reader_margin_line_height,
                                             &metrics.margin_after_px) ||
-      !lectern0_resolve_nonnegative_product(row->margin_left_cols,
+      !eightvo_resolve_nonnegative_product(row->margin_left_cols,
                                             app->layout_key.char_advance,
                                             &metrics.content_left_px) ||
-      !lectern0_resolve_nonnegative_product(row->margin_right_cols,
+      !eightvo_resolve_nonnegative_product(row->margin_right_cols,
                                             app->layout_key.char_advance,
                                             &metrics.content_right_px))
   {
@@ -9134,7 +9134,7 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
   else
   {
     S32 indent_px = 0;
-    if (!lectern0_resolve_nonnegative_product(row->text_indent_cols,
+    if (!eightvo_resolve_nonnegative_product(row->text_indent_cols,
                                               app->layout_key.char_advance,
                                               &indent_px))
     {
@@ -9150,8 +9150,8 @@ lectern0_resolve_presentation_row_metrics(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_row_has_safe_justification_styles(
-  const Lectern0App *app,
+eightvo_reader_row_has_safe_justification_styles(
+  const EightvoApp *app,
   const EpubReaderFrameStyleRow *row)
 {
   if (!app || !row) { return 0; }
@@ -9161,7 +9161,7 @@ lectern0_reader_row_has_safe_justification_styles(
                            DocTextStyleFlag_SmallCaps |
                            DocTextStyleFlag_NormalCaps |
                            DocTextStyleFlag_NoUnderline;
-  if ((lectern0_reader_block_style_flags(row) & ~safe) != 0) { return 0; }
+  if ((eightvo_reader_block_style_flags(row) & ~safe) != 0) { return 0; }
   U32 first = row->first_style_fragment_index;
   if (row->style_fragment_count > 0 &&
       (first >= app->frame.style_fragment_count ||
@@ -9181,7 +9181,7 @@ lectern0_reader_row_has_safe_justification_styles(
 }
 
 FUNCTION B32
-lectern0_reader_row_is_soft_wrapped(const Lectern0App *app,
+eightvo_reader_row_is_soft_wrapped(const EightvoApp *app,
                                     const EpubReaderFrameStyleRow *row)
 {
   if (!app || !row) { return 0; }
@@ -9192,25 +9192,25 @@ lectern0_reader_row_is_soft_wrapped(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_row_allows_justification(const Lectern0App *app,
+eightvo_reader_row_allows_justification(const EightvoApp *app,
                                          const EpubReaderFrameStyleRow *row,
                                          U32 row_size)
 {
   B32 kind_allows = row && row->text_align == DocTextAlign_Justify &&
     (row->block_kind == DocTextBlockKind_Paragraph ||
      (row->block_kind == DocTextBlockKind_Blockquote &&
-      lectern0_reader_row_is_soft_wrapped(app, row)));
+      eightvo_reader_row_is_soft_wrapped(app, row)));
   B32 margin_allows = row &&
     (row->margin_left_cols == 0 ||
      (row->block_kind == DocTextBlockKind_Blockquote &&
       row->margin_left_cols <= 8));
   return (kind_allows && !row->block_last_row && row->heading_level == 0 &&
           row_size >= 8 && margin_allows &&
-          lectern0_reader_row_has_safe_justification_styles(app, row));
+          eightvo_reader_row_has_safe_justification_styles(app, row));
 }
 
 FUNCTION S32
-lectern0_reader_justification_extra_cap_per_space(U32 space_count,
+eightvo_reader_justification_extra_cap_per_space(U32 space_count,
                                                   S32 natural_space_w)
 {
   if (space_count == 0) { return 0; }
@@ -9236,14 +9236,14 @@ lectern0_reader_justification_extra_cap_per_space(U32 space_count,
 }
 
 FUNCTION S32
-lectern0_reader_row_justification_extra_cap_per_space(
+eightvo_reader_row_justification_extra_cap_per_space(
   const EpubReaderFrameStyleRow *row,
   U32 space_count,
   S32 natural_space_w,
   S32 natural_w,
   S32 available_w)
 {
-  S32 result = lectern0_reader_justification_extra_cap_per_space(
+  S32 result = eightvo_reader_justification_extra_cap_per_space(
     space_count, natural_space_w);
   if (row && row->block_kind == DocTextBlockKind_Paragraph &&
       row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
@@ -9295,7 +9295,7 @@ lectern0_reader_row_justification_extra_cap_per_space(
 }
 
 FUNCTION S32
-lectern0_reader_justification_remainder_for_space(U32 space_index,
+eightvo_reader_justification_remainder_for_space(U32 space_index,
                                                   U32 space_count,
                                                   U32 remainder)
 {
@@ -9307,13 +9307,13 @@ lectern0_reader_justification_remainder_for_space(U32 space_index,
 }
 
 FUNCTION B32
-lectern0_reader_styled_row_build(
-  Lectern0App *app,
+eightvo_reader_styled_row_build(
+  EightvoApp *app,
   const EpubReaderFrameStyleRow *row,
   const PresentationEngineBlockFlowRow *presentation_row,
   U32 local_start,
   U32 local_end,
-  Lectern0ReaderStyledRow *out_row)
+  EightvoReaderStyledRow *out_row)
 {
   if (out_row) { MemoryZeroStruct(out_row); }
   if (!app || !row || !presentation_row || !out_row ||
@@ -9321,8 +9321,8 @@ lectern0_reader_styled_row_build(
   {
     return 0;
   }
-  Lectern0PresentationRowMetrics metrics = {0};
-  if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics))
+  EightvoPresentationRowMetrics metrics = {0};
+  if (!eightvo_resolve_presentation_row_metrics(app, row, &metrics))
     return 0;
 
   U32 row_size = local_end - local_start;
@@ -9330,11 +9330,11 @@ lectern0_reader_styled_row_build(
   U32 segment_start = 0;
   S32 natural_width = 0;
   S32 fill_h = 1;
-  B32 dark = lectern0_theme_profile(app->theme).appearance ==
+  B32 dark = eightvo_theme_profile(app->theme).appearance ==
              UI0AppearanceMode_Dark;
   while (segment_start < row_size)
   {
-    if (span_count >= Lectern0DisplaySpanCap) { return 0; }
+    if (span_count >= EightvoDisplaySpanCap) { return 0; }
     U32 segment_end = row_size;
     DocTextStyleFlags flags = 0;
     U32 inline_scale_permille = 1000;
@@ -9342,7 +9342,7 @@ lectern0_reader_styled_row_build(
     U32 face = row->font_face_index;
     U32 text_color_rgb = row->text_color_rgb;
     B32 has_text_color = row->has_text_color;
-    lectern0_reader_segment_style(app, row, row_size, segment_start,
+    eightvo_reader_segment_style(app, row, row_size, segment_start,
                                   &segment_end, &flags,
                                   &inline_scale_permille, &family, &face,
                                   &text_color_rgb, &has_text_color);
@@ -9363,9 +9363,9 @@ lectern0_reader_styled_row_build(
     S32 segment_width = epub_reader_typography_measure_text(
       &app->reader.typography, segment_text, flags, scale_permille,
       family, face);
-    Lectern0ReaderSpanStyle *span_style =
+    EightvoReaderSpanStyle *span_style =
       app->reader_span_styles + span_count;
-    *span_style = (Lectern0ReaderSpanStyle){
+    *span_style = (EightvoReaderSpanStyle){
       .flags = flags,
       .scale_permille = scale_permille,
       .scale_px = scale,
@@ -9403,17 +9403,17 @@ lectern0_reader_styled_row_build(
   S32 extra_px = 0;
   U32 extra_remainder = 0;
   if (space_count > 0 &&
-      lectern0_reader_row_allows_justification(app, row, row_size) &&
+      eightvo_reader_row_allows_justification(app, row, row_size) &&
       presentation_row->content_rect.w > natural_width)
   {
-    Lectern0ReaderSpanStyle base_style = app->reader_span_styles[0];
+    EightvoReaderSpanStyle base_style = app->reader_span_styles[0];
     S32 natural_space_w = epub_reader_typography_measure_text(
       &app->reader.typography, str8_from_cstr(" "), base_style.flags,
       base_style.scale_permille, base_style.font_family_hint,
       base_style.font_face_index);
     S32 slack = presentation_row->content_rect.w - natural_width;
     S32 max_slack = (S32)space_count *
-      lectern0_reader_row_justification_extra_cap_per_space(
+      eightvo_reader_row_justification_extra_cap_per_space(
         row, space_count, natural_space_w, natural_width,
         presentation_row->content_rect.w);
     S32 applied = MIN(slack, max_slack);
@@ -9430,13 +9430,13 @@ lectern0_reader_styled_row_build(
   for (U32 span_index = 0; span_index < span_count; span_index += 1)
   {
     TextEngineDisplaySpan *span = app->reader_display_spans + span_index;
-    Lectern0ReaderSpanStyle *style = app->reader_span_styles + span_index;
+    EightvoReaderSpanStyle *style = app->reader_span_styles + span_index;
     U32 span_local_start = (U32)(span->source_range.byte_start -
                                  app->frame.view_byte_offset);
     U32 span_local_end = (U32)(span->source_range.byte_end -
                                app->frame.view_byte_offset);
     U32 first_stop = stop_count;
-    if (stop_count >= Lectern0DisplayRowStopCap) { return 0; }
+    if (stop_count >= EightvoDisplayRowStopCap) { return 0; }
     app->reader_display_stops[stop_count++] = (TextEngineDisplayRowStop){
       .source_byte = span->source_range.byte_start,
       .x = 0,
@@ -9473,7 +9473,7 @@ lectern0_reader_styled_row_build(
     U64 at = span_local_start;
     while (at < span_local_end)
     {
-      if (stop_count >= Lectern0DisplayRowStopCap)
+      if (stop_count >= EightvoDisplayRowStopCap)
       {
         scratch_end(shape_scratch);
         return 0;
@@ -9490,7 +9490,7 @@ lectern0_reader_styled_row_build(
           space_index < space_count)
       {
         span_extra += extra_px +
-          lectern0_reader_justification_remainder_for_space(
+          eightvo_reader_justification_remainder_for_space(
             space_index, space_count, extra_remainder);
         space_index += 1;
       }
@@ -9616,7 +9616,7 @@ lectern0_reader_styled_row_build(
 }
 
 FUNCTION PresentationEngineBlockRole
-lectern0_presentation_block_role(DocTextBlockKind kind)
+eightvo_presentation_block_role(DocTextBlockKind kind)
 {
   switch (kind)
   {
@@ -9636,7 +9636,7 @@ lectern0_presentation_block_role(DocTextBlockKind kind)
 }
 
 FUNCTION PresentationEngineTextAlign
-lectern0_presentation_text_align(DocTextAlign align)
+eightvo_presentation_text_align(DocTextAlign align)
 {
   switch (align)
   {
@@ -9648,7 +9648,7 @@ lectern0_presentation_text_align(DocTextAlign align)
 }
 
 FUNCTION PresentationEngineMediaStatus
-lectern0_presentation_media_status(EpubReaderFrameImageStatus status)
+eightvo_presentation_media_status(EpubReaderFrameImageStatus status)
 {
   if (status == EpubReaderFrameImageStatus_Loaded)
   {
@@ -9662,13 +9662,13 @@ lectern0_presentation_media_status(EpubReaderFrameImageStatus status)
 }
 
 FUNCTION B32
-lectern0_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
+eightvo_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
                                         const EpubReaderFrameImage *image,
                                         S32 body_width_px,
                                         S32 body_height_px,
                                         S32 line_height_px,
                                         S32 content_left_px,
-                                        Lectern0PresentationImageBox *out_box)
+                                        EightvoPresentationImageBox *out_box)
 {
   if (out_box) { MemoryZeroStruct(out_box); }
   if (!row || !image || !out_box || body_width_px <= 0 ||
@@ -9685,7 +9685,7 @@ lectern0_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
     {
       return 0;
     }
-    *out_box = (Lectern0PresentationImageBox){
+    *out_box = (EightvoPresentationImageBox){
       .x_offset_px = 0,
       .width_px = body_width_px,
       .height_px = (S32)canonical_height,
@@ -9710,7 +9710,7 @@ lectern0_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
   }
   desired_height = MIN(MAX(desired_height, 72), 320);
 
-  *out_box = (Lectern0PresentationImageBox){
+  *out_box = (EightvoPresentationImageBox){
     .x_offset_px = content_left_px,
     .width_px = image_width,
     .height_px = (S32)desired_height,
@@ -9719,56 +9719,56 @@ lectern0_resolve_presentation_image_box(const EpubReaderFrameStyleRow *row,
 }
 
 FUNCTION U64
-lectern0_presentation_hash_mix(U64 state, U64 value)
+eightvo_presentation_hash_mix(U64 state, U64 value)
 {
   return (state ^ value) * 1099511628211ULL;
 }
 
 FUNCTION U64
-lectern0_presentation_frame_hash(const PresentationEngineBlockFlowFrame *frame)
+eightvo_presentation_frame_hash(const PresentationEngineBlockFlowFrame *frame)
 {
   if (!frame || !frame->valid) { return 0; }
   U64 hash = 1469598103934665603ULL;
-  hash = lectern0_presentation_hash_mix(hash, frame->row_count);
-  hash = lectern0_presentation_hash_mix(hash, frame->media_count);
-  hash = lectern0_presentation_hash_mix(hash, (U64)(S64)frame->content_height_px);
+  hash = eightvo_presentation_hash_mix(hash, frame->row_count);
+  hash = eightvo_presentation_hash_mix(hash, frame->media_count);
+  hash = eightvo_presentation_hash_mix(hash, (U64)(S64)frame->content_height_px);
   for (U32 index = 0; index < frame->row_count; index += 1)
   {
     const PresentationEngineBlockFlowRow *row = frame->rows + index;
-    hash = lectern0_presentation_hash_mix(hash, row->role);
-    hash = lectern0_presentation_hash_mix(hash, row->source_row);
-    hash = lectern0_presentation_hash_mix(hash, row->source_start);
-    hash = lectern0_presentation_hash_mix(hash, row->source_end);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.x);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.y);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->row_rect.h);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->content_rect.x);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)row->content_rect.w);
-    hash = lectern0_presentation_hash_mix(hash, row->first_media_index);
+    hash = eightvo_presentation_hash_mix(hash, row->role);
+    hash = eightvo_presentation_hash_mix(hash, row->source_row);
+    hash = eightvo_presentation_hash_mix(hash, row->source_start);
+    hash = eightvo_presentation_hash_mix(hash, row->source_end);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)row->row_rect.x);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)row->row_rect.y);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)row->row_rect.h);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)row->content_rect.x);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)row->content_rect.w);
+    hash = eightvo_presentation_hash_mix(hash, row->first_media_index);
   }
   for (U32 index = 0; index < frame->media_count; index += 1)
   {
     const PresentationEngineBlockFlowMedia *media = frame->media + index;
-    hash = lectern0_presentation_hash_mix(hash, media->row_index);
-    hash = lectern0_presentation_hash_mix(hash, media->status);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.x);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.y);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.w);
-    hash = lectern0_presentation_hash_mix(hash, (U64)(S64)media->rect.h);
+    hash = eightvo_presentation_hash_mix(hash, media->row_index);
+    hash = eightvo_presentation_hash_mix(hash, media->status);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)media->rect.x);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)media->rect.y);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)media->rect.w);
+    hash = eightvo_presentation_hash_mix(hash, (U64)(S64)media->rect.h);
   }
   return hash;
 }
 
 FUNCTION B32
-lectern0_build_reader_presentation(Lectern0App *app,
+eightvo_build_reader_presentation(EightvoApp *app,
                                    S32 body_x,
                                    S32 body_y,
                                    S32 body_w,
                                    S32 body_h)
 {
   if (!app || body_w <= 0 || body_h <= 0 ||
-      app->frame.style_row_count > Lectern0PresentationRowCap ||
-      app->frame.image_count > Lectern0PresentationMediaCap)
+      app->frame.style_row_count > EightvoPresentationRowCap ||
+      app->frame.image_count > EightvoPresentationMediaCap)
   {
     return 0;
   }
@@ -9784,22 +9784,22 @@ lectern0_build_reader_presentation(Lectern0App *app,
   for (U32 row_index = 0; row_index < app->frame.style_row_count; row_index += 1)
   {
     const EpubReaderFrameStyleRow *row = app->frame.style_rows + row_index;
-    Lectern0PresentationRowMetrics metrics = {0};
-    if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics) ||
+    EightvoPresentationRowMetrics metrics = {0};
+    if (!eightvo_resolve_presentation_row_metrics(app, row, &metrics) ||
         row->byte_end < row->byte_start)
     {
       return 0;
     }
 
-    EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
+    EpubReaderFrameImage *image = eightvo_image_for_row(&app->frame, row->row);
     S32 row_height_px = metrics.line_height_px;
-    PresentationEngineBlockRole role = lectern0_presentation_block_role(row->block_kind);
+    PresentationEngineBlockRole role = eightvo_presentation_block_role(row->block_kind);
     if (image)
     {
-      Lectern0PresentationImageBox box = {0};
-      if (media_count >= Lectern0PresentationMediaCap ||
+      EightvoPresentationImageBox box = {0};
+      if (media_count >= EightvoPresentationMediaCap ||
           image->text_byte_end < image->text_byte_start ||
-          !lectern0_resolve_presentation_image_box(row,
+          !eightvo_resolve_presentation_image_box(row,
                                                    image,
                                                    body_w,
                                                    body_h,
@@ -9816,7 +9816,7 @@ lectern0_build_reader_presentation(Lectern0App *app,
       app->presentation_media_specs[media_count] =
         (PresentationEngineBlockFlowMediaSpec){
           .row_index = row_index,
-          .status = lectern0_presentation_media_status(image->status),
+          .status = eightvo_presentation_media_status(image->status),
           .source_start = image->text_byte_start,
           .source_end = image->text_byte_end,
           .x_offset_px = box.x_offset_px,
@@ -9853,7 +9853,7 @@ lectern0_build_reader_presentation(Lectern0App *app,
         .block_key = row->row,
         .line_row = row->line_row,
         .heading_level = row->heading_level,
-        .text_align = lectern0_presentation_text_align(row->text_align),
+        .text_align = eightvo_presentation_text_align(row->text_align),
         .style_index = row_index,
         .text_index = row_index,
         .table_index = row->table_index,
@@ -9877,9 +9877,9 @@ lectern0_build_reader_presentation(Lectern0App *app,
       },
       &(PresentationEngineBlockFlowStorage){
         .rows = app->presentation_rows,
-        .row_capacity = Lectern0PresentationRowCap,
+        .row_capacity = EightvoPresentationRowCap,
         .media = app->presentation_media,
-        .media_capacity = Lectern0PresentationMediaCap,
+        .media_capacity = EightvoPresentationMediaCap,
       },
       &app->presentation_frame);
   if (build_result != PresentationEngineBuildResult_Complete ||
@@ -9892,19 +9892,19 @@ lectern0_build_reader_presentation(Lectern0App *app,
   }
 
   app->presentation_hash =
-    lectern0_presentation_frame_hash(&app->presentation_frame);
+    eightvo_presentation_frame_hash(&app->presentation_frame);
   return 1;
 }
 
 FUNCTION B32
-lectern0_reader_display_span_row(
-  Lectern0App *app,
+eightvo_reader_display_span_row(
+  EightvoApp *app,
   const EpubReaderFrameStyleRow *row,
   const PresentationEngineBlockFlowRow *presentation_row,
   TextEngineDisplaySpanRow *out_display_row);
 
 FUNCTION B32
-lectern0_reader_point_to_byte(Lectern0App *app,
+eightvo_reader_point_to_byte(EightvoApp *app,
                               S32 x,
                               S32 y,
                               U64 *out_byte,
@@ -9939,7 +9939,7 @@ lectern0_reader_point_to_byte(Lectern0App *app,
     TextEngineDisplaySpanRow display_row = {0};
     U64 source_byte = 0;
     S32 caret_x = 0;
-    if (!lectern0_reader_display_span_row(app, style_row, row, &display_row) ||
+    if (!eightvo_reader_display_span_row(app, style_row, row, &display_row) ||
         !text_engine_display_span_row_source_byte_at_x(&display_row, x,
                                                        &source_byte) ||
         !text_engine_display_span_row_x_for_source_byte(&display_row,
@@ -9954,12 +9954,12 @@ lectern0_reader_point_to_byte(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
+eightvo_update_pointer_selection(EightvoApp *app, S32 x, S32 y, B32 begin)
 {
   if (!app) return;
   U64 byte = 0;
   UI0Rect anchor_rect = {0};
-  if (!lectern0_reader_point_to_byte(app, x, y, &byte, &anchor_rect))
+  if (!eightvo_reader_point_to_byte(app, x, y, &byte, &anchor_rect))
   {
     if (begin) app->selection_dragging = 0;
     return;
@@ -9984,12 +9984,12 @@ lectern0_update_pointer_selection(Lectern0App *app, S32 x, S32 y, B32 begin)
   if (epub_reader_set_selection(&app->reader, selection) == EpubReaderResult_Ok)
   {
     app->selection_anchor_rect = anchor_rect;
-    lectern0_prepare_selected_text(app);
+    eightvo_prepare_selected_text(app);
   }
 }
 
 FUNCTION B32
-lectern0_reader_selection_contains_point(Lectern0App *app, S32 x, S32 y)
+eightvo_reader_selection_contains_point(EightvoApp *app, S32 x, S32 y)
 {
   if (!app || !app->reader.has_active_selection ||
       app->reader.active_selection.spine_index != app->frame.spine_index ||
@@ -10015,7 +10015,7 @@ lectern0_reader_selection_contains_point(Lectern0App *app, S32 x, S32 y)
     if (selection_end <= row_start || selection_start >= row_end) continue;
     TextEngineDisplaySpanRow display_row = {0};
     TextEngineRowRect range_rect = {0};
-    if (!lectern0_reader_display_span_row(app, style_row, presentation_row,
+    if (!eightvo_reader_display_span_row(app, style_row, presentation_row,
                                           &display_row) ||
         !text_engine_display_span_row_range_rect_from_source_range(
           &display_row,
@@ -10035,7 +10035,7 @@ lectern0_reader_selection_contains_point(Lectern0App *app, S32 x, S32 y)
 }
 
 FUNCTION B32
-lectern0_reader_selection_popup_contains_point(const Lectern0App *app,
+eightvo_reader_selection_popup_contains_point(const EightvoApp *app,
                                                 S32 x,
                                                 S32 y)
 {
@@ -10062,7 +10062,7 @@ lectern0_reader_selection_popup_contains_point(const Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
+eightvo_host_pointer_press(EightvoApp *app, S32 x, S32 y)
 {
   if (!app) return;
   app->input.pointer_x = x;
@@ -10070,19 +10070,19 @@ lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_down = 1;
   app->input.pointer_pressed = 1;
   app->input.pointer_selection_release = 0;
-  if (lectern0_library_active(app))
+  if (eightvo_library_active(app))
   {
-    app->host_pointer_armed = Lectern0HostControl_None;
+    app->host_pointer_armed = EightvoHostControl_None;
     if (app->library.entry_count == 0 &&
-        ui0_rect_contains_point(lectern0_library_empty_add_rect(app), x, y))
+        ui0_rect_contains_point(eightvo_library_empty_add_rect(app), x, y))
     {
-      app->host_pointer_armed = Lectern0HostControl_LibraryAdd;
+      app->host_pointer_armed = EightvoHostControl_LibraryAdd;
     }
     else
     {
       for (U32 index = app->host_control_count; index > 0; index -= 1)
       {
-        Lectern0HostControlRecord *record = app->host_controls + index - 1;
+        EightvoHostControlRecord *record = app->host_controls + index - 1;
         if (ui0_rect_contains_point(record->semantic.rect, x, y))
         {
           app->host_pointer_armed = record->identity;
@@ -10092,36 +10092,36 @@ lectern0_host_pointer_press(Lectern0App *app, S32 x, S32 y)
         }
       }
     }
-    (void)lectern0_host_focus_set(app, app->host_pointer_armed, 0);
+    (void)eightvo_host_focus_set(app, app->host_pointer_armed, 0);
     return;
   }
   if (app->reader_view_state.popup == ReaderViewPopup_SelectionTools &&
-      !lectern0_reader_selection_popup_contains_point(app, x, y) &&
-      !lectern0_reader_selection_contains_point(app, x, y))
+      !eightvo_reader_selection_popup_contains_point(app, x, y) &&
+      !eightvo_reader_selection_contains_point(app, x, y))
   {
     /*
     Match the pre-extraction reader interaction: one press outside both the
     selected glyphs and their action surface clears the concrete selection
     while the same frame dismisses the transient popup.
     */
-    lectern0_reader_view_escape(app);
+    eightvo_reader_view_escape(app);
   }
-  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  UI0Rect exit_rect = eightvo_host_exit_rect(app);
   app->host_exit_pointer_armed =
     exit_rect.w > 0 && ui0_rect_contains_point(exit_rect, x, y);
   if (app->host_exit_pointer_armed)
   {
-    (void)lectern0_host_focus_set(app, Lectern0HostControl_ExitReader, 0);
+    (void)eightvo_host_focus_set(app, EightvoHostControl_ExitReader, 0);
   }
   else
   {
-    (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
-    lectern0_update_pointer_selection(app, x, y, 1);
+    (void)eightvo_host_focus_set(app, EightvoHostControl_None, 0);
+    eightvo_update_pointer_selection(app, x, y, 1);
   }
 }
 
 FUNCTION B32
-lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
+eightvo_host_pointer_release(EightvoApp *app, S32 x, S32 y)
 {
   if (!app) return 0;
   app->input.pointer_x = x;
@@ -10129,33 +10129,33 @@ lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
   app->input.pointer_down = 0;
   app->input.pointer_released = 1;
   app->input.pointer_selection_release = 0;
-  if (lectern0_library_active(app))
+  if (eightvo_library_active(app))
   {
-    Lectern0HostControlIdentity armed = app->host_pointer_armed;
-    app->host_pointer_armed = Lectern0HostControl_None;
-    if (armed == Lectern0HostControl_None) return 0;
-    Lectern0HostControlRecord *record = lectern0_host_control_record(app, armed);
+    EightvoHostControlIdentity armed = app->host_pointer_armed;
+    app->host_pointer_armed = EightvoHostControl_None;
+    if (armed == EightvoHostControl_None) return 0;
+    EightvoHostControlRecord *record = eightvo_host_control_record(app, armed);
     B32 inside = record && ui0_rect_contains_point(record->semantic.rect, x, y);
     if (app->library.entry_count == 0 &&
-        armed == Lectern0HostControl_LibraryAdd)
+        armed == EightvoHostControl_LibraryAdd)
       inside = inside || ui0_rect_contains_point(
-        lectern0_library_empty_add_rect(app), x, y);
+        eightvo_library_empty_add_rect(app), x, y);
     if (!inside) return 0;
     app->input.pointer_released = 0;
-    return lectern0_host_control_invoke(app, armed);
+    return eightvo_host_control_invoke(app, armed);
   }
-  UI0Rect exit_rect = lectern0_host_exit_rect(app);
+  UI0Rect exit_rect = eightvo_host_exit_rect(app);
   B32 activate_exit = app->host_exit_pointer_armed && exit_rect.w > 0 &&
                       ui0_rect_contains_point(exit_rect, x, y);
   app->host_exit_pointer_armed = 0;
   if (activate_exit)
   {
     app->input.pointer_released = 0;
-    return lectern0_host_control_invoke(app, Lectern0HostControl_ExitReader);
+    return eightvo_host_control_invoke(app, EightvoHostControl_ExitReader);
   }
   if (app->selection_dragging)
   {
-    lectern0_update_pointer_selection(app, x, y, 0);
+    eightvo_update_pointer_selection(app, x, y, 0);
     app->selection_dragging = 0;
     if (app->reader.has_active_selection)
       app->input.pointer_selection_release = 1;
@@ -10164,21 +10164,21 @@ lectern0_host_pointer_release(Lectern0App *app, S32 x, S32 y)
 }
 
 FUNCTION U32
-lectern0_reader_page_color(const Lectern0App *app)
+eightvo_reader_page_color(const EightvoApp *app)
 {
   return app ? app->reader_content_theme.page_background : 0x00FFFDF9U;
 }
 
 FUNCTION U32
-lectern0_reader_ink_color(const Lectern0App *app)
+eightvo_reader_ink_color(const EightvoApp *app)
 {
   return app ? app->reader_content_theme.ink : 0x001B1A18U;
 }
 
 FUNCTION U32
-lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
+eightvo_reader_highlight_color(const EightvoApp *app, U32 color_index)
 {
-  B32 dark = app && lectern0_theme_profile(app->theme).appearance ==
+  B32 dark = app && eightvo_theme_profile(app->theme).appearance ==
                       UI0AppearanceMode_Dark;
   switch (color_index)
   {
@@ -10189,36 +10189,36 @@ lectern0_reader_highlight_color(const Lectern0App *app, U32 color_index)
   }
 }
 
-typedef struct Lectern0ReaderRowMeasure
+typedef struct EightvoReaderRowMeasure
 {
   B32 valid;
-  Lectern0ReaderStyledRow styled;
-} Lectern0ReaderRowMeasure;
+  EightvoReaderStyledRow styled;
+} EightvoReaderRowMeasure;
 
 FUNCTION B32
-lectern0_reader_row_measure(Lectern0App *app,
+eightvo_reader_row_measure(EightvoApp *app,
                             const EpubReaderFrameStyleRow *row,
                             const PresentationEngineBlockFlowRow *presentation_row,
                             U32 local_start,
                             U32 local_end,
-                            Lectern0ReaderRowMeasure *out_measure)
+                            EightvoReaderRowMeasure *out_measure)
 {
-  if (out_measure) *out_measure = (Lectern0ReaderRowMeasure){0};
+  if (out_measure) *out_measure = (EightvoReaderRowMeasure){0};
   if (!app || !row || !presentation_row || !out_measure ||
       local_end <= local_start)
     return 0;
 
-  out_measure->valid = lectern0_reader_styled_row_build(
+  out_measure->valid = eightvo_reader_styled_row_build(
     app, row, presentation_row, local_start, local_end,
     &out_measure->styled);
   return out_measure->valid;
 }
 
 FUNCTION S32
-lectern0_reader_row_x_for_local_byte(
-  Lectern0App *app,
+eightvo_reader_row_x_for_local_byte(
+  EightvoApp *app,
   const EpubReaderFrameStyleRow *row,
-  const Lectern0ReaderRowMeasure *measure,
+  const EightvoReaderRowMeasure *measure,
   U32 local_byte)
 {
   if (!app || !row || !measure || !measure->valid)
@@ -10234,8 +10234,8 @@ lectern0_reader_row_x_for_local_byte(
 }
 
 FUNCTION B32
-lectern0_reader_display_span_row(
-  Lectern0App *app,
+eightvo_reader_display_span_row(
+  EightvoApp *app,
   const EpubReaderFrameStyleRow *row,
   const PresentationEngineBlockFlowRow *presentation_row,
   TextEngineDisplaySpanRow *out_display_row)
@@ -10254,8 +10254,8 @@ lectern0_reader_display_span_row(
   }
   if (local_end <= local_start) return 0;
 
-  Lectern0ReaderStyledRow styled = {0};
-  if (!lectern0_reader_styled_row_build(app, row, presentation_row,
+  EightvoReaderStyledRow styled = {0};
+  if (!eightvo_reader_styled_row_build(app, row, presentation_row,
                                         local_start, local_end, &styled))
     return 0;
   *out_display_row = styled.display;
@@ -10263,10 +10263,10 @@ lectern0_reader_display_span_row(
 }
 
 FUNCTION void
-lectern0_reader_row_range_x(Lectern0App *app,
+eightvo_reader_row_range_x(EightvoApp *app,
                             const EpubReaderFrameStyleRow *row,
                             const PresentationEngineBlockFlowRow *presentation_row,
-                            const Lectern0ReaderRowMeasure *measure,
+                            const EightvoReaderRowMeasure *measure,
                             U64 row_size,
                             U64 start,
                             U64 end,
@@ -10279,7 +10279,7 @@ lectern0_reader_row_range_x(Lectern0App *app,
   U64 source_base = app ? app->frame.view_byte_offset : 0;
   U64 source_start = source_base + (U64)row->byte_start + start;
   U64 source_end = source_base + (U64)row->byte_start + end;
-  if (lectern0_reader_display_span_row(app, row, presentation_row,
+  if (eightvo_reader_display_span_row(app, row, presentation_row,
                                        &display_row))
   {
     if (source_start == source_end)
@@ -10305,9 +10305,9 @@ lectern0_reader_row_range_x(Lectern0App *app,
   {
     U64 local_start = (U64)row->byte_start + start;
     U64 local_end = (U64)row->byte_start + end;
-    *out_x0 = lectern0_reader_row_x_for_local_byte(
+    *out_x0 = eightvo_reader_row_x_for_local_byte(
       app, row, measure, (U32)MIN(local_start, (U64)UINT32_MAX));
-    *out_x1 = lectern0_reader_row_x_for_local_byte(
+    *out_x1 = eightvo_reader_row_x_for_local_byte(
       app, row, measure, (U32)MIN(local_end, (U64)UINT32_MAX));
     return;
   }
@@ -10320,7 +10320,7 @@ lectern0_reader_row_range_x(Lectern0App *app,
 }
 
 FUNCTION void
-lectern0_draw_reader_note_marker(Lectern0App *app, S32 anchor_x, S32 row_y,
+eightvo_draw_reader_note_marker(EightvoApp *app, S32 anchor_x, S32 row_y,
                                  S32 row_h)
 {
   if (!app) return;
@@ -10337,7 +10337,7 @@ lectern0_draw_reader_note_marker(Lectern0App *app, S32 anchor_x, S32 row_y,
 }
 
 FUNCTION void
-lectern0_draw_row_highlights(Lectern0App *app,
+eightvo_draw_row_highlights(EightvoApp *app,
                              const EpubReaderFrameStyleRow *row,
                              const PresentationEngineBlockFlowRow *presentation_row)
 {
@@ -10361,13 +10361,13 @@ lectern0_draw_row_highlights(Lectern0App *app,
   {
     local_row_end -= 1;
   }
-  Lectern0ReaderRowMeasure row_measure = {0};
-  (void)lectern0_reader_row_measure(app, row, presentation_row,
+  EightvoReaderRowMeasure row_measure = {0};
+  (void)eightvo_reader_row_measure(app, row, presentation_row,
                                     local_row_start, local_row_end,
                                     &row_measure);
   for (U32 index = 0; index < app->highlight_count; index += 1)
   {
-    const Lectern0Highlight *highlight = app->highlights + index;
+    const EightvoHighlight *highlight = app->highlights + index;
     if (highlight->spine_index != app->frame.spine_index)
       continue;
     if (highlight->is_highlight &&
@@ -10377,9 +10377,9 @@ lectern0_draw_row_highlights(Lectern0App *app,
       U64 end = MIN(highlight->end_byte, row_end) - row_start;
       S32 x0 = 0;
       S32 x1 = 0;
-      lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+      eightvo_reader_row_range_x(app, row, presentation_row, &row_measure,
                                   row_size, start, end, &x0, &x1);
-      U32 color = lectern0_reader_highlight_color(app,
+      U32 color = eightvo_reader_highlight_color(app,
                                                   highlight->color_index);
       (void)draw_push_rect(&app->draw_commands, DrawLayer_World,
                            x0, presentation_row->row_rect.y,
@@ -10392,10 +10392,10 @@ lectern0_draw_row_highlights(Lectern0App *app,
       U64 marker = highlight->end_byte - row_start;
       S32 marker_x0 = 0;
       S32 marker_x1 = 0;
-      lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+      eightvo_reader_row_range_x(app, row, presentation_row, &row_measure,
                                   row_size, marker, marker,
                                   &marker_x0, &marker_x1);
-      lectern0_draw_reader_note_marker(app, marker_x1,
+      eightvo_draw_reader_note_marker(app, marker_x1,
                                       presentation_row->row_rect.y,
                                       presentation_row->row_rect.h);
     }
@@ -10415,9 +10415,9 @@ lectern0_draw_row_highlights(Lectern0App *app,
           continue;
         U32 overlap_start = (U32)MAX(range->start, (U64)local_row_start);
         U32 overlap_end = (U32)MIN(range->end, (U64)local_row_end);
-        S32 x0 = lectern0_reader_row_x_for_local_byte(
+        S32 x0 = eightvo_reader_row_x_for_local_byte(
           app, row, &row_measure, overlap_start);
-        S32 x1 = lectern0_reader_row_x_for_local_byte(
+        S32 x1 = eightvo_reader_row_x_for_local_byte(
           app, row, &row_measure, overlap_end);
         U32 color = draw_active ? app->reader_content_theme.search_match :
                                   app->reader_content_theme.search_hit;
@@ -10440,7 +10440,7 @@ lectern0_draw_row_highlights(Lectern0App *app,
     U64 end = MIN(app->reader.active_selection.text_byte_end, row_end) - row_start;
     S32 x0 = 0;
     S32 x1 = 0;
-    lectern0_reader_row_range_x(app, row, presentation_row, &row_measure,
+    eightvo_reader_row_range_x(app, row, presentation_row, &row_measure,
                                 row_size, start, end, &x0, &x1);
     U32 color = app->reader_content_theme.selection;
     (void)draw_push_rounded_rect(&app->draw_commands, DrawLayer_World,
@@ -10451,8 +10451,8 @@ lectern0_draw_row_highlights(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_draw_reader_styled_row(
-  Lectern0App *app,
+eightvo_draw_reader_styled_row(
+  EightvoApp *app,
   const EpubReaderFrameStyleRow *row,
   const PresentationEngineBlockFlowRow *presentation_row,
   U32 local_start,
@@ -10464,8 +10464,8 @@ lectern0_draw_reader_styled_row(
 {
   if (!app || !row || !presentation_row || local_end <= local_start)
     return 0;
-  Lectern0ReaderStyledRow styled = {0};
-  if (!lectern0_reader_styled_row_build(app, row, presentation_row,
+  EightvoReaderStyledRow styled = {0};
+  if (!eightvo_reader_styled_row_build(app, row, presentation_row,
                                         local_start, local_end, &styled))
     return 0;
 
@@ -10473,7 +10473,7 @@ lectern0_draw_reader_styled_row(
   {
     const TextEngineDisplaySpan *span = styled.display.spans + span_index;
     if (span->style_index >= styled.span_count) { return 0; }
-    const Lectern0ReaderSpanStyle *style =
+    const EightvoReaderSpanStyle *style =
       app->reader_span_styles + span->style_index;
     if (styled.justify_extra_px == 0 &&
         styled.justify_extra_remainder == 0)
@@ -10483,7 +10483,7 @@ lectern0_draw_reader_styled_row(
       String8 span_text = str8(
         app->frame.visible_text.str + local_span_start,
         span->source_range.byte_end - span->source_range.byte_start);
-      if (!lectern0_push_reader_text_chunks(
+      if (!eightvo_push_reader_text_chunks(
             app, span_text, style->flags, style->font_family_hint,
             style->font_face_index, &style->resolved,
             styled.display.x + span->x,
@@ -10525,7 +10525,7 @@ lectern0_draw_reader_styled_row(
       U64 local_run_start = source_at - app->frame.view_byte_offset;
       String8 text = str8(app->frame.visible_text.str + local_run_start,
                           run_end - source_at);
-      if (!lectern0_push_reader_text_chunks(
+      if (!eightvo_push_reader_text_chunks(
             app, text, style->flags, style->font_family_hint,
             style->font_face_index, &style->resolved, run_x,
             presentation_row->row_rect.y, style->scale_px, style->color,
@@ -10540,7 +10540,7 @@ lectern0_draw_reader_styled_row(
 }
 
 FUNCTION U64
-lectern0_reader_page_visual_key(const EpubReaderFrame *frame)
+eightvo_reader_page_visual_key(const EpubReaderFrame *frame)
 {
   if (!frame || !frame->ready || !frame->document_open) return 0;
   U64 values[] = {
@@ -10600,12 +10600,12 @@ lectern0_reader_page_visual_key(const EpubReaderFrame *frame)
 }
 
 FUNCTION B32
-lectern0_draw_cached_adjacent_page(Lectern0App *app, UI0Rect page)
+eightvo_draw_cached_adjacent_page(EightvoApp *app, UI0Rect page)
 {
   if (!app || !app->presentation_complete || !app->adjacent_page_ready ||
       app->frame.image_count != 0 ||
       app->adjacent_page_visual_key !=
-        lectern0_reader_page_visual_key(&app->frame) ||
+        eightvo_reader_page_visual_key(&app->frame) ||
       app->adjacent_page_annotation_revision != app->annotation_revision ||
       app->adjacent_page_buffer_width != app->width ||
       app->adjacent_page_buffer_height != app->height ||
@@ -10651,7 +10651,7 @@ lectern0_draw_cached_adjacent_page(Lectern0App *app, UI0Rect page)
 }
 
 FUNCTION void
-lectern0_draw_reader_page(Lectern0App *app)
+eightvo_draw_reader_page(EightvoApp *app)
 {
   UI0Rect page = app->reader_content_geometry.page_surface_rect;
   UI0Rect content = app->reader_content_geometry.content_rect;
@@ -10666,7 +10666,7 @@ lectern0_draw_reader_page(Lectern0App *app)
   S32 body_y = content.y;
   S32 body_w = MAX(content.w, 1);
   S32 body_h = MAX(content.h, 1);
-  U32 page_color = lectern0_reader_page_color(app);
+  U32 page_color = eightvo_reader_page_color(app);
   (void)draw_push_rect(&app->draw_commands,
                        DrawLayer_World,
                        page.x,
@@ -10683,12 +10683,12 @@ lectern0_draw_reader_page(Lectern0App *app)
     return;
   }
 
-  if (lectern0_draw_cached_adjacent_page(app, page)) return;
+  if (eightvo_draw_cached_adjacent_page(app, page)) return;
 
   if (app->frame.image_count != 0)
   {
     U64 prepared_key_values[] = {
-      lectern0_reader_page_visual_key(&app->frame),
+      eightvo_reader_page_visual_key(&app->frame),
       (U64)(U32)body_x,
       (U64)(U32)body_y,
       (U64)(U32)body_w,
@@ -10697,11 +10697,11 @@ lectern0_draw_reader_page(Lectern0App *app)
     };
     U64 prepared_key =
       u64_hash_bytes(prepared_key_values, sizeof(prepared_key_values));
-    lectern0_image_cache_begin_prepared(&app->image_cache,
+    eightvo_image_cache_begin_prepared(&app->image_cache,
                                         prepared_key ? prepared_key : 1);
   }
 
-  if (!lectern0_build_reader_presentation(app,
+  if (!eightvo_build_reader_presentation(app,
                                           body_x,
                                           body_y,
                                           body_w,
@@ -10733,17 +10733,17 @@ lectern0_draw_reader_page(Lectern0App *app)
     {
       end -= 1;
     }
-    Lectern0PresentationRowMetrics metrics = {0};
+    EightvoPresentationRowMetrics metrics = {0};
     S64 row_bottom = (S64)presentation_row->row_rect.y +
                      (S64)presentation_row->row_rect.h;
-    if (!lectern0_resolve_presentation_row_metrics(app, row, &metrics) ||
+    if (!eightvo_resolve_presentation_row_metrics(app, row, &metrics) ||
         presentation_row->row_rect.y < body_y ||
         row_bottom > (S64)body_y + (S64)body_h)
     {
       app->presentation_complete = 0;
       break;
     }
-    EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
+    EpubReaderFrameImage *image = eightvo_image_for_row(&app->frame, row->row);
     if (image)
     {
       if (presentation_row->first_media_index == PRESENTATION_ENGINE_INDEX_NONE ||
@@ -10791,7 +10791,7 @@ lectern0_draw_reader_page(Lectern0App *app)
         S32 fit_y = 0;
         S32 fit_w = 0;
         S32 fit_h = 0;
-        B32 fitted = lectern0_fit_image_rect(image->src_w,
+        B32 fitted = eightvo_fit_image_rect(image->src_w,
                                              image->src_h,
                                              image_x,
                                              image_y,
@@ -10804,10 +10804,10 @@ lectern0_draw_reader_page(Lectern0App *app)
         B32 pushed = 0;
         if (fitted)
         {
-          Lectern0PreparedImage *prepared = 0;
+          EightvoPreparedImage *prepared = 0;
           if (fit_w != image->src_w || fit_h != image->src_h)
           {
-            prepared = lectern0_image_cache_prepare(
+            prepared = eightvo_image_cache_prepare(
               &app->image_cache,
               image->pixels,
               image->src_w,
@@ -10844,7 +10844,7 @@ lectern0_draw_reader_page(Lectern0App *app)
               image->src_w,
               image->src_h,
               image->src_stride_pixels,
-              lectern0_image_sample_kind(image->src_w,
+              eightvo_image_sample_kind(image->src_w,
                                          image->src_h,
                                          fit_w,
                                          fit_h),
@@ -10875,7 +10875,7 @@ lectern0_draw_reader_page(Lectern0App *app)
         }
         else
         {
-          lectern0_copy_cstr(placeholder, ARRAY_COUNT(placeholder), "Image unavailable");
+          eightvo_copy_cstr(placeholder, ARRAY_COUNT(placeholder), "Image unavailable");
         }
         (void)draw_push_text_in_rect(&app->draw_commands,
                                      DrawLayer_World,
@@ -10896,8 +10896,8 @@ lectern0_draw_reader_page(Lectern0App *app)
 
     if (end > start)
     {
-      lectern0_draw_row_highlights(app, row, presentation_row);
-      if (!lectern0_draw_reader_styled_row(app,
+      eightvo_draw_row_highlights(app, row, presentation_row);
+      if (!eightvo_draw_reader_styled_row(app,
                                            row,
                                            presentation_row,
                                            start,
@@ -10919,7 +10919,7 @@ lectern0_draw_reader_page(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_frame_uses_embedded_font_face(const EpubReaderFrame *frame)
+eightvo_frame_uses_embedded_font_face(const EpubReaderFrame *frame)
 {
   if (!frame) return 0;
   for (U32 index = 0; index < frame->style_row_count; index += 1)
@@ -10938,7 +10938,7 @@ lectern0_frame_uses_embedded_font_face(const EpubReaderFrame *frame)
 }
 
 FUNCTION void
-lectern0_invalidate_adjacent_page(Lectern0App *app)
+eightvo_invalidate_adjacent_page(EightvoApp *app)
 {
   if (!app) return;
   app->adjacent_page_ready = 0;
@@ -10948,13 +10948,13 @@ lectern0_invalidate_adjacent_page(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_build_adjacent_page_raster(Lectern0App *app)
+eightvo_build_adjacent_page_raster(EightvoApp *app)
 {
   if (!app || !app->render_ready || !app->adjacent_warm_frame_ready ||
       app->adjacent_frame.image_count != 0 || app->width <= 0 || app->height <= 0)
     return 0;
   U64 pixel_count = (U64)(U32)app->width * (U64)(U32)app->height;
-  if (pixel_count == 0 || pixel_count > Lectern0AdjacentPagePixelCap)
+  if (pixel_count == 0 || pixel_count > EightvoAdjacentPagePixelCap)
     return 0;
   if (pixel_count > app->adjacent_page_pixel_cap)
   {
@@ -10968,10 +10968,10 @@ lectern0_build_adjacent_page_raster(Lectern0App *app)
   render_buffer_init(&buffer, app->adjacent_page_pixels,
                      app->width, app->height, app->width);
   render_buffer_clear(&buffer,
-                      lectern0_reader_content_theme(app->theme).page_background);
+                      eightvo_reader_content_theme(app->theme).page_background);
   render_execute_draw_commands(&app->render_state, &buffer, &app->draw_commands);
   app->adjacent_page_visual_key =
-    lectern0_reader_page_visual_key(&app->adjacent_frame);
+    eightvo_reader_page_visual_key(&app->adjacent_frame);
   app->adjacent_page_annotation_revision = app->annotation_revision;
   app->adjacent_page_rect = app->reader_content_geometry.page_surface_rect;
   app->adjacent_page_buffer_width = app->width;
@@ -10987,40 +10987,40 @@ lectern0_build_adjacent_page_raster(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_cancel_location_warm(Lectern0App *app)
+eightvo_cancel_location_warm(EightvoApp *app)
 {
   if (!app) return;
   if (app->window && app->location_warm_pending)
-    (void)KillTimer(app->window, Lectern0LocationWarmTimerId);
+    (void)KillTimer(app->window, EightvoLocationWarmTimerId);
   app->location_warm_pending = 0;
 }
 
 FUNCTION void
-lectern0_schedule_location_warm(Lectern0App *app)
+eightvo_schedule_location_warm(EightvoApp *app)
 {
   if (!app || !app->window || !epub_reader_is_open(&app->reader) ||
       (app->reader.location_cache_complete &&
        app->reader.location_cache_valid))
   {
-    lectern0_cancel_location_warm(app);
+    eightvo_cancel_location_warm(app);
     return;
   }
   app->location_warm_pending = 1;
-  if (SetTimer(app->window, Lectern0LocationWarmTimerId,
-               Lectern0LocationWarmDelayMs, 0) == 0)
+  if (SetTimer(app->window, EightvoLocationWarmTimerId,
+               EightvoLocationWarmDelayMs, 0) == 0)
   {
     app->location_warm_pending = 0;
   }
 }
 
 FUNCTION B32
-lectern0_location_warm_step(Lectern0App *app)
+eightvo_location_warm_step(EightvoApp *app)
 {
   if (app && app->first_reader_present_pending) return 0;
   if (!app || !app->location_warm_pending ||
       !epub_reader_is_open(&app->reader))
   {
-    lectern0_cancel_location_warm(app);
+    eightvo_cancel_location_warm(app);
     return 0;
   }
   U32 before = app->reader.location_next_spine_index;
@@ -11029,16 +11029,16 @@ lectern0_location_warm_step(Lectern0App *app)
                  app->reader.location_cache_valid;
   B32 progressed = app->reader.location_next_spine_index > before;
   if (complete || !progressed)
-    lectern0_cancel_location_warm(app);
+    eightvo_cancel_location_warm(app);
   return progressed;
 }
 
 FUNCTION void
-lectern0_cancel_adjacent_warm(Lectern0App *app)
+eightvo_cancel_adjacent_warm(EightvoApp *app)
 {
   if (!app) return;
   if (app->window && app->adjacent_warm_pending)
-    (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
+    (void)KillTimer(app->window, EightvoAdjacentWarmTimerId);
   app->adjacent_warm_pending = 0;
   app->adjacent_warm_frame_ready = 0;
   app->adjacent_warm_next_text_command = 0;
@@ -11051,22 +11051,22 @@ lectern0_cancel_adjacent_warm(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_schedule_adjacent_warm(Lectern0App *app)
+eightvo_schedule_adjacent_warm(EightvoApp *app)
 {
   if (!app || !app->render_ready || !app->adjacent_frame_storage ||
       !epub_reader_is_open(&app->reader) || !app->reader.has_current_page)
   {
-    lectern0_cancel_adjacent_warm(app);
+    eightvo_cancel_adjacent_warm(app);
     return;
   }
   if (app->page_repeat_active || app->page_action_waiting_for_present ||
       app->page_action_pending)
   {
-    lectern0_cancel_adjacent_warm(app);
+    eightvo_cancel_adjacent_warm(app);
     return;
   }
   if (app->window && app->adjacent_warm_pending)
-    (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
+    (void)KillTimer(app->window, EightvoAdjacentWarmTimerId);
   app->adjacent_warm_pending = 1;
   app->adjacent_warm_frame_ready = 0;
   app->adjacent_warm_next_text_command = 0;
@@ -11079,14 +11079,14 @@ lectern0_schedule_adjacent_warm(Lectern0App *app)
   if (app->window && !app->page_repeat_active &&
       !app->first_reader_present_pending)
   {
-    if (SetTimer(app->window, Lectern0AdjacentWarmTimerId,
-                 Lectern0AdjacentWarmDelayMs, 0) == 0)
-      lectern0_cancel_adjacent_warm(app);
+    if (SetTimer(app->window, EightvoAdjacentWarmTimerId,
+                 EightvoAdjacentWarmDelayMs, 0) == 0)
+      eightvo_cancel_adjacent_warm(app);
   }
 }
 
 FUNCTION B32
-lectern0_adjacent_warm_step(Lectern0App *app)
+eightvo_adjacent_warm_step(EightvoApp *app)
 {
   /*
   A due timer must never let speculative adjacent-page work get ahead of the
@@ -11103,7 +11103,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
       app->reader.current_page.first_byte !=
         app->adjacent_warm_source_first_byte)
   {
-    lectern0_cancel_adjacent_warm(app);
+    eightvo_cancel_adjacent_warm(app);
     return 0;
   }
   if (app->reader_content_geometry.content_rect.w <= 0 ||
@@ -11153,7 +11153,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
         target.first_byte >= target.one_past_last_byte)
     {
       if (app->window)
-        (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
+        (void)KillTimer(app->window, EightvoAdjacentWarmTimerId);
       app->adjacent_warm_pending = 0;
       return 0;
     }
@@ -11165,17 +11165,17 @@ lectern0_adjacent_warm_step(Lectern0App *app)
     if (!built || !app->adjacent_frame.ready ||
         !app->adjacent_frame.document_open)
     {
-      lectern0_cancel_adjacent_warm(app);
+      eightvo_cancel_adjacent_warm(app);
       return 0;
     }
     app->adjacent_warm_frame_ready = 1;
     if (app->adjacent_frame.spine_index !=
           app->adjacent_warm_source_spine_index &&
-        lectern0_frame_uses_embedded_font_face(&app->adjacent_frame))
+        eightvo_frame_uses_embedded_font_face(&app->adjacent_frame))
     {
       app->adjacent_warm_completed_page_count += 1;
       if (app->window)
-        (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
+        (void)KillTimer(app->window, EightvoAdjacentWarmTimerId);
       app->adjacent_warm_pending = 0;
       app->adjacent_warm_frame_ready = 0;
       app->adjacent_warm_next_text_command = 0;
@@ -11193,13 +11193,13 @@ lectern0_adjacent_warm_step(Lectern0App *app)
   draw_command_buffer_begin(&app->draw_commands);
   app->presentation_hash = 0;
   app->presentation_complete = 1;
-  lectern0_draw_reader_page(app);
+  eightvo_draw_reader_page(app);
   B32 adjacent_presentation_complete = app->presentation_complete;
   app->frame = saved_frame;
   app->adjacent_page_ready = saved_adjacent_page_ready;
   UI0Rect current_content = app->reader_content_geometry.content_rect;
   B32 current_presentation_restored =
-    lectern0_build_reader_presentation(app,
+    eightvo_build_reader_presentation(app,
                                        current_content.x,
                                        current_content.y,
                                        current_content.w,
@@ -11212,12 +11212,12 @@ lectern0_adjacent_warm_step(Lectern0App *app)
     saved_presentation_complete && current_presentation_matches;
   if (!current_presentation_matches)
   {
-    lectern0_cancel_adjacent_warm(app);
+    eightvo_cancel_adjacent_warm(app);
     return 0;
   }
   if (app->draw_commands.overflow_count != 0)
   {
-    lectern0_cancel_adjacent_warm(app);
+    eightvo_cancel_adjacent_warm(app);
     return 0;
   }
 
@@ -11237,12 +11237,12 @@ lectern0_adjacent_warm_step(Lectern0App *app)
 
   U32 shaped_index = 0;
   U32 warmed_count = 0;
-  U32 warm_text_budget = Lectern0AdjacentWarmTextBudget;
+  U32 warm_text_budget = EightvoAdjacentWarmTextBudget;
   B32 warm_budget_exhausted = 0;
   U64 warm_start_ticks = os_time_ticks();
   U64 warm_frequency = os_time_frequency();
   U64 warm_budget_us = app->reader.navigation_stats.page_move_count == 0 ?
-    Lectern0AdjacentWarmFirstOpenBudgetUs : Lectern0AdjacentWarmIdleBudgetUs;
+    EightvoAdjacentWarmFirstOpenBudgetUs : EightvoAdjacentWarmIdleBudgetUs;
   for (U32 layer = 0; layer < DrawLayer_Count; layer += 1)
   {
     for (U32 index = 0;
@@ -11302,7 +11302,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
     if (app->adjacent_warm_distance == 1 &&
         adjacent_presentation_complete)
     {
-      (void)lectern0_build_adjacent_page_raster(app);
+      (void)eightvo_build_adjacent_page_raster(app);
     }
     app->adjacent_warm_completed_page_count += 1;
     app->adjacent_warm_distance += 1;
@@ -11310,10 +11310,10 @@ lectern0_adjacent_warm_step(Lectern0App *app)
     app->adjacent_warm_next_text_command = 0;
     MemoryZeroStruct(&app->adjacent_frame);
     if (app->page_repeat_active || crossed_spine ||
-        app->adjacent_warm_distance > Lectern0AdjacentWarmPageCap)
+        app->adjacent_warm_distance > EightvoAdjacentWarmPageCap)
     {
       if (app->window)
-        (void)KillTimer(app->window, Lectern0AdjacentWarmTimerId);
+        (void)KillTimer(app->window, EightvoAdjacentWarmTimerId);
       app->adjacent_warm_pending = 0;
     }
   }
@@ -11321,7 +11321,7 @@ lectern0_adjacent_warm_step(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_reset_input(Lectern0App *app)
+eightvo_reset_input(EightvoApp *app)
 {
   if (!app) { return; }
   app->input.pointer_pressed = 0;
@@ -11350,7 +11350,7 @@ lectern0_reset_input(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
+eightvo_render_to_buffer(EightvoApp *app, RenderBuffer *buffer)
 {
   if (!app || !buffer || !buffer->pixels || !app->render_ready) { return; }
   app->last_render_reader_view_ticks = 0;
@@ -11359,49 +11359,49 @@ lectern0_render_to_buffer(Lectern0App *app, RenderBuffer *buffer)
   app->last_render_execute_ticks = 0;
   app->presentation_complete = 1;
   app->adjacent_page_cache_used_last_render = 0;
-  U32 canvas_color = lectern0_reader_content_theme(app->theme).page_background;
+  U32 canvas_color = eightvo_reader_content_theme(app->theme).page_background;
   render_buffer_clear(buffer, canvas_color);
   draw_command_buffer_begin(&app->draw_commands);
-  if (lectern0_library_active(app))
+  if (eightvo_library_active(app))
   {
     app->reader_view_ready = 0;
     app->reader_view_frame.semantic_node_count = 0;
     app->reader_view_frame.action_count = 0;
     app->reader_view_frame.change_flags = ReaderViewFrameChange_None;
-    lectern0_library_resolve_layout(app);
-    lectern0_update_host_control_records(app);
-    lectern0_draw_library(app);
+    eightvo_library_resolve_layout(app);
+    eightvo_update_host_control_records(app);
+    eightvo_draw_library(app);
     U64 execute_start = os_time_ticks();
     render_execute_draw_commands(&app->render_state, buffer,
                                   &app->draw_commands);
     app->last_render_execute_ticks = os_time_ticks() - execute_start;
-    lectern0_reset_input(app);
+    eightvo_reset_input(app);
     return;
   }
   U64 reader_view_start = os_time_ticks();
-  (void)lectern0_build_reader_view(app);
-  lectern0_update_host_control_records(app);
+  (void)eightvo_build_reader_view(app);
+  eightvo_update_host_control_records(app);
   app->last_render_reader_view_ticks =
     os_time_ticks() - reader_view_start;
   U64 reader_page_start = os_time_ticks();
-  lectern0_draw_reader_page(app);
+  eightvo_draw_reader_page(app);
   app->last_render_reader_page_ticks =
     os_time_ticks() - reader_page_start;
   U64 ui_adapt_start = os_time_ticks();
   if (app->reader_view_ready)
   {
-    lectern0_adapt_ui0_draw(app);
-    lectern0_draw_host_exit_slot(app);
+    eightvo_adapt_ui0_draw(app);
+    eightvo_draw_host_exit_slot(app);
   }
   app->last_render_ui_adapt_ticks = os_time_ticks() - ui_adapt_start;
   U64 execute_start = os_time_ticks();
   render_execute_draw_commands(&app->render_state, buffer, &app->draw_commands);
   app->last_render_execute_ticks = os_time_ticks() - execute_start;
-  lectern0_reset_input(app);
+  eightvo_reset_input(app);
 }
 
 FUNCTION B32
-lectern0_frame_presentation_is_complete(const Lectern0App *app)
+eightvo_frame_presentation_is_complete(const EightvoApp *app)
 {
   if (!app || !app->presentation_complete ||
       app->draw_commands.overflow_count != 0)
@@ -11418,7 +11418,7 @@ lectern0_frame_presentation_is_complete(const Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_render(Lectern0App *app)
+eightvo_render(EightvoApp *app)
 {
   if (!app || !app->gfx_ready || !app->render_ready) { return 0; }
   app->last_present_complete = 0;
@@ -11428,15 +11428,15 @@ lectern0_render(Lectern0App *app)
   app->last_render_present_ticks = 0;
   if (app->page_action_waiting_for_present &&
       app->page_action_expected_identity.kind ==
-        Lectern0PresentationIdentity_Page)
+        EightvoPresentationIdentity_Page)
   {
-    Lectern0PresentationIdentity current_frame_identity = {0};
-    if (!lectern0_capture_rendered_presentation_identity(
+    EightvoPresentationIdentity current_frame_identity = {0};
+    if (!eightvo_capture_rendered_presentation_identity(
           app, &current_frame_identity) ||
-        !lectern0_presentation_identity_equal(
+        !eightvo_presentation_identity_equal(
           app->page_action_expected_identity, current_frame_identity))
     {
-      if (lectern0_capture_frame(app) &&
+      if (eightvo_capture_frame(app) &&
           app->capture_frame_recovery_count < UINT32_MAX)
         app->capture_frame_recovery_count += 1;
     }
@@ -11455,19 +11455,19 @@ lectern0_render(Lectern0App *app)
                      surface.height,
                      surface.stride_pixels);
   U64 render_start = os_time_ticks();
-  lectern0_render_to_buffer(app, &buffer);
+  eightvo_render_to_buffer(app, &buffer);
   app->last_render_buffer_ticks = os_time_ticks() - render_start;
-  Lectern0PresentationIdentity rendered_identity = {0};
+  EightvoPresentationIdentity rendered_identity = {0};
   B32 rendered_identity_valid =
-    lectern0_capture_rendered_presentation_identity(app,
+    eightvo_capture_rendered_presentation_identity(app,
                                                      &rendered_identity);
   U64 accessibility_start = os_time_ticks();
   if (app->accessibility)
-    lectern0_accessibility_publish_frame(app->accessibility,
+    eightvo_accessibility_publish_frame(app->accessibility,
                                          &app->reader_view_frame);
   app->last_render_accessibility_ticks =
     os_time_ticks() - accessibility_start;
-  B32 frame_complete = lectern0_frame_presentation_is_complete(app);
+  B32 frame_complete = eightvo_frame_presentation_is_complete(app);
   U64 present_start = os_time_ticks();
   B32 presented = os_gfx_present_surface(&app->gfx, &surface);
   app->last_render_present_ticks = os_time_ticks() - present_start;
@@ -11478,7 +11478,7 @@ lectern0_render(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_note_stable_presentation(Lectern0App *app,
+eightvo_note_stable_presentation(EightvoApp *app,
                                   B32 presented_complete,
                                   B32 followup_frame_required)
 {
@@ -11494,28 +11494,28 @@ lectern0_note_stable_presentation(Lectern0App *app,
       epub_reader_is_open(&app->reader))
   {
     app->first_reader_present_pending = 0;
-    lectern0_schedule_location_warm(app);
+    eightvo_schedule_location_warm(app);
     if (app->window && app->adjacent_warm_pending &&
         !app->page_repeat_active &&
-        SetTimer(app->window, Lectern0AdjacentWarmTimerId,
-                 Lectern0AdjacentWarmDelayMs, 0) == 0)
+        SetTimer(app->window, EightvoAdjacentWarmTimerId,
+                 EightvoAdjacentWarmDelayMs, 0) == 0)
     {
-      lectern0_cancel_adjacent_warm(app);
+      eightvo_cancel_adjacent_warm(app);
     }
   }
 }
 
 FUNCTION B32
-lectern0_win32_page_repeat_frame(Lectern0App *app,
+eightvo_win32_page_repeat_frame(EightvoApp *app,
                                   U64 now_ticks,
-                                  Lectern0PageRepeatFrameTiming *out_timing)
+                                  EightvoPageRepeatFrameTiming *out_timing)
 {
   if (out_timing) MemoryZeroStruct(out_timing);
   if (!app || !app->window || !app->page_repeat_active) return 0;
   U64 present_sequence_before = app->complete_present_sequence;
   U64 action_prepare_start = os_time_ticks();
-  Lectern0PageRepeatFrameResult frame_result =
-    lectern0_page_repeat_frame_step(app, now_ticks);
+  EightvoPageRepeatFrameResult frame_result =
+    eightvo_page_repeat_frame_step(app, now_ticks);
   U64 action_prepare_end = os_time_ticks();
   if (out_timing)
   {
@@ -11554,7 +11554,7 @@ lectern0_win32_page_repeat_frame(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_write_bmp(const char *path, const U32 *pixels, S32 width, S32 height)
+eightvo_write_bmp(const char *path, const U32 *pixels, S32 width, S32 height)
 {
   if (!path || !path[0] || !pixels || width <= 0 || height <= 0) { return 0; }
   FILE *file = fopen(path, "wb");
@@ -11589,31 +11589,31 @@ lectern0_write_bmp(const char *path, const U32 *pixels, S32 width, S32 height)
 }
 
 FUNCTION int
-lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
+eightvo_run_library_smoke(const char *epub_path, const char *output_prefix)
 {
   enum { Width = 1100, Height = 760, CompactWidth = 520, CompactHeight = 720 };
   if (!epub_path || !epub_path[0] || !output_prefix || !output_prefix[0])
     return 2;
-  char output_directory[Lectern0PathCap] = {0};
-  char catalog_path[Lectern0PathCap] = {0};
-  char state_path[Lectern0PathCap] = {0};
-  char settings_path[Lectern0PathCap] = {0};
-  char empty_bmp[Lectern0PathCap] = {0};
-  char populated_bmp[Lectern0PathCap] = {0};
-  char restart_bmp[Lectern0PathCap] = {0};
-  char restart_repeat_bmp[Lectern0PathCap] = {0};
-  char compact_bmp[Lectern0PathCap] = {0};
-  char missing_bmp[Lectern0PathCap] = {0};
-  char hover_bmp[Lectern0PathCap] = {0};
-  char pressed_bmp[Lectern0PathCap] = {0};
-  char missing_path[Lectern0PathCap] = {0};
-  lectern0_copy_cstr(output_directory, ARRAY_COUNT(output_directory),
+  char output_directory[EightvoPathCap] = {0};
+  char catalog_path[EightvoPathCap] = {0};
+  char state_path[EightvoPathCap] = {0};
+  char settings_path[EightvoPathCap] = {0};
+  char empty_bmp[EightvoPathCap] = {0};
+  char populated_bmp[EightvoPathCap] = {0};
+  char restart_bmp[EightvoPathCap] = {0};
+  char restart_repeat_bmp[EightvoPathCap] = {0};
+  char compact_bmp[EightvoPathCap] = {0};
+  char missing_bmp[EightvoPathCap] = {0};
+  char hover_bmp[EightvoPathCap] = {0};
+  char pressed_bmp[EightvoPathCap] = {0};
+  char missing_path[EightvoPathCap] = {0};
+  eightvo_copy_cstr(output_directory, ARRAY_COUNT(output_directory),
                      output_prefix);
   char *slash = strrchr(output_directory, '\\');
   char *forward = strrchr(output_directory, '/');
   if (!slash || (forward && forward > slash)) slash = forward;
   if (slash) *slash = 0;
-  else lectern0_copy_cstr(output_directory,
+  else eightvo_copy_cstr(output_directory,
                           ARRAY_COUNT(output_directory), ".");
   if (!os_make_directory_chain(output_directory) ||
       cstr_format(catalog_path, ARRAY_COUNT(catalog_path),
@@ -11645,9 +11645,9 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   (void)os_file_delete(state_path);
   (void)os_file_delete(settings_path);
 
-  Lectern0LibraryCatalog *ordering =
-    (Lectern0LibraryCatalog *)calloc(1, sizeof(*ordering));
-  Lectern0App *migration = (Lectern0App *)calloc(1, sizeof(*migration));
+  EightvoLibraryCatalog *ordering =
+    (EightvoLibraryCatalog *)calloc(1, sizeof(*ordering));
+  EightvoApp *migration = (EightvoApp *)calloc(1, sizeof(*migration));
   if (!ordering || !migration)
   {
     free(ordering);
@@ -11657,20 +11657,20 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   ordering->entry_count = 2;
   ordering->entries[0].entry_id = 1;
   ordering->entries[0].last_opened_time = 10;
-  lectern0_copy_cstr(ordering->entries[0].title,
+  eightvo_copy_cstr(ordering->entries[0].title,
                      ARRAY_COUNT(ordering->entries[0].title), "Older");
   ordering->entries[1].entry_id = 2;
   ordering->entries[1].last_opened_time = 20;
-  lectern0_copy_cstr(ordering->entries[1].title,
+  eightvo_copy_cstr(ordering->entries[1].title,
                      ARRAY_COUNT(ordering->entries[1].title), "Newer");
-  lectern0_library_catalog_sort(ordering);
-  lectern0_library_catalog_init(&migration->library);
+  eightvo_library_catalog_sort(ordering);
+  eightvo_library_catalog_init(&migration->library);
   migration->saved.valid = 1;
   migration->saved.spine_index = 3;
   migration->saved.byte_offset = 47;
-  lectern0_copy_cstr(migration->saved.path,
+  eightvo_copy_cstr(migration->saved.path,
                      ARRAY_COUNT(migration->saved.path), epub_path);
-  lectern0_migrate_saved_state_to_library(migration);
+  eightvo_migrate_saved_state_to_library(migration);
   B32 ordering_valid = ordering->entries[0].entry_id == 2 &&
                        ordering->entries[1].entry_id == 1;
   B32 migration_valid = migration->library.entry_count == 1 &&
@@ -11681,225 +11681,225 @@ lectern0_run_library_smoke(const char *epub_path, const char *output_prefix)
   if (!ordering_valid || !migration_valid) return 1;
 
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   RenderBuffer buffer = {0};
-  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0))
+  if (!pixels || !eightvo_app_init(&app, Width, Height, 1, 0))
     goto fail;
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
+  eightvo_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
                      output_directory);
-  lectern0_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
+  eightvo_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
                      catalog_path);
-  lectern0_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
-  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+  eightvo_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
+  eightvo_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
                      settings_path);
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_library_active(&app) || app.library.entry_count != 0 ||
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_library_active(&app) || app.library.entry_count != 0 ||
       app.host_control_count != 1 ||
-      app.host_controls[0].action != Lectern0HostControlAction_AddEpubs ||
-      !lectern0_write_bmp(empty_bmp, pixels, Width, Height))
+      app.host_controls[0].action != EightvoHostControlAction_AddBooks ||
+      !eightvo_write_bmp(empty_bmp, pixels, Width, Height))
     goto fail;
 
   app.saved.valid = 1;
   app.saved.spine_index = 3;
   app.saved.byte_offset = 47;
-  lectern0_copy_cstr(app.saved.path, ARRAY_COUNT(app.saved.path), epub_path);
-  lectern0_migrate_saved_state_to_library(&app);
+  eightvo_copy_cstr(app.saved.path, ARRAY_COUNT(app.saved.path), epub_path);
+  eightvo_migrate_saved_state_to_library(&app);
   app.library_selected_entry_id = app.library.entries[0].entry_id;
-  lectern0_library_hydrate_startup_entry(&app);
-  Lectern0LibraryEntry *hydrated = app.library.entries;
-  Lectern0LibraryThumbnail *hydrated_thumbnail =
-    lectern0_library_thumbnail_load(&app, hydrated);
+  eightvo_library_hydrate_startup_entry(&app);
+  EightvoLibraryEntry *hydrated = app.library.entries;
+  EightvoLibraryThumbnail *hydrated_thumbnail =
+    eightvo_library_thumbnail_load(&app, hydrated);
   if (epub_reader_is_open(&app.reader) || !hydrated_thumbnail ||
       app.library_metadata_refresh_count != 1 ||
-      !(hydrated->metadata_flags & Lectern0LibraryMetadata_Inspected) ||
-      !(hydrated->metadata_flags & Lectern0LibraryMetadata_Title) ||
-      !(hydrated->metadata_flags & Lectern0LibraryMetadata_Author) ||
-      !(hydrated->metadata_flags & Lectern0LibraryMetadata_Cover))
+      !(hydrated->metadata_flags & EightvoLibraryMetadata_Inspected) ||
+      !(hydrated->metadata_flags & EightvoLibraryMetadata_Title) ||
+      !(hydrated->metadata_flags & EightvoLibraryMetadata_Author) ||
+      !(hydrated->metadata_flags & EightvoLibraryMetadata_Cover))
     goto fail;
 
-  if (!lectern0_open_path(&app, epub_path) || app.library.entry_count != 1 ||
+  if (!eightvo_open_path(&app, epub_path) || app.library.entry_count != 1 ||
       app.library_metadata_refresh_count != 1 ||
       !epub_reader_is_open(&app.reader))
     goto fail;
-  Lectern0LibraryEntry *opened = app.library.entries;
+  EightvoLibraryEntry *opened = app.library.entries;
   U64 entry_id = opened->entry_id;
   if (!opened->title[0] || !opened->author[0] ||
-      !(opened->metadata_flags & Lectern0LibraryMetadata_Title) ||
-      !(opened->metadata_flags & Lectern0LibraryMetadata_Author) ||
-      !(opened->metadata_flags & Lectern0LibraryMetadata_Cover) ||
-      opened->digest_algorithm != Lectern0LibraryDigest_None)
+      !(opened->metadata_flags & EightvoLibraryMetadata_Title) ||
+      !(opened->metadata_flags & EightvoLibraryMetadata_Author) ||
+      !(opened->metadata_flags & EightvoLibraryMetadata_Cover) ||
+      opened->digest_algorithm != EightvoLibraryDigest_None)
     goto fail;
-  (void)lectern0_move_page(&app, 1);
-  if (!lectern0_close_book(&app) || !lectern0_library_active(&app) ||
+  (void)eightvo_move_page(&app, 1);
+  if (!eightvo_close_book(&app) || !eightvo_library_active(&app) ||
       app.library.entry_count != 1)
     goto fail;
   if (buffer.pixels != pixels || buffer.width != Width ||
       buffer.height != Height || buffer.stride_pixels != Width)
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_write_bmp(populated_bmp, pixels, Width, Height))
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_write_bmp(populated_bmp, pixels, Width, Height))
     goto fail;
-  Lectern0LibraryEntry *closed =
-    lectern0_library_catalog_find_id(&app.library, entry_id);
-  Lectern0LibraryThumbnail *thumbnail = closed ?
-    lectern0_library_thumbnail_find(&app.library_thumbnail_cache,
+  EightvoLibraryEntry *closed =
+    eightvo_library_catalog_find_id(&app.library, entry_id);
+  EightvoLibraryThumbnail *thumbnail = closed ?
+    eightvo_library_thumbnail_find(&app.library_thumbnail_cache,
                                     closed->entry_id,
                                     closed->file_size,
                                     closed->file_modified_time) : 0;
   if (!closed || !thumbnail || closed->runtime_missing ||
       app.host_control_count < 2 ||
-      !lectern0_save_library(&app))
+      !eightvo_save_library(&app))
     goto fail;
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
 
-  if (!lectern0_app_init(&app, Width, Height, 1, 0)) goto fail;
+  if (!eightvo_app_init(&app, Width, Height, 1, 0)) goto fail;
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
+  eightvo_copy_cstr(app.app_directory, ARRAY_COUNT(app.app_directory),
                      output_directory);
-  lectern0_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
+  eightvo_copy_cstr(app.catalog_path, ARRAY_COUNT(app.catalog_path),
                      catalog_path);
-  lectern0_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
-  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+  eightvo_copy_cstr(app.state_path, ARRAY_COUNT(app.state_path), state_path);
+  eightvo_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
                      settings_path);
-  if (!lectern0_library_catalog_load(&app.library, catalog_path) ||
+  if (!eightvo_library_catalog_load(&app.library, catalog_path) ||
       app.library.entry_count != 1)
     goto fail;
   app.library_selected_entry_id = app.library.entries[0].entry_id;
-  lectern0_library_set_summary_status(&app);
+  eightvo_library_set_summary_status(&app);
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 restart_hash = u64_hash_bytes(pixels,
                                     (U64)Width * Height * sizeof(U32));
-  if (!lectern0_library_active(&app) || !app.library.entries[0].title[0] ||
+  if (!eightvo_library_active(&app) || !app.library.entries[0].title[0] ||
       app.library_metadata_refresh_count != 0 ||
-      !lectern0_write_bmp(restart_bmp, pixels, Width, Height))
+      !eightvo_write_bmp(restart_bmp, pixels, Width, Height))
     goto fail;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 restart_repeat_hash = u64_hash_bytes(
     pixels, (U64)Width * Height * sizeof(U32));
   if (restart_repeat_hash != restart_hash ||
-      !lectern0_write_bmp(restart_repeat_bmp, pixels, Width, Height))
+      !eightvo_write_bmp(restart_repeat_bmp, pixels, Width, Height))
     goto fail;
 
   app.width = CompactWidth;
   app.height = CompactHeight;
   render_buffer_init(&buffer, pixels,
                      CompactWidth, CompactHeight, CompactWidth);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.library_column_count != 3 || app.library_card_count != 1 ||
-      !lectern0_write_bmp(compact_bmp, pixels, CompactWidth, CompactHeight))
+      !eightvo_write_bmp(compact_bmp, pixels, CompactWidth, CompactHeight))
     goto fail;
   app.width = Width;
   app.height = Height;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  Lectern0HostControlRecord *book_control =
-    lectern0_host_control_record(&app, Lectern0HostControl_LibraryBookBase);
+  eightvo_render_to_buffer(&app, &buffer);
+  EightvoHostControlRecord *book_control =
+    eightvo_host_control_record(&app, EightvoHostControl_LibraryBookBase);
   if (!book_control) goto fail;
   S32 book_x = book_control->semantic.rect.x + book_control->semantic.rect.w / 2;
   S32 book_y = book_control->semantic.rect.y + book_control->semantic.rect.h / 2;
   U64 idle_hash = u64_hash_bytes(pixels,
                                  (U64)Width * Height * sizeof(U32));
-  lectern0_host_pointer_move(&app, book_x, book_y);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_host_pointer_move(&app, book_x, book_y);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 hover_hash = u64_hash_bytes(pixels,
                                   (U64)Width * Height * sizeof(U32));
-  if (!lectern0_write_bmp(hover_bmp, pixels, Width, Height)) goto fail;
-  lectern0_host_pointer_press(&app, book_x, book_y);
-  lectern0_render_to_buffer(&app, &buffer);
+  if (!eightvo_write_bmp(hover_bmp, pixels, Width, Height)) goto fail;
+  eightvo_host_pointer_press(&app, book_x, book_y);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 pressed_hash = u64_hash_bytes(pixels,
                                     (U64)Width * Height * sizeof(U32));
-  if (!lectern0_write_bmp(pressed_bmp, pixels, Width, Height)) goto fail;
+  if (!eightvo_write_bmp(pressed_bmp, pixels, Width, Height)) goto fail;
   if (idle_hash == hover_hash || hover_hash == pressed_hash ||
       idle_hash == pressed_hash)
     goto fail;
-  lectern0_host_pointer_move(&app, Width - 1, Height - 1);
-  if (lectern0_host_pointer_release(&app, book_x, book_y) ||
-      !lectern0_library_active(&app))
+  eightvo_host_pointer_move(&app, Width - 1, Height - 1);
+  if (eightvo_host_pointer_release(&app, book_x, book_y) ||
+      !eightvo_library_active(&app))
     goto fail;
-  lectern0_host_pointer_press(&app, book_x, book_y);
-  if (!lectern0_host_pointer_release(&app, book_x, book_y) ||
+  eightvo_host_pointer_press(&app, book_x, book_y);
+  if (!eightvo_host_pointer_release(&app, book_x, book_y) ||
       !epub_reader_is_open(&app.reader) ||
       app.library_metadata_refresh_count != 0 ||
-      app.host_focus_control != Lectern0HostControl_None)
+      app.host_focus_control != EightvoHostControl_None)
     goto fail;
   U32 card_open_spine = app.reader.active_spine_index;
   U64 card_open_byte = app.reader.view_byte_offset;
-  if (lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
-        Lectern0ReaderKeyRoute_Handled ||
+  if (eightvo_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+        EightvoReaderKeyRoute_Handled ||
       (app.reader.active_spine_index == card_open_spine &&
        app.reader.view_byte_offset == card_open_byte) ||
-      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
-        Lectern0ReaderKeyRoute_Handled ||
+      eightvo_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        EightvoReaderKeyRoute_Handled ||
       app.reader.active_spine_index != card_open_spine ||
       app.reader.view_byte_offset != card_open_byte)
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_host_control_invoke(&app, Lectern0HostControl_CloseBook))
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_host_control_invoke(&app, EightvoHostControl_CloseBook))
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_host_focus_set(&app, Lectern0HostControl_LibraryBookBase, 1) ||
-      !lectern0_host_keyboard_activate(&app) ||
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_host_focus_set(&app, EightvoHostControl_LibraryBookBase, 1) ||
+      !eightvo_host_keyboard_activate(&app) ||
       app.library_metadata_refresh_count != 0 ||
       !epub_reader_is_open(&app.reader))
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_host_control_invoke(&app, Lectern0HostControl_CloseBook) ||
-      !lectern0_library_active(&app) || app.library.entry_count != 1)
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_host_control_invoke(&app, EightvoHostControl_CloseBook) ||
+      !eightvo_library_active(&app) || app.library.entry_count != 1)
     goto fail;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
 
-  lectern0_copy_cstr(app.library.entries[0].source_path,
+  eightvo_copy_cstr(app.library.entries[0].source_path,
                      ARRAY_COUNT(app.library.entries[0].source_path),
                      missing_path);
-  lectern0_library_catalog_refresh_missing(&app.library);
-  lectern0_library_set_summary_status(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_library_catalog_refresh_missing(&app.library);
+  eightvo_library_set_summary_status(&app);
+  eightvo_render_to_buffer(&app, &buffer);
   B32 has_locate = 0;
   B32 has_remove = 0;
   for (U32 index = 0; index < app.host_control_count; index += 1)
   {
     has_locate |= app.host_controls[index].action ==
-                  Lectern0HostControlAction_LocateBook;
+                  EightvoHostControlAction_LocateBook;
     has_remove |= app.host_controls[index].action ==
-                  Lectern0HostControlAction_RemoveBook;
+                  EightvoHostControlAction_RemoveBook;
   }
   B32 source_before_remove = os_file_exists(epub_path);
   if (!app.library.entries[0].runtime_missing || !has_locate || !has_remove ||
-      !lectern0_write_bmp(missing_bmp, pixels, Width, Height) ||
-      !lectern0_library_remove_entry(&app, entry_id) ||
+      !eightvo_write_bmp(missing_bmp, pixels, Width, Height) ||
+      !eightvo_library_remove_entry(&app, entry_id) ||
       app.library.entry_count != 0 || !source_before_remove ||
       !os_file_exists(epub_path))
     goto fail;
 
   fprintf(stdout,
-          "lectern0_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame_reused_on_open thumbnail=area_v2 progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
+          "eightvo_library_smoke result=pass catalog=bounded_atomic_v1 entries=1 ordering=mru migration=legacy_state metadata=title_author cover=first_library_frame_reused_on_open thumbnail=area_v2 progress=canonical close=library restart=persisted repeat_hash=%016llx interaction=pointer_keyboard_card_open_arrow states=idle_hover_pressed missing=locate_remove remove=source_preserved responsive=wide_and_compact accessibility=host_semantics digest=reserved_none empty_bmp=%s populated_bmp=%s restart_bmp=%s restart_repeat_bmp=%s compact_bmp=%s missing_bmp=%s hover_bmp=%s pressed_bmp=%s\n",
           (unsigned long long)restart_hash, empty_bmp, populated_bmp,
           restart_bmp, restart_repeat_bmp, compact_bmp, missing_bmp,
           hover_bmp, pressed_bmp);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   free(pixels);
   return 0;
 
 fail:
   fprintf(stderr,
-          "lectern0_library_smoke result=fail entries=%u open=%d library=%d status=%s\n",
+          "eightvo_library_smoke result=fail entries=%u open=%d library=%d status=%s\n",
           app.library.entry_count, epub_reader_is_open(&app.reader),
-          lectern0_library_active(&app), app.status);
-  lectern0_app_release(&app);
+          eightvo_library_active(&app), app.status);
+  eightvo_app_release(&app);
   free(pixels);
   return 1;
 }
 
 FUNCTION B32
-lectern0_write_reader_view_parity(const char *path,
-                                  const Lectern0App *app)
+eightvo_write_reader_view_parity(const char *path,
+                                  const EightvoApp *app)
 {
   ReaderViewDebugSnapshot snapshot = {0};
   if (!path || !path[0] || !app || !app->reader_view_ready ||
@@ -11914,7 +11914,7 @@ lectern0_write_reader_view_parity(const char *path,
   int wrote = fprintf(
     file,
     "schema=reader_view_stage2b0_v1\n"
-    "host=lectern0\n"
+    "host=eightvo\n"
     "bounds=%d,%d\n"
     "layout_mode=%d\n"
     "toolbar_density=%d\n"
@@ -11951,7 +11951,7 @@ lectern0_write_reader_view_parity(const char *path,
 }
 
 FUNCTION B32
-lectern0_configure_reader_view_parity(Lectern0App *app,
+eightvo_configure_reader_view_parity(EightvoApp *app,
                                       const char *theme,
                                       const char *left,
                                       const char *right,
@@ -11964,13 +11964,13 @@ lectern0_configure_reader_view_parity(Lectern0App *app,
       !annotation_case)
     return 0;
   B32 theme_found = 0;
-  for (U32 index = 0; index < Lectern0Theme_Count; index += 1)
+  for (U32 index = 0; index < EightvoTheme_Count; index += 1)
   {
     UI0ThemeProfile profile =
       ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
     if (profile.code && strcmp(theme, profile.code) == 0)
     {
-      app->theme = (Lectern0Theme)index;
+      app->theme = (EightvoTheme)index;
       theme_found = 1;
       break;
     }
@@ -12009,7 +12009,7 @@ lectern0_configure_reader_view_parity(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_seed_reader_view_parity_annotations(Lectern0App *app,
+eightvo_seed_reader_view_parity_annotations(EightvoApp *app,
                                               const char *annotation_case)
 {
   if (!app || !annotation_case) return 0;
@@ -12022,15 +12022,15 @@ lectern0_seed_reader_view_parity_annotations(Lectern0App *app,
   };
   if (epub_reader_set_selection(&app->reader, selection) != EpubReaderResult_Ok)
     return 0;
-  lectern0_prepare_selected_text(app);
+  eightvo_prepare_selected_text(app);
   if (strcmp(app->selected_text, "Alpha reader parity sentence") != 0 ||
-      !lectern0_set_highlight_color(app, 2) ||
-      !lectern0_save_selection_note(
+      !eightvo_set_highlight_color(app, 2) ||
+      !eightvo_save_selection_note(
         app, (ReaderViewText){"Attached parity note", 20}))
     return 0;
   epub_reader_clear_selection(&app->reader);
   app->selection_anchor_rect = (UI0Rect){0};
-  lectern0_prepare_reader_view_projection(app);
+  eightvo_prepare_reader_view_projection(app);
   return app->highlight_count == 1 && app->highlights[0].id == 1 &&
          app->highlights[0].is_highlight &&
          app->highlights[0].color_index == 2 &&
@@ -12043,7 +12043,7 @@ lectern0_seed_reader_view_parity_annotations(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_view_text_equals(ReaderViewText text, const char *literal)
+eightvo_reader_view_text_equals(ReaderViewText text, const char *literal)
 {
   U64 size = literal ? strlen(literal) : 0;
   return literal && text.size >= 0 && (U64)text.size == size &&
@@ -12051,7 +12051,7 @@ lectern0_reader_view_text_equals(ReaderViewText text, const char *literal)
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_parity_semantic(const Lectern0App *app,
+eightvo_reader_view_parity_semantic(const EightvoApp *app,
                                      ReaderViewSemanticRole role,
                                      const char *name)
 {
@@ -12063,14 +12063,14 @@ lectern0_reader_view_parity_semantic(const Lectern0App *app,
     const ReaderViewSemanticNode *node =
       app->reader_view_frame.semantic_nodes + index;
     if (node->role == role &&
-        (!name || lectern0_reader_view_text_equals(node->name, name)))
+        (!name || eightvo_reader_view_text_equals(node->name, name)))
       return node;
   }
   return 0;
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_parity_control(const Lectern0App *app,
+eightvo_reader_view_parity_control(const EightvoApp *app,
                                     ReaderViewSemanticControl control)
 {
   if (!app || !app->reader_view_frame.semantic_nodes ||
@@ -12088,8 +12088,8 @@ lectern0_reader_view_parity_control(const Lectern0App *app,
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_parity_control_source(
-  const Lectern0App *app,
+eightvo_reader_view_parity_control_source(
+  const EightvoApp *app,
   ReaderViewSemanticControl control,
   ReaderViewKey source_key)
 {
@@ -12109,7 +12109,7 @@ lectern0_reader_view_parity_control_source(
 }
 
 FUNCTION ReaderViewKey
-lectern0_reader_view_parity_right_key(const Lectern0App *app,
+eightvo_reader_view_parity_right_key(const EightvoApp *app,
                                       ReaderViewRightRowKind kind)
 {
   if (!app) return 0;
@@ -12122,73 +12122,73 @@ lectern0_reader_view_parity_right_key(const Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_view_parity_click_node(
-  Lectern0App *app,
+eightvo_reader_view_parity_click_node(
+  EightvoApp *app,
   RenderBuffer *buffer,
   const ReaderViewSemanticNode *node)
 {
   if (!node || node->rect.w <= 0 || node->rect.h <= 0) return 0;
   S32 x = node->rect.x + node->rect.w / 2;
   S32 y = node->rect.y + node->rect.h / 2;
-  lectern0_host_pointer_press(app, x, y);
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
-  if (lectern0_host_pointer_release(app, x, y)) return 0;
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_host_pointer_press(app, x, y);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
+  if (eightvo_host_pointer_release(app, x, y)) return 0;
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
   app->input.pointer_x = -32768;
   app->input.pointer_y = -32768;
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_reader_view_parity_space_node(
-  Lectern0App *app,
+eightvo_reader_view_parity_space_node(
+  EightvoApp *app,
   RenderBuffer *buffer,
   const ReaderViewSemanticNode *node)
 {
   if (!app || !buffer || !node || node->id == 0 ||
       !reader_view_accessibility_focus(&app->reader_view_state, node->id))
     return 0;
-  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_host_focus_set(app, EightvoHostControl_None, 0);
+  eightvo_render_to_buffer(app, buffer);
   if (app->reader_view_state.focus_id != node->id ||
-      !lectern0_reader_view_space_activates_focus(app))
+      !eightvo_reader_view_space_activates_focus(app))
     return 0;
-  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  if (eightvo_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      EightvoReaderKeyRoute_Handled)
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_reader_view_parity_click(Lectern0App *app,
+eightvo_reader_view_parity_click(EightvoApp *app,
                                   RenderBuffer *buffer,
                                   ReaderViewSemanticRole role,
                                   const char *name)
 {
-  return lectern0_reader_view_parity_click_node(
-    app, buffer, lectern0_reader_view_parity_semantic(app, role, name));
+  return eightvo_reader_view_parity_click_node(
+    app, buffer, eightvo_reader_view_parity_semantic(app, role, name));
 }
 
 FUNCTION B32
-lectern0_reader_view_parity_click_control(
-  Lectern0App *app,
+eightvo_reader_view_parity_click_control(
+  EightvoApp *app,
   RenderBuffer *buffer,
   ReaderViewSemanticControl control)
 {
-  return lectern0_reader_view_parity_click_node(
-    app, buffer, lectern0_reader_view_parity_control(app, control));
+  return eightvo_reader_view_parity_click_node(
+    app, buffer, eightvo_reader_view_parity_control(app, control));
 }
 
 FUNCTION B32
-lectern0_reader_view_parity_focus(Lectern0App *app,
+eightvo_reader_view_parity_focus(EightvoApp *app,
                                   RenderBuffer *buffer,
                                   const char *focus)
 {
@@ -12198,9 +12198,9 @@ lectern0_reader_view_parity_focus(Lectern0App *app,
   {
     U32 before_spine = app->reader.active_spine_index;
     U64 before_byte = app->reader.view_byte_offset;
-    if (lectern0_move_page(app, 1) != EpubReaderResult_Ok) return 0;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    if (eightvo_move_page(app, 1) != EpubReaderResult_Ok) return 0;
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     if (app->reader.active_spine_index == before_spine &&
         app->reader.view_byte_offset == before_byte)
       return 0;
@@ -12212,16 +12212,16 @@ lectern0_reader_view_parity_focus(Lectern0App *app,
   if (tab_count == 0) return 0;
   for (U32 tab = 0; tab < tab_count; tab += 1)
   {
-    if (!lectern0_host_keyboard_tab(app, 0))
+    if (!eightvo_host_keyboard_tab(app, 0))
       app->input.focus_next_pressed = 1;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
   }
   if (strcmp(focus, "exit") == 0)
   {
-    Lectern0HostControlRecord *exit = lectern0_host_control_record(
-      app, Lectern0HostControl_ExitReader);
-    return exit && app->host_focus_control == Lectern0HostControl_ExitReader &&
+    EightvoHostControlRecord *exit = eightvo_host_control_record(
+      app, EightvoHostControl_ExitReader);
+    return exit && app->host_focus_control == EightvoHostControl_ExitReader &&
            app->host_focus_visible &&
            (exit->semantic.flags & ReaderViewSemantic_Focused) != 0;
   }
@@ -12231,7 +12231,7 @@ lectern0_reader_view_parity_focus(Lectern0App *app,
     ReaderViewSemanticControl_PreviousPage :
     ReaderViewSemanticControl_NextPage;
   const ReaderViewSemanticNode *node =
-    lectern0_reader_view_parity_control(app, expected);
+    eightvo_reader_view_parity_control(app, expected);
   return node && (node->flags & ReaderViewSemantic_Focused) != 0 &&
          (strcmp(focus, "previous-enabled") != 0 ||
           (node->flags & ReaderViewSemantic_Enabled) != 0) &&
@@ -12240,7 +12240,7 @@ lectern0_reader_view_parity_focus(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
+eightvo_apply_reader_view_parity_scenario(EightvoApp *app,
                                            RenderBuffer *buffer,
                                            const char *left,
                                            const char *right,
@@ -12254,34 +12254,34 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
     return 0;
   UI0ID filter_restore_id = 0;
   if (strcmp(left, "contents") == 0 &&
-      !lectern0_reader_view_parity_click(app, buffer,
+      !eightvo_reader_view_parity_click(app, buffer,
                                         ReaderViewSemantic_Button,
                                         "Contents"))
     return 0;
   if (strcmp(left, "find") == 0 &&
-      !lectern0_reader_view_parity_click(app, buffer,
+      !eightvo_reader_view_parity_click(app, buffer,
                                         ReaderViewSemantic_Button,
                                         "Find"))
     return 0;
 
   if (strcmp(right, "bookmark") == 0)
   {
-    if (!lectern0_reader_view_parity_click(app, buffer,
+    if (!eightvo_reader_view_parity_click(app, buffer,
                                           ReaderViewSemantic_Button,
                                           "Bookmark") ||
-        !lectern0_reader_view_parity_click(app, buffer,
+        !eightvo_reader_view_parity_click(app, buffer,
                                           ReaderViewSemantic_Button,
                                           "Annotations"))
       return 0;
   }
   else if (strcmp(right, "open") == 0 &&
-           !lectern0_reader_view_parity_click(app, buffer,
+           !eightvo_reader_view_parity_click(app, buffer,
                                              ReaderViewSemantic_Button,
                                              "Annotations"))
     return 0;
 
   if (strcmp(popup, "font") == 0 &&
-      !lectern0_reader_view_parity_click(app, buffer,
+      !eightvo_reader_view_parity_click(app, buffer,
                                         ReaderViewSemantic_Button,
                                         "Font"))
     return 0;
@@ -12290,49 +12290,49 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
   ReaderViewKey note_key = 0;
   if (strcmp(annotation_case, "none") != 0)
   {
-    highlight_key = lectern0_reader_view_parity_right_key(
+    highlight_key = eightvo_reader_view_parity_right_key(
       app, ReaderViewRightRow_Highlight);
-    note_key = lectern0_reader_view_parity_right_key(
+    note_key = eightvo_reader_view_parity_right_key(
       app, ReaderViewRightRow_Note);
     if (highlight_key == 0 || note_key == 0) return 0;
   }
   if (strcmp(annotation_case, "highlight-note") == 0)
   {
     const ReaderViewSemanticNode *star =
-      lectern0_reader_view_parity_control_source(
+      eightvo_reader_view_parity_control_source(
         app, ReaderViewSemanticControl_RightRowStar, highlight_key);
     UI0Rect star_rect = star ? star->rect : (UI0Rect){0};
-    if (!lectern0_reader_view_parity_click_node(app, buffer, star) ||
+    if (!eightvo_reader_view_parity_click_node(app, buffer, star) ||
         !app->highlights[0].starred || app->highlights[0].note_starred)
       return 0;
     /* re10's automation leaves the pointer over the activated Star. Preserve
        that final hover state for the deterministic visual comparison. */
     app->input.pointer_x = star_rect.x + star_rect.w / 2;
     app->input.pointer_y = star_rect.y + star_rect.h / 2;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
   }
   else if (strcmp(annotation_case, "row-actions") == 0)
   {
     const ReaderViewSemanticNode *menu =
-      lectern0_reader_view_parity_control_source(
+      eightvo_reader_view_parity_control_source(
         app, ReaderViewSemanticControl_RightRowMenu, highlight_key);
-    if (!lectern0_reader_view_parity_click_node(app, buffer, menu) ||
+    if (!eightvo_reader_view_parity_click_node(app, buffer, menu) ||
         app->reader_view_state.popup != ReaderViewPopup_RightRowActions)
       return 0;
   }
   else if (strcmp(annotation_case, "note-editor") == 0)
   {
     const ReaderViewSemanticNode *menu =
-      lectern0_reader_view_parity_control_source(
+      eightvo_reader_view_parity_control_source(
         app, ReaderViewSemanticControl_RightRowMenu, note_key);
-    if (!lectern0_reader_view_parity_click_node(app, buffer, menu)) return 0;
+    if (!eightvo_reader_view_parity_click_node(app, buffer, menu)) return 0;
     const ReaderViewSemanticNode *edit =
-      lectern0_reader_view_parity_control_source(
+      eightvo_reader_view_parity_control_source(
         app, ReaderViewSemanticControl_RightActionEditNote, note_key);
-    if (!lectern0_reader_view_parity_click_node(app, buffer, edit) ||
+    if (!eightvo_reader_view_parity_click_node(app, buffer, edit) ||
         app->reader_view_state.popup != ReaderViewPopup_NoteEditor ||
-        !lectern0_reader_view_text_equals(
+        !eightvo_reader_view_text_equals(
           reader_view_note_draft(&app->reader_view_state),
           "Attached parity note"))
       return 0;
@@ -12340,11 +12340,11 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
   if (strcmp(popup, "annotations-filter") == 0)
   {
     const ReaderViewSemanticNode *filter =
-      lectern0_reader_view_parity_control(
+      eightvo_reader_view_parity_control(
         app, ReaderViewSemanticControl_RightFilter);
     if (!filter) return 0;
     filter_restore_id = filter->id;
-    if (!lectern0_reader_view_parity_click_control(
+    if (!eightvo_reader_view_parity_click_control(
           app, buffer, ReaderViewSemanticControl_RightFilter))
       return 0;
   }
@@ -12354,26 +12354,26 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
     size_t query_size = strlen(query);
     if (app->reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
         query_size >= ARRAY_COUNT(app->input.text) ||
-        !lectern0_reader_view_parity_click(app, buffer,
+        !eightvo_reader_view_parity_click(app, buffer,
                                           ReaderViewSemantic_SearchBox,
                                           0))
       return 0;
     MemoryCopy(app->input.text, query, (U64)query_size);
     app->input.text[query_size] = 0;
     app->input.text_length = (S32)query_size;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     app->input.commit_pressed = 1;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     for (U32 frame = 0; frame < 6; frame += 1)
     {
-      lectern0_render_to_buffer(app, buffer);
-      lectern0_apply_reader_view_actions(app);
+      eightvo_render_to_buffer(app, buffer);
+      eightvo_apply_reader_view_actions(app);
     }
   }
 
-  if (!lectern0_reader_view_parity_focus(app, buffer, focus)) return 0;
+  if (!eightvo_reader_view_parity_focus(app, buffer, focus)) return 0;
 
   ReaderViewLeftPanelMode expected_left = ReaderViewLeftPanel_None;
   if (strcmp(left, "contents") == 0)
@@ -12390,9 +12390,9 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
     strcmp(popup, "note-editor") == 0 ?
       ReaderViewPopup_NoteEditor : ReaderViewPopup_None;
   B32 query_matches = strcmp(query, "-") == 0 ||
-    (lectern0_reader_view_text_equals(reader_view_find_query(
+    (eightvo_reader_view_text_equals(reader_view_find_query(
        &app->reader_view_state), query) && app->reader.search_match_count > 0 &&
-     lectern0_reader_view_text_equals(
+     eightvo_reader_view_text_equals(
        app->reader_view_projection.find.status.message, "18 matches"));
   B32 bookmark_matches = strcmp(right, "bookmark") != 0 ||
                          app->bookmark_count == 1;
@@ -12400,7 +12400,7 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
   if (expected_popup == ReaderViewPopup_RightFilter)
   {
     const ReaderViewSemanticNode *option =
-      lectern0_reader_view_parity_control(
+      eightvo_reader_view_parity_control(
         app, ReaderViewSemanticControl_RightFilterOption);
     filter_focus_matches = option &&
       option->source_key == ReaderViewRightFilter_All &&
@@ -12430,7 +12430,7 @@ lectern0_apply_reader_view_parity_scenario(Lectern0App *app,
 }
 
 FUNCTION int
-lectern0_run_reader_view_parity_capture(const char *epub_path,
+eightvo_run_reader_view_parity_capture(const char *epub_path,
                                         const char *width_text,
                                         const char *height_text,
                                         const char *theme,
@@ -12449,29 +12449,29 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
   if (width < 320 || height < 240 || width > 4096 || height > 4096 ||
       pixel_count > (U64)4096 * 4096)
     return 2;
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
-  if (!pixels || !lectern0_app_init(&app, width, height, 1, 0) ||
-      !lectern0_open_path(&app, epub_path) ||
-      !lectern0_configure_reader_view_parity(&app, theme, left, right,
+  if (!pixels || !eightvo_app_init(&app, width, height, 1, 0) ||
+      !eightvo_open_path(&app, epub_path) ||
+      !eightvo_configure_reader_view_parity(&app, theme, left, right,
                                              popup, query, focus,
                                              annotation_case) ||
-      !lectern0_seed_reader_view_parity_annotations(&app, annotation_case))
+      !eightvo_seed_reader_view_parity_annotations(&app, annotation_case))
   {
-    fprintf(stderr, "lectern0_reader_view_parity result=fail reason=setup\n");
+    fprintf(stderr, "eightvo_reader_view_parity result=fail reason=setup\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, width, height, width);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_apply_reader_view_parity_scenario(&app, &buffer,
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_apply_reader_view_parity_scenario(&app, &buffer,
                                                    left, right, popup, query,
                                                    focus, annotation_case))
   {
     fprintf(stderr,
-            "lectern0_reader_view_parity result=fail reason=scenario expected_left=%s actual_left=%d expected_right=%s actual_right=%d expected_popup=%s actual_popup=%d query=%s focus=%s annotation=%s matches=%u bookmarks=%u highlights=%u\n",
+            "eightvo_reader_view_parity result=fail reason=scenario expected_left=%s actual_left=%d expected_right=%s actual_right=%d expected_popup=%s actual_popup=%d query=%s focus=%s annotation=%s matches=%u bookmarks=%u highlights=%u\n",
             left,
             (int)app.reader_view_state.left_panel,
             right,
@@ -12485,58 +12485,58 @@ lectern0_run_reader_view_parity_capture(const char *epub_path,
             app.bookmark_count,
             app.highlight_count);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   if (strcmp(query, "-") != 0)
   {
     /* The re10 automation capture lands on the first hidden caret frame.
        Keep this headless comparison at the same deterministic blink phase;
-       interactive lectern0 continues to use its monotonically increasing
+       interactive eightvo continues to use its monotonically increasing
        host frame counter. */
     app.reader_view_frame_index = 30;
   }
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 wrote_evidence = lectern0_write_reader_view_parity(evidence_path, &app);
-  B32 wrote_bmp = lectern0_write_bmp(bmp_path, pixels, width, height);
+  eightvo_render_to_buffer(&app, &buffer);
+  B32 wrote_evidence = eightvo_write_reader_view_parity(evidence_path, &app);
+  B32 wrote_bmp = eightvo_write_bmp(bmp_path, pixels, width, height);
   if (!wrote_evidence || !wrote_bmp)
   {
     fprintf(stderr,
-            "lectern0_reader_view_parity result=fail reason=write evidence=%d bmp=%d\n",
+            "eightvo_reader_view_parity result=fail reason=write evidence=%d bmp=%d\n",
             wrote_evidence, wrote_bmp);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   fprintf(stdout,
-          "lectern0_reader_view_parity result=pass size=%dx%d theme=%s left=%s right=%s popup=%s query=%s focus=%s annotation=%s\n",
+          "eightvo_reader_view_parity result=pass size=%dx%d theme=%s left=%s right=%s popup=%s query=%s focus=%s annotation=%s\n",
           width, height, theme, left, right, popup, query, focus,
           annotation_case);
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION void
-lectern0_library_focus_selected(Lectern0App *app)
+eightvo_library_focus_selected(EightvoApp *app)
 {
   if (!app || app->library.entry_count == 0) return;
-  S32 selected = lectern0_library_catalog_index_for_id(
+  S32 selected = eightvo_library_catalog_index_for_id(
     &app->library, app->library_selected_entry_id);
   if (selected < 0)
   {
     selected = 0;
     app->library_selected_entry_id = app->library.entries[0].entry_id;
   }
-  lectern0_library_resolve_layout(app);
-  Lectern0LibraryCardLayout *card = lectern0_library_card_for_entry(
+  eightvo_library_resolve_layout(app);
+  EightvoLibraryCardLayout *card = eightvo_library_card_for_entry(
     app, app->library_selected_entry_id);
   if (!card)
   {
     S32 row = selected / MAX(app->library_column_count, 1);
     app->library_scroll_y = MAX(0, row * 380);
-    lectern0_library_resolve_layout(app);
-    card = lectern0_library_card_for_entry(app,
+    eightvo_library_resolve_layout(app);
+    card = eightvo_library_card_for_entry(app,
                                            app->library_selected_entry_id);
   }
   if (card)
@@ -12548,38 +12548,38 @@ lectern0_library_focus_selected(Lectern0App *app)
       app->library_scroll_y = MIN(app->library_scroll_max,
         app->library_scroll_y + card->card_rect.y + card->card_rect.h -
           (app->height - 16));
-    lectern0_library_resolve_layout(app);
+    eightvo_library_resolve_layout(app);
   }
-  lectern0_update_host_control_records(app);
+  eightvo_update_host_control_records(app);
   for (U32 card_index = 0; card_index < app->library_card_count; card_index += 1)
   {
     if (app->library_cards[card_index].entry_id ==
         app->library_selected_entry_id)
     {
       app->host_focus_control =
-        (Lectern0HostControlIdentity)(Lectern0HostControl_LibraryBookBase +
+        (EightvoHostControlIdentity)(EightvoHostControl_LibraryBookBase +
                                        card_index);
       app->host_focus_visible = 1;
-      lectern0_update_host_control_records(app);
+      eightvo_update_host_control_records(app);
       break;
     }
   }
 }
 
 FUNCTION B32
-lectern0_library_route_keydown(Lectern0App *app, WPARAM key, B32 shift)
+eightvo_library_route_keydown(EightvoApp *app, WPARAM key, B32 shift)
 {
-  if (!app || !lectern0_library_active(app)) return 0;
-  if (key == VK_TAB) return lectern0_host_keyboard_tab(app, shift);
+  if (!app || !eightvo_library_active(app)) return 0;
+  if (key == VK_TAB) return eightvo_host_keyboard_tab(app, shift);
   if (key == VK_RETURN || key == VK_SPACE)
-    return lectern0_host_keyboard_activate(app);
+    return eightvo_host_keyboard_activate(app);
   if (app->library.entry_count == 0)
   {
     if (key == VK_HOME || key == VK_END)
-      return lectern0_host_focus_set(app, Lectern0HostControl_LibraryAdd, 1);
+      return eightvo_host_focus_set(app, EightvoHostControl_LibraryAdd, 1);
     return 0;
   }
-  S32 index = lectern0_library_catalog_index_for_id(
+  S32 index = eightvo_library_catalog_index_for_id(
     &app->library, app->library_selected_entry_id);
   if (index < 0) index = 0;
   S32 target = index;
@@ -12591,30 +12591,30 @@ lectern0_library_route_keydown(Lectern0App *app, WPARAM key, B32 shift)
   else if (key == VK_HOME) target = 0;
   else if (key == VK_END) target = (S32)app->library.entry_count - 1;
   else if (key == VK_DELETE)
-    return lectern0_library_remove_entry(app,
+    return eightvo_library_remove_entry(app,
                                          app->library_selected_entry_id);
   else if (key == 'L')
   {
-    Lectern0LibraryEntry *entry = lectern0_library_catalog_find_id(
+    EightvoLibraryEntry *entry = eightvo_library_catalog_find_id(
       &app->library, app->library_selected_entry_id);
     return entry && entry->runtime_missing ?
-      lectern0_locate_library_entry(app, entry->entry_id) : 0;
+      eightvo_locate_library_entry(app, entry->entry_id) : 0;
   }
   else return 0;
   target = MAX(0, MIN(target, (S32)app->library.entry_count - 1));
   app->library_selected_entry_id = app->library.entries[target].entry_id;
-  lectern0_library_focus_selected(app);
+  eightvo_library_focus_selected(app);
   return 1;
 }
 
 FUNCTION LRESULT CALLBACK
-lectern0_page_repeat_probe_paint_proc(HWND window,
+eightvo_page_repeat_probe_paint_proc(HWND window,
                                       UINT message,
                                       WPARAM w_param,
                                       LPARAM l_param)
 {
-  Lectern0Win32 *win32 =
-    (Lectern0Win32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
+  EightvoWin32 *win32 =
+    (EightvoWin32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
   switch (message)
   {
     case WM_NCCREATE:
@@ -12644,10 +12644,10 @@ lectern0_page_repeat_probe_paint_proc(HWND window,
 }
 
 FUNCTION LRESULT CALLBACK
-lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
+eightvo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 {
-  Lectern0Win32 *win32 = (Lectern0Win32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
-  Lectern0App *app = win32 ? &win32->app : 0;
+  EightvoWin32 *win32 = (EightvoWin32 *)GetWindowLongPtrW(window, GWLP_USERDATA);
+  EightvoApp *app = win32 ? &win32->app : 0;
   switch (message)
   {
     case WM_NCCREATE:
@@ -12677,11 +12677,11 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     {
       if (app)
       {
-        lectern0_host_pointer_move(app,
+        eightvo_host_pointer_move(app,
                                    GET_X_LPARAM(l_param),
                                    GET_Y_LPARAM(l_param));
         if (app->selection_dragging && app->input.pointer_down)
-          lectern0_update_pointer_selection(app,
+          eightvo_update_pointer_selection(app,
                                             app->input.pointer_x,
                                             app->input.pointer_y,
                                             0);
@@ -12695,9 +12695,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     {
       if (app)
       {
-        lectern0_host_pointer_cancel(app);
+        eightvo_host_pointer_cancel(app);
         if (message == WM_CANCELMODE)
-          lectern0_cancel_page_repeat_for_deactivation(app);
+          eightvo_cancel_page_repeat_for_deactivation(app);
       }
       return 0;
     } break;
@@ -12705,13 +12705,13 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     case WM_ACTIVATEAPP:
     {
       if (app && !w_param)
-        lectern0_cancel_page_repeat_for_deactivation(app);
+        eightvo_cancel_page_repeat_for_deactivation(app);
     } break;
 
     case WM_ACTIVATE:
     {
       if (app && LOWORD(w_param) == WA_INACTIVE)
-        lectern0_cancel_page_repeat_for_deactivation(app);
+        eightvo_cancel_page_repeat_for_deactivation(app);
     } break;
 
     case WM_LBUTTONDOWN:
@@ -12719,7 +12719,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app)
       {
         SetCapture(window);
-        lectern0_host_pointer_press(app,
+        eightvo_host_pointer_press(app,
                                     GET_X_LPARAM(l_param),
                                     GET_Y_LPARAM(l_param));
         InvalidateRect(window, 0, FALSE);
@@ -12731,7 +12731,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     {
       if (app)
       {
-        B32 exit_requested = lectern0_host_pointer_release(
+        B32 exit_requested = eightvo_host_pointer_release(
           app, GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param));
         ReleaseCapture();
         (void)exit_requested;
@@ -12745,11 +12745,11 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app && (LONG)l_param == OBJID_CLIENT)
       {
         if (!app->accessibility)
-          (void)lectern0_accessibility_create(window,
+          (void)eightvo_accessibility_create(window,
                                                app,
                                                &app->accessibility);
         if (app->accessibility)
-          return lectern0_accessibility_get_object(app->accessibility,
+          return eightvo_accessibility_get_object(app->accessibility,
                                                    w_param,
                                                    l_param);
       }
@@ -12772,9 +12772,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     case WM_CHAR:
     {
       if (app && w_param >= 32 && w_param != 127 &&
-          lectern0_reader_view_text_editing(app))
+          eightvo_reader_view_text_editing(app))
       {
-        lectern0_append_input_wchar(app, (wchar_t)w_param);
+        eightvo_append_input_wchar(app, (wchar_t)w_param);
         InvalidateRect(window, 0, FALSE);
       }
       return 0;
@@ -12786,7 +12786,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       {
         B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
         B32 system_repeat = (l_param & (1LL << 30)) != 0;
-        if (lectern0_page_repeat_consume_cancelled_keydown(app,
+        if (eightvo_page_repeat_consume_cancelled_keydown(app,
                                                            w_param,
                                                            l_param))
         {
@@ -12795,9 +12795,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         if (app->page_repeat_active || app->page_action_pending)
         {
           B32 active_key = w_param == app->page_repeat_key;
-          lectern0_cancel_page_repeat_for_modifier(app);
+          eightvo_cancel_page_repeat_for_modifier(app);
           if (active_key && system_repeat &&
-              lectern0_page_repeat_consume_cancelled_keydown(app,
+              eightvo_page_repeat_consume_cancelled_keydown(app,
                                                               w_param,
                                                               l_param))
           {
@@ -12806,13 +12806,13 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         if (alt && w_param == VK_LEFT)
         {
-          (void)lectern0_move_history(app, 0);
+          (void)eightvo_move_history(app, 0);
           InvalidateRect(window, 0, FALSE);
           return 0;
         }
         if (alt && w_param == VK_RIGHT)
         {
-          (void)lectern0_move_history(app, 1);
+          (void)eightvo_move_history(app, 1);
           InvalidateRect(window, 0, FALSE);
           return 0;
         }
@@ -12827,13 +12827,13 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         B32 shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         B32 alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
         B32 system_repeat = (l_param & (1LL << 30)) != 0;
-        B32 editing = lectern0_reader_view_text_editing(app);
+        B32 editing = eightvo_reader_view_text_editing(app);
         S32 repeat_direction = 0;
         B32 page_action_candidate = !control && !alt &&
-          lectern0_page_direction_for_key(app, w_param, &repeat_direction);
+          eightvo_page_direction_for_key(app, w_param, &repeat_direction);
         B32 repeat_candidate = page_action_candidate && !shift;
         B32 repeat_handled = 0;
-        if (lectern0_page_repeat_consume_cancelled_keydown(app,
+        if (eightvo_page_repeat_consume_cancelled_keydown(app,
                                                            w_param,
                                                            l_param))
         {
@@ -12841,12 +12841,12 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         if ((app->page_repeat_active || app->page_action_pending) &&
             (control || shift || alt ||
-             lectern0_page_repeat_modifier_key(w_param)))
+             eightvo_page_repeat_modifier_key(w_param)))
         {
           B32 active_key = w_param == app->page_repeat_key;
-          lectern0_cancel_page_repeat_for_modifier(app);
+          eightvo_cancel_page_repeat_for_modifier(app);
           if (active_key && system_repeat &&
-              lectern0_page_repeat_consume_cancelled_keydown(app,
+              eightvo_page_repeat_consume_cancelled_keydown(app,
                                                               w_param,
                                                               l_param))
           {
@@ -12854,7 +12854,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
           }
         }
         if (!control && !alt &&
-            lectern0_page_repeat_should_coalesce_keydown(app,
+            eightvo_page_repeat_should_coalesce_keydown(app,
                                                          w_param,
                                                          l_param,
                                                          0))
@@ -12867,7 +12867,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         if (page_action_candidate && app->page_action_waiting_for_present)
         {
           if (system_repeat) return 0;
-          lectern0_page_action_defer(app,
+          eightvo_page_action_defer(app,
                                      w_param,
                                      repeat_direction,
                                      repeat_candidate);
@@ -12877,75 +12877,75 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
             w_param != app->page_repeat_key)
         {
           WPARAM cancelled_key = app->page_repeat_key;
-          lectern0_stop_page_repeat(app);
+          eightvo_stop_page_repeat(app);
           app->page_repeat_cancelled_key = cancelled_key;
         }
         if (w_param == 'O' && control)
         {
-          (void)lectern0_pick_epub(app);
+          (void)eightvo_pick_epub(app);
         }
         else if (w_param == 'F' && control &&
                  epub_reader_is_open(&app->reader))
         {
-          lectern0_reader_view_open_find_from_shortcut(app);
+          eightvo_reader_view_open_find_from_shortcut(app);
         }
         else if (w_param == 'B' && control && epub_reader_is_open(&app->reader))
         {
-          (void)lectern0_toggle_current_bookmark(app);
+          (void)eightvo_toggle_current_bookmark(app);
         }
         else if (w_param == VK_F11)
         {
-          (void)lectern0_set_fullscreen(app, !app->fullscreen.active);
+          (void)eightvo_set_fullscreen(app, !app->fullscreen.active);
         }
         else if (w_param == VK_ESCAPE && epub_reader_is_open(&app->reader))
         {
-          lectern0_reader_view_escape(app);
+          eightvo_reader_view_escape(app);
         }
         else if (editing && control && w_param == 'A') app->input.select_all_pressed = 1;
         else if (editing && control && w_param == 'C') app->input.copy_pressed = 1;
         else if (editing && control && w_param == 'X') app->input.cut_pressed = 1;
         else if (editing && control && w_param == 'V')
         {
-          app->input.paste_pressed = lectern0_get_clipboard_text(app);
+          app->input.paste_pressed = eightvo_get_clipboard_text(app);
         }
         else if (editing && control && w_param == 'Z') app->input.undo_pressed = 1;
         else if (editing && control && w_param == 'Y') app->input.redo_pressed = 1;
         else if (!editing && control && w_param == 'C' && app->selected_text[0])
         {
-          (void)lectern0_set_clipboard_text(
-            app, lectern0_reader_view_text(app->selected_text));
+          (void)eightvo_set_clipboard_text(
+            app, eightvo_reader_view_text(app->selected_text));
         }
         else if (alt && w_param == VK_LEFT)
         {
-          (void)lectern0_move_history(app, 0);
+          (void)eightvo_move_history(app, 0);
         }
         else if (alt && w_param == VK_RIGHT)
         {
-          (void)lectern0_move_history(app, 1);
+          (void)eightvo_move_history(app, 1);
         }
-        else if (lectern0_library_active(app))
+        else if (eightvo_library_active(app))
         {
-          (void)lectern0_library_route_keydown(app, w_param, shift);
+          (void)eightvo_library_route_keydown(app, w_param, shift);
         }
         else
         {
           B32 page_move_succeeded = 0;
-          Lectern0ReaderKeyRoute route =
-            lectern0_reader_view_route_keydown_ex(app,
+          EightvoReaderKeyRoute route =
+            eightvo_reader_view_route_keydown_ex(app,
                                                   w_param,
                                                   shift,
                                                   &page_move_succeeded);
-          if (route == Lectern0ReaderKeyRoute_CloseRequested)
+          if (route == EightvoReaderKeyRoute_CloseRequested)
           {
             InvalidateRect(window, 0, FALSE);
             return 0;
           }
           repeat_handled = repeat_candidate && page_move_succeeded &&
-            route == Lectern0ReaderKeyRoute_Handled;
+            route == EightvoReaderKeyRoute_Handled;
         }
         if (repeat_handled)
         {
-          lectern0_start_page_repeat(app, w_param, repeat_direction);
+          eightvo_start_page_repeat(app, w_param, repeat_direction);
         }
         InvalidateRect(window, 0, FALSE);
       }
@@ -12957,11 +12957,11 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app)
       {
         if ((app->page_repeat_active || app->page_action_pending) &&
-            lectern0_page_repeat_modifier_key(w_param))
+            eightvo_page_repeat_modifier_key(w_param))
         {
-          lectern0_cancel_page_repeat_for_modifier(app);
+          eightvo_cancel_page_repeat_for_modifier(app);
         }
-        lectern0_page_action_release_key(app, w_param);
+        eightvo_page_action_release_key(app, w_param);
       }
       return 0;
     } break;
@@ -12971,7 +12971,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       if (app)
       {
         if (app->page_repeat_active || app->page_action_pending)
-          lectern0_cancel_page_repeat_for_modifier(app);
+          eightvo_cancel_page_repeat_for_modifier(app);
         if (w_param == app->page_repeat_cancelled_key)
           app->page_repeat_cancelled_key = 0;
       }
@@ -12979,14 +12979,14 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 
     case WM_KILLFOCUS:
     {
-      if (app) lectern0_cancel_page_repeat_for_focus(app);
+      if (app) eightvo_cancel_page_repeat_for_focus(app);
     } break;
 
     case WM_TIMER:
     {
-      if (app && w_param == Lectern0PresentationRetryTimerId)
+      if (app && w_param == EightvoPresentationRetryTimerId)
       {
-        (void)KillTimer(window, Lectern0PresentationRetryTimerId);
+        (void)KillTimer(window, EightvoPresentationRetryTimerId);
         if (app->page_action_waiting_for_present)
         {
           if (app->page_action_presentation_retry_fired_count < UINT32_MAX)
@@ -12995,55 +12995,55 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         return 0;
       }
-      if (app && w_param == Lectern0StateSaveTimerId)
+      if (app && w_param == EightvoStateSaveTimerId)
       {
         if (app->page_repeat_active || app->page_action_waiting_for_present ||
             app->page_action_pending)
         {
-          (void)KillTimer(window, Lectern0StateSaveTimerId);
+          (void)KillTimer(window, EightvoStateSaveTimerId);
           app->state_save_pending = 1;
           return 0;
         }
-        (void)lectern0_save_state(app);
+        (void)eightvo_save_state(app);
         return 0;
       }
-      if (app && w_param == Lectern0AdjacentWarmTimerId)
+      if (app && w_param == EightvoAdjacentWarmTimerId)
       {
-        (void)lectern0_adjacent_warm_step(app);
+        (void)eightvo_adjacent_warm_step(app);
         return 0;
       }
-      if (app && w_param == Lectern0LocationWarmTimerId)
+      if (app && w_param == EightvoLocationWarmTimerId)
       {
-        (void)lectern0_location_warm_step(app);
+        (void)eightvo_location_warm_step(app);
         return 0;
       }
     } break;
 
-    case Lectern0PageRepeatProbeMutationMessage:
+    case EightvoPageRepeatProbeMutationMessage:
     {
       if (app && win32 && win32->page_repeat_probe_track_paints &&
-          w_param < Lectern0PageRepeatProbeMutationCount)
+          w_param < EightvoPageRepeatProbeMutationCount)
       {
         switch ((U32)w_param)
         {
           case 0:
             app->suppress_native_picker = 1;
-            (void)lectern0_pick_epub(app);
+            (void)eightvo_pick_epub(app);
             app->suppress_native_picker = 0;
             break;
-          case 1: (void)lectern0_move_history(app, 0); break;
+          case 1: (void)eightvo_move_history(app, 0); break;
           case 2:
-            (void)lectern0_apply_setting(
+            (void)eightvo_apply_setting(
               app, ReaderViewSetting_Theme, (ReaderViewKey)4001);
             break;
-          case 3: (void)lectern0_seek_location(app, 0); break;
+          case 3: (void)eightvo_seek_location(app, 0); break;
           case 4:
-            lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+            eightvo_apply_reader_view_action(app, &(ReaderViewAction){
               .kind = ReaderViewAction_NextPage,
             });
             break;
-          case 5: (void)lectern0_repaginate(app); break;
-          case 6: (void)lectern0_close_book(app); break;
+          case 5: (void)eightvo_repaginate(app); break;
+          case 6: (void)eightvo_close_book(app); break;
         }
       }
       return 0;
@@ -13054,7 +13054,7 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       B32 had_update_region = GetUpdateRect(window, 0, FALSE) != 0;
       PAINTSTRUCT paint = {0};
       BeginPaint(window, &paint);
-      B32 presented_complete = app ? lectern0_render(app) : 0;
+      B32 presented_complete = app ? eightvo_render(app) : 0;
       EndPaint(window, &paint);
       if (win32 && win32->page_repeat_probe_track_paints &&
           !had_update_region &&
@@ -13067,12 +13067,12 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
       {
         B32 needs_frame = app->reader_view_frame.action_count > 0 ||
           app->reader_view_frame.change_flags != ReaderViewFrameChange_None;
-        lectern0_apply_reader_view_actions(app);
+        eightvo_apply_reader_view_actions(app);
         if (needs_frame) InvalidateRect(window, 0, FALSE);
-        lectern0_note_stable_presentation(app,
+        eightvo_note_stable_presentation(app,
                                           presented_complete,
                                           needs_frame);
-        lectern0_page_repeat_note_presented_frame(
+        eightvo_page_repeat_note_presented_frame(
           app, app->last_present_complete);
       }
       return 0;
@@ -13080,9 +13080,9 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 
     case WM_DESTROY:
     {
-      if (app) { lectern0_stop_page_repeat(app); }
+      if (app) { eightvo_stop_page_repeat(app); }
       if (app && app->accessibility)
-        lectern0_accessibility_destroy(app->accessibility);
+        eightvo_accessibility_destroy(app->accessibility);
       PostQuitMessage(0);
       return 0;
     } break;
@@ -13091,10 +13091,10 @@ lectern0_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 }
 
 FUNCTION B32
-lectern0_reader_view_host_icon_raster_regression(Lectern0App *app);
+eightvo_reader_view_host_icon_raster_regression(EightvoApp *app);
 
 FUNCTION int
-lectern0_run_saved_position_first_load_smoke(const char *path,
+eightvo_run_saved_position_first_load_smoke(const char *path,
                                              U32 spine_index,
                                              U64 byte_offset)
 {
@@ -13106,42 +13106,42 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     MaxFirstVisibleMilliseconds = 150,
     MaxRowsBuilt = 384,
   };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U32 *pixels = (U32 *)calloc(
     (size_t)SmokeWidth * SmokeHeight, sizeof(U32));
   RenderBuffer buffer = {0};
   U64 frequency = os_time_frequency();
   U64 init_start = os_time_ticks();
   if (!pixels || !path || !path[0] || frequency == 0 ||
-      !lectern0_app_init(&app, SmokeWidth, SmokeHeight, 1, 0) ||
-      !lectern0_library_normalize_path(path,
+      !eightvo_app_init(&app, SmokeWidth, SmokeHeight, 1, 0) ||
+      !eightvo_library_normalize_path(path,
                                        app.saved.path,
                                        ARRAY_COUNT(app.saved.path)))
   {
     fprintf(stderr,
-            "lectern0_saved_position_first_load_smoke result=fail reason=init\n");
-    lectern0_app_release(&app);
+            "eightvo_saved_position_first_load_smoke result=fail reason=init\n");
+    eightvo_app_release(&app);
     free(pixels);
     return 1;
   }
   render_buffer_init(&buffer, pixels, SmokeWidth, SmokeHeight, SmokeWidth);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   app.saved.valid = 1;
   app.saved.spine_index = spine_index;
   app.saved.byte_offset = byte_offset;
 
   U64 open_start = os_time_ticks();
-  B32 opened = lectern0_open_path(&app, path);
+  B32 opened = eightvo_open_path(&app, path);
   U64 open_ticks = os_time_ticks() - open_start;
   app.first_reader_present_pending = 1;
   B32 adjacent_warm_blocked_before_present =
     app.adjacent_warm_pending &&
-    !lectern0_adjacent_warm_step(&app) &&
+    !eightvo_adjacent_warm_step(&app) &&
     app.adjacent_warm_pending &&
     !app.adjacent_warm_frame_ready &&
     app.adjacent_warm_next_text_command == 0;
   app.highlight_count = 1;
-  app.highlights[0] = (Lectern0Highlight){
+  app.highlights[0] = (EightvoHighlight){
     .id = 1,
     .spine_index = app.layout_key.spine_count ?
       app.layout_key.spine_count - 1 : app.reader.active_spine_index,
@@ -13150,15 +13150,15 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     .color_index = 0,
     .is_highlight = 1,
   };
-  lectern0_copy_cstr(app.highlights[0].section,
+  eightvo_copy_cstr(app.highlights[0].section,
                      ARRAY_COUNT(app.highlights[0].section),
                      "Deferred annotation location");
-  lectern0_copy_cstr(app.highlights[0].text,
+  eightvo_copy_cstr(app.highlights[0].text,
                      ARRAY_COUNT(app.highlights[0].text),
                      "Deferred");
   app.annotation_revision += 1;
   U64 first_render_start = os_time_ticks();
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 first_render_ticks = os_time_ticks() - first_render_start;
   B32 annotation_locations_deferred =
     app.reader_view_projection.right.row_count == 1 &&
@@ -13172,7 +13172,7 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
   app.highlight_count = 0;
   app.annotation_revision += 1;
   U64 second_render_start = os_time_ticks();
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 second_render_ticks = os_time_ticks() - second_render_start;
   U64 total_ticks = os_time_ticks() - init_start;
   double open_ms = 1000.0 * (double)open_ticks / (double)frequency;
@@ -13211,10 +13211,10 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
     first_visible_ms <= MaxFirstVisibleMilliseconds &&
     adjacent_warm_blocked_before_present &&
     annotation_locations_deferred &&
-    lectern0_frame_presentation_is_complete(&app);
+    eightvo_frame_presentation_is_complete(&app);
 
   fprintf(passed ? stdout : stderr,
-          "lectern0_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f warm_before_present=%s annotation_locations=%s spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
+          "eightvo_saved_position_first_load_smoke result=%s open_ms=%.3f first_render_ms=%.3f first_visible_ms=%.3f second_render_ms=%.3f first_reader_view_ms=%.3f first_reader_page_ms=%.3f first_ui_adapt_ms=%.3f first_execute_ms=%.3f total_ms=%.3f warm_before_present=%s annotation_locations=%s spine=%u byte=%llu page=%llu/%llu active_pages=%llu total_pages=%llu active_rows=%llu rows_built=%llu bytes_laid_out=%llu window_rebuilds=%llu full_rebuilds=%llu active_complete=%d\n",
           passed ? "pass" : "fail",
           open_ms,
           first_render_ms,
@@ -13241,26 +13241,26 @@ lectern0_run_saved_position_first_load_smoke(const char *path,
           (unsigned long long)
             app.reader.navigation_stats.full_pagination_rebuild_count,
           active_spine ? active_spine->rows_complete : 0);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   free(pixels);
   return passed ? 0 : 1;
 }
 
 FUNCTION int
-lectern0_run_headless(const char *path)
+eightvo_run_headless(const char *path)
 {
-  Lectern0App app = {0};
-  if (!lectern0_app_init(&app, 1000, 720, 0, 0) || !lectern0_open_path(&app, path))
+  EightvoApp app = {0};
+  if (!eightvo_app_init(&app, 1000, 720, 0, 0) || !eightvo_open_path(&app, path))
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=open\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=open\n");
+    eightvo_app_release(&app);
     return 1;
   }
-  if (!lectern0_reader_view_host_icon_raster_regression(&app))
+  if (!eightvo_reader_view_host_icon_raster_regression(&app))
   {
     fprintf(stderr,
-            "lectern0_host_smoke result=fail reason=host_icon_raster\n");
-    lectern0_app_release(&app);
+            "eightvo_host_smoke result=fail reason=host_icon_raster\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13270,7 +13270,7 @@ lectern0_run_headless(const char *path)
                                      epub_reader_document_id(&app.reader),
                                      &nav_count) != DocError_Ok ||
       nav_count < 2 ||
-      lectern0_navigate_to_nav_point(&app,
+      eightvo_navigate_to_nav_point(&app,
                                      1,
                                      &nav_navigation) != EpubReaderResult_Ok ||
       !nav_navigation.had_fragment ||
@@ -13278,8 +13278,8 @@ lectern0_run_headless(const char *path)
       nav_navigation.fragment_fallback ||
       app.reader.active_spine_index != 1)
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=contents_navigation\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=contents_navigation\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13287,20 +13287,20 @@ lectern0_run_headless(const char *path)
                                   str8_from_cstr("standalone host proof")) ||
       app.reader.search_match_count == 0)
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=find_query\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=find_query\n");
+    eightvo_app_release(&app);
     return 1;
   }
   EpubReaderSearchNavigationResult search_navigation = {0};
-  if (lectern0_navigate_to_search_match(&app,
+  if (eightvo_navigate_to_search_match(&app,
                                         0,
                                         &search_navigation) != EpubReaderResult_Ok ||
       search_navigation.match.spine_index != 0 ||
       app.reader.active_spine_index != 0 ||
       app.reader.back_stack_count < 2)
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=find_navigation\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=find_navigation\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13309,10 +13309,10 @@ lectern0_run_headless(const char *path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok)
     {
-      fprintf(stderr, "lectern0_host_smoke result=fail reason=forward\n");
-      lectern0_app_release(&app);
+      fprintf(stderr, "eightvo_host_smoke result=fail reason=forward\n");
+      eightvo_app_release(&app);
       return 1;
     }
     crossed = app.reader.active_spine_index != start_spine;
@@ -13321,29 +13321,29 @@ lectern0_run_headless(const char *path)
   U32 frame_gap_start = 0;
   U32 frame_gap_end = 0;
   if (crossed &&
-      !lectern0_frame_text_rows_are_complete(&app.frame,
+      !eightvo_frame_text_rows_are_complete(&app.frame,
                                              &frame_gap_start,
                                              &frame_gap_end))
   {
     fprintf(stderr,
-            "lectern0_host_smoke result=fail reason=frame_text_gap gap=%u..%u text=%llu rows=%u\n",
+            "eightvo_host_smoke result=fail reason=frame_text_gap gap=%u..%u text=%llu rows=%u\n",
             frame_gap_start,
             frame_gap_end,
             (unsigned long long)app.frame.visible_text.size,
             app.frame.style_row_count);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
-  if (!crossed || lectern0_move_page(&app, -1) != EpubReaderResult_Ok ||
+  if (!crossed || eightvo_move_page(&app, -1) != EpubReaderResult_Ok ||
       app.reader.active_spine_index != start_spine ||
-      lectern0_move_page(&app, 1) != EpubReaderResult_Ok ||
+      eightvo_move_page(&app, 1) != EpubReaderResult_Ok ||
       app.reader.current_page.spine_index != cross_page.spine_index ||
       app.reader.current_page.first_byte != cross_page.first_byte ||
-      !lectern0_capture_frame(&app))
+      !eightvo_capture_frame(&app))
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=cross_spine\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=cross_spine\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13351,39 +13351,39 @@ lectern0_run_headless(const char *path)
   U64 resize_byte = app.reader.view_byte_offset;
   app.width = 760;
   app.height = 560;
-  if (!lectern0_repaginate(&app) ||
+  if (!eightvo_repaginate(&app) ||
       app.reader.active_spine_index != resize_spine ||
       app.reader.current_page.first_byte > resize_byte ||
       app.reader.current_page.one_past_last_byte <= resize_byte ||
       !app.frame.ready || !app.frame.document_open)
   {
-    fprintf(stderr, "lectern0_host_smoke result=fail reason=resize\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_host_smoke result=fail reason=resize\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
   U64 hash = u64_hash_str8(app.frame.visible_text);
   fprintf(stdout,
-          "lectern0_host_smoke result=pass spine=%u page=%llu/%llu text=%llu toc=1 find=1 carets=frozen18x32 hash=%016llx\n",
+          "eightvo_host_smoke result=pass spine=%u page=%llu/%llu text=%llu toc=1 find=1 carets=frozen18x32 hash=%016llx\n",
           app.frame.spine_index,
           (unsigned long long)app.frame.page_index,
           (unsigned long long)app.frame.page_count,
           (unsigned long long)app.frame.visible_text.size,
           (unsigned long long)hash);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION int
-lectern0_run_render_smoke(const char *path, const char *bmp_path)
+eightvo_run_render_smoke(const char *path, const char *bmp_path)
 {
   enum { RenderWidth = 1100, RenderHeight = 760 };
-  Lectern0App app = {0};
-  if (!lectern0_app_init(&app, RenderWidth, RenderHeight, 1, 0) ||
-      !lectern0_open_path(&app, path))
+  EightvoApp app = {0};
+  if (!eightvo_app_init(&app, RenderWidth, RenderHeight, 1, 0) ||
+      !eightvo_open_path(&app, path))
   {
-    fprintf(stderr, "lectern0_visual_smoke result=fail reason=open\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_visual_smoke result=fail reason=open\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13391,11 +13391,11 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    EpubReaderResult move = lectern0_move_page(&app, 1);
+    EpubReaderResult move = eightvo_move_page(&app, 1);
     if (move != EpubReaderResult_Ok)
     {
-      fprintf(stderr, "lectern0_visual_smoke result=fail reason=forward\n");
-      lectern0_app_release(&app);
+      fprintf(stderr, "eightvo_visual_smoke result=fail reason=forward\n");
+      eightvo_app_release(&app);
       return 1;
     }
     crossed = app.reader.active_spine_index != start_spine;
@@ -13404,13 +13404,13 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
   U32 gap_start = 0;
   U32 gap_end = 0;
   if (!crossed ||
-      !lectern0_frame_text_rows_are_complete(&app.frame, &gap_start, &gap_end))
+      !eightvo_frame_text_rows_are_complete(&app.frame, &gap_start, &gap_end))
   {
     fprintf(stderr,
-            "lectern0_visual_smoke result=fail reason=frame gap=%u..%u\n",
+            "eightvo_visual_smoke result=fail reason=frame gap=%u..%u\n",
             gap_start,
             gap_end);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13418,32 +13418,32 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
   if (!pixels)
   {
-    fprintf(stderr, "lectern0_visual_smoke result=fail reason=memory\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_visual_smoke result=fail reason=memory\n");
+    eightvo_app_release(&app);
     return 1;
   }
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, RenderWidth, RenderHeight, RenderWidth);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (!app.presentation_complete)
   {
-    fprintf(stderr, "lectern0_visual_smoke result=fail reason=presentation\n");
+    fprintf(stderr, "eightvo_visual_smoke result=fail reason=presentation\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   U64 pixel_hash = u64_hash_bytes(pixels, pixel_count * sizeof(U32));
-  B32 wrote = lectern0_write_bmp(bmp_path, pixels, RenderWidth, RenderHeight);
+  B32 wrote = eightvo_write_bmp(bmp_path, pixels, RenderWidth, RenderHeight);
   free(pixels);
   if (!wrote)
   {
-    fprintf(stderr, "lectern0_visual_smoke result=fail reason=write\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_visual_smoke result=fail reason=write\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
   fprintf(stdout,
-          "lectern0_visual_smoke result=pass spine=%u page=%llu/%llu rows=%u pixels=%dx%d hash=%016llx presentation=%016llx bmp=%s\n",
+          "eightvo_visual_smoke result=pass spine=%u page=%llu/%llu rows=%u pixels=%dx%d hash=%016llx presentation=%016llx bmp=%s\n",
           app.frame.spine_index,
           (unsigned long long)app.frame.page_index,
           (unsigned long long)app.frame.page_count,
@@ -13453,12 +13453,12 @@ lectern0_run_render_smoke(const char *path, const char *bmp_path)
           (unsigned long long)pixel_hash,
           (unsigned long long)app.presentation_hash,
           bmp_path);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION U32
-lectern0_loaded_image_count(const EpubReaderFrame *frame)
+eightvo_loaded_image_count(const EpubReaderFrame *frame)
 {
   if (!frame) { return 0; }
   U32 result = 0;
@@ -13475,7 +13475,7 @@ lectern0_loaded_image_count(const EpubReaderFrame *frame)
 }
 
 FUNCTION B32
-lectern0_write_frame_evidence(Lectern0App *app,
+eightvo_write_frame_evidence(EightvoApp *app,
                               const char *bmp_path,
                               U64 *out_hash)
 {
@@ -13487,9 +13487,9 @@ lectern0_write_frame_evidence(Lectern0App *app,
   if (!pixels) { return 0; }
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, RenderWidth, RenderHeight, RenderWidth);
-  lectern0_render_to_buffer(app, &buffer);
+  eightvo_render_to_buffer(app, &buffer);
   B32 result = app->presentation_complete &&
-    lectern0_write_bmp(bmp_path, pixels, RenderWidth, RenderHeight);
+    eightvo_write_bmp(bmp_path, pixels, RenderWidth, RenderHeight);
   if (result && out_hash)
   {
     *out_hash = u64_hash_bytes(pixels, pixel_count * sizeof(U32));
@@ -13499,32 +13499,32 @@ lectern0_write_frame_evidence(Lectern0App *app,
 }
 
 FUNCTION int
-lectern0_run_image_smoke(const char *path,
+eightvo_run_image_smoke(const char *path,
                          const char *cover_bmp_path,
                          const char *inline_bmp_path)
 {
   enum { RenderWidth = 1100, RenderHeight = 760 };
-  Lectern0App app = {0};
-  if (!lectern0_app_init(&app, RenderWidth, RenderHeight, 1, 0) ||
-      !lectern0_open_path(&app, path))
+  EightvoApp app = {0};
+  if (!eightvo_app_init(&app, RenderWidth, RenderHeight, 1, 0) ||
+      !eightvo_open_path(&app, path))
   {
-    fprintf(stderr, "lectern0_image_smoke result=fail reason=open\n");
-    lectern0_app_release(&app);
+    fprintf(stderr, "eightvo_image_smoke result=fail reason=open\n");
+    eightvo_app_release(&app);
     return 1;
   }
 
-  U32 cover_loaded = lectern0_loaded_image_count(&app.frame);
+  U32 cover_loaded = eightvo_loaded_image_count(&app.frame);
   U64 cover_hash = 0;
   if (app.frame.image_count == 0 || cover_loaded == 0 ||
-      !lectern0_capture_frame(&app) ||
-      lectern0_loaded_image_count(&app.frame) == 0 ||
-      !lectern0_write_frame_evidence(&app, cover_bmp_path, &cover_hash))
+      !eightvo_capture_frame(&app) ||
+      eightvo_loaded_image_count(&app.frame) == 0 ||
+      !eightvo_write_frame_evidence(&app, cover_bmp_path, &cover_hash))
   {
     fprintf(stderr,
-            "lectern0_image_smoke result=fail reason=cover images=%u loaded=%u\n",
+            "eightvo_image_smoke result=fail reason=cover images=%u loaded=%u\n",
             app.frame.image_count,
             cover_loaded);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
@@ -13532,31 +13532,31 @@ lectern0_run_image_smoke(const char *path,
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok)
     {
       break;
     }
     crossed = app.reader.active_spine_index != cover_spine;
   }
 
-  U32 inline_loaded = lectern0_loaded_image_count(&app.frame);
+  U32 inline_loaded = eightvo_loaded_image_count(&app.frame);
   U64 inline_hash = 0;
   if (!crossed || app.frame.image_count == 0 || inline_loaded == 0 ||
-      !lectern0_capture_frame(&app) ||
-      lectern0_loaded_image_count(&app.frame) == 0 ||
-      !lectern0_write_frame_evidence(&app, inline_bmp_path, &inline_hash))
+      !eightvo_capture_frame(&app) ||
+      eightvo_loaded_image_count(&app.frame) == 0 ||
+      !eightvo_write_frame_evidence(&app, inline_bmp_path, &inline_hash))
   {
     fprintf(stderr,
-            "lectern0_image_smoke result=fail reason=inline crossed=%d images=%u loaded=%u\n",
+            "eightvo_image_smoke result=fail reason=inline crossed=%d images=%u loaded=%u\n",
             crossed,
             app.frame.image_count,
             inline_loaded);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
   fprintf(stdout,
-          "lectern0_image_smoke result=pass cover_loaded=%u inline_loaded=%u entries=%u lookups=%llu hits=%llu misses=%llu cover_hash=%016llx inline_hash=%016llx\n",
+          "eightvo_image_smoke result=pass cover_loaded=%u inline_loaded=%u entries=%u lookups=%llu hits=%llu misses=%llu cover_hash=%016llx inline_hash=%016llx\n",
           cover_loaded,
           inline_loaded,
           app.image_cache.entry_count,
@@ -13565,11 +13565,11 @@ lectern0_run_image_smoke(const char *path,
           (unsigned long long)app.image_cache.miss_count,
           (unsigned long long)cover_hash,
           (unsigned long long)inline_hash);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
-typedef struct Lectern0ReaderImageFitEvidence
+typedef struct EightvoReaderImageFitEvidence
 {
   U32 spine_index;
   U64 page_index;
@@ -13585,15 +13585,15 @@ typedef struct Lectern0ReaderImageFitEvidence
   S32 source_height_px;
   U64 pixel_hash;
   U64 presentation_hash;
-} Lectern0ReaderImageFitEvidence;
+} EightvoReaderImageFitEvidence;
 
 FUNCTION B32
-lectern0_capture_reader_image_fit_evidence(
-  Lectern0App *app,
+eightvo_capture_reader_image_fit_evidence(
+  EightvoApp *app,
   RenderBuffer *buffer,
   const char *case_name,
   const char *bmp_path,
-  Lectern0ReaderImageFitEvidence *out_evidence)
+  EightvoReaderImageFitEvidence *out_evidence)
 {
   if (out_evidence) { MemoryZeroStruct(out_evidence); }
   if (!app || !buffer || !buffer->pixels || !case_name || !bmp_path ||
@@ -13605,12 +13605,12 @@ lectern0_capture_reader_image_fit_evidence(
   U64 prepared_build_before = app->image_cache.prepared_build_count;
   U64 prepared_hit_before = app->image_cache.prepared_hit_count;
   U64 prepared_fallback_before = app->image_cache.prepared_fallback_count;
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
   U64 pixel_count = (U64)buffer->width * (U64)buffer->height;
   U64 pixel_hash = u64_hash_bytes(buffer->pixels,
                                   pixel_count * sizeof(U32));
-  if (!lectern0_write_bmp(bmp_path,
+  if (!eightvo_write_bmp(bmp_path,
                           buffer->pixels,
                           buffer->width,
                           buffer->height) ||
@@ -13621,7 +13621,7 @@ lectern0_capture_reader_image_fit_evidence(
       app->presentation_frame.media_count != 1)
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit_case result=fail case=%s reason=frame rows=%u presentation_rows=%u media=%u complete=%d bmp=%s\n",
+            "eightvo_reader_image_fit_case result=fail case=%s reason=frame rows=%u presentation_rows=%u media=%u complete=%d bmp=%s\n",
             case_name,
             app->frame.style_row_count,
             app->presentation_frame.row_count,
@@ -13632,7 +13632,7 @@ lectern0_capture_reader_image_fit_evidence(
   }
 
   const EpubReaderFrameStyleRow *row = app->frame.style_rows;
-  EpubReaderFrameImage *image = lectern0_image_for_row(&app->frame, row->row);
+  EpubReaderFrameImage *image = eightvo_image_for_row(&app->frame, row->row);
   const PresentationEngineBlockFlowRow *presentation_row =
     app->presentation_frame.rows;
   if (!image ||
@@ -13644,7 +13644,7 @@ lectern0_capture_reader_image_fit_evidence(
         app->presentation_frame.media_count)
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit_case result=fail case=%s reason=image placement=%u status=%u src=%dx%d bmp=%s\n",
+            "eightvo_reader_image_fit_case result=fail case=%s reason=image placement=%u status=%u src=%dx%d bmp=%s\n",
             case_name,
             image ? image->image_placement : 0,
             image ? image->status : 0,
@@ -13664,7 +13664,7 @@ lectern0_capture_reader_image_fit_evidence(
   S32 fit_w = 0;
   S32 fit_h = 0;
   if (canonical_height <= 0 || canonical_height > INT32_MAX ||
-      !lectern0_fit_image_rect(image->src_w,
+      !eightvo_fit_image_rect(image->src_w,
                                image->src_h,
                                media->rect.x,
                                media->rect.y,
@@ -13676,7 +13676,7 @@ lectern0_capture_reader_image_fit_evidence(
                                &fit_h))
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit_case result=fail case=%s reason=fit units=%u line_height=%d media=%dx%d bmp=%s\n",
+            "eightvo_reader_image_fit_case result=fail case=%s reason=fit units=%u line_height=%d media=%dx%d bmp=%s\n",
             case_name, visual_units, app->layout_key.line_height,
             media->rect.w, media->rect.h, bmp_path);
     return 0;
@@ -13702,7 +13702,7 @@ lectern0_capture_reader_image_fit_evidence(
            prepared_index < app->image_cache.prepared_image_count;
            prepared_index += 1)
       {
-        const Lectern0PreparedImage *prepared =
+        const EightvoPreparedImage *prepared =
           app->image_cache.prepared_images + prepared_index;
         if (command->v.sprite.pixels == prepared->pixels &&
             command->v.sprite.pixels != image->pixels &&
@@ -13753,7 +13753,7 @@ lectern0_capture_reader_image_fit_evidence(
       app->image_cache.prepared_fallback_count != prepared_fallback_before)
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit_case result=fail case=%s reason=contract spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d canonical=%lld sprites=%u backgrounds=%u area_prepared=%d builds=%llu hits=%llu fallbacks=%llu aspect=%d bmp=%s\n",
+            "eightvo_reader_image_fit_case result=fail case=%s reason=contract spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d canonical=%lld sprites=%u backgrounds=%u area_prepared=%d builds=%llu hits=%llu fallbacks=%llu aspect=%d bmp=%s\n",
             case_name,
             app->frame.spine_index,
             (unsigned long long)app->frame.page_index,
@@ -13778,7 +13778,7 @@ lectern0_capture_reader_image_fit_evidence(
     return 0;
   }
 
-  *out_evidence = (Lectern0ReaderImageFitEvidence){
+  *out_evidence = (EightvoReaderImageFitEvidence){
     .spine_index = app->frame.spine_index,
     .page_index = app->frame.page_index,
     .visual_units = visual_units,
@@ -13795,7 +13795,7 @@ lectern0_capture_reader_image_fit_evidence(
     .presentation_hash = app->presentation_hash,
   };
   fprintf(stdout,
-          "lectern0_reader_image_fit_case result=pass case=%s spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d sampling=area_prepared builds=1 hits=1 fallbacks=0 pixel=%016llx presentation=%016llx bmp=%s\n",
+          "eightvo_reader_image_fit_case result=pass case=%s spine=%u page=%llu units=%u line_height=%d body=%dx%d media=%dx%d fit=%dx%d src=%dx%d sampling=area_prepared builds=1 hits=1 fallbacks=0 pixel=%016llx presentation=%016llx bmp=%s\n",
           case_name,
           out_evidence->spine_index,
           (unsigned long long)out_evidence->page_index,
@@ -13816,39 +13816,39 @@ lectern0_capture_reader_image_fit_evidence(
 }
 
 FUNCTION int
-lectern0_run_reader_image_fit_smoke(const char *epub_path,
+eightvo_run_reader_image_fit_smoke(const char *epub_path,
                                     const char *output_prefix)
 {
   enum { Width = 1182, Height = 713, CaseCount = 4 };
   static const char *case_names[CaseCount] = {
     "cover", "maps_1", "maps_2", "maps_3",
   };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
-  Lectern0ReaderImageFitEvidence evidence[CaseCount] = {0};
+  EightvoReaderImageFitEvidence evidence[CaseCount] = {0};
   RenderBuffer buffer = {0};
-  char bmp_path[Lectern0PathCap] = {0};
+  char bmp_path[EightvoPathCap] = {0};
   int result = 1;
   if (!pixels || !epub_path || !epub_path[0] ||
       !output_prefix || !output_prefix[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0))
+      !eightvo_app_init(&app, Width, Height, 1, 0))
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit result=fail reason=setup\n");
+            "eightvo_reader_image_fit result=fail reason=setup\n");
     goto cleanup;
   }
-  app.theme = Lectern0Theme_Dark;
-  if (!lectern0_open_path(&app, epub_path))
+  app.theme = EightvoTheme_Dark;
+  if (!eightvo_open_path(&app, epub_path))
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit result=fail reason=open\n");
+            "eightvo_reader_image_fit result=fail reason=open\n");
     goto cleanup;
   }
   render_buffer_init(&buffer, pixels, Width, Height, Width);
 
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_%s.bmp", output_prefix, case_names[0]);
-  if (!lectern0_capture_reader_image_fit_evidence(
+  if (!eightvo_capture_reader_image_fit_evidence(
         &app, &buffer, case_names[0], bmp_path, evidence + 0))
   {
     goto cleanup;
@@ -13860,12 +13860,12 @@ lectern0_run_reader_image_fit_smoke(const char *epub_path,
                                      epub_reader_document_id(&app.reader),
                                      &nav_count) != DocError_Ok ||
       nav_count == 0 ||
-      lectern0_navigate_to_nav_point(&app, 0, &navigation) !=
+      eightvo_navigate_to_nav_point(&app, 0, &navigation) !=
         EpubReaderResult_Ok ||
       app.reader.active_spine_index != 9)
   {
     fprintf(stderr,
-            "lectern0_reader_image_fit result=fail reason=maps_navigation nav_count=%u spine=%u\n",
+            "eightvo_reader_image_fit result=fail reason=maps_navigation nav_count=%u spine=%u\n",
             nav_count, app.reader.active_spine_index);
     goto cleanup;
   }
@@ -13873,16 +13873,16 @@ lectern0_run_reader_image_fit_smoke(const char *epub_path,
   for (U32 case_index = 1; case_index < CaseCount; case_index += 1)
   {
     if (case_index > 1 &&
-        lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+        eightvo_move_page(&app, 1) != EpubReaderResult_Ok)
     {
       fprintf(stderr,
-              "lectern0_reader_image_fit result=fail reason=maps_page case=%u\n",
+              "eightvo_reader_image_fit result=fail reason=maps_page case=%u\n",
               case_index);
       goto cleanup;
     }
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                       "%s_%s.bmp", output_prefix, case_names[case_index]);
-    if (!lectern0_capture_reader_image_fit_evidence(
+    if (!eightvo_capture_reader_image_fit_evidence(
           &app, &buffer, case_names[case_index], bmp_path,
           evidence + case_index))
     {
@@ -13891,7 +13891,7 @@ lectern0_run_reader_image_fit_smoke(const char *epub_path,
   }
 
   fprintf(stdout,
-          "lectern0_reader_image_fit result=pass book=gotm_new cases=4 viewport=%dx%d image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=%016llx,%016llx,%016llx,%016llx output=%s\n",
+          "eightvo_reader_image_fit result=pass book=gotm_new cases=4 viewport=%dx%d image_only=4 canonical_units=reader0 cap320=absent sampling=area_prepared hashes=%016llx,%016llx,%016llx,%016llx output=%s\n",
           Width, Height,
           (unsigned long long)evidence[0].pixel_hash,
           (unsigned long long)evidence[1].pixel_hash,
@@ -13902,12 +13902,12 @@ lectern0_run_reader_image_fit_smoke(const char *epub_path,
 
 cleanup:
   if (pixels) { free(pixels); }
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION U64
-lectern0_reader_view_hash_mix(U64 hash, U64 value)
+eightvo_reader_view_hash_mix(U64 hash, U64 value)
 {
   hash ^= value;
   hash *= 1099511628211ull;
@@ -13915,7 +13915,7 @@ lectern0_reader_view_hash_mix(U64 hash, U64 value)
 }
 
 FUNCTION U64
-lectern0_reader_view_icon_hash_u32(U64 hash, U32 value)
+eightvo_reader_view_icon_hash_u32(U64 hash, U32 value)
 {
   U64 result = hash;
   for (U32 shift = 0; shift < 32; shift += 8)
@@ -13927,7 +13927,7 @@ lectern0_reader_view_icon_hash_u32(U64 hash, U32 value)
 }
 
 FUNCTION U64
-lectern0_reader_view_icon_raster_hash(const U32 *pixels,
+eightvo_reader_view_icon_raster_hash(const U32 *pixels,
                                       S32 width,
                                       S32 height,
                                       S32 stride_pixels)
@@ -13935,58 +13935,58 @@ lectern0_reader_view_icon_raster_hash(const U32 *pixels,
   U64 hash = 1469598103934665603ull;
   if (!pixels || width <= 0 || height <= 0 || stride_pixels < width)
     return 0;
-  hash = lectern0_reader_view_icon_hash_u32(hash, (U32)width);
-  hash = lectern0_reader_view_icon_hash_u32(hash, (U32)height);
+  hash = eightvo_reader_view_icon_hash_u32(hash, (U32)width);
+  hash = eightvo_reader_view_icon_hash_u32(hash, (U32)height);
   for (S32 y = 0; y < height; y += 1)
     for (S32 x = 0; x < width; x += 1)
-      hash = lectern0_reader_view_icon_hash_u32(
+      hash = eightvo_reader_view_icon_hash_u32(
         hash, pixels[(size_t)y * (size_t)stride_pixels + (size_t)x]);
   return hash;
 }
 
 FUNCTION U64
-lectern0_reader_view_contract_hash(const ReaderViewFrame *frame)
+eightvo_reader_view_contract_hash(const ReaderViewFrame *frame)
 {
   U64 hash = 1469598103934665603ull;
   if (!frame) return hash;
-  hash = lectern0_reader_view_hash_mix(hash, (U64)frame->layout.mode);
-  hash = lectern0_reader_view_hash_mix(hash, (U64)frame->layout.toolbar_density);
-  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.x);
-  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.y);
-  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.w);
-  hash = lectern0_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.h);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)frame->layout.mode);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)frame->layout.toolbar_density);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.x);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.y);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.w);
+  hash = eightvo_reader_view_hash_mix(hash, (U64)(S64)frame->layout.viewport_rect.h);
   for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
   {
     const ReaderViewSemanticNode *node = frame->semantic_nodes + index;
-    hash = lectern0_reader_view_hash_mix(hash, node->id);
-    hash = lectern0_reader_view_hash_mix(hash, node->parent_id);
-    hash = lectern0_reader_view_hash_mix(hash, (U64)node->role);
-    hash = lectern0_reader_view_hash_mix(hash, node->flags);
-    hash = lectern0_reader_view_hash_mix(hash, node->source_key);
+    hash = eightvo_reader_view_hash_mix(hash, node->id);
+    hash = eightvo_reader_view_hash_mix(hash, node->parent_id);
+    hash = eightvo_reader_view_hash_mix(hash, (U64)node->role);
+    hash = eightvo_reader_view_hash_mix(hash, node->flags);
+    hash = eightvo_reader_view_hash_mix(hash, node->source_key);
     if (node->name.data && node->name.size > 0)
-      hash = lectern0_reader_view_hash_mix(
+      hash = eightvo_reader_view_hash_mix(
         hash, u64_hash_bytes(node->name.data, (U64)node->name.size));
   }
   return hash;
 }
 
 FUNCTION B32
-lectern0_reader_view_has_semantic(const ReaderViewFrame *frame,
+eightvo_reader_view_has_semantic(const ReaderViewFrame *frame,
                                   const char *name)
 {
   if (!frame || !name) return 0;
   for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
-    if (lectern0_reader_view_text_is(frame->semantic_nodes[index].name, name))
+    if (eightvo_reader_view_text_is(frame->semantic_nodes[index].name, name))
       return 1;
   return 0;
 }
 
 FUNCTION B32
-lectern0_reader_view_has_action(const ReaderViewFrame *frame,
+eightvo_reader_view_has_action(const ReaderViewFrame *frame,
                                 ReaderViewActionKind kind);
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_semantic_control(const ReaderViewFrame *frame,
+eightvo_reader_view_semantic_control(const ReaderViewFrame *frame,
                                       ReaderViewSemanticControl control)
 {
   if (!frame || !frame->semantic_nodes ||
@@ -13999,7 +13999,7 @@ lectern0_reader_view_semantic_control(const ReaderViewFrame *frame,
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_semantic_control_source(
+eightvo_reader_view_semantic_control_source(
   const ReaderViewFrame *frame,
   ReaderViewSemanticControl control,
   ReaderViewKey source_key)
@@ -14017,7 +14017,7 @@ lectern0_reader_view_semantic_control_source(
 }
 
 FUNCTION B32
-lectern0_reader_view_has_draw_for_source(const ReaderViewFrame *frame,
+eightvo_reader_view_has_draw_for_source(const ReaderViewFrame *frame,
                                          UI0DrawOpKind op,
                                          UI0ID source_id)
 {
@@ -14030,7 +14030,7 @@ lectern0_reader_view_has_draw_for_source(const ReaderViewFrame *frame,
 }
 
 FUNCTION const UI0DrawCommand *
-lectern0_reader_view_draw_for_source(const ReaderViewFrame *frame,
+eightvo_reader_view_draw_for_source(const ReaderViewFrame *frame,
                                      UI0DrawOpKind op,
                                      UI0ID source_id)
 {
@@ -14043,15 +14043,15 @@ lectern0_reader_view_draw_for_source(const ReaderViewFrame *frame,
 }
 
 FUNCTION B32
-lectern0_reader_view_host_icon_raster_regression(Lectern0App *app)
+eightvo_reader_view_host_icon_raster_regression(EightvoApp *app)
 {
   UI0DrawCommand command = {0};
   const U32 *left_first;
   const U32 *left_repeat;
   const U32 *right;
   const U32 *filter;
-  if (!app || Lectern0UI0IconRasterMaxWidth != 32 ||
-      Lectern0UI0IconRasterMaxHeight != 32)
+  if (!app || EightvoUI0IconRasterMaxWidth != 32 ||
+      EightvoUI0IconRasterMaxHeight != 32)
     return 0;
 
   app->ui0_icon_raster_count = 0;
@@ -14060,22 +14060,22 @@ lectern0_reader_view_host_icon_raster_regression(Lectern0App *app)
   command.rect = ui0_rect(0, 0, 18, 32);
   command.color = UI0_COLOR_RGB(31, 41, 55);
   command.stroke_color = UI0_COLOR_RGB(253, 251, 247);
-  left_first = lectern0_ui0_icon_raster(app, &command);
-  left_repeat = lectern0_ui0_icon_raster(app, &command);
+  left_first = eightvo_ui0_icon_raster(app, &command);
+  left_repeat = eightvo_ui0_icon_raster(app, &command);
   if (!left_first || left_repeat != left_first ||
       app->ui0_icon_raster_count != 1)
     return 0;
 
   command.icon_kind = UI0IconKind_PageCaretRight;
-  right = lectern0_ui0_icon_raster(app, &command);
+  right = eightvo_ui0_icon_raster(app, &command);
   if (!right || right == left_first || app->ui0_icon_raster_count != 2)
     return 0;
 
-  if (lectern0_reader_view_icon_raster_hash(
-        left_first, 18, 32, Lectern0UI0IconRasterMaxWidth) !=
+  if (eightvo_reader_view_icon_raster_hash(
+        left_first, 18, 32, EightvoUI0IconRasterMaxWidth) !=
         2165135300752429591ull ||
-      lectern0_reader_view_icon_raster_hash(
-        right, 18, 32, Lectern0UI0IconRasterMaxWidth) !=
+      eightvo_reader_view_icon_raster_hash(
+        right, 18, 32, EightvoUI0IconRasterMaxWidth) !=
         7851032404797536851ull)
     return 0;
 
@@ -14084,26 +14084,26 @@ lectern0_reader_view_host_icon_raster_regression(Lectern0App *app)
   command.clip_rect = ui0_rect(112, 64, 34, 34);
   command.color = UI0_COLOR_RGB(35, 42, 53);
   command.stroke_color = UI0_COLOR_RGB(246, 241, 232);
-  filter = lectern0_ui0_icon_raster(app, &command);
+  filter = eightvo_ui0_icon_raster(app, &command);
   if (!filter || app->ui0_icon_raster_count != 3 ||
-      lectern0_reader_view_icon_raster_hash(
-        filter, 18, 18, Lectern0UI0IconRasterMaxWidth) !=
+      eightvo_reader_view_icon_raster_hash(
+        filter, 18, 18, EightvoUI0IconRasterMaxWidth) !=
         768785035519145851ull)
     return 0;
 
-  command.rect.h = Lectern0UI0IconRasterMaxHeight + 1;
-  return lectern0_ui0_icon_raster(app, &command) == 0 &&
+  command.rect.h = EightvoUI0IconRasterMaxHeight + 1;
+  return eightvo_ui0_icon_raster(app, &command) == 0 &&
          app->ui0_icon_raster_count == 3;
 }
 
-typedef struct Lectern0ExpectedFocus
+typedef struct EightvoExpectedFocus
 {
-  Lectern0HostControlIdentity host;
+  EightvoHostControlIdentity host;
   ReaderViewSemanticControl shared;
-} Lectern0ExpectedFocus;
+} EightvoExpectedFocus;
 
 FUNCTION B32
-lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
+eightvo_reader_view_keyboard_input_routing_regression(EightvoApp *app)
 {
   if (!app) return 0;
   enum
@@ -14148,7 +14148,7 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
   };
   ReaderViewFrame saved_frame = app->reader_view_frame;
   ReaderViewState saved_state = app->reader_view_state;
-  Lectern0Input saved_input = app->input;
+  EightvoInput saved_input = app->input;
   app->reader_view_frame.semantic_nodes = nodes;
   app->reader_view_frame.semantic_node_count = ARRAY_COUNT(nodes);
 
@@ -14157,101 +14157,101 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
   app->reader_view_state.popup = ReaderViewPopup_None;
   app->reader_view_state.pending_left_panel_focus = ReaderViewLeftPanel_None;
   app->reader_view_state.focus_id = FindInput;
-  B32 result = lectern0_reader_view_text_editing(app) &&
-    !lectern0_reader_view_space_activates_focus(app) &&
-    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
-      Lectern0ReaderKeyRoute_None &&
-    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_RIGHT, 1) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_NEXT, 0) ==
-      Lectern0ReaderKeyRoute_Handled;
-  ReaderViewInput input = lectern0_reader_view_input(app);
+  B32 result = eightvo_reader_view_text_editing(app) &&
+    !eightvo_reader_view_space_activates_focus(app) &&
+    eightvo_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      EightvoReaderKeyRoute_None &&
+    eightvo_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      EightvoReaderKeyRoute_Handled &&
+    eightvo_reader_view_route_keydown(app, VK_RIGHT, 1) ==
+      EightvoReaderKeyRoute_Handled &&
+    eightvo_reader_view_route_keydown(app, VK_NEXT, 0) ==
+      EightvoReaderKeyRoute_Handled;
+  ReaderViewInput input = eightvo_reader_view_input(app);
   result = result &&
     input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
     input.range_move == ReaderViewRangeMove_NextPage &&
     input.find_text.move_delta == 1 && input.find_text.extend_selection &&
     input.find_text.commit_pressed &&
-    lectern0_reader_view_horizontal_move_is_shared(app);
+    eightvo_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.focus_id = FindClear;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_PRIOR, 0) ==
-      Lectern0ReaderKeyRoute_Handled;
-  input = lectern0_reader_view_input(app);
-  result = result && !lectern0_reader_view_text_editing(app) &&
-    lectern0_reader_view_space_activates_focus(app) &&
+    eightvo_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      EightvoReaderKeyRoute_Handled &&
+    eightvo_reader_view_route_keydown(app, VK_PRIOR, 0) ==
+      EightvoReaderKeyRoute_Handled;
+  input = eightvo_reader_view_input(app);
+  result = result && !eightvo_reader_view_text_editing(app) &&
+    eightvo_reader_view_space_activates_focus(app) &&
     (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
     input.move_horizontal_delta == 0 &&
     input.range_move == ReaderViewRangeMove_PreviousPage &&
-    !lectern0_reader_view_horizontal_move_is_shared(app);
+    !eightvo_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
   app->reader_view_state.popup = ReaderViewPopup_NoteEditor;
   app->reader_view_state.focus_id = NoteInput;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
-      Lectern0ReaderKeyRoute_None &&
-    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_DOWN, 1) ==
-      Lectern0ReaderKeyRoute_Handled;
-  input = lectern0_reader_view_input(app);
-  result = result && lectern0_reader_view_text_editing(app) &&
-    !lectern0_reader_view_space_activates_focus(app) &&
+    eightvo_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      EightvoReaderKeyRoute_None &&
+    eightvo_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      EightvoReaderKeyRoute_Handled &&
+    eightvo_reader_view_route_keydown(app, VK_DOWN, 1) ==
+      EightvoReaderKeyRoute_Handled;
+  input = eightvo_reader_view_input(app);
+  result = result && eightvo_reader_view_text_editing(app) &&
+    !eightvo_reader_view_space_activates_focus(app) &&
     input.move_horizontal_delta == 0 && input.move_vertical_delta == 0 &&
     input.note_text.text_len == 1 && input.note_text.text[0] == '\n' &&
     input.note_text.move_vertical_delta == 1 &&
     input.note_text.extend_selection &&
-    lectern0_reader_view_horizontal_move_is_shared(app);
+    eightvo_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.focus_id = NoteSave;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_RETURN, 0) ==
-      Lectern0ReaderKeyRoute_Handled;
-  input = lectern0_reader_view_input(app);
-  result = result && !lectern0_reader_view_text_editing(app) &&
-    lectern0_reader_view_space_activates_focus(app) &&
+    eightvo_reader_view_route_keydown(app, VK_RETURN, 0) ==
+      EightvoReaderKeyRoute_Handled;
+  input = eightvo_reader_view_input(app);
+  result = result && !eightvo_reader_view_text_editing(app) &&
+    eightvo_reader_view_space_activates_focus(app) &&
     (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
-    !lectern0_reader_view_horizontal_move_is_shared(app);
+    !eightvo_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.popup = ReaderViewPopup_None;
   app->reader_view_state.focus_id = NextPage;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_NEXT, 0) ==
-      Lectern0ReaderKeyRoute_Handled &&
-    lectern0_reader_view_route_keydown(app, VK_SPACE, 0) ==
-      Lectern0ReaderKeyRoute_Handled;
-  input = lectern0_reader_view_input(app);
-  result = result && !lectern0_reader_view_text_editing(app) &&
-    lectern0_reader_view_space_activates_focus(app) &&
+    eightvo_reader_view_route_keydown(app, VK_NEXT, 0) ==
+      EightvoReaderKeyRoute_Handled &&
+    eightvo_reader_view_route_keydown(app, VK_SPACE, 0) ==
+      EightvoReaderKeyRoute_Handled;
+  input = eightvo_reader_view_input(app);
+  result = result && !eightvo_reader_view_text_editing(app) &&
+    eightvo_reader_view_space_activates_focus(app) &&
     (input.ui.flags & UI0Input_ActivatePressed) != 0 &&
     input.move_horizontal_delta == 0 &&
     input.range_move == ReaderViewRangeMove_NextPage &&
-    !lectern0_reader_view_horizontal_move_is_shared(app);
+    !eightvo_reader_view_horizontal_move_is_shared(app);
 
   MemoryZeroStruct(&app->input);
   app->reader_view_state.focus_id = Progress;
   U32 progress_spine = app->reader.active_spine_index;
   U64 progress_byte = app->reader.view_byte_offset;
   result = result &&
-    lectern0_reader_view_route_keydown(app, VK_RIGHT, 0) ==
-      Lectern0ReaderKeyRoute_Handled;
-  input = lectern0_reader_view_input(app);
+    eightvo_reader_view_route_keydown(app, VK_RIGHT, 0) ==
+      EightvoReaderKeyRoute_Handled;
+  input = eightvo_reader_view_input(app);
   result = result && input.move_horizontal_delta == 1 &&
     app->reader.active_spine_index == progress_spine &&
     app->reader.view_byte_offset == progress_byte &&
-    lectern0_reader_view_horizontal_move_is_shared(app);
+    eightvo_reader_view_horizontal_move_is_shared(app);
   app->reader_view_state.focus_id = 0;
-  result = result && !lectern0_reader_view_text_editing(app) &&
-    !lectern0_reader_view_space_activates_focus(app);
+  result = result && !eightvo_reader_view_text_editing(app) &&
+    !eightvo_reader_view_space_activates_focus(app);
 
   app->input = saved_input;
   app->reader_view_state = saved_state;
@@ -14260,42 +14260,42 @@ lectern0_reader_view_keyboard_input_routing_regression(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_reader_view_find_shortcut_focus_regression(Lectern0App *app,
+eightvo_reader_view_find_shortcut_focus_regression(EightvoApp *app,
                                                      RenderBuffer *buffer)
 {
   if (!app || !buffer) return 0;
   ReaderViewState saved_state = app->reader_view_state;
-  Lectern0Input saved_input = app->input;
-  Lectern0HostControlIdentity saved_host_focus = app->host_focus_control;
+  EightvoInput saved_input = app->input;
+  EightvoHostControlIdentity saved_host_focus = app->host_focus_control;
   B32 saved_host_visible = app->host_focus_visible;
 
   app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
   app->reader_view_state.popup = ReaderViewPopup_None;
   app->reader_view_state.focus_id = 0;
-  app->host_focus_control = Lectern0HostControl_ExitReader;
+  app->host_focus_control = EightvoHostControl_ExitReader;
   app->host_focus_visible = 1;
-  lectern0_reader_view_open_find_from_shortcut(app);
+  eightvo_reader_view_open_find_from_shortcut(app);
   B32 result =
     app->reader_view_state.pending_left_panel_focus == ReaderViewLeftPanel_Find &&
-    app->host_focus_control == Lectern0HostControl_None &&
-    lectern0_reader_view_text_editing(app) &&
-    !lectern0_reader_view_space_activates_focus(app);
+    app->host_focus_control == EightvoHostControl_None &&
+    eightvo_reader_view_text_editing(app) &&
+    !eightvo_reader_view_space_activates_focus(app);
   if (result)
   {
     app->input.text[0] = 'q';
     app->input.text[1] = 0;
     app->input.text_length = 1;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     const ReaderViewSemanticNode *input =
-      lectern0_reader_view_semantic_control(
+      eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_FindInput);
     result = input && app->reader_view_state.focus_id == input->id &&
       app->reader_view_state.pending_left_panel_focus ==
         ReaderViewLeftPanel_None &&
-      lectern0_reader_view_text_editing(app) &&
-      !lectern0_reader_view_space_activates_focus(app) &&
-      lectern0_reader_view_text_equals(
+      eightvo_reader_view_text_editing(app) &&
+      !eightvo_reader_view_space_activates_focus(app) &&
+      eightvo_reader_view_text_equals(
         reader_view_find_query(&app->reader_view_state), "q");
   }
 
@@ -14303,18 +14303,18 @@ lectern0_reader_view_find_shortcut_focus_regression(Lectern0App *app,
   app->input = saved_input;
   app->host_focus_control = saved_host_focus;
   app->host_focus_visible = saved_host_visible;
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
   return result;
 }
 
 FUNCTION B32
-lectern0_reader_view_reference_focus_order(Lectern0App *app,
+eightvo_reader_view_reference_focus_order(EightvoApp *app,
                                            RenderBuffer *buffer)
 {
-  static const Lectern0ExpectedFocus expected[] = {
+  static const EightvoExpectedFocus expected[] = {
     {.shared = ReaderViewSemanticControl_Contents},
     {.shared = ReaderViewSemanticControl_Find},
-    {.host = Lectern0HostControl_ExitReader},
+    {.host = EightvoHostControl_ExitReader},
     {.shared = ReaderViewSemanticControl_Fullscreen},
     {.shared = ReaderViewSemanticControl_Annotations},
     {.shared = ReaderViewSemanticControl_FontSize},
@@ -14328,58 +14328,58 @@ lectern0_reader_view_reference_focus_order(Lectern0App *app,
   };
   if (!app || !buffer) return 0;
   const ReaderViewSemanticNode *contents =
-    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+    eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                           ReaderViewSemanticControl_Contents);
   if (!contents ||
       !reader_view_accessibility_focus(&app->reader_view_state, contents->id))
     return 0;
-  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_host_focus_set(app, EightvoHostControl_None, 0);
+  eightvo_render_to_buffer(app, buffer);
 
   for (U32 index = 0; index < ARRAY_COUNT(expected); index += 1)
   {
-    if (expected[index].host != Lectern0HostControl_None)
+    if (expected[index].host != EightvoHostControl_None)
     {
       if (app->host_focus_control != expected[index].host) return 0;
     }
     else
     {
       const ReaderViewSemanticNode *node =
-        lectern0_reader_view_semantic_control(&app->reader_view_frame,
+        eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                               expected[index].shared);
-      if (!node || app->host_focus_control != Lectern0HostControl_None ||
+      if (!node || app->host_focus_control != EightvoHostControl_None ||
           app->reader_view_state.focus_id != node->id)
         return 0;
     }
 
-    if (!lectern0_host_keyboard_tab(app, 0))
+    if (!eightvo_host_keyboard_tab(app, 0))
       app->input.focus_next_pressed = 1;
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
   }
 
   const ReaderViewSemanticNode *wrapped =
-    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+    eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                           ReaderViewSemanticControl_Contents);
-  if (!wrapped || app->host_focus_control != Lectern0HostControl_None ||
+  if (!wrapped || app->host_focus_control != EightvoHostControl_None ||
       app->reader_view_state.focus_id != wrapped->id)
     return 0;
 
   for (U32 offset = 0; offset < ARRAY_COUNT(expected); offset += 1)
   {
     U32 index = (U32)ARRAY_COUNT(expected) - 1 - offset;
-    if (!lectern0_host_keyboard_tab(app, 1))
+    if (!eightvo_host_keyboard_tab(app, 1))
       app->input.focus_prev_pressed = 1;
-    lectern0_render_to_buffer(app, buffer);
-    if (expected[index].host != Lectern0HostControl_None)
+    eightvo_render_to_buffer(app, buffer);
+    if (expected[index].host != EightvoHostControl_None)
     {
       if (app->host_focus_control != expected[index].host) return 0;
     }
     else
     {
       const ReaderViewSemanticNode *node =
-        lectern0_reader_view_semantic_control(&app->reader_view_frame,
+        eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                               expected[index].shared);
-      if (!node || app->host_focus_control != Lectern0HostControl_None ||
+      if (!node || app->host_focus_control != EightvoHostControl_None ||
           app->reader_view_state.focus_id != node->id)
         return 0;
     }
@@ -14388,7 +14388,7 @@ lectern0_reader_view_reference_focus_order(Lectern0App *app,
 }
 
 FUNCTION const ReaderViewSemanticNode *
-lectern0_reader_view_focused_semantic(const ReaderViewFrame *frame)
+eightvo_reader_view_focused_semantic(const ReaderViewFrame *frame)
 {
   if (!frame || !frame->semantic_nodes) return 0;
   for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
@@ -14400,7 +14400,7 @@ lectern0_reader_view_focused_semantic(const ReaderViewFrame *frame)
 }
 
 FUNCTION B32
-lectern0_reader_view_semantic_center_in_rect(
+eightvo_reader_view_semantic_center_in_rect(
   const ReaderViewSemanticNode *node,
   UI0Rect rect)
 {
@@ -14412,15 +14412,15 @@ lectern0_reader_view_semantic_center_in_rect(
 }
 
 FUNCTION B32
-lectern0_reader_view_panel_focus_regression(Lectern0App *app,
+eightvo_reader_view_panel_focus_regression(EightvoApp *app,
                                              RenderBuffer *buffer)
 {
-  typedef struct Lectern0PanelFocusCase
+  typedef struct EightvoPanelFocusCase
   {
     ReaderViewLeftPanelMode left_panel;
     B32 right_panel_open;
-  } Lectern0PanelFocusCase;
-  static const Lectern0PanelFocusCase cases[] = {
+  } EightvoPanelFocusCase;
+  static const EightvoPanelFocusCase cases[] = {
     {ReaderViewLeftPanel_Contents, 0},
     {ReaderViewLeftPanel_Find, 0},
     {ReaderViewLeftPanel_None, 1},
@@ -14428,7 +14428,7 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
   if (!app || !buffer || !epub_reader_is_open(&app->reader)) return 0;
 
   ReaderViewState saved_state = app->reader_view_state;
-  Lectern0HostControlIdentity saved_host_focus = app->host_focus_control;
+  EightvoHostControlIdentity saved_host_focus = app->host_focus_control;
   B32 saved_host_visible = app->host_focus_visible;
   U32 saved_spine = app->reader.active_spine_index;
   U64 saved_byte = app->reader.view_byte_offset;
@@ -14443,7 +14443,7 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
        case_index += 1)
   {
     checkpoint = 0;
-    const Lectern0PanelFocusCase *test = cases + case_index;
+    const EightvoPanelFocusCase *test = cases + case_index;
     app->reader_view_state = saved_state;
     app->reader_view_state.left_panel = test->left_panel;
     app->reader_view_state.right_panel_open = test->right_panel_open;
@@ -14455,23 +14455,23 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
     app->reader_view_state.restore_focus_id = 0;
     app->reader_view_state.pending_accessibility_focus_id = 0;
     app->reader_view_state.pending_accessibility_invoke_id = 0;
-    app->host_focus_control = Lectern0HostControl_None;
+    app->host_focus_control = EightvoHostControl_None;
     app->host_focus_visible = 0;
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
 
     UI0Rect panel = test->right_panel_open ?
       app->reader_view_layout.right_panel_rect :
       app->reader_view_layout.left_panel_rect;
     const ReaderViewSemanticNode *progress =
-      lectern0_reader_view_semantic_control(
+      eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Progress);
     result = progress &&
       (progress->flags & ReaderViewSemantic_Focusable) != 0 &&
       reader_view_accessibility_focus(&app->reader_view_state, progress->id);
     if (result)
     {
-      lectern0_render_to_buffer(app, buffer);
-      progress = lectern0_reader_view_semantic_control(
+      eightvo_render_to_buffer(app, buffer);
+      progress = eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Progress);
       result = progress &&
         app->reader_view_state.focus_id == progress->id &&
@@ -14481,29 +14481,29 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
     }
     if (result) checkpoint = 1;
 
-    B32 host_handled = result ? lectern0_host_keyboard_tab(app, 0) : 0;
+    B32 host_handled = result ? eightvo_host_keyboard_tab(app, 0) : 0;
     result = result && !host_handled;
     if (result)
     {
       app->input.focus_next_pressed = 1;
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
       const ReaderViewSemanticNode *focused =
-        lectern0_reader_view_focused_semantic(&app->reader_view_frame);
+        eightvo_reader_view_focused_semantic(&app->reader_view_frame);
       result = focused && app->reader_view_state.focus_visible &&
         app->reader_view_state.focus_id == focused->id &&
         (focused->flags & ReaderViewSemantic_Focusable) != 0 &&
-        lectern0_reader_view_semantic_center_in_rect(focused, panel) &&
+        eightvo_reader_view_semantic_center_in_rect(focused, panel) &&
         app->reader_view_frame.action_count == 0;
     }
     if (result) checkpoint = 2;
 
-    host_handled = result ? lectern0_host_keyboard_tab(app, 1) : 0;
+    host_handled = result ? eightvo_host_keyboard_tab(app, 1) : 0;
     result = result && !host_handled;
     if (result)
     {
       app->input.focus_prev_pressed = 1;
-      lectern0_render_to_buffer(app, buffer);
-      progress = lectern0_reader_view_semantic_control(
+      eightvo_render_to_buffer(app, buffer);
+      progress = eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Progress);
       result = progress &&
         app->reader_view_state.focus_id == progress->id &&
@@ -14514,14 +14514,14 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
     if (result) checkpoint = 3;
 
     const ReaderViewSemanticNode *contents = result ?
-      lectern0_reader_view_semantic_control(
+      eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Contents) : 0;
     result = result && contents &&
       reader_view_accessibility_focus(&app->reader_view_state, contents->id);
     if (result)
     {
-      lectern0_render_to_buffer(app, buffer);
-      contents = lectern0_reader_view_semantic_control(
+      eightvo_render_to_buffer(app, buffer);
+      contents = eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Contents);
       result = contents &&
         app->reader_view_state.focus_id == contents->id &&
@@ -14530,29 +14530,29 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
         app->reader_view_frame.action_count == 0;
     }
 
-    host_handled = result ? lectern0_host_keyboard_tab(app, 1) : 0;
+    host_handled = result ? eightvo_host_keyboard_tab(app, 1) : 0;
     result = result && !host_handled;
     if (result)
     {
       app->input.focus_prev_pressed = 1;
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
       const ReaderViewSemanticNode *focused =
-        lectern0_reader_view_focused_semantic(&app->reader_view_frame);
+        eightvo_reader_view_focused_semantic(&app->reader_view_frame);
       result = focused && app->reader_view_state.focus_visible &&
         app->reader_view_state.focus_id == focused->id &&
         (focused->flags & ReaderViewSemantic_Focusable) != 0 &&
-        lectern0_reader_view_semantic_center_in_rect(focused, panel) &&
+        eightvo_reader_view_semantic_center_in_rect(focused, panel) &&
         app->reader_view_frame.action_count == 0;
     }
     if (result) checkpoint = 4;
 
-    host_handled = result ? lectern0_host_keyboard_tab(app, 0) : 0;
+    host_handled = result ? eightvo_host_keyboard_tab(app, 0) : 0;
     result = result && !host_handled;
     if (result)
     {
       app->input.focus_next_pressed = 1;
-      lectern0_render_to_buffer(app, buffer);
-      contents = lectern0_reader_view_semantic_control(
+      eightvo_render_to_buffer(app, buffer);
+      contents = eightvo_reader_view_semantic_control(
         &app->reader_view_frame, ReaderViewSemanticControl_Contents);
       result = contents &&
         app->reader_view_state.focus_id == contents->id &&
@@ -14575,11 +14575,11 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
   app->reader_view_state = saved_state;
   app->host_focus_control = saved_host_focus;
   app->host_focus_visible = saved_host_visible;
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
   if (!result)
   {
     fprintf(stderr,
-            "lectern0 panel focus regression case=%u checkpoint=%u focus=%llu left=%d right=%d actions=%d\n",
+            "eightvo panel focus regression case=%u checkpoint=%u focus=%llu left=%d right=%d actions=%d\n",
             failed_case,
             checkpoint,
             (unsigned long long)app->reader_view_state.focus_id,
@@ -14594,115 +14594,115 @@ lectern0_reader_view_panel_focus_regression(Lectern0App *app,
 }
 
 FUNCTION B32
-lectern0_reader_view_gutter_keyboard_regression(Lectern0App *app,
+eightvo_reader_view_gutter_keyboard_regression(EightvoApp *app,
                                                 RenderBuffer *buffer)
 {
   if (!app || !buffer || !epub_reader_is_open(&app->reader)) return 0;
   U32 start_spine = app->reader.active_spine_index;
   U64 start_byte = app->reader.view_byte_offset;
   const ReaderViewSemanticNode *previous =
-    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+    eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                           ReaderViewSemanticControl_PreviousPage);
   if (!previous || (previous->flags & ReaderViewSemantic_Enabled) != 0 ||
       (previous->flags & ReaderViewSemantic_Focusable) == 0)
     return 0;
 
-  (void)lectern0_host_focus_set(app, Lectern0HostControl_None, 0);
+  (void)eightvo_host_focus_set(app, EightvoHostControl_None, 0);
   if (!reader_view_accessibility_focus(&app->reader_view_state, previous->id))
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  previous = lectern0_reader_view_semantic_control(
+  eightvo_render_to_buffer(app, buffer);
+  previous = eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
   const UI0DrawCommand *previous_icon = previous ?
-    lectern0_reader_view_draw_for_source(
+    eightvo_reader_view_draw_for_source(
       &app->reader_view_frame, UI0DrawOp_Icon, previous->id) : 0;
   if (!previous ||
       (previous->flags & ReaderViewSemantic_Focused) == 0 ||
       !previous_icon ||
       previous_icon->icon_kind != UI0IconKind_PageCaretLeft ||
       previous_icon->rect.w != 18 || previous_icon->rect.h != 32 ||
-      !lectern0_reader_view_space_activates_focus(app) ||
-      !lectern0_reader_view_has_draw_for_source(
+      !eightvo_reader_view_space_activates_focus(app) ||
+      !eightvo_reader_view_has_draw_for_source(
         &app->reader_view_frame, UI0DrawOp_FocusRing, previous->id))
     return 0;
-  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  if (eightvo_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      EightvoReaderKeyRoute_Handled)
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  B32 disabled_previous_emitted = lectern0_reader_view_has_action(
+  eightvo_render_to_buffer(app, buffer);
+  B32 disabled_previous_emitted = eightvo_reader_view_has_action(
     &app->reader_view_frame, ReaderViewAction_PreviousPage);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_apply_reader_view_actions(app);
   if (disabled_previous_emitted || app->reader.active_spine_index != start_spine ||
       app->reader.view_byte_offset != start_byte)
     return 0;
 
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
   const ReaderViewSemanticNode *next =
-    lectern0_reader_view_semantic_control(&app->reader_view_frame,
+    eightvo_reader_view_semantic_control(&app->reader_view_frame,
                                           ReaderViewSemanticControl_NextPage);
   if (!next || (next->flags & ReaderViewSemantic_Enabled) == 0 ||
       !reader_view_accessibility_focus(&app->reader_view_state, next->id))
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  next = lectern0_reader_view_semantic_control(
+  eightvo_render_to_buffer(app, buffer);
+  next = eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_NextPage);
   const UI0DrawCommand *next_icon = next ?
-    lectern0_reader_view_draw_for_source(
+    eightvo_reader_view_draw_for_source(
       &app->reader_view_frame, UI0DrawOp_Icon, next->id) : 0;
   if (!next || !next_icon ||
       next_icon->icon_kind != UI0IconKind_PageCaretRight ||
       next_icon->rect.w != 18 || next_icon->rect.h != 32 ||
-      !lectern0_reader_view_space_activates_focus(app))
+      !eightvo_reader_view_space_activates_focus(app))
     return 0;
-  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  if (eightvo_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      EightvoReaderKeyRoute_Handled)
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  B32 next_emitted = lectern0_reader_view_has_action(
+  eightvo_render_to_buffer(app, buffer);
+  B32 next_emitted = eightvo_reader_view_has_action(
     &app->reader_view_frame, ReaderViewAction_NextPage);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_apply_reader_view_actions(app);
   B32 moved_next = app->reader.active_spine_index != start_spine ||
                    app->reader.view_byte_offset != start_byte;
   if (!next_emitted || !moved_next) return 0;
 
-  lectern0_render_to_buffer(app, buffer);
-  previous = lectern0_reader_view_semantic_control(
+  eightvo_render_to_buffer(app, buffer);
+  previous = eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
   if (!previous || (previous->flags & ReaderViewSemantic_Enabled) == 0 ||
       !reader_view_accessibility_focus(&app->reader_view_state, previous->id))
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  if (!lectern0_reader_view_space_activates_focus(app)) return 0;
-  if (lectern0_reader_view_route_keydown(app, VK_SPACE, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  eightvo_render_to_buffer(app, buffer);
+  if (!eightvo_reader_view_space_activates_focus(app)) return 0;
+  if (eightvo_reader_view_route_keydown(app, VK_SPACE, 0) !=
+      EightvoReaderKeyRoute_Handled)
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  B32 previous_emitted = lectern0_reader_view_has_action(
+  eightvo_render_to_buffer(app, buffer);
+  B32 previous_emitted = eightvo_reader_view_has_action(
     &app->reader_view_frame, ReaderViewAction_PreviousPage);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_apply_reader_view_actions(app);
   if (!previous_emitted || app->reader.active_spine_index != start_spine ||
       app->reader.view_byte_offset != start_byte)
     return 0;
 
-  lectern0_render_to_buffer(app, buffer);
-  next = lectern0_reader_view_semantic_control(
+  eightvo_render_to_buffer(app, buffer);
+  next = eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_NextPage);
-  if (!next || !lectern0_reader_view_parity_click_node(app, buffer, next) ||
+  if (!next || !eightvo_reader_view_parity_click_node(app, buffer, next) ||
       (app->reader.active_spine_index == start_spine &&
        app->reader.view_byte_offset == start_byte))
     return 0;
-  lectern0_render_to_buffer(app, buffer);
-  previous = lectern0_reader_view_semantic_control(
+  eightvo_render_to_buffer(app, buffer);
+  previous = eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_PreviousPage);
   return previous &&
-    lectern0_reader_view_parity_click_node(app, buffer, previous) &&
+    eightvo_reader_view_parity_click_node(app, buffer, previous) &&
     app->reader.active_spine_index == start_spine &&
     app->reader.view_byte_offset == start_byte;
 }
 
 FUNCTION B32
-lectern0_reader_view_navigation_panel_interaction_regression(
-  Lectern0App *app,
+eightvo_reader_view_navigation_panel_interaction_regression(
+  EightvoApp *app,
   RenderBuffer *buffer,
   ReaderViewKey find_key)
 {
@@ -14717,21 +14717,21 @@ lectern0_reader_view_navigation_panel_interaction_regression(
 
   app->reader_view_state.left_panel = ReaderViewLeftPanel_None;
   app->reader_view_state.popup = ReaderViewPopup_None;
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_render_to_buffer(app, buffer);
   const ReaderViewSemanticNode *contents =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_Contents);
   B32 result = contents &&
-    lectern0_reader_view_parity_space_node(app, buffer, contents) &&
+    eightvo_reader_view_parity_space_node(app, buffer, contents) &&
     app->reader_view_state.left_panel == ReaderViewLeftPanel_Contents &&
     app->draw_adapter_stats.unsupported_count == 0;
   if (result) checkpoint = 1;
 
   const ReaderViewSemanticNode *toc_row = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame, ReaderViewSemanticControl_TocRow, 2) : 0;
   result = result && toc_row &&
-    lectern0_reader_view_parity_space_node(app, buffer, toc_row) &&
+    eightvo_reader_view_parity_space_node(app, buffer, toc_row) &&
     (app->reader.active_spine_index != start_spine ||
      app->reader.view_byte_offset != start_byte) &&
     app->reader.back_stack_count > start_back_count;
@@ -14739,40 +14739,40 @@ lectern0_reader_view_navigation_panel_interaction_regression(
 
   if (result)
   {
-    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(app, &(ReaderViewAction){
       .kind = ReaderViewAction_HistoryBack,
     });
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
     result = app->reader.active_spine_index == start_spine &&
       app->reader.view_byte_offset == start_byte;
   }
   if (result) checkpoint = 3;
 
   const ReaderViewSemanticNode *find = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_Find) : 0;
   result = result && find &&
-    lectern0_reader_view_parity_space_node(app, buffer, find) &&
+    eightvo_reader_view_parity_space_node(app, buffer, find) &&
     app->reader_view_state.left_panel == ReaderViewLeftPanel_Find &&
     app->draw_adapter_stats.unsupported_count == 0;
   if (result) checkpoint = 4;
 
   const ReaderViewSemanticNode *find_row = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame, ReaderViewSemanticControl_FindRow, find_key) : 0;
   U32 expected_find_index = (U32)(find_key - 0x100000ull);
   result = result && find_row &&
-    lectern0_reader_view_parity_space_node(app, buffer, find_row) &&
+    eightvo_reader_view_parity_space_node(app, buffer, find_row) &&
     app->reader.search_has_active &&
     app->reader.search_active_index == expected_find_index &&
     app->reader_view_state.left_panel == ReaderViewLeftPanel_Find;
   if (result) checkpoint = 5;
 
   const ReaderViewSemanticNode *close = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_LeftPanelClose) : 0;
   result = result && close &&
-    lectern0_reader_view_parity_click_node(app, buffer, close) &&
+    eightvo_reader_view_parity_click_node(app, buffer, close) &&
     app->reader_view_state.left_panel == ReaderViewLeftPanel_None &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     app->reader_view_frame.action_count == 0 &&
@@ -14782,7 +14782,7 @@ lectern0_reader_view_navigation_panel_interaction_regression(
   if (!result)
   {
     fprintf(stderr,
-            "lectern0 navigation panel interaction checkpoint=%u left=%d popup=%d spine=%u byte=%llu active=%u/%u\n",
+            "eightvo navigation panel interaction checkpoint=%u left=%d popup=%d spine=%u byte=%llu active=%u/%u\n",
             checkpoint,
             (int)app->reader_view_state.left_panel,
             (int)app->reader_view_state.popup,
@@ -14795,7 +14795,7 @@ lectern0_reader_view_navigation_panel_interaction_regression(
 }
 
 FUNCTION B32
-lectern0_reader_view_has_action(const ReaderViewFrame *frame,
+eightvo_reader_view_has_action(const ReaderViewFrame *frame,
                                 ReaderViewActionKind kind)
 {
   if (!frame || !frame->actions) return 0;
@@ -14805,8 +14805,8 @@ lectern0_reader_view_has_action(const ReaderViewFrame *frame,
 }
 
 FUNCTION B32
-lectern0_reader_view_document_selection_is(
-  const Lectern0App *app,
+eightvo_reader_view_document_selection_is(
+  const EightvoApp *app,
   DocSelection selection,
   const char *selected_text,
   UI0Rect anchor)
@@ -14823,24 +14823,24 @@ lectern0_reader_view_document_selection_is(
 }
 
 FUNCTION B32
-lectern0_reader_view_annotation_interaction_regression(
-  Lectern0App *app,
+eightvo_reader_view_annotation_interaction_regression(
+  EightvoApp *app,
   RenderBuffer *buffer,
   ReaderViewKey note_key)
 {
   if (!app || !buffer || note_key == 0) return 0;
-  const Lectern0ReaderViewRightSource *source =
-    lectern0_reader_view_right_source(
+  const EightvoReaderViewRightSource *source =
+    eightvo_reader_view_right_source(
       app, note_key, ReaderViewRightRow_Note);
   S32 highlight_index = source ?
-    lectern0_highlight_index(app, source->record_id) : -1;
+    eightvo_highlight_index(app, source->record_id) : -1;
   if (highlight_index < 0) return 0;
 
   ReaderViewState saved_state = app->reader_view_state;
   U64 saved_revision = app->annotation_revision;
   B32 saved_has_selection = app->reader.has_active_selection;
   DocSelection saved_selection = app->reader.active_selection;
-  char saved_selected_text[Lectern0SelectionTextCap] = {0};
+  char saved_selected_text[EightvoSelectionTextCap] = {0};
   MemoryCopy(saved_selected_text, app->selected_text,
              sizeof(saved_selected_text));
   UI0Rect saved_selection_anchor = app->selection_anchor_rect;
@@ -14856,12 +14856,12 @@ lectern0_reader_view_annotation_interaction_regression(
   epub_reader_clear_selection(&app->reader);
   app->selected_text[0] = 0;
   app->selection_anchor_rect = (UI0Rect){0};
-  (void)lectern0_capture_frame(app);
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_capture_frame(app);
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
 
   const ReaderViewSemanticNode *annotations =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
   annotations_id = annotations ? annotations->id : 0;
   ReaderViewSemanticFlags annotations_flags = annotations ?
@@ -14872,75 +14872,75 @@ lectern0_reader_view_annotation_interaction_regression(
   result = annotations && queued_focus;
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
-    annotations = lectern0_reader_view_semantic_control(
+    eightvo_render_to_buffer(app, buffer);
+    annotations = eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
     queued_invoke = annotations &&
       app->reader_view_state.focus_id == annotations->id &&
-      lectern0_reader_view_space_activates_focus(app) &&
+      eightvo_reader_view_space_activates_focus(app) &&
       reader_view_accessibility_invoke(
         &app->reader_view_state, annotations->id);
     result = queued_invoke;
   }
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     result = app->reader_view_state.right_panel_open &&
       app->reader_view_state.popup == ReaderViewPopup_None &&
       app->draw_adapter_stats.unsupported_count == 0;
     if (result)
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
   }
   if (result) checkpoint = 1;
 
   const ReaderViewSemanticNode *close = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_RightPanelClose) : 0;
   result = result && close &&
     reader_view_accessibility_focus(&app->reader_view_state, close->id) &&
     reader_view_accessibility_invoke(&app->reader_view_state, close->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     result = !app->reader_view_state.right_panel_open &&
       app->reader_view_state.popup == ReaderViewPopup_None &&
       app->reader_view_state.focus_id == annotations_id;
   }
   if (result) checkpoint = 2;
 
-  annotations = result ? lectern0_reader_view_semantic_control(
+  annotations = result ? eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_Annotations) : 0;
   result = result && annotations &&
     reader_view_accessibility_invoke(&app->reader_view_state, annotations->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
     result = app->reader_view_state.right_panel_open;
     if (result)
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
   }
   if (result) checkpoint = 3;
 
   const ReaderViewSemanticNode *filter = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
   result = result && filter &&
     reader_view_accessibility_focus(&app->reader_view_state, filter->id) &&
     reader_view_accessibility_invoke(&app->reader_view_state, filter->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
     result = app->reader_view_state.popup == ReaderViewPopup_RightFilter;
     if (result)
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
   }
   if (result) checkpoint = 4;
 
   const ReaderViewSemanticNode *bookmarks_option = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightFilterOption,
       (ReaderViewKey)ReaderViewRightFilter_Bookmarks) : 0;
@@ -14951,12 +14951,12 @@ lectern0_reader_view_annotation_interaction_regression(
       &app->reader_view_state, bookmarks_option->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
     result = app->reader_view_state.popup == ReaderViewPopup_None &&
       app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks &&
-      lectern0_reader_view_has_action(
+      eightvo_reader_view_has_action(
         &app->reader_view_frame, ReaderViewAction_RightFilterChanged);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_apply_reader_view_actions(app);
   }
   if (result) checkpoint = 5;
 
@@ -14964,11 +14964,11 @@ lectern0_reader_view_annotation_interaction_regression(
   {
     app->reader_view_state.right_filter = ReaderViewRightFilter_All;
     app->reader_view_state.popup = ReaderViewPopup_None;
-    lectern0_prepare_reader_view_projection(app);
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_prepare_reader_view_projection(app);
+    eightvo_render_to_buffer(app, buffer);
   }
   const ReaderViewSemanticNode *menu = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightRowMenu,
       note_key) : 0;
@@ -14977,15 +14977,15 @@ lectern0_reader_view_annotation_interaction_regression(
     reader_view_accessibility_invoke(&app->reader_view_state, menu->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
     result = app->reader_view_state.popup == ReaderViewPopup_RightRowActions;
     if (result)
-      lectern0_render_to_buffer(app, buffer);
+      eightvo_render_to_buffer(app, buffer);
   }
   if (result) checkpoint = 6;
 
   const ReaderViewSemanticNode *edit_note = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightActionEditNote,
       note_key) : 0;
@@ -15000,11 +15000,11 @@ lectern0_reader_view_annotation_interaction_regression(
       &app->reader_view_state, edit_note->id);
   if (result)
   {
-    lectern0_render_to_buffer(app, buffer);
+    eightvo_render_to_buffer(app, buffer);
     result = app->reader_view_state.popup == ReaderViewPopup_None &&
-      lectern0_reader_view_has_action(
+      eightvo_reader_view_has_action(
         &app->reader_view_frame, ReaderViewAction_EditRightRowNote);
-    lectern0_apply_reader_view_actions(app);
+    eightvo_apply_reader_view_actions(app);
     result = result &&
       app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
       app->annotation_note_highlight_id ==
@@ -15014,14 +15014,14 @@ lectern0_reader_view_annotation_interaction_regression(
       app->reader.back_stack_count == before_back_count &&
       app->reader.forward_stack_count == before_forward_count &&
       reader_view_close_note_editor(&app->reader_view_state);
-    lectern0_reader_view_clear_annotation_note_target(app);
+    eightvo_reader_view_clear_annotation_note_target(app);
   }
   if (result) checkpoint = 7;
 
   if (!result)
   {
     fprintf(stderr,
-            "lectern0 annotation interaction checkpoint=%u ready=%d errors=%u popup=%d right=%d filter=%d focus=%llu annotation=%llu flags=%u queued=%d/%d pending=%llu/%llu\n",
+            "eightvo annotation interaction checkpoint=%u ready=%d errors=%u popup=%d right=%d filter=%d focus=%llu annotation=%llu flags=%u queued=%d/%d pending=%llu/%llu\n",
             checkpoint,
             (int)app->reader_view_ready,
             (unsigned)app->reader_view_frame.error_flags,
@@ -15046,21 +15046,21 @@ lectern0_reader_view_annotation_interaction_regression(
   MemoryCopy(app->selected_text, saved_selected_text,
              sizeof(saved_selected_text));
   app->selection_anchor_rect = saved_selection_anchor;
-  (void)lectern0_capture_frame(app);
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_capture_frame(app);
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
   return result && app->draw_adapter_stats.unsupported_count == 0;
 }
 
 FUNCTION B32
-lectern0_reader_view_pointer_open_annotation_note(
-  Lectern0App *app,
+eightvo_reader_view_pointer_open_annotation_note(
+  EightvoApp *app,
   RenderBuffer *buffer,
   ReaderViewKey note_key)
 {
   if (!app || !buffer || note_key == 0) return 0;
   const ReaderViewSemanticNode *menu =
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightRowMenu,
       note_key);
@@ -15068,7 +15068,7 @@ lectern0_reader_view_pointer_open_annotation_note(
   U64 before_byte = app->reader.view_byte_offset;
   U32 before_back_count = app->reader.back_stack_count;
   U32 before_forward_count = app->reader.forward_stack_count;
-  if (!menu || !lectern0_reader_view_parity_click_node(app, buffer, menu) ||
+  if (!menu || !eightvo_reader_view_parity_click_node(app, buffer, menu) ||
       app->reader_view_state.popup != ReaderViewPopup_RightRowActions ||
       app->reader.active_spine_index != before_spine ||
       app->reader.view_byte_offset != before_byte ||
@@ -15076,12 +15076,12 @@ lectern0_reader_view_pointer_open_annotation_note(
       app->reader.forward_stack_count != before_forward_count)
     return 0;
   const ReaderViewSemanticNode *edit =
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightActionEditNote,
       note_key);
   return edit &&
-    lectern0_reader_view_parity_click_node(app, buffer, edit) &&
+    eightvo_reader_view_parity_click_node(app, buffer, edit) &&
     app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app->reader.active_spine_index == before_spine &&
     app->reader.view_byte_offset == before_byte &&
@@ -15090,8 +15090,8 @@ lectern0_reader_view_pointer_open_annotation_note(
 }
 
 FUNCTION B32
-lectern0_reader_view_pointer_replace_note_draft(
-  Lectern0App *app,
+eightvo_reader_view_pointer_replace_note_draft(
+  EightvoApp *app,
   RenderBuffer *buffer,
   const char *text)
 {
@@ -15101,43 +15101,43 @@ lectern0_reader_view_pointer_replace_note_draft(
   size_t size = strlen(text);
   if (size == 0 || size >= ARRAY_COUNT(app->input.text)) return 0;
   const ReaderViewSemanticNode *editor =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       app, ReaderViewSemantic_TextArea, 0);
-  if (!editor || !lectern0_reader_view_parity_click_node(app, buffer, editor))
+  if (!editor || !eightvo_reader_view_parity_click_node(app, buffer, editor))
     return 0;
   app->input.select_all_pressed = 1;
   MemoryCopy(app->input.text, text, (U64)size);
   app->input.text[size] = 0;
   app->input.text_length = (S32)size;
-  lectern0_render_to_buffer(app, buffer);
-  lectern0_apply_reader_view_actions(app);
+  eightvo_render_to_buffer(app, buffer);
+  eightvo_apply_reader_view_actions(app);
   return app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app->reader_view_state.note_dirty &&
-    lectern0_reader_view_text_is(reader_view_note_draft(
+    eightvo_reader_view_text_is(reader_view_note_draft(
       &app->reader_view_state), text);
 }
 
 FUNCTION B32
-lectern0_reader_view_annotation_pointer_regression(
-  Lectern0App *app,
+eightvo_reader_view_annotation_pointer_regression(
+  EightvoApp *app,
   RenderBuffer *buffer,
   ReaderViewKey note_key)
 {
   if (!app || !buffer || note_key == 0) return 0;
-  const Lectern0ReaderViewRightSource *source =
-    lectern0_reader_view_right_source(
+  const EightvoReaderViewRightSource *source =
+    eightvo_reader_view_right_source(
       app, note_key, ReaderViewRightRow_Note);
   S32 highlight_index = source ?
-    lectern0_highlight_index(app, source->record_id) : -1;
+    eightvo_highlight_index(app, source->record_id) : -1;
   if (highlight_index < 0 || app->highlights[highlight_index].note[0] == 0)
     return 0;
 
   ReaderViewState saved_state = app->reader_view_state;
-  Lectern0Highlight saved_highlight = app->highlights[highlight_index];
+  EightvoHighlight saved_highlight = app->highlights[highlight_index];
   U64 saved_revision = app->annotation_revision;
   B32 saved_has_selection = app->reader.has_active_selection;
   DocSelection saved_selection = app->reader.active_selection;
-  char saved_selected_text[Lectern0SelectionTextCap] = {0};
+  char saved_selected_text[EightvoSelectionTextCap] = {0};
   MemoryCopy(saved_selected_text, app->selected_text,
              sizeof(saved_selected_text));
   UI0Rect saved_selection_anchor = app->selection_anchor_rect;
@@ -15157,34 +15157,34 @@ lectern0_reader_view_annotation_pointer_regression(
   epub_reader_clear_selection(&app->reader);
   app->selected_text[0] = 0;
   app->selection_anchor_rect = (UI0Rect){0};
-  (void)lectern0_capture_frame(app);
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_capture_frame(app);
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
 
   const ReaderViewSemanticNode *annotations =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_Annotations);
   result = annotations &&
-    lectern0_reader_view_parity_click_node(app, buffer, annotations) &&
+    eightvo_reader_view_parity_click_node(app, buffer, annotations) &&
     app->reader_view_state.right_panel_open &&
     app->reader_view_state.popup == ReaderViewPopup_None;
   if (result) checkpoint = 1;
 
   const ReaderViewSemanticNode *filter = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
   UI0ID filter_id = filter ? filter->id : 0;
   result = result && filter &&
-    lectern0_reader_view_parity_click_node(app, buffer, filter) &&
+    eightvo_reader_view_parity_click_node(app, buffer, filter) &&
     app->reader_view_state.popup == ReaderViewPopup_RightFilter;
   if (result) checkpoint = 2;
 
   if (result)
   {
     app->input.escape_pressed = 1;
-    lectern0_render_to_buffer(app, buffer);
-    lectern0_apply_reader_view_actions(app);
-    filter = lectern0_reader_view_semantic_control(
+    eightvo_render_to_buffer(app, buffer);
+    eightvo_apply_reader_view_actions(app);
+    filter = eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_RightFilter);
     result = app->reader_view_state.popup == ReaderViewPopup_None &&
       app->reader_view_state.right_panel_open && filter &&
@@ -15194,43 +15194,43 @@ lectern0_reader_view_annotation_pointer_regression(
   }
   if (result) checkpoint = 3;
 
-  filter = result ? lectern0_reader_view_semantic_control(
+  filter = result ? eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
   result = result && filter &&
-    lectern0_reader_view_parity_click_node(app, buffer, filter);
+    eightvo_reader_view_parity_click_node(app, buffer, filter);
   const ReaderViewSemanticNode *bookmarks_option = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightFilterOption,
       (ReaderViewKey)ReaderViewRightFilter_Bookmarks) : 0;
   result = result && bookmarks_option &&
-    lectern0_reader_view_parity_click_node(
+    eightvo_reader_view_parity_click_node(
       app, buffer, bookmarks_option) &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     app->reader_view_state.right_filter == ReaderViewRightFilter_Bookmarks;
   if (result) checkpoint = 4;
 
-  filter = result ? lectern0_reader_view_semantic_control(
+  filter = result ? eightvo_reader_view_semantic_control(
     &app->reader_view_frame, ReaderViewSemanticControl_RightFilter) : 0;
   result = result && filter &&
-    lectern0_reader_view_parity_click_node(app, buffer, filter);
+    eightvo_reader_view_parity_click_node(app, buffer, filter);
   const ReaderViewSemanticNode *all_option = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame,
       ReaderViewSemanticControl_RightFilterOption,
       (ReaderViewKey)ReaderViewRightFilter_All) : 0;
   result = result && all_option &&
-    lectern0_reader_view_parity_click_node(app, buffer, all_option) &&
+    eightvo_reader_view_parity_click_node(app, buffer, all_option) &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     app->reader_view_state.right_filter == ReaderViewRightFilter_All;
   if (result) checkpoint = 5;
 
   const ReaderViewSemanticNode *row = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame, ReaderViewSemanticControl_RightRow,
       note_key) : 0;
   result = result && row &&
-    lectern0_reader_view_parity_click_node(app, buffer, row) &&
+    eightvo_reader_view_parity_click_node(app, buffer, row) &&
     app->reader.active_spine_index == saved_highlight.spine_index;
   if (result) checkpoint = 6;
 
@@ -15240,21 +15240,21 @@ lectern0_reader_view_annotation_pointer_regression(
   U32 star_back_count = app->reader.back_stack_count;
   U32 star_forward_count = app->reader.forward_stack_count;
   const ReaderViewSemanticNode *star = result ?
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app->reader_view_frame, ReaderViewSemanticControl_RightRowStar,
       note_key) : 0;
   result = result && star &&
-    lectern0_reader_view_parity_click_node(app, buffer, star) &&
+    eightvo_reader_view_parity_click_node(app, buffer, star) &&
     app->highlights[highlight_index].note_starred != initial_star &&
     app->reader.active_spine_index == star_spine &&
     app->reader.view_byte_offset == star_byte &&
     app->reader.back_stack_count == star_back_count &&
     app->reader.forward_stack_count == star_forward_count;
-  star = result ? lectern0_reader_view_semantic_control_source(
+  star = result ? eightvo_reader_view_semantic_control_source(
     &app->reader_view_frame, ReaderViewSemanticControl_RightRowStar,
     note_key) : 0;
   result = result && star &&
-    lectern0_reader_view_parity_click_node(app, buffer, star) &&
+    eightvo_reader_view_parity_click_node(app, buffer, star) &&
     app->highlights[highlight_index].note_starred == initial_star &&
     app->reader.active_spine_index == star_spine &&
     app->reader.view_byte_offset == star_byte &&
@@ -15262,12 +15262,12 @@ lectern0_reader_view_annotation_pointer_regression(
     app->reader.forward_stack_count == star_forward_count;
   if (result) checkpoint = 7;
 
-  result = result && lectern0_reader_view_pointer_open_annotation_note(
+  result = result && eightvo_reader_view_pointer_open_annotation_note(
     app, buffer, note_key) &&
-    lectern0_reader_view_pointer_replace_note_draft(
+    eightvo_reader_view_pointer_replace_note_draft(
       app, buffer, "Pointer saved note");
   const ReaderViewSemanticNode *save = result ?
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       app, ReaderViewSemantic_Button, "Save note") : 0;
   if (save)
   {
@@ -15280,38 +15280,38 @@ lectern0_reader_view_annotation_pointer_regression(
     (save->flags & (ReaderViewSemantic_Enabled |
                     ReaderViewSemantic_Focusable)) ==
       (ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable) &&
-    lectern0_reader_view_parity_click_node(app, buffer, save) &&
+    eightvo_reader_view_parity_click_node(app, buffer, save) &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     strcmp(app->highlights[highlight_index].note, "Pointer saved note") == 0 &&
     app->annotation_note_selection_key == 0;
   if (result) checkpoint = 8;
 
-  result = result && lectern0_save_note_at_index(
+  result = result && eightvo_save_note_at_index(
     app, (U32)highlight_index,
-    lectern0_reader_view_text(saved_highlight.note));
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
-  result = result && lectern0_reader_view_pointer_open_annotation_note(
+    eightvo_reader_view_text(saved_highlight.note));
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
+  result = result && eightvo_reader_view_pointer_open_annotation_note(
     app, buffer, note_key) &&
-    lectern0_reader_view_pointer_replace_note_draft(
+    eightvo_reader_view_pointer_replace_note_draft(
       app, buffer, "Pointer cancelled note");
   const ReaderViewSemanticNode *cancel = result ?
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       app, ReaderViewSemantic_Button, "Cancel note") : 0;
   result = result && cancel &&
-    lectern0_reader_view_parity_click_node(app, buffer, cancel) &&
+    eightvo_reader_view_parity_click_node(app, buffer, cancel) &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     strcmp(app->highlights[highlight_index].note, saved_highlight.note) == 0 &&
     app->annotation_note_selection_key == 0;
   if (result) checkpoint = 9;
 
-  result = result && lectern0_reader_view_pointer_open_annotation_note(
+  result = result && eightvo_reader_view_pointer_open_annotation_note(
     app, buffer, note_key);
   const ReaderViewSemanticNode *delete_note = result ?
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       app, ReaderViewSemantic_Button, "Delete note") : 0;
   result = result && delete_note &&
-    lectern0_reader_view_parity_click_node(app, buffer, delete_note) &&
+    eightvo_reader_view_parity_click_node(app, buffer, delete_note) &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
     app->highlights[highlight_index].note[0] == 0 &&
     app->annotation_note_selection_key == 0;
@@ -15320,16 +15320,16 @@ lectern0_reader_view_annotation_pointer_regression(
   app->highlights[highlight_index] = saved_highlight;
   app->annotation_revision = saved_revision;
   B32 restore_persisted = !app->persistence_enabled ||
-                          lectern0_save_annotations(app);
+                          eightvo_save_annotations(app);
   result = result && restore_persisted;
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
   const ReaderViewSemanticNode *close = result ?
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app->reader_view_frame, ReaderViewSemanticControl_RightPanelClose) : 0;
   B32 close_present = close != 0;
   B32 close_clicked = result && close &&
-    lectern0_reader_view_parity_click_node(app, buffer, close);
+    eightvo_reader_view_parity_click_node(app, buffer, close);
   result = result && close_present && close_clicked &&
     !app->reader_view_state.right_panel_open &&
     app->reader_view_state.popup == ReaderViewPopup_None &&
@@ -15339,7 +15339,7 @@ lectern0_reader_view_annotation_pointer_regression(
   if (!result)
   {
     fprintf(stderr,
-            "lectern0 annotation pointer regression checkpoint=%u popup=%d right=%d filter=%d note=%s star=%d target=%llu save_flags=%u revisions=%llu/%llu/%llu persisted=%d close=%d/%d\n",
+            "eightvo annotation pointer regression checkpoint=%u popup=%d right=%d filter=%d note=%s star=%d target=%llu save_flags=%u revisions=%llu/%llu/%llu persisted=%d close=%d/%d\n",
             checkpoint,
             (int)app->reader_view_state.popup,
             (int)app->reader_view_state.right_panel_open,
@@ -15358,7 +15358,7 @@ lectern0_reader_view_annotation_pointer_regression(
 
   app->highlights[highlight_index] = saved_highlight;
   app->annotation_revision = saved_revision;
-  (void)lectern0_save_annotations(app);
+  (void)eightvo_save_annotations(app);
   app->reader_view_state = saved_state;
   if (saved_has_selection)
     (void)epub_reader_set_selection(&app->reader, saved_selection);
@@ -15367,14 +15367,14 @@ lectern0_reader_view_annotation_pointer_regression(
   MemoryCopy(app->selected_text, saved_selected_text,
              sizeof(saved_selected_text));
   app->selection_anchor_rect = saved_selection_anchor;
-  (void)lectern0_capture_frame(app);
-  lectern0_prepare_reader_view_projection(app);
-  lectern0_render_to_buffer(app, buffer);
+  (void)eightvo_capture_frame(app);
+  eightvo_prepare_reader_view_projection(app);
+  eightvo_render_to_buffer(app, buffer);
   return result && app->draw_adapter_stats.unsupported_count == 0;
 }
 
 FUNCTION U32
-lectern0_draw_text_command_count(const Lectern0App *app,
+eightvo_draw_text_command_count(const EightvoApp *app,
                                  const char *text)
 {
   if (!app || !text) return 0;
@@ -15396,79 +15396,79 @@ lectern0_draw_text_command_count(const Lectern0App *app,
 }
 
 FUNCTION int
-lectern0_run_reader_view_startup_interaction_smoke(void)
+eightvo_run_reader_view_startup_interaction_smoke(void)
 {
   enum { Width = 1100, Height = 760 };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
-  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0))
+  if (!pixels || !eightvo_app_init(&app, Width, Height, 1, 0))
   {
     fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=setup\n");
+            "eightvo_reader_view_startup_interaction result=fail reason=setup\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   app.suppress_native_picker = 1;
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  Lectern0HostControlRecord *add = lectern0_host_control_record(
-    &app, Lectern0HostControl_LibraryAdd);
+  eightvo_render_to_buffer(&app, &buffer);
+  EightvoHostControlRecord *add = eightvo_host_control_record(
+    &app, EightvoHostControl_LibraryAdd);
   U32 empty_message_count =
-    lectern0_draw_text_command_count(&app, "Your library is empty");
-  B32 initial = lectern0_library_active(&app) &&
+    eightvo_draw_text_command_count(&app, "Your library is empty");
+  B32 initial = eightvo_library_active(&app) &&
                 app.library.entry_count == 0 && !app.reader_view_ready &&
                 add && add->semantic.rect.w > 0 &&
                 empty_message_count == 1;
-  UI0Rect cta = lectern0_library_empty_add_rect(&app);
+  UI0Rect cta = eightvo_library_empty_add_rect(&app);
   S32 x = cta.x + cta.w / 2;
   S32 y = cta.y + cta.h / 2;
-  lectern0_host_pointer_press(&app, x, y);
-  B32 armed = app.host_pointer_armed == Lectern0HostControl_LibraryAdd;
-  lectern0_host_pointer_move(&app, 0, Height - 1);
+  eightvo_host_pointer_press(&app, x, y);
+  B32 armed = app.host_pointer_armed == EightvoHostControl_LibraryAdd;
+  eightvo_host_pointer_move(&app, 0, Height - 1);
   B32 cancel_suppressed =
-    !lectern0_host_pointer_release(&app, x, y) &&
+    !eightvo_host_pointer_release(&app, x, y) &&
     app.native_picker_request_count == 0;
-  lectern0_host_pointer_press(&app, x, y);
-  B32 pointer_add = lectern0_host_pointer_release(&app, x, y) &&
+  eightvo_host_pointer_press(&app, x, y);
+  B32 pointer_add = eightvo_host_pointer_release(&app, x, y) &&
                     app.native_picker_request_count == 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 tab_focus = lectern0_host_focus_set(
-                    &app, Lectern0HostControl_LibraryAdd, 1) &&
-                  lectern0_host_keyboard_tab(&app, 0) &&
-                  app.host_focus_control == Lectern0HostControl_LibraryAdd &&
+  eightvo_render_to_buffer(&app, &buffer);
+  B32 tab_focus = eightvo_host_focus_set(
+                    &app, EightvoHostControl_LibraryAdd, 1) &&
+                  eightvo_host_keyboard_tab(&app, 0) &&
+                  app.host_focus_control == EightvoHostControl_LibraryAdd &&
                   app.host_focus_visible;
-  B32 keyboard_add = lectern0_host_keyboard_activate(&app) &&
+  B32 keyboard_add = eightvo_host_keyboard_activate(&app) &&
                      app.native_picker_request_count == 2;
   if (!initial || !armed || !cancel_suppressed || !pointer_add ||
       !tab_focus || !keyboard_add)
   {
     fprintf(stderr,
-            "lectern0_reader_view_startup_interaction result=fail reason=library initial=%d armed=%d cancel=%d pointer=%d tab=%d keyboard=%d requests=%u\n",
+            "eightvo_reader_view_startup_interaction result=fail reason=library initial=%d armed=%d cancel=%d pointer=%d tab=%d keyboard=%d requests=%u\n",
             initial, armed, cancel_suppressed, pointer_add, tab_focus,
             keyboard_add, app.native_picker_request_count);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   fprintf(stdout,
-          "lectern0_reader_view_startup_interaction result=pass surface=library catalog=empty lifecycle=press_release capture=cancel_and_release action=add_epubs picker=suppressed focus=pointer_keyboard accessibility=host_semantics\n");
+          "eightvo_reader_view_startup_interaction result=pass surface=library catalog=empty lifecycle=press_release capture=cancel_and_release action=add_books picker=suppressed focus=pointer_keyboard accessibility=host_semantics\n");
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION int
-lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
+eightvo_run_reader_view_selection_menu_smoke(const char *epub_path,
                                                const char *output_prefix)
 {
   enum { Width = 1100, Height = 760 };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
   U32 checkpoint = 0;
   int result = 1;
-  char bmp_path[Lectern0PathCap] = {0};
+  char bmp_path[EightvoPathCap] = {0};
   U32 selection_rows[2] = {0};
   U32 selection_row_count = 0;
   U64 expected_start = 0;
@@ -15476,42 +15476,42 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   S32 end_x = 0;
   S32 end_y = 0;
   if (!pixels || !epub_path || !output_prefix ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, epub_path) ||
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, epub_path) ||
       !epub_reader_rebuild_search(&app.reader, str8_from_cstr("Vane")) ||
       app.reader.search_match_count == 0 ||
-      lectern0_navigate_to_search_match(
+      eightvo_navigate_to_search_match(
         &app, 0, &(EpubReaderSearchNavigationResult){0}) != EpubReaderResult_Ok)
   {
     fprintf(stderr,
-            "lectern0_reader_view_selection_menu result=fail checkpoint=0 reason=setup\n");
+            "eightvo_reader_view_selection_menu result=fail checkpoint=0 reason=setup\n");
     goto cleanup;
   }
 
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   U64 current_presentation_hash = app.presentation_hash;
   U32 current_presentation_row_count = app.presentation_frame.row_count;
-  lectern0_schedule_adjacent_warm(&app);
-  B32 adjacent_warm_ran = lectern0_adjacent_warm_step(&app);
+  eightvo_schedule_adjacent_warm(&app);
+  B32 adjacent_warm_ran = eightvo_adjacent_warm_step(&app);
   B32 current_presentation_preserved =
     adjacent_warm_ran &&
     current_presentation_hash != 0 &&
     app.presentation_frame.valid &&
     app.presentation_hash == current_presentation_hash &&
     app.presentation_frame.row_count == current_presentation_row_count &&
-    lectern0_frame_presentation_is_complete(&app);
+    eightvo_frame_presentation_is_complete(&app);
   if (!current_presentation_preserved)
   {
     fprintf(stderr,
-            "lectern0_reader_view_selection_menu result=fail checkpoint=0 reason=adjacent_presentation ran=%d hash=%llu/%llu rows=%u/%u complete=%d\n",
+            "eightvo_reader_view_selection_menu result=fail checkpoint=0 reason=adjacent_presentation ran=%d hash=%llu/%llu rows=%u/%u complete=%d\n",
             adjacent_warm_ran,
             (unsigned long long)app.presentation_hash,
             (unsigned long long)current_presentation_hash,
             app.presentation_frame.row_count,
             current_presentation_row_count,
-            lectern0_frame_presentation_is_complete(&app));
+            eightvo_frame_presentation_is_complete(&app));
     goto cleanup;
   }
   for (U32 index = 0;
@@ -15523,7 +15523,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
     if (presentation_row->style_index >= app.frame.style_row_count)
       continue;
     TextEngineDisplaySpanRow display_row = {0};
-    if (!lectern0_reader_display_span_row(&app,
+    if (!eightvo_reader_display_span_row(&app,
                                           app.frame.style_rows +
                                             presentation_row->style_index,
                                           presentation_row,
@@ -15541,7 +15541,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   if (selection_row_count != 2 || selection_rows[0] == selection_rows[1])
   {
     fprintf(stderr,
-            "lectern0_reader_view_selection_menu result=fail checkpoint=0 reason=rows count=%u\n",
+            "eightvo_reader_view_selection_menu result=fail checkpoint=0 reason=rows count=%u\n",
             selection_row_count);
     goto cleanup;
   }
@@ -15549,7 +15549,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   TextEngineDisplaySpanRow start_row = {0};
   const PresentationEngineBlockFlowRow *start_presentation_row =
     app.presentation_frame.rows + selection_rows[0];
-  if (!lectern0_reader_display_span_row(
+  if (!eightvo_reader_display_span_row(
         &app,
         app.frame.style_rows + start_presentation_row->style_index,
         start_presentation_row,
@@ -15565,7 +15565,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   TextEngineDisplaySpanRow end_row = {0};
   const PresentationEngineBlockFlowRow *end_presentation_row =
     app.presentation_frame.rows + selection_rows[1];
-  if (!lectern0_reader_display_span_row(
+  if (!eightvo_reader_display_span_row(
         &app,
         app.frame.style_rows + end_presentation_row->style_index,
         end_presentation_row,
@@ -15582,24 +15582,24 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
     goto cleanup;
   checkpoint = 1;
 
-  lectern0_host_pointer_press(&app, start_x, start_y);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_host_pointer_press(&app, start_x, start_y);
+  eightvo_render_to_buffer(&app, &buffer);
   if (!app.selection_dragging ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
   checkpoint = 11;
-  lectern0_host_pointer_move(&app, end_x, end_y);
-  lectern0_update_pointer_selection(&app, end_x, end_y, 0);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_host_pointer_move(&app, end_x, end_y);
+  eightvo_update_pointer_selection(&app, end_x, end_y, 0);
+  eightvo_render_to_buffer(&app, &buffer);
   if (!app.selection_dragging ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
   checkpoint = 12;
-  if (lectern0_host_pointer_release(&app, end_x, end_y) ||
+  if (eightvo_host_pointer_release(&app, end_x, end_y) ||
       !app.input.pointer_selection_release)
     goto cleanup;
   checkpoint = 13;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (!app.reader.has_active_selection ||
       app.reader.active_selection.text_byte_start != expected_start ||
       app.reader.active_selection.text_byte_end != expected_end ||
@@ -15619,7 +15619,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
       app.frame.style_rows + presentation_row->style_index;
     TextEngineDisplaySpanRow display_row = {0};
     TextEngineRowRect expected_rect = {0};
-    if (!lectern0_reader_display_span_row(&app, style_row, presentation_row,
+    if (!eightvo_reader_display_span_row(&app, style_row, presentation_row,
                                           &display_row) ||
         !text_engine_display_span_row_range_rect_from_source_range(
           &display_row, expected_start, expected_end, &expected_rect))
@@ -15648,19 +15648,19 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
   checkpoint = 3;
 
   const ReaderViewSemanticNode *popup =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       &app, ReaderViewSemantic_Group, "More");
   const ReaderViewSemanticNode *yellow =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       &app, ReaderViewSemantic_MenuItem, "Yellow");
   const ReaderViewSemanticNode *pink =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       &app, ReaderViewSemantic_MenuItem, "Pink");
   const ReaderViewSemanticNode *copy =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       &app, ReaderViewSemantic_MenuItem, "Copy");
   const ReaderViewSemanticNode *delete_row =
-    lectern0_reader_view_parity_semantic(
+    eightvo_reader_view_parity_semantic(
       &app, ReaderViewSemantic_MenuItem, "Delete");
   UI0Rect viewport = app.reader_view_layout.viewport_rect;
   if (!popup || !yellow || !pink || !copy || delete_row ||
@@ -15676,18 +15676,18 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
     goto cleanup;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_multiline_light.bmp", output_prefix);
-  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+  if (!eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 4;
 
-  if (!lectern0_reader_view_parity_click_node(&app, &buffer, pink) ||
+  if (!eightvo_reader_view_parity_click_node(&app, &buffer, pink) ||
       app.highlight_count != 1 || app.highlights[0].color_index != 1 ||
       !app.reader.has_active_selection)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
 
   TextEngineDisplaySpanRow interaction_row = {0};
-  if (!lectern0_reader_display_span_row(
+  if (!eightvo_reader_display_span_row(
         &app,
         app.frame.style_rows + start_presentation_row->style_index,
         start_presentation_row,
@@ -15748,7 +15748,7 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
     if (presentation_row->style_index >= app.frame.style_row_count)
       continue;
     TextEngineDisplaySpanRow outside_row = {0};
-    if (!lectern0_reader_display_span_row(
+    if (!eightvo_reader_display_span_row(
           &app,
           app.frame.style_rows + presentation_row->style_index,
           presentation_row,
@@ -15770,9 +15770,9 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
       {
         S32 candidate_x =
           outside_row.x + span->x + span->stops[stop_index].x + 2;
-        if (!lectern0_reader_selection_popup_contains_point(
+        if (!eightvo_reader_selection_popup_contains_point(
               &app, candidate_x, candidate_y) &&
-            !lectern0_reader_selection_contains_point(
+            !eightvo_reader_selection_contains_point(
               &app, candidate_x, candidate_y))
         {
           outside_x = candidate_x;
@@ -15786,73 +15786,73 @@ lectern0_run_reader_view_selection_menu_smoke(const char *epub_path,
      selection without materializing the clicked glyph as a new selection. */
   if (!found_outside_glyph ||
       app.reader_view_state.popup != ReaderViewPopup_SelectionTools ||
-      lectern0_reader_selection_popup_contains_point(
+      eightvo_reader_selection_popup_contains_point(
         &app, outside_x, outside_y) ||
-      lectern0_reader_selection_contains_point(&app, outside_x, outside_y))
+      eightvo_reader_selection_contains_point(&app, outside_x, outside_y))
     goto cleanup;
 
-  lectern0_host_pointer_press(&app, outside_x, outside_y);
+  eightvo_host_pointer_press(&app, outside_x, outside_y);
   if (app.selection_dragging || app.reader.has_active_selection ||
       app.selected_text[0] || !app.input.escape_pressed)
     goto cleanup;
   checkpoint = 44;
-  if (lectern0_host_pointer_release(&app, outside_x, outside_y) ||
+  if (eightvo_host_pointer_release(&app, outside_x, outside_y) ||
       app.input.pointer_selection_release)
     goto cleanup;
   checkpoint = 45;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.reader.has_active_selection || app.selected_text[0] ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
   checkpoint = 46;
 
-  lectern0_host_pointer_press(&app, partial_start_x, interaction_y);
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_host_pointer_move(&app, partial_end_x, interaction_y);
-  lectern0_update_pointer_selection(&app, partial_end_x, interaction_y, 0);
-  lectern0_render_to_buffer(&app, &buffer);
-  if (lectern0_host_pointer_release(&app, partial_end_x, interaction_y) ||
+  eightvo_host_pointer_press(&app, partial_start_x, interaction_y);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_host_pointer_move(&app, partial_end_x, interaction_y);
+  eightvo_update_pointer_selection(&app, partial_end_x, interaction_y, 0);
+  eightvo_render_to_buffer(&app, &buffer);
+  if (eightvo_host_pointer_release(&app, partial_end_x, interaction_y) ||
       !app.input.pointer_selection_release)
     goto cleanup;
   checkpoint = 47;
-  lectern0_render_to_buffer(&app, &buffer);
-  pink = lectern0_reader_view_parity_semantic(
+  eightvo_render_to_buffer(&app, &buffer);
+  pink = eightvo_reader_view_parity_semantic(
     &app, ReaderViewSemantic_MenuItem, "Pink");
   if (!app.reader.has_active_selection ||
       app.reader.active_selection.text_byte_start != partial_start ||
       app.reader.active_selection.text_byte_end != partial_end ||
       app.reader_view_state.popup != ReaderViewPopup_SelectionTools ||
       !pink || (pink->flags & ReaderViewSemantic_Selected) == 0 ||
-      lectern0_selection_highlight_index(&app) != 0)
+      eightvo_selection_highlight_index(&app) != 0)
     goto cleanup;
 
-  app.theme = Lectern0Theme_Dark;
-  lectern0_render_to_buffer(&app, &buffer);
-  pink = lectern0_reader_view_parity_semantic(
+  app.theme = EightvoTheme_Dark;
+  eightvo_render_to_buffer(&app, &buffer);
+  pink = eightvo_reader_view_parity_semantic(
     &app, ReaderViewSemantic_MenuItem, "Pink");
   if (!pink || (pink->flags & ReaderViewSemantic_Selected) == 0 ||
       !reader_view_accessibility_focus(&app.reader_view_state, pink->id))
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_selected_dark_focus.bmp", output_prefix);
-  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+  if (!eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   app.input.activate_pressed = 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  if (!lectern0_reader_view_has_action(
+  eightvo_render_to_buffer(&app, &buffer);
+  if (!eightvo_reader_view_has_action(
         &app.reader_view_frame, ReaderViewAction_RemoveHighlight))
     goto cleanup;
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_apply_reader_view_actions(&app);
   if (app.highlight_count != 0 || !app.reader.has_active_selection)
     goto cleanup;
   checkpoint = 5;
 
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.reader_view_state.popup != ReaderViewPopup_SelectionTools)
     goto cleanup;
-  lectern0_reader_view_escape(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_reader_view_escape(&app);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.reader.has_active_selection || app.selected_text[0] ||
       app.reader_view_state.popup != ReaderViewPopup_None)
     goto cleanup;
@@ -15863,7 +15863,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
+            "eightvo_reader_view_selection_menu result=pass checkpoint=%u rows=%u,%u range=%llu..%llu geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=%s\n",
             checkpoint,
             selection_rows[0], selection_rows[1],
             (unsigned long long)expected_start,
@@ -15875,10 +15875,10 @@ cleanup:
     U64 mapped_end = 0;
     UI0Rect mapped_rect = {0};
     B32 mapped_end_valid =
-      lectern0_reader_point_to_byte(&app, end_x, end_y,
+      eightvo_reader_point_to_byte(&app, end_x, end_y,
                                     &mapped_end, &mapped_rect);
     fprintf(stderr,
-            "lectern0_reader_view_selection_menu result=fail checkpoint=%u popup=%d selection=%d range=%llu..%llu rows=%u,%u highlights=%u dragging=%d anchor=%llu mapped_end=%d:%llu frame_rows=%u presentation_rows=%u content=%d,%d,%d,%d end_point=%d,%d selected=\"%s\" projection_key=%llu projection_flags=%llu\n",
+            "eightvo_reader_view_selection_menu result=fail checkpoint=%u popup=%d selection=%d range=%llu..%llu rows=%u,%u highlights=%u dragging=%d anchor=%llu mapped_end=%d:%llu frame_rows=%u presentation_rows=%u content=%d,%d,%d,%d end_point=%d,%d selected=\"%s\" projection_key=%llu projection_flags=%llu\n",
             checkpoint,
             (int)app.reader_view_state.popup,
             app.reader.has_active_selection,
@@ -15905,12 +15905,12 @@ cleanup:
               app.reader_view_projection.selection.flags);
   }
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
+eightvo_draw_adapter_covers_all_ops(EightvoApp *app)
 {
   if (!app) return 0;
   UI0DrawCommand commands[UI0DrawOp_Count] = {0};
@@ -15939,7 +15939,7 @@ lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
   app->reader_view_frame.draw_commands = commands;
   app->reader_view_frame.draw_command_count = UI0DrawOp_Count;
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
   B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
                app->draw_commands.overflow_count == 0;
   for (UI0S32 index = 0; index < UI0DrawOp_Count; index += 1)
@@ -15949,14 +15949,14 @@ lectern0_draw_adapter_covers_all_ops(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_draw_clip_matches(DrawClipRect actual, UI0Rect expected)
+eightvo_draw_clip_matches(DrawClipRect actual, UI0Rect expected)
 {
   return actual.x == expected.x && actual.y == expected.y &&
          actual.w == expected.w && actual.h == expected.h;
 }
 
 FUNCTION B32
-lectern0_draw_adapter_rect_border_matches(const DrawCommand *commands,
+eightvo_draw_adapter_rect_border_matches(const DrawCommand *commands,
                                           UI0Rect rect,
                                           UI0Rect clip,
                                           U32 color)
@@ -15980,14 +15980,14 @@ lectern0_draw_adapter_rect_border_matches(const DrawCommand *commands,
         command->v.line.y1 != endpoints[index][3] ||
         command->v.line.stroke_width != 1 ||
         command->v.line.color != color ||
-        !lectern0_draw_clip_matches(command->v.line.clip, clip))
+        !eightvo_draw_clip_matches(command->v.line.clip, clip))
       return 0;
   }
   return 1;
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_reference_edges(Lectern0App *app)
+eightvo_draw_adapter_covers_reference_edges(EightvoApp *app)
 {
   if (!app) return 0;
   const UI0Color focus_color = UI0_COLOR_RGB(0x11, 0x22, 0x33);
@@ -16168,15 +16168,15 @@ lectern0_draw_adapter_covers_reference_edges(Lectern0App *app)
   app->reader_view_frame.draw_commands = commands;
   app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
 
   const DrawCommand *draw = app->draw_commands.commands[DrawLayer_UI];
   B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
                app->draw_commands.overflow_count == 0 &&
                app->draw_commands.command_count[DrawLayer_UI] == 27 &&
-               lectern0_draw_adapter_rect_border_matches(
+               eightvo_draw_adapter_rect_border_matches(
                  draw, commands[0].rect, commands[0].rect,
-                 lectern0_draw_color(focus_color));
+                 eightvo_draw_color(focus_color));
   if (result)
   {
     const DrawRoundedRectStrokeCommand *round_top =
@@ -16193,49 +16193,49 @@ lectern0_draw_adapter_covers_reference_edges(Lectern0App *app)
       round_top->x == 40 && round_top->y == 10 &&
       round_top->w == 20 && round_top->h == 24 &&
       round_top->radius == 4 && round_top->stroke_width == 1 &&
-      round_top->color == lectern0_draw_color(focus_color) &&
-      lectern0_draw_clip_matches(round_top->clip, commands[1].rect) &&
+      round_top->color == eightvo_draw_color(focus_color) &&
+      eightvo_draw_clip_matches(round_top->clip, commands[1].rect) &&
       draw[5].type == DrawCommandType_RoundedRectStroke &&
       round_bottom->x == 70 && round_bottom->y == 6 &&
       round_bottom->w == 20 && round_bottom->h == 24 &&
       round_bottom->radius == 4 && round_bottom->stroke_width == 1 &&
-      round_bottom->color == lectern0_draw_color(focus_color) &&
-      lectern0_draw_clip_matches(round_bottom->clip, commands[2].rect) &&
+      round_bottom->color == eightvo_draw_color(focus_color) &&
+      eightvo_draw_clip_matches(round_bottom->clip, commands[2].rect) &&
       draw[6].type == DrawCommandType_RoundedRectStroke &&
       round_both->x == 100 && round_both->y == 10 &&
       round_both->w == 20 && round_both->h == 20 &&
       round_both->radius == 4 && round_both->stroke_width == 1 &&
-      round_both->color == lectern0_draw_color(focus_color) &&
-      lectern0_draw_clip_matches(round_both->clip, commands[3].rect) &&
+      round_both->color == eightvo_draw_color(focus_color) &&
+      eightvo_draw_clip_matches(round_both->clip, commands[3].rect) &&
       draw[7].type == DrawCommandType_RoundedRectStroke &&
       round_all->x == 130 && round_all->y == 10 &&
       round_all->w == 20 && round_all->h == 20 &&
       round_all->radius == 4 && round_all->stroke_width == 1 &&
-      round_all->color == lectern0_draw_color(focus_color) &&
-      lectern0_draw_clip_matches(round_all->clip, clip) &&
-      lectern0_draw_adapter_rect_border_matches(
+      round_all->color == eightvo_draw_color(focus_color) &&
+      eightvo_draw_clip_matches(round_all->clip, clip) &&
+      eightvo_draw_adapter_rect_border_matches(
         draw + 8, commands[5].rect, clip,
-        lectern0_draw_color(border_color)) &&
+        eightvo_draw_color(border_color)) &&
       draw[12].type == DrawCommandType_RoundedRectStroke &&
       checkbox->radius == 5 && checkbox->stroke_width == 1 &&
-      checkbox->color == lectern0_draw_color(border_color) &&
-      lectern0_draw_clip_matches(checkbox->clip, clip);
+      checkbox->color == eightvo_draw_color(border_color) &&
+      eightvo_draw_clip_matches(checkbox->clip, clip);
   }
   result = result && draw[13].type == DrawCommandType_RoundedRect &&
     draw[13].v.rounded_rect.radius == 5 &&
-    draw[13].v.rounded_rect.fill_color == lectern0_draw_color(fill_color) &&
-    draw[13].v.rounded_rect.border_color == lectern0_draw_color(fill_color) &&
-    lectern0_draw_clip_matches(draw[13].v.rounded_rect.clip, clip);
+    draw[13].v.rounded_rect.fill_color == eightvo_draw_color(fill_color) &&
+    draw[13].v.rounded_rect.border_color == eightvo_draw_color(fill_color) &&
+    eightvo_draw_clip_matches(draw[13].v.rounded_rect.clip, clip);
   for (U32 index = 14; result && index <= 20; index += 1)
   {
     const DrawCommand *visual = draw + index;
     result = visual->type == DrawCommandType_RoundedRect &&
       visual->v.rounded_rect.radius == 5 &&
       visual->v.rounded_rect.fill_color ==
-        lectern0_draw_color(fill_color) &&
+        eightvo_draw_color(fill_color) &&
       visual->v.rounded_rect.border_color ==
-        lectern0_draw_color(stroke_color) &&
-      lectern0_draw_clip_matches(visual->v.rounded_rect.clip, clip);
+        eightvo_draw_color(stroke_color) &&
+      eightvo_draw_clip_matches(visual->v.rounded_rect.clip, clip);
   }
   result = result && draw[21].type == DrawCommandType_RoundedRect &&
     draw[21].v.rounded_rect.x == 100 &&
@@ -16243,24 +16243,24 @@ lectern0_draw_adapter_covers_reference_edges(Lectern0App *app)
     draw[21].v.rounded_rect.w == 20 &&
     draw[21].v.rounded_rect.h == 20 &&
     draw[21].v.rounded_rect.radius == 5 &&
-    draw[21].v.rounded_rect.fill_color == lectern0_draw_color(fill_color) &&
-    draw[21].v.rounded_rect.border_color == lectern0_draw_color(stroke_color) &&
-    lectern0_draw_clip_matches(draw[21].v.rounded_rect.clip, clip) &&
+    draw[21].v.rounded_rect.fill_color == eightvo_draw_color(fill_color) &&
+    draw[21].v.rounded_rect.border_color == eightvo_draw_color(stroke_color) &&
+    eightvo_draw_clip_matches(draw[21].v.rounded_rect.clip, clip) &&
     draw[22].type == DrawCommandType_Rect &&
     draw[22].v.rect.x == 130 && draw[22].v.rect.y == 70 &&
     draw[22].v.rect.w == 20 && draw[22].v.rect.h == 20 &&
-    draw[22].v.rect.color == lectern0_draw_color(fill_color) &&
-    lectern0_draw_clip_matches(draw[22].v.rect.clip, commands[16].rect) &&
-    lectern0_draw_adapter_rect_border_matches(
+    draw[22].v.rect.color == eightvo_draw_color(fill_color) &&
+    eightvo_draw_clip_matches(draw[22].v.rect.clip, commands[16].rect) &&
+    eightvo_draw_adapter_rect_border_matches(
       draw + 23, commands[16].rect, commands[16].rect,
-      lectern0_draw_color(border_color));
+      eightvo_draw_color(border_color));
 
   app->reader_view_frame = saved;
   return result;
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
+eightvo_draw_adapter_covers_reference_text_styles(EightvoApp *app)
 {
   if (!app) return 0;
   static const char *labels[] = {
@@ -16314,7 +16314,7 @@ lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
   app->reader_view_frame.draw_commands = commands;
   app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
 
   B32 result = app->draw_adapter_stats.unsupported_count == 0;
   for (U32 label_index = 0;
@@ -16343,7 +16343,7 @@ lectern0_draw_adapter_covers_reference_text_styles(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
+eightvo_draw_adapter_covers_note_editable_row(EightvoApp *app)
 {
   if (!app) return 0;
   static const char note[] = "Attached parity note";
@@ -16351,7 +16351,7 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
   enum { RowSource = 9301, EditorSource = 9302 };
   ReaderViewFrame saved_frame = app->reader_view_frame;
   ReaderViewState saved_state = app->reader_view_state;
-  lectern0_copy_cstr(app->reader_view_state.note_draft,
+  eightvo_copy_cstr(app->reader_view_state.note_draft,
                      ARRAY_COUNT(app->reader_view_state.note_draft), note);
   app->reader_view_state.note_draft_length = (UI0S32)strlen(note);
   app->reader_view_state.note_input.caret =
@@ -16384,7 +16384,7 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
       .color = UI0_COLOR_RGB(0x24, 0x35, 0x46),
       .has_typography_role = 1,
       .typography_role = UI0TypographyRole_Body,
-      .typography_line_height = Lectern0ReaderViewNotePixelHeight,
+      .typography_line_height = EightvoReaderViewNotePixelHeight,
     },
     {
       .op = UI0DrawOp_TextCaret,
@@ -16400,13 +16400,13 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
   app->reader_view_frame.draw_commands = commands;
   app->reader_view_frame.draw_command_count = ARRAY_COUNT(commands);
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
 
   Scratch scratch = scratch_begin(0, 0);
   TextEngineResolvedStyle style = text_engine_resolved_style_make(
     font_provider_system_ui(),
     (FontTag){0},
-    Lectern0ReaderViewNotePixelHeight,
+    EightvoReaderViewNotePixelHeight,
     0x00243546U,
     0,
     FontRasterFlag_Smooth | FontRasterFlag_Hinted);
@@ -16422,7 +16422,7 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
     clip.x,
     clip.y,
     clip.h,
-    Lectern0ReaderViewNoteTerminalCaretGap) &&
+    EightvoReaderViewNoteTerminalCaretGap) &&
     text_engine_editable_row_caret_x_for_source_byte(
       &expected_row, sizeof(note) - 1, &expected_caret_x);
 
@@ -16438,7 +16438,7 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
     {
       text_matches += 1;
       expected = expected && draw->v.text.x == clip.x &&
-        draw->v.text.scale == Lectern0ReaderViewNotePixelHeight &&
+        draw->v.text.scale == EightvoReaderViewNotePixelHeight &&
         draw->v.text.color == 0x00243546U &&
         (draw->v.text.flags & DrawTextFlag_Shaped) != 0;
     }
@@ -16463,7 +16463,7 @@ lectern0_draw_adapter_covers_note_editable_row(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_measured_find_match(Lectern0App *app)
+eightvo_draw_adapter_covers_measured_find_match(EightvoApp *app)
 {
   if (!app) return 0;
   static const char text[] = "prefix alpha suffix";
@@ -16492,7 +16492,7 @@ lectern0_draw_adapter_covers_measured_find_match(Lectern0App *app)
   app->reader_view_frame.draw_commands = &command;
   app->reader_view_frame.draw_command_count = 1;
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
 
   FontTextMetrics metrics =
     font_metrics_for_size(font_provider_system_ui(), 1);
@@ -16501,8 +16501,8 @@ lectern0_draw_adapter_covers_measured_find_match(Lectern0App *app)
   S32 match_width = font_measure_text_width_s8(
     font_provider_system_ui(),
     str8((U8 *)text + MatchStart, MatchSize), 1);
-  Lectern0ReaderContentTheme theme =
-    lectern0_reader_content_theme(app->theme);
+  EightvoReaderContentTheme theme =
+    eightvo_reader_content_theme(app->theme);
   B32 result = app->draw_adapter_stats.unsupported_count == 0 &&
                app->draw_commands.overflow_count == 0 &&
                app->draw_commands.command_count[DrawLayer_UI] == 2;
@@ -16535,7 +16535,7 @@ lectern0_draw_adapter_covers_measured_find_match(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_draw_adapter_covers_find_status_and_metadata(Lectern0App *app)
+eightvo_draw_adapter_covers_find_status_and_metadata(EightvoApp *app)
 {
   if (!app) return 0;
   static const char metadata[] = "First Light";
@@ -16605,7 +16605,7 @@ lectern0_draw_adapter_covers_find_status_and_metadata(Lectern0App *app)
   app->reader_view_state.left_panel = ReaderViewLeftPanel_Find;
   app->reader_view_layout.left_panel_rect = (UI0Rect){0, 0, 240, 80};
   draw_command_buffer_begin(&app->draw_commands);
-  lectern0_adapt_ui0_draw(app);
+  eightvo_adapt_ui0_draw(app);
 
   const FontProvider *provider = font_provider_system_ui();
   FontTextMetrics metrics = font_metrics_for_size(provider, 1);
@@ -16647,12 +16647,12 @@ lectern0_draw_adapter_covers_find_status_and_metadata(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
+eightvo_reader_view_covers_find_text_metrics(EightvoApp *app)
 {
   if (!app) return 0;
   ReaderViewState saved_state = app->reader_view_state;
   ReaderViewProjection saved_projection = app->reader_view_projection;
-  Lectern0Input saved_input = app->input;
+  EightvoInput saved_input = app->input;
   ReaderViewCodepointAdvance
     saved_advances[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
   U64 saved_last_seen[READER_VIEW_FIND_CODEPOINT_ADVANCE_CAP];
@@ -16718,7 +16718,7 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
   input.find_text.commit_buffer = &commit;
 
   ReaderViewFindTextMetrics metrics =
-    lectern0_reader_view_find_text_metrics(app, &input);
+    eightvo_reader_view_find_text_metrics(app, &input);
   static const U32 expected_scalars[] = {
     0x03a9u, 0x03b2u, 0x00e9u, 0x2603u, 0x0416u, 0x754cu,
   };
@@ -16768,13 +16768,13 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
   app->reader_view_projection.find.committed_query = (ReaderViewText){0};
   app->reader_view_state.find_history.text_size = 0;
   app->reader_view_state.find_history.scratch_size = 0;
-  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  metrics = eightvo_reader_view_find_text_metrics(app, &input);
   result = result && (U32)metrics.advance_count == retained_count;
 
   MemoryCopy(app->reader_view_state.find_history_text,
              omega, sizeof(omega) - 1);
   app->reader_view_state.find_history.text_size = sizeof(omega) - 1;
-  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  metrics = eightvo_reader_view_find_text_metrics(app, &input);
   U32 omega_index = UINT32_MAX;
   for (U32 index = 0; index < app->find_text_advance_count; index += 1)
   {
@@ -16786,12 +16786,12 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
   }
   result = result && omega_index != UINT32_MAX &&
     app->find_text_advance_priority[omega_index] ==
-      Lectern0ReaderViewFindPriority_History;
+      EightvoReaderViewFindPriority_History;
 
   app->reader_view_state.find_history.text_size = 0;
   input.find_text.text = grin;
   input.find_text.text_len = (S32)sizeof(grin) - 1;
-  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  metrics = eightvo_reader_view_find_text_metrics(app, &input);
   result = result && (U32)metrics.advance_count == retained_count + 1 &&
     metrics.advances[metrics.advance_count - 1].codepoint == 0x1f600u &&
     metrics.advances[metrics.advance_count - 1].advance ==
@@ -16808,7 +16808,7 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
     };
     app->find_text_advance_last_seen[index] = 1;
     app->find_text_advance_priority[index] =
-      Lectern0ReaderViewFindPriority_History;
+      EightvoReaderViewFindPriority_History;
     app->find_text_advance_count += 1;
   }
   U64 next_generation = app->find_text_metrics_generation + 1;
@@ -16818,11 +16818,11 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
   {
     app->find_text_advance_last_seen[index] = next_generation;
     app->find_text_advance_priority[index] =
-      Lectern0ReaderViewFindPriority_History;
+      EightvoReaderViewFindPriority_History;
   }
   input.find_text.text = smile;
   input.find_text.text_len = (S32)sizeof(smile) - 1;
-  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  metrics = eightvo_reader_view_find_text_metrics(app, &input);
   const ReaderViewCodepointAdvance *smile_metric = 0;
   for (S32 index = 0; index < metrics.advance_count; index += 1)
   {
@@ -16838,7 +16838,7 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
       font_provider_system_ui(), str8((U8 *)smile, sizeof(smile) - 1), 1) &&
     app->find_text_advances[0x41u - 0x20u].codepoint == 0x41u &&
     app->find_text_advance_priority[0x41u - 0x20u] ==
-      Lectern0ReaderViewFindPriority_Pinned;
+      EightvoReaderViewFindPriority_Pinned;
 
   app->find_text_metrics_generation = UINT64_MAX;
   for (U32 index = 95;
@@ -16848,7 +16848,7 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
     app->find_text_advance_last_seen[index] = UINT64_MAX;
   }
   input = (ReaderViewInput){0};
-  metrics = lectern0_reader_view_find_text_metrics(app, &input);
+  metrics = eightvo_reader_view_find_text_metrics(app, &input);
   B32 wrap_reset = app->find_text_metrics_generation == 1;
   for (U32 index = 95;
        wrap_reset && index < app->find_text_advance_count;
@@ -16875,7 +16875,7 @@ lectern0_reader_view_covers_find_text_metrics(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
+eightvo_reader_view_covers_note_text_metrics(EightvoApp *app)
 {
   if (!app) return 0;
   ReaderViewState saved_state = app->reader_view_state;
@@ -16908,16 +16908,16 @@ lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
   input.note_text.transfer_buffer = &transfer;
 
   ReaderViewNoteTextMetrics metrics =
-    lectern0_reader_view_note_text_metrics(app, &input);
-  S32 expected_fallback = lectern0_reader_view_measure_note_text("?", 1);
+    eightvo_reader_view_note_text_metrics(app, &input);
+  S32 expected_fallback = eightvo_reader_view_measure_note_text("?", 1);
   if (expected_fallback <= 0)
-    expected_fallback = Lectern0ReaderViewNoteAdvanceFallback;
+    expected_fallback = EightvoReaderViewNoteAdvanceFallback;
   B32 result = metrics.advances == app->note_text_advances &&
     metrics.advance_count > 0 &&
     metrics.advance_count <= READER_VIEW_NOTE_CODEPOINT_ADVANCE_CAP &&
     metrics.fallback_advance == expected_fallback &&
-    metrics.pixel_height == Lectern0ReaderViewNotePixelHeight &&
-    metrics.line_height == Lectern0ReaderViewNoteLineHeightFallback;
+    metrics.pixel_height == EightvoReaderViewNotePixelHeight &&
+    metrics.line_height == EightvoReaderViewNoteLineHeightFallback;
   for (S32 index = 0; result && index < metrics.advance_count; index += 1)
   {
     const ReaderViewCodepointAdvance *item = metrics.advances + index;
@@ -16953,14 +16953,14 @@ lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
     }
     result = found_index > previous_index &&
       metrics.advances[found_index].advance ==
-        lectern0_reader_view_measure_note_text(
+        eightvo_reader_view_measure_note_text(
           expected_text[scalar_index], expected_sizes[scalar_index]);
     previous_index = found_index;
   }
 
   app->reader_view_state.popup = ReaderViewPopup_None;
   ReaderViewNoteTextMetrics closed =
-    lectern0_reader_view_note_text_metrics(app, &input);
+    eightvo_reader_view_note_text_metrics(app, &input);
   result = result && !closed.advances && closed.advance_count == 0 &&
     closed.fallback_advance == 0 && closed.pixel_height == 0 &&
     closed.line_height == 0;
@@ -16968,11 +16968,11 @@ lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
   if (!result)
   {
     fprintf(stderr,
-            "lectern0 note metrics regression count=%d fallback=%d pixel=%d line=%d provider_line=%d placeholder=%.*s\n",
+            "eightvo note metrics regression count=%d fallback=%d pixel=%d line=%d provider_line=%d placeholder=%.*s\n",
             metrics.advance_count, metrics.fallback_advance,
             metrics.pixel_height, metrics.line_height,
             font_metrics_for_size(font_provider_system_ui(),
-                                  Lectern0ReaderViewNotePixelHeight)
+                                  EightvoReaderViewNotePixelHeight)
               .line_advance_px,
             app->reader_view_projection.labels.note_placeholder.size,
             app->reader_view_projection.labels.note_placeholder.data);
@@ -16987,7 +16987,7 @@ lectern0_reader_view_covers_note_text_metrics(Lectern0App *app)
 }
 
 FUNCTION B32
-lectern0_reader_view_covers_noncontiguous_toc_identity(Lectern0App *app)
+eightvo_reader_view_covers_noncontiguous_toc_identity(EightvoApp *app)
 {
   if (!app || !app->frame.section_items || app->frame.section_item_count == 0)
     return 0;
@@ -16995,11 +16995,11 @@ lectern0_reader_view_covers_noncontiguous_toc_identity(Lectern0App *app)
   rows[0].nav_index = 7;
   rows[0].depth = 3;
   rows[0].active = 1;
-  lectern0_copy_cstr(rows[0].label, ARRAY_COUNT(rows[0].label), "Nested A");
+  eightvo_copy_cstr(rows[0].label, ARRAY_COUNT(rows[0].label), "Nested A");
   rows[0].label_length = 8;
   rows[1].nav_index = 42;
   rows[1].depth = 1;
-  lectern0_copy_cstr(rows[1].label, ARRAY_COUNT(rows[1].label), "Nested B");
+  eightvo_copy_cstr(rows[1].label, ARRAY_COUNT(rows[1].label), "Nested B");
   rows[1].label_length = 8;
 
   EpubReaderFrameSectionItem *saved_rows = app->frame.section_items;
@@ -17008,7 +17008,7 @@ lectern0_reader_view_covers_noncontiguous_toc_identity(Lectern0App *app)
   app->frame.section_items = rows;
   app->frame.section_item_count = ARRAY_COUNT(rows);
   app->frame.section_item_total_count = 73;
-  lectern0_prepare_reader_view_toc(app);
+  eightvo_prepare_reader_view_toc(app);
   B32 result = app->reader_view_projection.toc.row_count == 2 &&
     app->reader_view_projection.toc.total_count == 73 &&
     app->reader_view_projection.toc.rows[0].key == 8 &&
@@ -17022,12 +17022,12 @@ lectern0_reader_view_covers_noncontiguous_toc_identity(Lectern0App *app)
   app->frame.section_items = saved_rows;
   app->frame.section_item_count = saved_count;
   app->frame.section_item_total_count = saved_total;
-  lectern0_prepare_reader_view_toc(app);
+  eightvo_prepare_reader_view_toc(app);
   return result;
 }
 
 FUNCTION B32
-lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
+eightvo_reader_view_covers_mixed_right_order(EightvoApp *app)
 {
   if (!app || app->persistence_enabled || app->bookmark_count != 0 ||
       app->highlight_count != 0)
@@ -17035,41 +17035,41 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
   ReaderViewRightFilter saved_filter = app->reader_view_state.right_filter;
   U64 saved_revision = app->annotation_revision;
   app->bookmark_count = 2;
-  app->bookmarks[0] = (Lectern0Bookmark){
+  app->bookmarks[0] = (EightvoBookmark){
     .id = 11, .spine_index = 1, .byte_offset = 10,
   };
-  app->bookmarks[1] = (Lectern0Bookmark){
+  app->bookmarks[1] = (EightvoBookmark){
     .id = 12, .spine_index = 0, .byte_offset = 90,
   };
-  lectern0_copy_cstr(app->bookmarks[0].label,
+  eightvo_copy_cstr(app->bookmarks[0].label,
                      ARRAY_COUNT(app->bookmarks[0].label), "Second");
-  lectern0_copy_cstr(app->bookmarks[0].excerpt,
+  eightvo_copy_cstr(app->bookmarks[0].excerpt,
                      ARRAY_COUNT(app->bookmarks[0].excerpt), "Later bookmark");
-  lectern0_copy_cstr(app->bookmarks[1].label,
+  eightvo_copy_cstr(app->bookmarks[1].label,
                      ARRAY_COUNT(app->bookmarks[1].label), "First");
-  lectern0_copy_cstr(app->bookmarks[1].excerpt,
+  eightvo_copy_cstr(app->bookmarks[1].excerpt,
                      ARRAY_COUNT(app->bookmarks[1].excerpt), "Earlier bookmark");
   app->highlight_count = 2;
-  app->highlights[0] = (Lectern0Highlight){
+  app->highlights[0] = (EightvoHighlight){
     .id = 21, .spine_index = 0, .start_byte = 90, .end_byte = 100,
     .color_index = 2, .is_highlight = 1,
   };
-  app->highlights[1] = (Lectern0Highlight){
+  app->highlights[1] = (EightvoHighlight){
     .id = 22, .spine_index = 0, .start_byte = 20, .end_byte = 30,
     .color_index = 1, .is_highlight = 1,
   };
-  lectern0_copy_cstr(app->highlights[0].section,
+  eightvo_copy_cstr(app->highlights[0].section,
                      ARRAY_COUNT(app->highlights[0].section), "First");
-  lectern0_copy_cstr(app->highlights[0].text,
+  eightvo_copy_cstr(app->highlights[0].text,
                      ARRAY_COUNT(app->highlights[0].text), "Attached excerpt");
-  lectern0_copy_cstr(app->highlights[0].note,
+  eightvo_copy_cstr(app->highlights[0].note,
                      ARRAY_COUNT(app->highlights[0].note), "Attached note");
-  lectern0_copy_cstr(app->highlights[1].section,
+  eightvo_copy_cstr(app->highlights[1].section,
                      ARRAY_COUNT(app->highlights[1].section), "First");
-  lectern0_copy_cstr(app->highlights[1].text,
+  eightvo_copy_cstr(app->highlights[1].text,
                      ARRAY_COUNT(app->highlights[1].text), "Leading excerpt");
   app->reader_view_state.right_filter = ReaderViewRightFilter_All;
-  lectern0_prepare_reader_view_projection(app);
+  eightvo_prepare_reader_view_projection(app);
 
   static const ReaderViewRightRowKind expected_kinds[] = {
     ReaderViewRightRow_Highlight,
@@ -17087,7 +17087,7 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
   {
     const ReaderViewRightRow *row =
       app->reader_view_projection.right.rows + index;
-    const Lectern0ReaderViewRightSource *source =
+    const EightvoReaderViewRightSource *source =
       app->reader_view_right_sources + index;
     result = row->kind == expected_kinds[index] &&
              source->key == row->key &&
@@ -17106,7 +17106,7 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
     const ReaderViewRightRow *highlight =
       app->reader_view_projection.right.rows + 2;
     const ReaderViewRightRow *note = highlight + 1;
-    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = highlight->key,
       .right_row_kind = ReaderViewRightRow_Highlight,
@@ -17114,7 +17114,7 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
     B32 highlight_routed = app->highlights[0].starred &&
                            !app->highlights[0].note_starred &&
                            !app->highlights[1].starred;
-    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = note->key,
       .right_row_kind = ReaderViewRightRow_Note,
@@ -17124,7 +17124,7 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
              !app->highlights[1].starred;
     ReaderViewKey bookmark_key =
       app->reader_view_projection.right.rows[1].key;
-    lectern0_apply_reader_view_action(app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = bookmark_key,
       .right_row_kind = ReaderViewRightRow_Bookmark,
@@ -17140,12 +17140,12 @@ lectern0_reader_view_covers_mixed_right_order(Lectern0App *app)
   MemoryZeroArray(app->highlights);
   app->annotation_revision = saved_revision;
   app->reader_view_state.right_filter = saved_filter;
-  lectern0_prepare_reader_view_projection(app);
+  eightvo_prepare_reader_view_projection(app);
   return result;
 }
 
 FUNCTION B32
-lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
+eightvo_reader_view_covers_right_projection_contract(EightvoApp *app)
 {
   if (!app || app->persistence_enabled || app->bookmark_count != 0 ||
       app->highlight_count != 0)
@@ -17174,21 +17174,21 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
   };
 
   ReaderViewRightFilter saved_filter = app->reader_view_state.right_filter;
-  Lectern0Theme saved_theme = app->theme;
+  EightvoTheme saved_theme = app->theme;
   U64 saved_revision = app->annotation_revision;
   app->bookmark_count = 1;
-  app->bookmarks[0] = (Lectern0Bookmark){
+  app->bookmarks[0] = (EightvoBookmark){
     .id = 51, .spine_index = 0, .byte_offset = 50,
   };
-  lectern0_copy_cstr(app->bookmarks[0].label,
+  eightvo_copy_cstr(app->bookmarks[0].label,
                      ARRAY_COUNT(app->bookmarks[0].label), "Section");
-  lectern0_copy_cstr(app->bookmarks[0].excerpt,
+  eightvo_copy_cstr(app->bookmarks[0].excerpt,
                      ARRAY_COUNT(app->bookmarks[0].excerpt), "Bookmark");
   app->highlight_count = 4;
   for (U32 color_index = 0; color_index < app->highlight_count; color_index += 1)
   {
-    Lectern0Highlight *highlight = app->highlights + color_index;
-    *highlight = (Lectern0Highlight){
+    EightvoHighlight *highlight = app->highlights + color_index;
+    *highlight = (EightvoHighlight){
       .id = 101 + color_index,
       .spine_index = 0,
       .start_byte = 100 + 100 * color_index,
@@ -17196,11 +17196,11 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
       .color_index = color_index,
       .is_highlight = 1,
     };
-    lectern0_copy_cstr(highlight->section,
+    eightvo_copy_cstr(highlight->section,
                        ARRAY_COUNT(highlight->section), "Section");
-    lectern0_copy_cstr(highlight->text,
+    eightvo_copy_cstr(highlight->text,
                        ARRAY_COUNT(highlight->text), "Highlight");
-    lectern0_copy_cstr(highlight->note,
+    eightvo_copy_cstr(highlight->note,
                        ARRAY_COUNT(highlight->note), "Attached note");
   }
 
@@ -17208,13 +17208,13 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
   for (U32 appearance = 0; appearance < 2; appearance += 1)
   {
     const UI0Color *expected_colors = appearance ? dark_colors : light_colors;
-    app->theme = appearance ? Lectern0Theme_Dark : Lectern0Theme_Light;
+    app->theme = appearance ? EightvoTheme_Dark : EightvoTheme_Light;
     for (U32 filter_index = 0;
          filter_index < ARRAY_COUNT(filters);
          filter_index += 1)
     {
       app->reader_view_state.right_filter = filters[filter_index];
-      lectern0_prepare_reader_view_projection(app);
+      eightvo_prepare_reader_view_projection(app);
       const ReaderViewRightProjection *right =
         &app->reader_view_projection.right;
       result = result &&
@@ -17232,14 +17232,14 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
            ReaderViewRightFilterFlag_Bookmarks |
            ReaderViewRightFilterFlag_Highlights |
            ReaderViewRightFilterFlag_Notes) &&
-        lectern0_reader_view_text_is(app->reader_view_projection.labels.all,
+        eightvo_reader_view_text_is(app->reader_view_projection.labels.all,
                                      "All") &&
-        lectern0_reader_view_text_is(
+        eightvo_reader_view_text_is(
           app->reader_view_projection.labels.bookmarks, "Bookmarks") &&
-        lectern0_reader_view_text_is(
+        eightvo_reader_view_text_is(
           app->reader_view_projection.labels.highlights,
           "All Highlight Colors") &&
-        lectern0_reader_view_text_is(app->reader_view_projection.labels.notes,
+        eightvo_reader_view_text_is(app->reader_view_projection.labels.notes,
                                      "Notes");
 
       U32 bookmark_rows = 0;
@@ -17250,8 +17250,8 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
            row_index += 1)
       {
         const ReaderViewRightRow *row = right->rows + row_index;
-        const Lectern0ReaderViewRightSource *source =
-          lectern0_reader_view_right_source(app, row->key, row->kind);
+        const EightvoReaderViewRightSource *source =
+          eightvo_reader_view_right_source(app, row->key, row->kind);
         result = result && source != 0;
         if (!source) continue;
         if (row->kind == ReaderViewRightRow_Bookmark)
@@ -17292,8 +17292,8 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
             if (row_index > 0)
             {
               const ReaderViewRightRow *previous = row - 1;
-              const Lectern0ReaderViewRightSource *previous_source =
-                lectern0_reader_view_right_source(
+              const EightvoReaderViewRightSource *previous_source =
+                eightvo_reader_view_right_source(
                   app, previous->key, previous->kind);
               result = result &&
                 previous->kind == ReaderViewRightRow_Highlight &&
@@ -17318,22 +17318,22 @@ lectern0_reader_view_covers_right_projection_contract(Lectern0App *app)
   app->annotation_revision = saved_revision;
   app->reader_view_state.right_filter = saved_filter;
   app->theme = saved_theme;
-  lectern0_prepare_reader_view_projection(app);
+  eightvo_prepare_reader_view_projection(app);
   return result;
 }
 
 FUNCTION int
-lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
+eightvo_run_reader_view_find_active_contrast_smoke(const char *path,
                                                      const char *output_prefix)
 {
   enum { Width = 1400, Height = 780 };
-  static const Lectern0Theme themes[] = {
-    Lectern0Theme_Dark,
-    Lectern0Theme_Light,
-    Lectern0Theme_CoralDark,
-    Lectern0Theme_CoralLight,
-    Lectern0Theme_BlueDark,
-    Lectern0Theme_BlueLight,
+  static const EightvoTheme themes[] = {
+    EightvoTheme_Dark,
+    EightvoTheme_Light,
+    EightvoTheme_CoralDark,
+    EightvoTheme_CoralLight,
+    EightvoTheme_BlueDark,
+    EightvoTheme_BlueLight,
   };
   static const char *theme_names[] = {
     "dark", "light", "coral-dark", "coral-light", "blue-dark", "blue-light",
@@ -17350,27 +17350,27 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
     0x004D3424U, 0x00FFE7D4U, 0x0063423EU,
     0x00F3C2B9U, 0x00345F91U, 0x00E6EEFFU,
   };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
   RenderBuffer buffer = {0};
   U32 checkpoint = 0;
   int result = 1;
-  char bmp_path[Lectern0PathCap] = {0};
+  char bmp_path[EightvoPathCap] = {0};
 
   if (!pixels || !path || !path[0] || !output_prefix || !output_prefix[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, path))
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, path))
     goto cleanup;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
 
   const ReaderViewSemanticNode *find =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_Find);
-  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+  if (!find || !eightvo_reader_view_parity_space_node(&app, &buffer, find) ||
       app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
-      !lectern0_reader_view_parity_click(
+      !eightvo_reader_view_parity_click(
         &app, &buffer, ReaderViewSemantic_SearchBox, 0))
     goto cleanup;
   checkpoint = 1;
@@ -17378,12 +17378,12 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
   MemoryCopy(app.input.text, "Paran", 5);
   app.input.text[5] = 0;
   app.input.text_length = 5;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   app.input.commit_pressed = 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.reader.search_match_count <= 2 ||
       app.reader_view_projection.find.row_count <= 2)
     goto cleanup;
@@ -17391,10 +17391,10 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
 
   ReaderViewKey active_key = app.reader_view_projection.find.rows[2].key;
   const ReaderViewSemanticNode *active_row =
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app.reader_view_frame, ReaderViewSemanticControl_FindRow, active_key);
   if (!active_row ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, active_row) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, active_row) ||
       !app.reader.search_has_active || app.reader.search_active_index != 2 ||
       app.reader_view_state.left_panel != ReaderViewLeftPanel_Find)
     goto cleanup;
@@ -17413,8 +17413,8 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
   for (U32 theme_index = 0; theme_index < ARRAY_COUNT(themes); theme_index += 1)
   {
     app.theme = themes[theme_index];
-    lectern0_render_to_buffer(&app, &buffer);
-    Lectern0ReaderContentTheme content = app.reader_content_theme;
+    eightvo_render_to_buffer(&app, &buffer);
+    EightvoReaderContentTheme content = app.reader_content_theme;
     if (content.search_match != expected_active[theme_index] ||
         content.search_hit != expected_inactive[theme_index] ||
         content.selection != expected_selection[theme_index] ||
@@ -17464,9 +17464,9 @@ lectern0_run_reader_view_find_active_contrast_smoke(const char *path,
 
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                       "%s_%s.bmp", output_prefix, theme_names[theme_index]);
-    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height)) goto cleanup;
+    if (!eightvo_write_bmp(bmp_path, pixels, Width, Height)) goto cleanup;
     fprintf(stdout,
-            "lectern0_reader_view_find_active_contrast theme=%s active=%06X inactive=%06X active_ranges=%u inactive_ranges=%u active_draws=%u inactive_draws=%u active_pixels=%llu inactive_pixels=%llu bmp=%s\n",
+            "eightvo_reader_view_find_active_contrast theme=%s active=%06X inactive=%06X active_ranges=%u inactive_ranges=%u active_draws=%u inactive_draws=%u active_pixels=%llu inactive_pixels=%llu bmp=%s\n",
             theme_names[theme_index],
             content.search_match, content.search_hit,
             active_ranges, inactive_ranges, active_draws, inactive_draws,
@@ -17481,32 +17481,32 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_find_active_contrast result=pass checkpoint=%u query=Paran active_index=2 themes=%u output=%s\n",
+            "eightvo_reader_view_find_active_contrast result=pass checkpoint=%u query=Paran active_index=2 themes=%u output=%s\n",
             checkpoint, (unsigned)ARRAY_COUNT(themes), output_prefix);
   }
   else
   {
     fprintf(stderr,
-            "lectern0_reader_view_find_active_contrast result=fail checkpoint=%u matches=%u active=%u index=%u ranges=%u output=%s\n",
+            "eightvo_reader_view_find_active_contrast result=fail checkpoint=%u matches=%u active=%u index=%u ranges=%u output=%s\n",
             checkpoint, app.reader.search_match_count,
             app.reader.search_has_active, app.reader.search_active_index,
             app.frame.search_highlight_count,
             output_prefix ? output_prefix : "-");
   }
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION int
-lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
+eightvo_run_reader_view_find_snippet_context_smoke(const char *path,
                                                      const char *bmp_path)
 {
   enum { Width = 1400, Height = 780 };
   static const char expected_excerpt[] =
     "IMPERIAL COMMAND Ganoes Stabro Paran, a noble-born officer in the "
     "Malazan Empire";
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
   RenderBuffer buffer = {0};
@@ -17518,52 +17518,52 @@ lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
   int result = 1;
 
   if (!pixels || !path || !path[0] || !bmp_path || !bmp_path[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, path))
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, path))
     goto cleanup;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   checkpoint = 1;
 
   const ReaderViewSemanticNode *find =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_Find);
-  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+  if (!find || !eightvo_reader_view_parity_space_node(&app, &buffer, find) ||
       app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
-      !lectern0_reader_view_parity_click(
+      !eightvo_reader_view_parity_click(
         &app, &buffer, ReaderViewSemantic_SearchBox, 0))
     goto cleanup;
 
   MemoryCopy(app.input.text, "Paran", 5);
   app.input.text[5] = 0;
   app.input.text_length = 5;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   app.input.commit_pressed = 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
   if (app.reader.search_match_count == 0 ||
       app.reader_view_projection.find.row_count == 0 ||
-      !lectern0_reader_view_text_is(
+      !eightvo_reader_view_text_is(
         app.reader_view_projection.find.rows[0].excerpt, expected_excerpt))
     goto cleanup;
   checkpoint = 2;
 
   ReaderViewKey first_key = app.reader_view_projection.find.rows[0].key;
-  active_row = lectern0_reader_view_semantic_control_source(
+  active_row = eightvo_reader_view_semantic_control_source(
     &app.reader_view_frame, ReaderViewSemanticControl_FindRow, first_key);
   if (!active_row ||
-      !lectern0_reader_view_text_is(active_row->name, expected_excerpt) ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, active_row) ||
+      !eightvo_reader_view_text_is(active_row->name, expected_excerpt) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, active_row) ||
       !app.reader.search_has_active || app.reader.search_active_index != 0 ||
       app.reader_view_state.left_panel != ReaderViewLeftPanel_Find)
     goto cleanup;
   checkpoint = 3;
 
-  active_row = lectern0_reader_view_semantic_control_source(
+  active_row = eightvo_reader_view_semantic_control_source(
     &app.reader_view_frame, ReaderViewSemanticControl_FindRow, first_key);
-  if (!active_row || !lectern0_reader_view_text_is(active_row->name,
+  if (!active_row || !eightvo_reader_view_text_is(active_row->name,
                                                     expected_excerpt))
     goto cleanup;
   for (UI0S32 index = 0;
@@ -17574,7 +17574,7 @@ lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
       app.reader_view_frame.semantic_nodes + index;
     if (candidate->parent_id != active_row->id) continue;
     const ReaderViewTextBinding *binding =
-      lectern0_reader_view_binding(&app, candidate->id);
+      eightvo_reader_view_binding(&app, candidate->id);
     if (binding && binding->match_size > 0)
     {
       excerpt_binding = binding;
@@ -17597,8 +17597,8 @@ lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
     goto cleanup;
   checkpoint = 4;
 
-  Lectern0ReaderContentTheme theme =
-    lectern0_reader_content_theme(app.theme);
+  EightvoReaderContentTheme theme =
+    eightvo_reader_content_theme(app.theme);
   for (U32 index = 0;
        index < app.draw_commands.command_count[DrawLayer_UI];
        index += 1)
@@ -17628,7 +17628,7 @@ lectern0_run_reader_view_find_snippet_context_smoke(const char *path,
     }
   }
   if (highlight_draws == 0 || highlight_pixels == 0 ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 5;
   result = 0;
@@ -17637,7 +17637,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_find_snippet_context result=pass checkpoint=%u query=Paran active_index=0 visible_bytes=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
+            "eightvo_reader_view_find_snippet_context result=pass checkpoint=%u query=Paran active_index=0 visible_bytes=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
             checkpoint,
             excerpt_binding ? excerpt_binding->text.size : 0,
             excerpt_binding ? excerpt_binding->match_start : 0,
@@ -17647,7 +17647,7 @@ cleanup:
   else
   {
     fprintf(stderr,
-            "lectern0_reader_view_find_snippet_context result=fail checkpoint=%u matches=%u rows=%d active=%u index=%u visible=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
+            "eightvo_reader_view_find_snippet_context result=fail checkpoint=%u matches=%u rows=%d active=%u index=%u visible=%d match_start=%u match_size=%u highlight_draws=%u highlight_pixels=%llu bmp=%s\n",
             checkpoint, app.reader.search_match_count,
             app.reader_view_projection.find.row_count,
             app.reader.search_has_active, app.reader.search_active_index,
@@ -17658,16 +17658,16 @@ cleanup:
             bmp_path ? bmp_path : "-");
   }
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION int
-lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
+eightvo_run_reader_view_post_action_arrow_smoke(const char *path,
                                                   const char *output_prefix)
 {
   enum { Width = 1400, Height = 780 };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
   RenderBuffer buffer = {0};
@@ -17685,28 +17685,28 @@ lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
   U64 note_right_byte = 0;
   U64 font_before_byte = 0;
   U64 font_right_byte = 0;
-  char bmp_path[Lectern0PathCap] = {0};
+  char bmp_path[EightvoPathCap] = {0};
 
   if (!pixels || !path || !path[0] || !output_prefix || !output_prefix[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, path))
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, path))
     goto cleanup;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
 
   for (U32 page = 0; page < 8 && app.frame.visible_text.size < 32; page += 1)
   {
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
-    lectern0_render_to_buffer(&app, &buffer);
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    eightvo_render_to_buffer(&app, &buffer);
   }
   if (app.frame.visible_text.size < 32) goto cleanup;
   checkpoint = 1;
 
   const ReaderViewSemanticNode *bookmark_control =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_Bookmark);
   if (!bookmark_control ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, bookmark_control) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, bookmark_control) ||
       app.bookmark_count != 1)
     goto cleanup;
 
@@ -17731,130 +17731,130 @@ lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
       epub_reader_set_selection(&app.reader, selection) != EpubReaderResult_Ok)
     goto cleanup;
   app.selection_anchor_rect = ui0_rect(500, 260, 4, 24);
-  lectern0_prepare_selected_text(&app);
-  if (!lectern0_set_highlight_color(&app, 2) ||
-      !lectern0_save_selection_note(
+  eightvo_prepare_selected_text(&app);
+  if (!eightvo_set_highlight_color(&app, 2) ||
+      !eightvo_save_selection_note(
         &app, (ReaderViewText){"Focus routing note", 18}))
     goto cleanup;
   epub_reader_clear_selection(&app.reader);
   app.selected_text[0] = 0;
   app.selection_anchor_rect = (UI0Rect){0};
-  if (!lectern0_capture_frame(&app)) goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+  if (!eightvo_capture_frame(&app)) goto cleanup;
+  eightvo_render_to_buffer(&app, &buffer);
   checkpoint = 2;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  eightvo_render_to_buffer(&app, &buffer);
   const ReaderViewSemanticNode *annotations =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_Annotations);
   if (!annotations ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, annotations) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, annotations) ||
       !app.reader_view_state.right_panel_open)
     goto cleanup;
   checkpoint = 3;
 
   ReaderViewKey bookmark_key =
-    lectern0_reader_view_parity_right_key(&app, ReaderViewRightRow_Bookmark);
+    eightvo_reader_view_parity_right_key(&app, ReaderViewRightRow_Bookmark);
   const ReaderViewSemanticNode *bookmark_row =
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app.reader_view_frame, ReaderViewSemanticControl_RightRow, bookmark_key);
   if (!bookmark_key || !bookmark_row ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, bookmark_row))
+      !eightvo_reader_view_parity_space_node(&app, &buffer, bookmark_row))
     goto cleanup;
-  bookmark_row = lectern0_reader_view_semantic_control_source(
+  bookmark_row = eightvo_reader_view_semantic_control_source(
     &app.reader_view_frame, ReaderViewSemanticControl_RightRow, bookmark_key);
   if (!bookmark_row || app.reader_view_state.focus_id != bookmark_row->id ||
-      lectern0_reader_view_horizontal_move_is_shared(&app))
+      eightvo_reader_view_horizontal_move_is_shared(&app))
     goto cleanup;
   bookmark_before_spine = app.reader.active_spine_index;
   bookmark_before_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_bookmark_before.bmp", output_prefix);
-  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
-      lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
-        Lectern0ReaderKeyRoute_Handled)
+  if (!eightvo_write_bmp(bmp_path, pixels, Width, Height) ||
+      eightvo_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+        EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   bookmark_right_spine = app.reader.active_spine_index;
   bookmark_right_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_bookmark_right.bmp", output_prefix);
   if ((bookmark_right_spine == bookmark_before_spine &&
        bookmark_right_byte == bookmark_before_byte) ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
-      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
-        Lectern0ReaderKeyRoute_Handled)
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height) ||
+      eightvo_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_bookmark_left.bmp", output_prefix);
   if (app.reader.active_spine_index != bookmark_before_spine ||
       app.reader.view_byte_offset != bookmark_before_byte ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 4;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  eightvo_render_to_buffer(&app, &buffer);
   ReaderViewKey note_key =
-    lectern0_reader_view_parity_right_key(&app, ReaderViewRightRow_Note);
+    eightvo_reader_view_parity_right_key(&app, ReaderViewRightRow_Note);
   const ReaderViewSemanticNode *note_row =
-    lectern0_reader_view_semantic_control_source(
+    eightvo_reader_view_semantic_control_source(
       &app.reader_view_frame, ReaderViewSemanticControl_RightRow, note_key);
   if (!note_key || !note_row ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, note_row))
+      !eightvo_reader_view_parity_space_node(&app, &buffer, note_row))
     goto cleanup;
-  note_row = lectern0_reader_view_semantic_control_source(
+  note_row = eightvo_reader_view_semantic_control_source(
     &app.reader_view_frame, ReaderViewSemanticControl_RightRow, note_key);
   if (!note_row || app.reader_view_state.focus_id != note_row->id ||
-      lectern0_reader_view_horizontal_move_is_shared(&app))
+      eightvo_reader_view_horizontal_move_is_shared(&app))
     goto cleanup;
   note_before_spine = app.reader.active_spine_index;
   note_before_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_note_before.bmp", output_prefix);
-  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
-      lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
-        Lectern0ReaderKeyRoute_Handled)
+  if (!eightvo_write_bmp(bmp_path, pixels, Width, Height) ||
+      eightvo_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+        EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   note_right_spine = app.reader.active_spine_index;
   note_right_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_note_right.bmp", output_prefix);
   if ((note_right_spine == note_before_spine &&
        note_right_byte == note_before_byte) ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height) ||
-      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
-        Lectern0ReaderKeyRoute_Handled)
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height) ||
+      eightvo_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_note_left.bmp", output_prefix);
   if (app.reader.active_spine_index != note_before_spine ||
       app.reader.view_byte_offset != note_before_byte ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 5;
 
-  annotations = lectern0_reader_view_semantic_control(
+  annotations = eightvo_reader_view_semantic_control(
     &app.reader_view_frame, ReaderViewSemanticControl_Annotations);
   if (!annotations ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, annotations) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, annotations) ||
       app.reader_view_state.right_panel_open)
     goto cleanup;
   checkpoint = 51;
   const ReaderViewSemanticNode *font =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_FontFamily);
-  if (!font || !lectern0_reader_view_parity_space_node(&app, &buffer, font) ||
+  if (!font || !eightvo_reader_view_parity_space_node(&app, &buffer, font) ||
       app.reader_view_state.popup != ReaderViewPopup_SettingMenu ||
       app.reader_view_state.active_setting_kind != ReaderViewSetting_FontFamily)
     goto cleanup;
@@ -17892,11 +17892,11 @@ lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
   if (!font_option) goto cleanup;
   checkpoint = 54;
   if (!font_option ||
-      !lectern0_reader_view_parity_space_node(&app, &buffer, font_option) ||
+      !eightvo_reader_view_parity_space_node(&app, &buffer, font_option) ||
       app.reader_view_state.popup != ReaderViewPopup_None ||
-      !lectern0_reader_view_focus_control_is(
+      !eightvo_reader_view_focus_control_is(
         &app, ReaderViewSemanticControl_FontFamily) ||
-      lectern0_reader_view_horizontal_move_is_shared(&app))
+      eightvo_reader_view_horizontal_move_is_shared(&app))
     goto cleanup;
   checkpoint = 55;
   B32 stable_font_page = 0;
@@ -17904,96 +17904,96 @@ lectern0_run_reader_view_post_action_arrow_smoke(const char *path,
   {
     U32 probe_spine = app.reader.active_spine_index;
     U64 probe_byte = app.reader.view_byte_offset;
-    if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) break;
+    if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) break;
     B32 moved = app.reader.active_spine_index != probe_spine ||
                 app.reader.view_byte_offset != probe_byte;
-    if (lectern0_move_page(&app, -1) != EpubReaderResult_Ok) break;
+    if (eightvo_move_page(&app, -1) != EpubReaderResult_Ok) break;
     stable_font_page = moved &&
       app.reader.active_spine_index == probe_spine &&
       app.reader.view_byte_offset == probe_byte;
     if (!stable_font_page &&
-        lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+        eightvo_move_page(&app, 1) != EpubReaderResult_Ok)
       break;
   }
   if (!stable_font_page ||
-      !lectern0_reader_view_focus_control_is(
+      !eightvo_reader_view_focus_control_is(
         &app, ReaderViewSemanticControl_FontFamily))
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   font_before_spine = app.reader.active_spine_index;
   font_before_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_font_before.bmp", output_prefix);
-  if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+  if (!eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 56;
-  if (lectern0_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  if (eightvo_reader_view_route_keydown(&app, VK_RIGHT, 0) !=
+      EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   font_right_spine = app.reader.active_spine_index;
   font_right_byte = app.reader.view_byte_offset;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_font_right.bmp", output_prefix);
   if ((font_right_spine == font_before_spine &&
        font_right_byte == font_before_byte) ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 57;
-  if (lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
-      Lectern0ReaderKeyRoute_Handled)
+  if (eightvo_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+      EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   checkpoint = 58;
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_font_left.bmp", output_prefix);
   if (app.reader.active_spine_index != font_before_spine ||
       app.reader.view_byte_offset != font_before_byte ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 6;
 
   const ReaderViewSemanticNode *find =
-    lectern0_reader_view_semantic_control(
+    eightvo_reader_view_semantic_control(
       &app.reader_view_frame, ReaderViewSemanticControl_Find);
-  if (!find || !lectern0_reader_view_parity_space_node(&app, &buffer, find) ||
+  if (!find || !eightvo_reader_view_parity_space_node(&app, &buffer, find) ||
       app.reader_view_state.left_panel != ReaderViewLeftPanel_Find ||
-      !lectern0_reader_view_parity_click(
+      !eightvo_reader_view_parity_click(
         &app, &buffer, ReaderViewSemantic_SearchBox, 0))
     goto cleanup;
   MemoryCopy(app.input.text, "Paran", 5);
   app.input.text[5] = 0;
   app.input.text_length = 5;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   app.input.commit_pressed = 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
   U32 find_spine = app.reader.active_spine_index;
   U64 find_byte = app.reader.view_byte_offset;
-  if (!lectern0_reader_view_text_is(
+  if (!eightvo_reader_view_text_is(
         reader_view_find_query(&app.reader_view_state), "Paran") ||
-      !lectern0_reader_view_horizontal_move_is_shared(&app) ||
-      lectern0_reader_view_route_keydown(&app, VK_LEFT, 0) !=
-        Lectern0ReaderKeyRoute_Handled)
+      !eightvo_reader_view_horizontal_move_is_shared(&app) ||
+      eightvo_reader_view_route_keydown(&app, VK_LEFT, 0) !=
+        EightvoReaderKeyRoute_Handled)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   app.input.text[0] = 'X';
   app.input.text[1] = 0;
   app.input.text_length = 1;
-  lectern0_render_to_buffer(&app, &buffer);
-  lectern0_apply_reader_view_actions(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  eightvo_apply_reader_view_actions(&app);
   (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                     "%s_find_input_left.bmp", output_prefix);
   if (app.reader.active_spine_index != find_spine ||
       app.reader.view_byte_offset != find_byte ||
-      !lectern0_reader_view_text_is(
+      !eightvo_reader_view_text_is(
         reader_view_find_query(&app.reader_view_state), "ParaXn") ||
-      !lectern0_write_bmp(bmp_path, pixels, Width, Height))
+      !eightvo_write_bmp(bmp_path, pixels, Width, Height))
     goto cleanup;
   checkpoint = 7;
   result = 0;
@@ -18002,7 +18002,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_reader_view_post_action_arrow result=pass checkpoint=%u bookmark=%u:%llu>%u:%llu note=%u:%llu>%u:%llu font=%u:%llu>%u:%llu find=ParaXn output=%s\n",
+            "eightvo_reader_view_post_action_arrow result=pass checkpoint=%u bookmark=%u:%llu>%u:%llu note=%u:%llu>%u:%llu font=%u:%llu>%u:%llu find=ParaXn output=%s\n",
             checkpoint,
             bookmark_before_spine, (unsigned long long)bookmark_before_byte,
             bookmark_right_spine, (unsigned long long)bookmark_right_byte,
@@ -18015,7 +18015,7 @@ cleanup:
   else
   {
     fprintf(stderr,
-            "lectern0_reader_view_post_action_arrow result=fail checkpoint=%u font=%u:%llu>%u:%llu current=%u:%llu focus=%llu popup=%d\n",
+            "eightvo_reader_view_post_action_arrow result=fail checkpoint=%u font=%u:%llu>%u:%llu current=%u:%llu focus=%llu popup=%d\n",
             checkpoint,
             font_before_spine, (unsigned long long)font_before_byte,
             font_right_spine, (unsigned long long)font_right_byte,
@@ -18025,17 +18025,17 @@ cleanup:
             (int)app.reader_view_state.popup);
   }
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION int
-lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
+eightvo_run_publisher_typography_spacing_smoke(const char *epub_path,
                                                 const char *output_prefix)
 {
   enum { Width = 1536, Height = 912 };
-  Lectern0App app = {0};
-  Lectern0App reload = {0};
+  EightvoApp app = {0};
+  EightvoApp reload = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
   U32 line_heights[3] = {0};
   U32 margin_units[3] = {0};
@@ -18053,24 +18053,24 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   U32 family_row_counts[ARRAY_COUNT(parity_families)] = {0};
   U64 family_page_starts[ARRAY_COUNT(parity_families)] = {0};
   U64 family_page_ends[ARRAY_COUNT(parity_families)] = {0};
-  char bmp_path[Lectern0PathCap] = {0};
-  char settings_path[Lectern0PathCap] = {0};
+  char bmp_path[EightvoPathCap] = {0};
+  char settings_path[EightvoPathCap] = {0};
   U32 italic_options = 0;
   U32 justified_options = 0;
   int result = 1;
   if (!pixels || !epub_path || !epub_path[0] ||
       !output_prefix || !output_prefix[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, epub_path))
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, epub_path))
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=setup\n");
+            "eightvo_publisher_typography_spacing result=fail reason=setup\n");
     goto cleanup;
   }
 
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_FontFamily,
     .key = 1000 + FontProviderBookContentFamily_Georgia,
@@ -18080,7 +18080,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       app.reader.typography.embedded_fonts_enabled)
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=font_override override=%d layout_embedded=%d typography_embedded=%d\n",
+            "eightvo_publisher_typography_spacing result=fail reason=font_override override=%d layout_embedded=%d typography_embedded=%d\n",
             app.font_family_user_override,
             app.layout_key.embedded_fonts_enabled,
             app.reader.typography.embedded_fonts_enabled);
@@ -18088,7 +18088,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   }
   for (U32 spacing_index = 0; spacing_index < 3; spacing_index += 1)
   {
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_SelectSetting,
       .setting_kind = ReaderViewSetting_LineSpacing,
       .key = 3000 + spacing_index,
@@ -18097,21 +18097,21 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
         !epub_reader_rebuild_search(&app.reader,
                                     str8_from_cstr("1154th Year")) ||
         app.reader.search_match_count == 0 ||
-        lectern0_navigate_to_search_match(
+        eightvo_navigate_to_search_match(
           &app, 0, &(EpubReaderSearchNavigationResult){0}) !=
             EpubReaderResult_Ok)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=setting_or_navigation index=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=setting_or_navigation index=%u\n",
               spacing_index);
       goto cleanup;
     }
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     if (!app.presentation_complete || !app.presentation_frame.valid ||
         app.presentation_frame.row_count != app.frame.style_row_count)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=presentation index=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=presentation index=%u\n",
               spacing_index);
       goto cleanup;
     }
@@ -18133,11 +18133,11 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       if (publisher_margin_px < 0 && row->line_row == 0 &&
           row->margin_top_rows > 0)
       {
-        Lectern0PresentationRowMetrics metrics = {0};
-        if (!lectern0_resolve_presentation_row_metrics(&app, row, &metrics))
+        EightvoPresentationRowMetrics metrics = {0};
+        if (!eightvo_resolve_presentation_row_metrics(&app, row, &metrics))
         {
           fprintf(stderr,
-                  "lectern0_publisher_typography_spacing result=fail reason=margin_metrics index=%u row=%u\n",
+                  "eightvo_publisher_typography_spacing result=fail reason=margin_metrics index=%u row=%u\n",
                   spacing_index, row_index);
           goto cleanup;
         }
@@ -18163,12 +18163,12 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
                                date_prefix,
                                sizeof(date_prefix) - 1) == 0;
       }
-      Lectern0ReaderStyledRow styled = {0};
-      if (!lectern0_reader_styled_row_build(&app, row, presentation_row,
+      EightvoReaderStyledRow styled = {0};
+      if (!eightvo_reader_styled_row_build(&app, row, presentation_row,
                                             start, end, &styled))
       {
         fprintf(stderr,
-                "lectern0_publisher_typography_spacing result=fail reason=styled_row index=%u row=%u\n",
+                "eightvo_publisher_typography_spacing result=fail reason=styled_row index=%u row=%u\n",
                 spacing_index, row_index);
         goto cleanup;
       }
@@ -18197,7 +18197,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     if (!found_date || !date_italic || justified_rows < 4)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=typography index=%u date=%d italic=%d justified=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=typography index=%u date=%d italic=%d justified=%u\n",
               spacing_index, found_date, date_italic, justified_rows);
       goto cleanup;
     }
@@ -18209,23 +18209,23 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     presentation_hashes[spacing_index] = app.presentation_hash;
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                       "%s_spacing_%u.bmp", output_prefix, spacing_index);
-    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    if (!eightvo_write_bmp(bmp_path, pixels, Width, Height))
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=evidence index=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=evidence index=%u\n",
               spacing_index);
       goto cleanup;
     }
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_NextPage,
     });
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_PreviousPage,
     });
     if (app.line_spacing_index != spacing_index)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=navigation_persistence index=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=navigation_persistence index=%u\n",
               spacing_index);
       goto cleanup;
     }
@@ -18242,7 +18242,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       presentation_hashes[1] == presentation_hashes[2])
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=geometry heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d hashes=%016llx,%016llx,%016llx\n",
+            "eightvo_publisher_typography_spacing result=fail reason=geometry heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d hashes=%016llx,%016llx,%016llx\n",
             line_heights[0], line_heights[1], line_heights[2],
             margin_units[0], margin_units[1], margin_units[2],
             publisher_margin_pixels[0], publisher_margin_pixels[1],
@@ -18253,7 +18253,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     goto cleanup;
   }
 
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_LineSpacing,
     .key = 3000,
@@ -18270,7 +18270,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       continue;
     }
     available_family_count += 1;
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_SelectSetting,
       .setting_kind = ReaderViewSetting_FontFamily,
       .key = 1000 + family,
@@ -18284,12 +18284,12 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
         !epub_reader_rebuild_search(&app.reader,
                                     str8_from_cstr("1161st Year")) ||
         app.reader.search_match_count == 0 ||
-        lectern0_navigate_to_search_match(
+        eightvo_navigate_to_search_match(
           &app, 0, &(EpubReaderSearchNavigationResult){0}) !=
             EpubReaderResult_Ok)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=family_layout index=%u family=%u override=%d layout_family=%u layout_embedded=%d typography_embedded=%d margin_unit=%u margin_line=%d line=%d\n",
+              "eightvo_publisher_typography_spacing result=fail reason=family_layout index=%u family=%u override=%d layout_family=%u layout_embedded=%d typography_embedded=%d margin_unit=%u margin_line=%d line=%d\n",
               family_index, family, app.font_family_user_override,
               app.layout_key.font_family_index,
               app.layout_key.embedded_fonts_enabled,
@@ -18299,12 +18299,12 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
               app.layout_key.line_height);
       goto cleanup;
     }
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     if (!app.presentation_complete || !app.presentation_frame.valid ||
         app.presentation_frame.row_count == 0 || !app.reader.has_current_page)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=family_presentation index=%u family=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=family_presentation index=%u family=%u\n",
               family_index, family);
       goto cleanup;
     }
@@ -18318,7 +18318,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     if (bottom_gap < 0 || bottom_gap > maximum_gap)
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=family_bottom_gap index=%u family=%u gap=%d maximum=%d rows=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=family_bottom_gap index=%u family=%u gap=%d maximum=%d rows=%u\n",
               family_index, family, bottom_gap, maximum_gap,
               app.presentation_frame.row_count);
       goto cleanup;
@@ -18330,10 +18330,10 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
     family_page_ends[family_index] = app.reader.current_page.one_past_last_byte;
     (void)cstr_format(bmp_path, ARRAY_COUNT(bmp_path),
                       "%s_family_%u.bmp", output_prefix, family_index);
-    if (!lectern0_write_bmp(bmp_path, pixels, Width, Height))
+    if (!eightvo_write_bmp(bmp_path, pixels, Width, Height))
     {
       fprintf(stderr,
-              "lectern0_publisher_typography_spacing result=fail reason=family_evidence index=%u\n",
+              "eightvo_publisher_typography_spacing result=fail reason=family_evidence index=%u\n",
               family_index);
       goto cleanup;
     }
@@ -18348,7 +18348,7 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
       family_page_ends[FontProviderBookContentFamily_PalatinoLinotype] != 873)
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=family_parity available=%u gaps=%d,%d,%d,%d,%d content=%d,%d,%d,%d palatino_line=%d rows=%u range=%llu..%llu\n",
+            "eightvo_publisher_typography_spacing result=fail reason=family_parity available=%u gaps=%d,%d,%d,%d,%d content=%d,%d,%d,%d palatino_line=%d rows=%u range=%llu..%llu\n",
             available_family_count,
             family_bottom_gaps[0], family_bottom_gaps[1],
             family_bottom_gaps[2], family_bottom_gaps[3],
@@ -18367,36 +18367,36 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
   (void)cstr_format(settings_path, ARRAY_COUNT(settings_path),
                     "%s_settings.bin", output_prefix);
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
+  eightvo_copy_cstr(app.settings_path, ARRAY_COUNT(app.settings_path),
                      settings_path);
-  if (!lectern0_save_settings(&app) ||
-      !lectern0_app_init(&reload, Width, Height, 1, 0))
+  if (!eightvo_save_settings(&app) ||
+      !eightvo_app_init(&reload, Width, Height, 1, 0))
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=persistence_write\n");
+            "eightvo_publisher_typography_spacing result=fail reason=persistence_write\n");
     goto cleanup;
   }
   reload.persistence_enabled = 1;
-  lectern0_copy_cstr(reload.settings_path, ARRAY_COUNT(reload.settings_path),
+  eightvo_copy_cstr(reload.settings_path, ARRAY_COUNT(reload.settings_path),
                      settings_path);
-  lectern0_load_settings(&reload);
+  eightvo_load_settings(&reload);
   if (reload.line_spacing_index != 0 ||
       !reload.font_family_user_override)
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=restart_persistence spacing=%u override=%d\n",
+            "eightvo_publisher_typography_spacing result=fail reason=restart_persistence spacing=%u override=%d\n",
             reload.line_spacing_index,
             reload.font_family_user_override);
     goto cleanup;
   }
 
-  Lectern0SettingsFileV2 legacy_settings = {
-    .magic = LECTERN0_SETTINGS_MAGIC,
+  EightvoSettingsFileV2 legacy_settings = {
+    .magic = EIGHTVO_SETTINGS_MAGIC,
     .version = 2,
     .font_family = FontProviderBookContentFamily_PalatinoLinotype,
     .text_size_index = 1,
     .line_spacing_index = 1,
-    .theme = Lectern0Theme_Light,
+    .theme = EightvoTheme_Light,
   };
   reload.font_family_user_override = 0;
   if (!os_write_entire_file_atomic(settings_path,
@@ -18404,22 +18404,22 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
                                    sizeof(legacy_settings)))
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=legacy_write\n");
+            "eightvo_publisher_typography_spacing result=fail reason=legacy_write\n");
     goto cleanup;
   }
-  lectern0_load_settings(&reload);
+  eightvo_load_settings(&reload);
   if (!reload.font_family_user_override ||
       reload.font_family != FontProviderBookContentFamily_PalatinoLinotype)
   {
     fprintf(stderr,
-            "lectern0_publisher_typography_spacing result=fail reason=legacy_migration family=%u override=%d\n",
+            "eightvo_publisher_typography_spacing result=fail reason=legacy_migration family=%u override=%d\n",
             reload.font_family,
             reload.font_family_user_override);
     goto cleanup;
   }
 
   fprintf(stdout,
-          "lectern0_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting font_override=explicit embedded_fonts=disabled italics=%u justification=%u line_heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d family_available=%u family_gaps=%d,%d,%d,%d,%d family_line_heights=%d,%d,%d,%d,%d family_rows=%u,%u,%u,%u,%u family_ranges=%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu parity_content=%d,%d,%d,%d navigation=persistent restart=persistent legacy_v2=override hashes=%016llx,%016llx,%016llx output=%s\n",
+          "eightvo_publisher_typography_spacing result=pass book=gotm_new options=3 action=select_setting font_override=explicit embedded_fonts=disabled italics=%u justification=%u line_heights=%u,%u,%u margin_units=%u,%u,%u publisher_margin=%d,%d,%d family_available=%u family_gaps=%d,%d,%d,%d,%d family_line_heights=%d,%d,%d,%d,%d family_rows=%u,%u,%u,%u,%u family_ranges=%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu,%llu..%llu parity_content=%d,%d,%d,%d navigation=persistent restart=persistent legacy_v2=override hashes=%016llx,%016llx,%016llx output=%s\n",
           italic_options, justified_options,
           line_heights[0], line_heights[1], line_heights[2],
           margin_units[0], margin_units[1], margin_units[2],
@@ -18455,59 +18455,59 @@ lectern0_run_publisher_typography_spacing_smoke(const char *epub_path,
 
 cleanup:
   if (pixels) { free(pixels); }
-  lectern0_app_release(&reload);
-  lectern0_app_release(&app);
+  eightvo_app_release(&reload);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION int
-lectern0_run_reader_view_smoke(const char *path, const char *export_path)
+eightvo_run_reader_view_smoke(const char *path, const char *export_path)
 {
   enum { Width = 1100, Height = 760 };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
-  if (!pixels || !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, path))
+  if (!pixels || !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, path))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=open\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=open\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&app, &buffer);
-  B32 adapter_all_ops = lectern0_draw_adapter_covers_all_ops(&app);
-  B32 adapter_edges = lectern0_draw_adapter_covers_reference_edges(&app);
+  eightvo_render_to_buffer(&app, &buffer);
+  B32 adapter_all_ops = eightvo_draw_adapter_covers_all_ops(&app);
+  B32 adapter_edges = eightvo_draw_adapter_covers_reference_edges(&app);
   B32 adapter_text =
-    lectern0_draw_adapter_covers_reference_text_styles(&app);
+    eightvo_draw_adapter_covers_reference_text_styles(&app);
   B32 adapter_find =
-    lectern0_draw_adapter_covers_measured_find_match(&app);
+    eightvo_draw_adapter_covers_measured_find_match(&app);
   B32 adapter_find_labels =
-    lectern0_draw_adapter_covers_find_status_and_metadata(&app);
+    eightvo_draw_adapter_covers_find_status_and_metadata(&app);
   B32 adapter_note =
-    lectern0_draw_adapter_covers_note_editable_row(&app);
-  B32 find_metrics = lectern0_reader_view_covers_find_text_metrics(&app);
-  B32 note_metrics = lectern0_reader_view_covers_note_text_metrics(&app);
+    eightvo_draw_adapter_covers_note_editable_row(&app);
+  B32 find_metrics = eightvo_reader_view_covers_find_text_metrics(&app);
+  B32 note_metrics = eightvo_reader_view_covers_note_text_metrics(&app);
   B32 toc_identity =
-    lectern0_reader_view_covers_noncontiguous_toc_identity(&app);
-  B32 right_order = lectern0_reader_view_covers_mixed_right_order(&app);
+    eightvo_reader_view_covers_noncontiguous_toc_identity(&app);
+  B32 right_order = eightvo_reader_view_covers_mixed_right_order(&app);
   B32 right_projection =
-    lectern0_reader_view_covers_right_projection_contract(&app);
+    eightvo_reader_view_covers_right_projection_contract(&app);
   B32 keyboard_routing =
-    lectern0_reader_view_keyboard_input_routing_regression(&app);
+    eightvo_reader_view_keyboard_input_routing_regression(&app);
   B32 find_shortcut =
-    lectern0_reader_view_find_shortcut_focus_regression(&app, &buffer);
+    eightvo_reader_view_find_shortcut_focus_regression(&app, &buffer);
   if (!app.reader_view_ready ||
       app.reader_view_projection.settings.count != READER_VIEW_SETTING_CAP ||
       app.reader_view_projection.toc.row_count < 2 ||
-      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Contents") ||
-      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Find") ||
-      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark") ||
-      !lectern0_reader_view_has_semantic(&app.reader_view_frame, "Annotations") ||
+      !eightvo_reader_view_has_semantic(&app.reader_view_frame, "Contents") ||
+      !eightvo_reader_view_has_semantic(&app.reader_view_frame, "Find") ||
+      !eightvo_reader_view_has_semantic(&app.reader_view_frame, "Bookmark") ||
+      !eightvo_reader_view_has_semantic(&app.reader_view_frame, "Annotations") ||
       app.reader_view_layout.host_toolbar_trailing_rect.w !=
-        Lectern0HostToolbarSlotWidth ||
+        EightvoHostToolbarSlotWidth ||
       app.reader_content_geometry.page_surface_rect.w >
         READER_VIEW_DEFAULT_PAGE_MAX_WIDTH ||
       app.reader_content_geometry.content_rect.x -
@@ -18523,14 +18523,14 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       !right_projection || !keyboard_routing || !find_shortcut)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u adapters=%d/%d/%d/%d/%d/%d metrics=%d/%d identities=%d/%d/%d keyboard=%d shortcut=%d\n",
+            "eightvo_reader_view_smoke result=fail reason=chrome ready=%d settings=%d toc=%d contents=%d find=%d bookmark=%d annotations=%d trailing=%d page=%d content_dx=%d content_dy=%d unsupported=%u adapters=%d/%d/%d/%d/%d/%d metrics=%d/%d identities=%d/%d/%d keyboard=%d shortcut=%d\n",
             app.reader_view_ready,
             app.reader_view_projection.settings.count,
             app.reader_view_projection.toc.row_count,
-            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Contents"),
-            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Find"),
-            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Bookmark"),
-            lectern0_reader_view_has_semantic(&app.reader_view_frame, "Annotations"),
+            eightvo_reader_view_has_semantic(&app.reader_view_frame, "Contents"),
+            eightvo_reader_view_has_semantic(&app.reader_view_frame, "Find"),
+            eightvo_reader_view_has_semantic(&app.reader_view_frame, "Bookmark"),
+            eightvo_reader_view_has_semantic(&app.reader_view_frame, "Annotations"),
             app.reader_view_layout.host_toolbar_trailing_rect.w,
             app.reader_content_geometry.page_surface_rect.w,
             app.reader_content_geometry.content_rect.x -
@@ -18543,56 +18543,56 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
             find_metrics, note_metrics, toc_identity, right_order,
             right_projection, keyboard_routing, find_shortcut);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
   B32 reference_focus =
-    lectern0_reader_view_reference_focus_order(&app, &buffer);
+    eightvo_reader_view_reference_focus_order(&app, &buffer);
   B32 panel_focus = reference_focus &&
-    lectern0_reader_view_panel_focus_regression(&app, &buffer);
+    eightvo_reader_view_panel_focus_regression(&app, &buffer);
   B32 gutter_keyboard = panel_focus &&
-    lectern0_reader_view_gutter_keyboard_regression(&app, &buffer);
+    eightvo_reader_view_gutter_keyboard_regression(&app, &buffer);
   if (!reference_focus || !panel_focus || !gutter_keyboard)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=reference_panel_focus_or_gutter focus=%d panel=%d gutter=%d\n",
+            "eightvo_reader_view_smoke result=fail reason=reference_panel_focus_or_gutter focus=%d panel=%d gutter=%d\n",
             reference_focus,
             panel_focus,
             gutter_keyboard);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
   U32 initial_spine = app.reader.active_spine_index;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ActivateTocRow,
     .key = 2,
   });
   if (app.reader.active_spine_index == initial_spine)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=toc_action\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=toc_action\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_HistoryBack,
   });
   B32 history_back_ok = app.reader.active_spine_index == initial_spine;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_HistoryForward,
   });
   B32 history_forward_ok = app.reader.active_spine_index != initial_spine;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_HistoryBack,
   });
   if (!history_back_ok || !history_forward_ok ||
       app.reader.active_spine_index != initial_spine)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=history_actions initial=%u current=%u back_ok=%d forward_ok=%d back_count=%u forward_count=%u\n",
+            "eightvo_reader_view_smoke result=fail reason=history_actions initial=%u current=%u back_ok=%d forward_ok=%d back_count=%u forward_count=%u\n",
             initial_spine,
             app.reader.active_spine_index,
             history_back_ok,
@@ -18600,40 +18600,40 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
             app.reader.back_stack_count,
             app.reader.forward_stack_count);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_FontSize,
     .key = 2001,
   });
   if (app.text_size_index != 1)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=setting\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=setting\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_LineSpacing,
     .key = 3001,
   });
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SelectSetting,
     .setting_kind = ReaderViewSetting_Theme,
     .key = 4000,
   });
-  if (app.line_spacing_index != 1 || app.theme != Lectern0Theme_Dark)
+  if (app.line_spacing_index != 1 || app.theme != EightvoTheme_Dark)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=settings\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=settings\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   for (UI0S32 index = 0;
        index < app.reader_view_settings[0].choices.count;
        index += 1)
@@ -18642,16 +18642,16 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     if ((choice.flags & ReaderViewChoice_Selected) == 0)
     {
       U32 old_family = app.font_family;
-      lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+      eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
         .kind = ReaderViewAction_SelectSetting,
         .setting_kind = ReaderViewSetting_FontFamily,
         .key = choice.key,
       });
       if (app.font_family == old_family)
       {
-        fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=font_setting\n");
+        fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=font_setting\n");
         free(pixels);
-        lectern0_app_release(&app);
+        eightvo_app_release(&app);
         return 1;
       }
       break;
@@ -18661,11 +18661,11 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   U32 find_edit_back_count = app.reader.back_stack_count;
   U32 find_edit_spine = app.reader.active_spine_index;
   U64 find_edit_byte = app.reader.view_byte_offset;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_FindChanged,
     .text = {.data = "standalone", .size = 10},
   });
-  if (!lectern0_reader_view_text_is(
+  if (!eightvo_reader_view_text_is(
         reader_view_find_query(&app.reader_view_state), "standalone") ||
       app.reader.search_match_count != find_edit_match_count ||
       app.reader.search_query_size != 0 ||
@@ -18674,63 +18674,63 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.reader.view_byte_offset != find_edit_byte)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=find_edit_executed\n");
+            "eightvo_reader_view_smoke result=fail reason=find_edit_executed\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_FindCommitted,
     .text = {.data = "standalone", .size = 10},
   });
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   if (app.reader.search_match_count < 2 ||
       app.reader.search_query_size != 10 ||
       memcmp(app.reader.search_query_storage, "standalone", 10) != 0 ||
       !app.reader.search_has_active || app.reader.search_active_index != 0 ||
       app.reader_view_projection.find.row_count < 2 ||
-      !lectern0_reader_view_text_is(
+      !eightvo_reader_view_text_is(
         app.reader_view_projection.find.committed_query, "standalone"))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=find_commit\n");
+            "eightvo_reader_view_smoke result=fail reason=find_commit\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   ReaderViewKey second_find_key =
     app.reader_view_projection.find.rows[1].key;
-  if (!lectern0_reader_view_navigation_panel_interaction_regression(
+  if (!eightvo_reader_view_navigation_panel_interaction_regression(
         &app, &buffer, second_find_key))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=navigation_panel_interactions\n");
+            "eightvo_reader_view_smoke result=fail reason=navigation_panel_interactions\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ActivateFindRow,
     .key = second_find_key,
   });
   if (!app.reader.search_has_active || app.reader.search_active_index != 1)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=find_result_action\n");
+            "eightvo_reader_view_smoke result=fail reason=find_result_action\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   U32 find_clear_spine = app.reader.active_spine_index;
   U64 find_clear_byte = app.reader.view_byte_offset;
   U32 find_clear_back_count = app.reader.back_stack_count;
   U32 find_clear_forward_count = app.reader.forward_stack_count;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_FindChanged,
     .text = {.data = "", .size = 0},
   });
-  lectern0_prepare_reader_view_projection(&app);
-  if (!lectern0_reader_view_text_is(
+  eightvo_prepare_reader_view_projection(&app);
+  if (!eightvo_reader_view_text_is(
         reader_view_find_query(&app.reader_view_state), "") ||
       app.reader.search_match_count != 0 ||
       app.reader.search_query_size != 0 || app.reader.search_has_active ||
@@ -18741,48 +18741,48 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.reader.forward_stack_count != find_clear_forward_count)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=find_clear\n");
+            "eightvo_reader_view_smoke result=fail reason=find_clear\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   {
-    char rollback_path[Lectern0PathCap] = {0};
-    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+    char rollback_path[EightvoPathCap] = {0};
+    eightvo_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
                        app.annotations_path);
     B32 rollback_persistence = app.persistence_enabled;
     U32 rollback_count = app.bookmark_count;
     U64 rollback_next_id = app.next_record_id;
     U64 rollback_revision = app.annotation_revision;
     app.persistence_enabled = 1;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path),
-                       "?:\\lectern0_reader_view_bookmark_add_failure.annotations");
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+                       "?:\\eightvo_reader_view_bookmark_add_failure.annotations");
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleBookmark,
     });
     app.persistence_enabled = rollback_persistence;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path), rollback_path);
     if (app.bookmark_count != rollback_count ||
         app.next_record_id != rollback_next_id ||
         app.annotation_revision != rollback_revision)
     {
       fprintf(stderr,
-              "lectern0_reader_view_smoke result=fail reason=bookmark_add_rollback\n");
+              "eightvo_reader_view_smoke result=fail reason=bookmark_add_rollback\n");
       free(pixels);
-      lectern0_app_release(&app);
+      eightvo_app_release(&app);
       return 1;
     }
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleBookmark,
   });
   if (app.bookmark_count != 1)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=bookmark\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=bookmark\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   U64 relative_start = 0;
@@ -18801,15 +18801,15 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (relative_end <= relative_start ||
       epub_reader_set_selection(&app.reader, selection) != EpubReaderResult_Ok)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=selection\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=selection\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   app.selection_anchor_rect = ui0_rect(400, 180, 4, 24);
-  lectern0_prepare_selected_text(&app);
-  char selection_failure_annotations_path[Lectern0PathCap] = {0};
-  lectern0_copy_cstr(selection_failure_annotations_path,
+  eightvo_prepare_selected_text(&app);
+  char selection_failure_annotations_path[EightvoPathCap] = {0};
+  eightvo_copy_cstr(selection_failure_annotations_path,
                      ARRAY_COUNT(selection_failure_annotations_path),
                      app.annotations_path);
   B32 selection_failure_persistence_enabled = app.persistence_enabled;
@@ -18817,13 +18817,13 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   U64 selection_failure_next_id = app.next_record_id;
   U64 selection_failure_revision = app.annotation_revision;
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.annotations_path,
+  eightvo_copy_cstr(app.annotations_path,
                      ARRAY_COUNT(app.annotations_path),
-                     "?:\\lectern0_reader_view_selection_note_failure.annotations");
-  B32 selection_note_failure_rejected = !lectern0_save_selection_note(
+                     "?:\\eightvo_reader_view_selection_note_failure.annotations");
+  B32 selection_note_failure_rejected = !eightvo_save_selection_note(
     &app, (ReaderViewText){"Must not persist", 16});
   app.persistence_enabled = selection_failure_persistence_enabled;
-  lectern0_copy_cstr(app.annotations_path,
+  eightvo_copy_cstr(app.annotations_path,
                      ARRAY_COUNT(app.annotations_path),
                      selection_failure_annotations_path);
   if (!selection_note_failure_rejected ||
@@ -18833,47 +18833,47 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.highlights[selection_failure_count].id != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=selection_note_atomic_rollback\n");
+            "eightvo_reader_view_smoke result=fail reason=selection_note_atomic_rollback\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   {
-    char rollback_path[Lectern0PathCap] = {0};
-    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+    char rollback_path[EightvoPathCap] = {0};
+    eightvo_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
                        app.annotations_path);
     B32 rollback_persistence = app.persistence_enabled;
-    Lectern0Bookmark rollback_bookmark = app.bookmarks[0];
+    EightvoBookmark rollback_bookmark = app.bookmarks[0];
     U64 rollback_revision = app.annotation_revision;
     app.persistence_enabled = 1;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path),
-                       "?:\\lectern0_reader_view_bookmark_remove_failure.annotations");
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+                       "?:\\eightvo_reader_view_bookmark_remove_failure.annotations");
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleBookmark,
     });
     app.persistence_enabled = rollback_persistence;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path), rollback_path);
     if (app.bookmark_count != 1 ||
         app.bookmarks[0].id != rollback_bookmark.id ||
         app.annotation_revision != rollback_revision)
     {
       fprintf(stderr,
-              "lectern0_reader_view_smoke result=fail reason=bookmark_remove_rollback\n");
+              "eightvo_reader_view_smoke result=fail reason=bookmark_remove_rollback\n");
       free(pixels);
-      lectern0_app_release(&app);
+      eightvo_app_release(&app);
       return 1;
     }
   }
-  if (!lectern0_set_highlight_color(&app, 2))
+  if (!eightvo_set_highlight_color(&app, 2))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=highlight\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=highlight\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   const ReaderViewRightRow *highlight_row = 0;
   for (UI0S32 index = 0;
        index < app.reader_view_projection.right.row_count;
@@ -18887,34 +18887,34 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       break;
     }
   }
-  char expected_highlight_secondary[Lectern0RecordLabelCap] = {0};
+  char expected_highlight_secondary[EightvoRecordLabelCap] = {0};
   (void)cstr_format(
     expected_highlight_secondary,
     ARRAY_COUNT(expected_highlight_secondary),
     "Highlight - re10 loc %llu",
-    (unsigned long long)lectern0_reader_location_for_position(
+    (unsigned long long)eightvo_reader_location_for_position(
       &app, app.highlights[0].spine_index, app.highlights[0].start_byte));
   if (!highlight_row ||
-      !lectern0_reader_view_text_is(highlight_row->secondary,
+      !eightvo_reader_view_text_is(highlight_row->secondary,
                                     expected_highlight_secondary))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=highlight_metadata\n");
+            "eightvo_reader_view_smoke result=fail reason=highlight_metadata\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   U64 note_revision = app.annotation_revision;
-  B32 note_saved = lectern0_save_selection_note(
+  B32 note_saved = eightvo_save_selection_note(
     &app, (ReaderViewText){"Smoke note", 10});
   if (!note_saved || app.annotation_revision != note_revision + 1)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=note\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=note\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   const ReaderViewRightRow *bookmark_row = 0;
   const ReaderViewRightRow *attached_highlight_row = 0;
   const ReaderViewRightRow *note_row = 0;
@@ -18929,19 +18929,19 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       attached_highlight_row = row;
     else if (row->kind == ReaderViewRightRow_Note) note_row = row;
   }
-  char expected_bookmark_secondary[Lectern0RecordLabelCap] = {0};
-  char expected_note_secondary[Lectern0RecordLabelCap] = {0};
+  char expected_bookmark_secondary[EightvoRecordLabelCap] = {0};
+  char expected_note_secondary[EightvoRecordLabelCap] = {0};
   (void)cstr_format(
     expected_bookmark_secondary,
     ARRAY_COUNT(expected_bookmark_secondary),
     "Bookmark - re10 loc %llu",
-    (unsigned long long)lectern0_reader_location_for_position(
+    (unsigned long long)eightvo_reader_location_for_position(
       &app, app.bookmarks[0].spine_index, app.bookmarks[0].byte_offset));
   (void)cstr_format(
     expected_note_secondary,
     ARRAY_COUNT(expected_note_secondary),
     "Note - re10 loc %llu",
-    (unsigned long long)lectern0_reader_location_for_position(
+    (unsigned long long)eightvo_reader_location_for_position(
       &app, app.highlights[0].spine_index, app.highlights[0].start_byte));
   if (app.reader_view_projection.right.row_count != 3 ||
       app.reader_view_projection.selection.current_color_key != 5002 ||
@@ -18957,35 +18957,35 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       (attached_highlight_row->flags &
        ReaderViewRow_AttachedToPrevious) != 0 ||
       (note_row->flags & ReaderViewRow_AttachedToPrevious) == 0 ||
-      !lectern0_reader_view_text_is(note_row->primary, "Smoke note") ||
-      !lectern0_reader_view_text_is(bookmark_row->secondary,
+      !eightvo_reader_view_text_is(note_row->primary, "Smoke note") ||
+      !eightvo_reader_view_text_is(bookmark_row->secondary,
                                     expected_bookmark_secondary) ||
-      !lectern0_reader_view_text_is(note_row->secondary,
+      !eightvo_reader_view_text_is(note_row->secondary,
                                     expected_note_secondary))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=projection\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=projection\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   app.reader_view_state.right_filter = ReaderViewRightFilter_Notes;
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   const ReaderViewRightRow *notes_only_row =
     app.reader_view_projection.right.row_count == 1 ?
       app.reader_view_projection.right.rows : 0;
   if (!notes_only_row || notes_only_row->kind != ReaderViewRightRow_Note ||
       notes_only_row->color_key != 5002 ||
-      !lectern0_reader_view_text_is(notes_only_row->primary, "Smoke note") ||
+      !eightvo_reader_view_text_is(notes_only_row->primary, "Smoke note") ||
       (notes_only_row->flags & ReaderViewRow_AttachedToPrevious) != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_note_filter_attachment\n");
+            "eightvo_reader_view_smoke result=fail reason=right_note_filter_attachment\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   app.reader_view_state.right_filter = ReaderViewRightFilter_All;
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   attached_highlight_row = 0;
   note_row = 0;
   for (UI0S32 index = 0;
@@ -19002,51 +19002,51 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (!attached_highlight_row || !note_row)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_attachment_restore\n");
+            "eightvo_reader_view_smoke result=fail reason=right_attachment_restore\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   ReaderViewKey bookmark_row_key = bookmark_row->key;
   ReaderViewKey highlight_row_key = attached_highlight_row->key;
   ReaderViewKey note_row_key = note_row->key;
-  const Lectern0ReaderViewRightSource *highlight_source =
-    lectern0_reader_view_right_source(
+  const EightvoReaderViewRightSource *highlight_source =
+    eightvo_reader_view_right_source(
       &app, highlight_row_key, ReaderViewRightRow_Highlight);
-  const Lectern0ReaderViewRightSource *note_source =
-    lectern0_reader_view_right_source(
+  const EightvoReaderViewRightSource *note_source =
+    eightvo_reader_view_right_source(
       &app, note_row_key, ReaderViewRightRow_Note);
   if (!highlight_source || !note_source ||
       highlight_source->record_id != app.highlights[0].id ||
       note_source->record_id != app.highlights[0].id)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_source_mapping\n");
+            "eightvo_reader_view_smoke result=fail reason=right_source_mapping\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  if (!lectern0_reader_view_annotation_interaction_regression(
+  if (!eightvo_reader_view_annotation_interaction_regression(
         &app, &buffer, note_row_key))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=annotation_interactions\n");
+            "eightvo_reader_view_smoke result=fail reason=annotation_interactions\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  if (!lectern0_reader_view_annotation_pointer_regression(
+  if (!eightvo_reader_view_annotation_pointer_regression(
         &app, &buffer, note_row_key))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=annotation_pointer_interactions\n");
+            "eightvo_reader_view_smoke result=fail reason=annotation_pointer_interactions\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   {
-    char rollback_path[Lectern0PathCap] = {0};
-    lectern0_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
+    char rollback_path[EightvoPathCap] = {0};
+    eightvo_copy_cstr(rollback_path, ARRAY_COUNT(rollback_path),
                        app.annotations_path);
     B32 rollback_persistence = app.persistence_enabled;
     U64 rollback_revision = app.annotation_revision;
@@ -19054,26 +19054,26 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     B32 rollback_highlight_star = app.highlights[0].starred;
     B32 rollback_note_star = app.highlights[0].note_starred;
     app.persistence_enabled = 1;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path),
-                       "?:\\lectern0_reader_view_row_star_failure.annotations");
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+                       "?:\\eightvo_reader_view_row_star_failure.annotations");
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = bookmark_row_key,
       .right_row_kind = ReaderViewRightRow_Bookmark,
     });
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = highlight_row_key,
       .right_row_kind = ReaderViewRightRow_Highlight,
     });
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleRightRowStar,
       .key = note_row_key,
       .right_row_kind = ReaderViewRightRow_Note,
     });
     app.persistence_enabled = rollback_persistence;
-    lectern0_copy_cstr(app.annotations_path,
+    eightvo_copy_cstr(app.annotations_path,
                        ARRAY_COUNT(app.annotations_path), rollback_path);
     if (app.bookmark_count != 1 ||
         app.bookmarks[0].id != rollback_bookmark_id ||
@@ -19082,32 +19082,32 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
         app.annotation_revision != rollback_revision)
     {
       fprintf(stderr,
-              "lectern0_reader_view_smoke result=fail reason=right_star_rollback\n");
+              "eightvo_reader_view_smoke result=fail reason=right_star_rollback\n");
       free(pixels);
-      lectern0_app_release(&app);
+      eightvo_app_release(&app);
       return 1;
     }
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleRightRowStar,
     .key = highlight_row_key,
     .right_row_kind = ReaderViewRightRow_Highlight,
   });
   B32 highlight_star_only = app.highlights[0].starred &&
                             !app.highlights[0].note_starred;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleRightRowStar,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
   B32 distinct_stars = highlight_star_only && app.highlights[0].starred &&
                        app.highlights[0].note_starred;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleRightRowStar,
     .key = highlight_row_key,
     .right_row_kind = ReaderViewRightRow_Highlight,
   });
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ToggleRightRowStar,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
@@ -19116,16 +19116,16 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.highlights[0].note_starred)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_star_mapping\n");
+            "eightvo_reader_view_smoke result=fail reason=right_star_mapping\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ActivateTocRow,
     .key = 2,
   });
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_ActivateRightRow,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
@@ -19133,9 +19133,9 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (app.reader.active_spine_index != app.highlights[0].spine_index)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_activate_mapping\n");
+            "eightvo_reader_view_smoke result=fail reason=right_activate_mapping\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   DocSelection unrelated_note_selection = {0};
@@ -19165,9 +19165,9 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     epub_reader_set_selection(&app.reader, unrelated_note_selection) ==
       EpubReaderResult_Ok;
   app.selection_anchor_rect = ui0_rect(377, 211, 5, 23);
-  if (unrelated_note_selection_set) lectern0_prepare_selected_text(&app);
-  char unrelated_note_selected_text[Lectern0SelectionTextCap] = {0};
-  lectern0_copy_cstr(unrelated_note_selected_text,
+  if (unrelated_note_selection_set) eightvo_prepare_selected_text(&app);
+  char unrelated_note_selected_text[EightvoSelectionTextCap] = {0};
+  eightvo_copy_cstr(unrelated_note_selected_text,
                      ARRAY_COUNT(unrelated_note_selected_text),
                      app.selected_text);
   UI0Rect unrelated_note_anchor = app.selection_anchor_rect;
@@ -19175,17 +19175,17 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   U64 note_edit_byte = app.reader.view_byte_offset;
   U32 note_edit_back_count = app.reader.back_stack_count;
   U32 note_edit_forward_count = app.reader.forward_stack_count;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_EditRightRowNote,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
   if (app.reader_view_state.popup != ReaderViewPopup_NoteEditor ||
-      !lectern0_reader_view_text_is(reader_view_note_draft(&app.reader_view_state),
+      !eightvo_reader_view_text_is(reader_view_note_draft(&app.reader_view_state),
                                     "Smoke note") ||
       !unrelated_note_selection_set ||
       unrelated_note_selected_text[0] == 0 ||
-      !lectern0_reader_view_document_selection_is(
+      !eightvo_reader_view_document_selection_is(
         &app, unrelated_note_selection, unrelated_note_selected_text,
         unrelated_note_anchor) ||
       app.reader.active_spine_index != note_edit_spine ||
@@ -19193,14 +19193,14 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.reader.back_stack_count != note_edit_back_count ||
       app.reader.forward_stack_count != note_edit_forward_count)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=direct_note_edit\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=direct_note_edit\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   U64 note_lifecycle_revision = app.annotation_revision;
   app.reader_view_state.note_dirty = 1;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SaveNote,
     .key = app.reader_view_state.note_selection_key,
     .value = note_lifecycle_revision + 1,
@@ -19210,10 +19210,10 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app.reader_view_state.note_dirty &&
     strcmp(app.highlights[0].note, "Smoke note") == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SaveNote,
     .key = app.reader_view_state.note_selection_key + 1,
     .value = note_lifecycle_revision,
@@ -19223,11 +19223,11 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app.reader_view_state.note_dirty &&
     strcmp(app.highlights[0].note, "Smoke note") == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor);
   app.annotation_revision += 1;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SaveNote,
     .key = app.reader_view_state.note_selection_key,
     .value = app.annotation_revision,
@@ -19237,20 +19237,20 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app.reader_view_state.note_dirty &&
     strcmp(app.highlights[0].note, "Smoke note") == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor);
   app.annotation_revision = note_lifecycle_revision;
-  char saved_annotations_path[Lectern0PathCap] = {0};
-  lectern0_copy_cstr(saved_annotations_path,
+  char saved_annotations_path[EightvoPathCap] = {0};
+  eightvo_copy_cstr(saved_annotations_path,
                      ARRAY_COUNT(saved_annotations_path),
                      app.annotations_path);
   B32 saved_persistence_enabled = app.persistence_enabled;
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.annotations_path,
+  eightvo_copy_cstr(app.annotations_path,
                      ARRAY_COUNT(app.annotations_path),
-                     "?:\\lectern0_reader_view_forced_failure.annotations");
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+                     "?:\\eightvo_reader_view_forced_failure.annotations");
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SaveNote,
     .key = app.reader_view_state.note_selection_key,
     .value = note_lifecycle_revision,
@@ -19261,10 +19261,10 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     strcmp(app.highlights[0].note, "Smoke note") == 0 &&
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app.reader_view_state.note_dirty &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteNote,
     .key = app.reader_view_state.note_selection_key,
     .value = note_lifecycle_revision,
@@ -19274,14 +19274,14 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     strcmp(app.highlights[0].note, "Smoke note") == 0 &&
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor &&
     app.reader_view_state.note_dirty &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor);
   app.persistence_enabled = saved_persistence_enabled;
-  lectern0_copy_cstr(app.annotations_path,
+  eightvo_copy_cstr(app.annotations_path,
                      ARRAY_COUNT(app.annotations_path),
                      saved_annotations_path);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_SaveNote,
     .key = app.reader_view_state.note_selection_key,
     .value = note_lifecycle_revision,
@@ -19292,23 +19292,23 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     app.reader_view_state.popup == ReaderViewPopup_None &&
     !app.reader_view_state.note_dirty &&
     app.annotation_note_selection_key == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor) &&
     app.reader.active_spine_index == note_edit_spine &&
     app.reader.view_byte_offset == note_edit_byte &&
     app.reader.back_stack_count == note_edit_back_count &&
     app.reader.forward_stack_count == note_edit_forward_count;
-  B32 restored_after_save = lectern0_save_note_at_index(
+  B32 restored_after_save = eightvo_save_note_at_index(
     &app, 0, (ReaderViewText){"Smoke note", 10});
-  lectern0_prepare_reader_view_projection(&app);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_prepare_reader_view_projection(&app);
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_EditRightRowNote,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
   U64 delete_revision = app.annotation_revision;
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteNote,
     .key = app.reader_view_state.note_selection_key,
     .value = delete_revision,
@@ -19316,20 +19316,20 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   B32 delete_acknowledged = app.highlights[0].note[0] == 0 &&
     app.reader_view_state.popup == ReaderViewPopup_None &&
     app.annotation_note_selection_key == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor) &&
     app.reader.active_spine_index == note_edit_spine &&
     app.reader.view_byte_offset == note_edit_byte &&
     app.reader.back_stack_count == note_edit_back_count &&
     app.reader.forward_stack_count == note_edit_forward_count;
-  B32 restored_after_delete = lectern0_save_note_at_index(
+  B32 restored_after_delete = eightvo_save_note_at_index(
     &app, 0, (ReaderViewText){"Smoke note", 10});
-  B32 cancel_selection_set = lectern0_reader_view_document_selection_is(
+  B32 cancel_selection_set = eightvo_reader_view_document_selection_is(
     &app, unrelated_note_selection, unrelated_note_selected_text,
     unrelated_note_anchor);
-  lectern0_prepare_reader_view_projection(&app);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_prepare_reader_view_projection(&app);
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_EditRightRowNote,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
@@ -19338,7 +19338,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     app.reader_view_state.popup == ReaderViewPopup_NoteEditor;
   B32 shared_cancel_closed =
     reader_view_close_note_editor(&app.reader_view_state);
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_CancelNote,
     .key = app.reader_view_state.note_selection_key,
     .value = app.annotation_revision,
@@ -19346,21 +19346,21 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   B32 cancel_acknowledged =
     app.reader_view_state.popup == ReaderViewPopup_None &&
     app.annotation_note_selection_key == 0 &&
-    lectern0_reader_view_document_selection_is(
+    eightvo_reader_view_document_selection_is(
       &app, unrelated_note_selection, unrelated_note_selected_text,
       unrelated_note_anchor) &&
     app.reader.active_spine_index == note_edit_spine &&
     app.reader.view_byte_offset == note_edit_byte &&
     app.reader.back_stack_count == note_edit_back_count &&
     app.reader.forward_stack_count == note_edit_forward_count;
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   B32 selection_origin_opened = reader_view_open_note_editor(
     &app.reader_view_state, &app.reader_view_projection.selection);
   B32 selection_origin_shared_closed = selection_origin_opened &&
     reader_view_close_note_editor(&app.reader_view_state);
   if (selection_origin_shared_closed)
   {
-    lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
       .kind = ReaderViewAction_CancelNote,
       .key = app.reader_view_state.note_selection_key,
       .value = app.reader_view_state.note_source_revision,
@@ -19384,7 +19384,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       !selection_origin_shared_closed || !selection_origin_released)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=note_lifecycle stale=%d identity=%d source_revision=%d failed_save=%d failed_delete=%d save=%d restore_save=%d delete=%d restore_delete=%d selection=%d open=%d shared_close=%d cancel=%d selection_origin=%d/%d/%d\n",
+            "eightvo_reader_view_smoke result=fail reason=note_lifecycle stale=%d identity=%d source_revision=%d failed_save=%d failed_delete=%d save=%d restore_save=%d delete=%d restore_delete=%d selection=%d open=%d shared_close=%d cancel=%d selection_origin=%d/%d/%d\n",
             stale_save_guarded,
             stale_identity_guarded,
             source_revision_guarded,
@@ -19402,25 +19402,25 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
             selection_origin_shared_closed,
             selection_origin_released);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteRightRow,
     .key = note_row_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
   if (app.highlight_count != 1 || app.highlights[0].note[0] != 0 ||
-      !lectern0_save_note_at_index(&app, 0,
+      !eightvo_save_note_at_index(&app, 0,
                                    (ReaderViewText){"Smoke note", 10}))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_note_delete_mapping\n");
+            "eightvo_reader_view_smoke result=fail reason=right_note_delete_mapping\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   const ReaderViewRightRow *restored_highlight_row = 0;
   for (UI0S32 index = 0;
        index < app.reader_view_projection.right.row_count;
@@ -19437,18 +19437,18 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (!restored_highlight_row)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_highlight_restore\n");
+            "eightvo_reader_view_smoke result=fail reason=right_highlight_restore\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  Lectern0Highlight saved_highlight = app.highlights[0];
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  EightvoHighlight saved_highlight = app.highlights[0];
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteRightRow,
     .key = restored_highlight_row->key,
     .right_row_kind = ReaderViewRightRow_Highlight,
   });
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   ReaderViewKey demoted_note_key = 0;
   U32 demoted_highlight_rows = 0;
   U32 demoted_note_rows = 0;
@@ -19474,7 +19474,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   B32 demoted_selection_set =
     epub_reader_set_selection(&app.reader, demoted_selection) ==
       EpubReaderResult_Ok;
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   B32 demoted_selection_identity = demoted_selection_set &&
     app.reader_view_projection.selection.current_color_key == 0 &&
     (app.reader_view_projection.selection.flags &
@@ -19494,7 +19494,7 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       demoted_note_key == 0 || !demoted_selection_identity)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=right_highlight_demotion count=%u identity=%d highlight_rows=%u note_rows=%u note_key=%llu selection=%d\n",
+            "eightvo_reader_view_smoke result=fail reason=right_highlight_demotion count=%u identity=%d highlight_rows=%u note_rows=%u note_key=%llu selection=%d\n",
             app.highlight_count,
             app.highlight_count ? app.highlights[0].is_highlight : -1,
             demoted_highlight_rows,
@@ -19502,36 +19502,36 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
             (unsigned long long)demoted_note_key,
             demoted_selection_identity);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
   app.persistence_enabled = 1;
-  lectern0_copy_cstr(app.export_path, ARRAY_COUNT(app.export_path), export_path);
+  eightvo_copy_cstr(app.export_path, ARRAY_COUNT(app.export_path), export_path);
   (void)cstr_format(app.settings_path, ARRAY_COUNT(app.settings_path),
                     "%s.settings", export_path);
   (void)cstr_format(app.annotations_path, ARRAY_COUNT(app.annotations_path),
                     "%s.annotations", export_path);
-  if (!lectern0_save_annotations(&app))
+  if (!eightvo_save_annotations(&app))
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=demoted_persistence\n");
+            "eightvo_reader_view_smoke result=fail reason=demoted_persistence\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
       app.highlights[0].is_highlight ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=demoted_reload\n");
+            "eightvo_reader_view_smoke result=fail reason=demoted_reload\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   ReaderViewKey reloaded_note_key = 0;
   for (UI0S32 index = 0;
        index < app.reader_view_projection.right.row_count;
@@ -19542,48 +19542,48 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     if (row->kind == ReaderViewRightRow_Note)
       reloaded_note_key = row->key;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteRightRow,
     .key = reloaded_note_key,
     .right_row_kind = ReaderViewRightRow_Note,
   });
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (reloaded_note_key == 0 || app.bookmark_count != 1 ||
       app.highlight_count != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=note_only_final_delete_reload\n");
+            "eightvo_reader_view_smoke result=fail reason=note_only_final_delete_reload\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
-  Lectern0AnnotationFileV1 *legacy_v1 =
-    (Lectern0AnnotationFileV1 *)calloc(1, sizeof(*legacy_v1));
+  EightvoAnnotationFileV1 *legacy_v1 =
+    (EightvoAnnotationFileV1 *)calloc(1, sizeof(*legacy_v1));
   if (!legacy_v1)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v1_allocate\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v1_allocate\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  legacy_v1->magic = LECTERN0_ANNOTATION_MAGIC;
+  legacy_v1->magic = EIGHTVO_ANNOTATION_MAGIC;
   legacy_v1->version = 1;
   legacy_v1->bookmark_count = 1;
   legacy_v1->highlight_count = 1;
   legacy_v1->path_hash = u64_hash_str8(str8_from_cstr(app.current_path));
   legacy_v1->next_record_id = app.next_record_id;
-  legacy_v1->bookmarks[0] = (Lectern0BookmarkV1){
+  legacy_v1->bookmarks[0] = (EightvoBookmarkV1){
     .id = app.bookmarks[0].id,
     .spine_index = app.bookmarks[0].spine_index,
     .byte_offset = app.bookmarks[0].byte_offset,
     .starred = 1,
   };
-  lectern0_copy_cstr(legacy_v1->bookmarks[0].label,
+  eightvo_copy_cstr(legacy_v1->bookmarks[0].label,
                      ARRAY_COUNT(legacy_v1->bookmarks[0].label),
                      app.bookmarks[0].label);
-  legacy_v1->highlights[0] = (Lectern0HighlightV2){
+  legacy_v1->highlights[0] = (EightvoHighlightV2){
     .id = saved_highlight.id,
     .spine_index = saved_highlight.spine_index,
     .start_byte = saved_highlight.start_byte,
@@ -19592,13 +19592,13 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     .starred = 1,
     .note_starred = 1,
   };
-  lectern0_copy_cstr(legacy_v1->highlights[0].section,
+  eightvo_copy_cstr(legacy_v1->highlights[0].section,
                      ARRAY_COUNT(legacy_v1->highlights[0].section),
                      saved_highlight.section);
-  lectern0_copy_cstr(legacy_v1->highlights[0].text,
+  eightvo_copy_cstr(legacy_v1->highlights[0].text,
                      ARRAY_COUNT(legacy_v1->highlights[0].text),
                      saved_highlight.text);
-  lectern0_copy_cstr(legacy_v1->highlights[0].note,
+  eightvo_copy_cstr(legacy_v1->highlights[0].note,
                      ARRAY_COUNT(legacy_v1->highlights[0].note),
                      saved_highlight.note);
   B32 wrote_legacy_v1 = os_write_entire_file_atomic(
@@ -19607,12 +19607,12 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (!wrote_legacy_v1)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v1_write\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v1_write\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
       !app.bookmarks[0].starred ||
       strcmp(app.bookmarks[0].excerpt, "Bookmark") != 0 ||
@@ -19621,30 +19621,30 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v1_migration\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v1_migration\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
-  Lectern0AnnotationFileV2 *legacy_v2 =
-    (Lectern0AnnotationFileV2 *)calloc(1, sizeof(*legacy_v2));
+  EightvoAnnotationFileV2 *legacy_v2 =
+    (EightvoAnnotationFileV2 *)calloc(1, sizeof(*legacy_v2));
   if (!legacy_v2)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v2_allocate\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v2_allocate\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  legacy_v2->magic = LECTERN0_ANNOTATION_MAGIC;
+  legacy_v2->magic = EIGHTVO_ANNOTATION_MAGIC;
   legacy_v2->version = 2;
   legacy_v2->bookmark_count = 1;
   legacy_v2->highlight_count = 1;
   legacy_v2->path_hash = u64_hash_str8(str8_from_cstr(app.current_path));
   legacy_v2->next_record_id = app.next_record_id;
   legacy_v2->bookmarks[0] = app.bookmarks[0];
-  legacy_v2->highlights[0] = (Lectern0HighlightV2){
+  legacy_v2->highlights[0] = (EightvoHighlightV2){
     .id = saved_highlight.id,
     .spine_index = saved_highlight.spine_index,
     .start_byte = saved_highlight.start_byte,
@@ -19653,13 +19653,13 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     .starred = 1,
     .note_starred = 0,
   };
-  lectern0_copy_cstr(legacy_v2->highlights[0].section,
+  eightvo_copy_cstr(legacy_v2->highlights[0].section,
                      ARRAY_COUNT(legacy_v2->highlights[0].section),
                      saved_highlight.section);
-  lectern0_copy_cstr(legacy_v2->highlights[0].text,
+  eightvo_copy_cstr(legacy_v2->highlights[0].text,
                      ARRAY_COUNT(legacy_v2->highlights[0].text),
                      saved_highlight.text);
-  lectern0_copy_cstr(legacy_v2->highlights[0].note,
+  eightvo_copy_cstr(legacy_v2->highlights[0].note,
                      ARRAY_COUNT(legacy_v2->highlights[0].note),
                      saved_highlight.note);
   B32 wrote_legacy_v2 = os_write_entire_file_atomic(
@@ -19668,24 +19668,24 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
   if (!wrote_legacy_v2)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v2_write\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v2_write\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
       !app.highlights[0].is_highlight ||
       !app.highlights[0].starred || app.highlights[0].note_starred ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_v2_migration\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_v2_migration\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_prepare_reader_view_projection(&app);
+  eightvo_prepare_reader_view_projection(&app);
   ReaderViewKey migrated_highlight_key = 0;
   for (UI0S32 index = 0;
        index < app.reader_view_projection.right.row_count;
@@ -19696,74 +19696,74 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
     if (row->kind == ReaderViewRightRow_Highlight)
       migrated_highlight_key = row->key;
   }
-  lectern0_apply_reader_view_action(&app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&app, &(ReaderViewAction){
     .kind = ReaderViewAction_DeleteRightRow,
     .key = migrated_highlight_key,
     .right_row_kind = ReaderViewRightRow_Highlight,
   });
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (migrated_highlight_key == 0 || app.bookmark_count != 1 ||
       app.highlight_count != 1 || app.highlights[0].is_highlight ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
     fprintf(stderr,
-            "lectern0_reader_view_smoke result=fail reason=legacy_demotion_reload\n");
+            "eightvo_reader_view_smoke result=fail reason=legacy_demotion_reload\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
   app.highlights[0] = saved_highlight;
   app.highlight_count = 1;
   app.annotation_revision += 1;
-  if (!lectern0_save_settings(&app) || !lectern0_save_annotations(&app) ||
-      !lectern0_export_annotations(&app))
+  if (!eightvo_save_settings(&app) || !eightvo_save_annotations(&app) ||
+      !eightvo_export_annotations(&app))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=persistence\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=persistence\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_load_annotations(&app);
+  eightvo_load_annotations(&app);
   if (app.bookmark_count != 1 || app.highlight_count != 1 ||
       !app.bookmarks[0].excerpt[0] || !app.highlights[0].is_highlight ||
       strcmp(app.highlights[0].note, "Smoke note") != 0)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=reload\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=reload\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
 
-  Lectern0App failed_app = {0};
-  char missing_path[Lectern0PathCap] = {0};
+  EightvoApp failed_app = {0};
+  char missing_path[EightvoPathCap] = {0};
   (void)cstr_format(missing_path, ARRAY_COUNT(missing_path),
                     "%s.missing.epub", export_path);
   (void)DeleteFileA(missing_path);
-  if (!lectern0_app_init(&failed_app, Width, Height, 1, 0) ||
-      lectern0_open_path(&failed_app, missing_path))
+  if (!eightvo_app_init(&failed_app, Width, Height, 1, 0) ||
+      eightvo_open_path(&failed_app, missing_path))
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=error_setup\n");
-    lectern0_app_release(&failed_app);
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=error_setup\n");
+    eightvo_app_release(&failed_app);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_render_to_buffer(&failed_app, &buffer);
-  if (!lectern0_library_active(&failed_app) ||
+  eightvo_render_to_buffer(&failed_app, &buffer);
+  if (!eightvo_library_active(&failed_app) ||
       failed_app.reader_view_ready || failed_app.host_control_count == 0 ||
       strstr(failed_app.status, "Open failed") == 0)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=error_state\n");
-    lectern0_app_release(&failed_app);
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=error_state\n");
+    eightvo_app_release(&failed_app);
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  lectern0_app_release(&failed_app);
+  eightvo_app_release(&failed_app);
 
   app.width = 680;
   app.height = 620;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   if (!app.reader_view_ready ||
       app.reader_view_layout.toolbar_density != ReaderViewToolbar_Compact ||
       app.reader_view_layout.mode != ReaderViewLayout_Overlay ||
@@ -19771,16 +19771,16 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
       app.reader_view_layout.shared_toolbar_rect.w != 420 ||
       app.reader_view_layout.host_toolbar_trailing_rect.x != 630 ||
       app.reader_view_layout.host_toolbar_trailing_rect.w !=
-        Lectern0HostToolbarSlotWidth)
+        EightvoHostToolbarSlotWidth)
   {
-    fprintf(stderr, "lectern0_reader_view_smoke result=fail reason=responsive\n");
+    fprintf(stderr, "eightvo_reader_view_smoke result=fail reason=responsive\n");
     free(pixels);
-    lectern0_app_release(&app);
+    eightvo_app_release(&app);
     return 1;
   }
-  U64 hash = lectern0_reader_view_contract_hash(&app.reader_view_frame);
+  U64 hash = eightvo_reader_view_contract_hash(&app.reader_view_frame);
   fprintf(stdout,
-          "lectern0_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate horizontal_routing=text_progress_or_page find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
+          "eightvo_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate horizontal_routing=text_progress_or_page find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
           READERVIEW0_API_VERSION,
           app.reader_view_projection.toc.row_count,
           app.reader.search_match_count,
@@ -19789,39 +19789,39 @@ lectern0_run_reader_view_smoke(const char *path, const char *export_path)
           (unsigned long long)hash,
           export_path);
   free(pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return 0;
 }
 
 FUNCTION int
-lectern0_run_accessibility_smoke(const char *path)
+eightvo_run_accessibility_smoke(const char *path)
 {
   enum { Width = 1100, Height = 760 };
   static const wchar_t *ClassName = L"EightvoAccessibilitySmokeWindow";
-  Lectern0Win32 win32 = {0};
+  EightvoWin32 win32 = {0};
   U32 *pixels = (U32 *)calloc((size_t)Width * Height, sizeof(U32));
-  if (!pixels || !lectern0_app_init(&win32.app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&win32.app, path))
+  if (!pixels || !eightvo_app_init(&win32.app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&win32.app, path))
   {
-    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=open\n");
+    fprintf(stderr, "eightvo_accessibility_smoke result=fail reason=open\n");
     free(pixels);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   RenderBuffer buffer = {0};
   render_buffer_init(&buffer, pixels, Width, Height, Width);
-  lectern0_render_to_buffer(&win32.app, &buffer);
+  eightvo_render_to_buffer(&win32.app, &buffer);
 
   HINSTANCE instance = GetModuleHandleW(0);
   WNDCLASSW window_class = {0};
-  window_class.lpfnWndProc = lectern0_win32_proc;
+  window_class.lpfnWndProc = eightvo_win32_proc;
   window_class.hInstance = instance;
   window_class.lpszClassName = ClassName;
   if (!RegisterClassW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
   {
-    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=register\n");
+    fprintf(stderr, "eightvo_accessibility_smoke result=fail reason=register\n");
     free(pixels);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   win32.window = CreateWindowExW(0, ClassName, L"8vo accessibility smoke",
@@ -19830,10 +19830,10 @@ lectern0_run_accessibility_smoke(const char *path)
                                   0, 0, instance, &win32);
   if (!win32.window)
   {
-    fprintf(stderr, "lectern0_accessibility_smoke result=fail reason=window\n");
+    fprintf(stderr, "eightvo_accessibility_smoke result=fail reason=window\n");
     (void)UnregisterClassW(ClassName, instance);
     free(pixels);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   win32.app.window = win32.window;
@@ -19852,7 +19852,7 @@ lectern0_run_accessibility_smoke(const char *path)
        index < win32.app.reader_view_frame.semantic_node_count;
        index += 1)
   {
-    if (lectern0_reader_view_text_is(
+    if (eightvo_reader_view_text_is(
           win32.app.reader_view_frame.semantic_nodes[index].name,
           "Contents"))
     {
@@ -19872,7 +19872,7 @@ lectern0_run_accessibility_smoke(const char *path)
   VARIANT contents_child;
   VariantInit(&contents_child);
   contents_child.vt = VT_I4;
-  contents_child.lVal = lectern0_accessibility_shared_child_id(
+  contents_child.lVal = eightvo_accessibility_shared_child_id(
     win32.app.accessibility, contents_index);
   long contents_child_id = contents_child.lVal;
   long previous_child_id = 0;
@@ -19924,7 +19924,7 @@ lectern0_run_accessibility_smoke(const char *path)
     VARIANT previous_child;
     VariantInit(&previous_child);
     previous_child.vt = VT_I4;
-    previous_child.lVal = lectern0_accessibility_shared_child_id(
+    previous_child.lVal = eightvo_accessibility_shared_child_id(
       win32.app.accessibility, previous_index);
     previous_child_id = previous_child.lVal;
     const ReaderViewSemanticNode *previous =
@@ -19938,7 +19938,7 @@ lectern0_run_accessibility_smoke(const char *path)
                                                previous_child));
     if (valid)
     {
-      lectern0_render_to_buffer(&win32.app, &buffer);
+      eightvo_render_to_buffer(&win32.app, &buffer);
       valid = SUCCEEDED(accessible->lpVtbl->get_accFocus(accessible,
                                                          &previous_focus)) &&
               previous_focus.vt == VT_I4 &&
@@ -19961,10 +19961,10 @@ lectern0_run_accessibility_smoke(const char *path)
   if (valid) accessibility_checkpoint = 3;
   if (valid)
   {
-    lectern0_render_to_buffer(&win32.app, &buffer);
+    eightvo_render_to_buffer(&win32.app, &buffer);
     valid = win32.app.reader_view_state.left_panel == ReaderViewLeftPanel_Contents;
     if (valid)
-      lectern0_render_to_buffer(&win32.app, &buffer);
+      eightvo_render_to_buffer(&win32.app, &buffer);
   }
   if (valid) accessibility_checkpoint = 4;
 
@@ -19985,7 +19985,7 @@ lectern0_run_accessibility_smoke(const char *path)
     VARIANT slider_child;
     VariantInit(&slider_child);
     slider_child.vt = VT_I4;
-    slider_child.lVal = lectern0_accessibility_shared_child_id(
+    slider_child.lVal = eightvo_accessibility_shared_child_id(
       win32.app.accessibility, slider_index);
     progress_child_id = slider_child.lVal;
     U64 before_offset = win32.app.reader.view_byte_offset;
@@ -19993,18 +19993,18 @@ lectern0_run_accessibility_smoke(const char *path)
                                                              slider_child));
     if (valid)
     {
-      lectern0_render_to_buffer(&win32.app, &buffer);
-      valid = lectern0_reader_view_focus_is(&win32.app,
+      eightvo_render_to_buffer(&win32.app, &buffer);
+      valid = eightvo_reader_view_focus_is(&win32.app,
                                             ReaderViewSemantic_Slider);
     }
     if (valid) accessibility_checkpoint = 5;
     if (valid)
     {
       win32.app.input.move_delta = 10;
-      lectern0_render_to_buffer(&win32.app, &buffer);
-      valid = lectern0_reader_view_has_action(&win32.app.reader_view_frame,
+      eightvo_render_to_buffer(&win32.app, &buffer);
+      valid = eightvo_reader_view_has_action(&win32.app.reader_view_frame,
                                               ReaderViewAction_SeekLocation);
-      lectern0_apply_reader_view_actions(&win32.app);
+      eightvo_apply_reader_view_actions(&win32.app);
       valid = valid && win32.app.reader.view_byte_offset != before_offset;
     }
     if (valid) accessibility_checkpoint = 6;
@@ -20016,17 +20016,17 @@ lectern0_run_accessibility_smoke(const char *path)
 
   if (valid)
   {
-    valid = !lectern0_reader_view_has_semantic(&win32.app.reader_view_frame,
+    valid = !eightvo_reader_view_has_semantic(&win32.app.reader_view_frame,
                                                 "Focus");
   }
   if (valid) accessibility_checkpoint = 7;
   if (valid)
   {
-    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&win32.app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleFullscreen,
     });
     valid = win32.app.fullscreen.active;
-    lectern0_apply_reader_view_action(&win32.app, &(ReaderViewAction){
+    eightvo_apply_reader_view_action(&win32.app, &(ReaderViewAction){
       .kind = ReaderViewAction_ToggleFullscreen,
     });
     valid = valid && !win32.app.fullscreen.active;
@@ -20052,17 +20052,17 @@ lectern0_run_accessibility_smoke(const char *path)
     VARIANT find_child;
     VariantInit(&find_child);
     find_child.vt = VT_I4;
-    find_child.lVal = lectern0_accessibility_shared_child_id(
+    find_child.lVal = eightvo_accessibility_shared_child_id(
       win32.app.accessibility, find_index);
     VARIANT fullscreen_child;
     VariantInit(&fullscreen_child);
     fullscreen_child.vt = VT_I4;
-    fullscreen_child.lVal = lectern0_accessibility_shared_child_id(
+    fullscreen_child.lVal = eightvo_accessibility_shared_child_id(
       win32.app.accessibility, fullscreen_index);
     VARIANT exit_child;
     VariantInit(&exit_child);
     exit_child.vt = VT_I4;
-    exit_child.lVal = lectern0_accessibility_host_child_id(
+    exit_child.lVal = eightvo_accessibility_host_child_id(
       win32.app.accessibility, 0);
     exit_child_id = exit_child.lVal;
     VARIANT next_from_find;
@@ -20113,24 +20113,24 @@ lectern0_run_accessibility_smoke(const char *path)
                                                exit_child));
     if (valid)
     {
-      lectern0_render_to_buffer(&win32.app, &buffer);
+      eightvo_render_to_buffer(&win32.app, &buffer);
       valid = SUCCEEDED(accessible->lpVtbl->get_accFocus(accessible,
                                                          &exit_focus)) &&
               exit_focus.vt == VT_I4 &&
               exit_focus.lVal == exit_child.lVal &&
-              win32.app.host_focus_control == Lectern0HostControl_ExitReader;
+              win32.app.host_focus_control == EightvoHostControl_ExitReader;
     }
     if (valid)
     {
       valid = SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
                                                                contents_child));
-      lectern0_render_to_buffer(&win32.app, &buffer);
+      eightvo_render_to_buffer(&win32.app, &buffer);
       const ReaderViewSemanticNode *shared_contents =
-        lectern0_reader_view_semantic_control(
+        eightvo_reader_view_semantic_control(
           &win32.app.reader_view_frame, ReaderViewSemanticControl_Contents);
       valid = valid &&
               shared_contents &&
-              win32.app.host_focus_control == Lectern0HostControl_None &&
+              win32.app.host_focus_control == EightvoHostControl_None &&
               win32.app.reader_view_state.focus_id == shared_contents->id &&
               SUCCEEDED(accessible->lpVtbl->accSelect(accessible,
                                                        SELFLAG_TAKEFOCUS,
@@ -20138,10 +20138,10 @@ lectern0_run_accessibility_smoke(const char *path)
     }
     if (valid)
     {
-      lectern0_render_to_buffer(&win32.app, &buffer);
+      eightvo_render_to_buffer(&win32.app, &buffer);
       /* Closing Contents republishes a shorter shared tree. Recompute the
          logical native child ID while the host identity/order remains stable. */
-      exit_child.lVal = lectern0_accessibility_host_child_id(
+      exit_child.lVal = eightvo_accessibility_host_child_id(
         win32.app.accessibility, 0);
       exit_child_id = exit_child.lVal;
       VariantClear(&exit_focus);
@@ -20149,10 +20149,10 @@ lectern0_run_accessibility_smoke(const char *path)
                                                          &exit_focus)) &&
               exit_focus.vt == VT_I4 &&
               exit_focus.lVal == exit_child.lVal &&
-              win32.app.host_focus_control == Lectern0HostControl_ExitReader &&
+              win32.app.host_focus_control == EightvoHostControl_ExitReader &&
               SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
                                                                 exit_child)) &&
-              lectern0_library_active(&win32.app);
+              eightvo_library_active(&win32.app);
     }
     VariantClear(&next_from_find);
     VariantClear(&next_from_exit);
@@ -20177,7 +20177,7 @@ lectern0_run_accessibility_smoke(const char *path)
   if (!valid)
   {
     fprintf(stderr,
-            "lectern0_accessibility_smoke result=fail reason=contract checkpoint=%u hr=%08lx nodes=%ld contents=%d previous=%d slider=%d exit=%ld role=%ld rect=%ldx%ld\n",
+            "eightvo_accessibility_smoke result=fail reason=contract checkpoint=%u hr=%08lx nodes=%ld contents=%d previous=%d slider=%d exit=%ld role=%ld rect=%ldx%ld\n",
             accessibility_checkpoint,
             (unsigned long)access_result,
             child_count,
@@ -20189,12 +20189,12 @@ lectern0_run_accessibility_smoke(const char *path)
             width,
             height);
     free(pixels);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
 
   fprintf(stdout,
-          "lectern0_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%ld previous_child=%ld progress_child=%ld close_child=%ld role=%ld order=find_close_fullscreen focus=shared_disabled_host action=disabled_guard_shared_host_close_to_library progress=keyboard fullscreen=native distraction=dormant\n",
+          "eightvo_accessibility_smoke result=pass adapter=msaa nodes=%ld contents_child=%ld previous_child=%ld progress_child=%ld close_child=%ld role=%ld order=find_close_fullscreen focus=shared_disabled_host action=disabled_guard_shared_host_close_to_library progress=keyboard fullscreen=native distraction=dormant\n",
           child_count,
           contents_child_id,
           previous_child_id,
@@ -20202,17 +20202,17 @@ lectern0_run_accessibility_smoke(const char *path)
           exit_child_id,
           role_value);
   free(pixels);
-  lectern0_app_release(&win32.app);
+  eightvo_app_release(&win32.app);
   return 0;
 }
 
 FUNCTION int
-lectern0_run_page_turn_regression_smoke(const char *path,
+eightvo_run_page_turn_regression_smoke(const char *path,
                                         const char *output_prefix)
 {
   enum { Width = 1100, Height = 760, ScanPageCount = 64,
          PerformancePairCount = 16, HeldWidth = 1917, HeldHeight = 1137 };
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
   U64 held_pixel_count = (U64)HeldWidth * HeldHeight;
   U32 *pixels = (U32 *)calloc((size_t)pixel_count, sizeof(U32));
@@ -20267,16 +20267,16 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   String8 boundary_utf8 = str8_from_cstr("Moon\xe2\x80\x99s lord");
   String8 boundary_hyphen = str8_from_cstr("Moon-s lord");
   B32 boundary_oracle_self_test =
-    !lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 4) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 5) &&
-    lectern0_gotm_page_start_is_word_boundary(boundary_ascii, 7) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 4) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 5) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 7) &&
-    lectern0_gotm_page_start_is_word_boundary(boundary_utf8, 9) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 4) &&
-    !lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 5) &&
-    lectern0_gotm_page_start_is_word_boundary(boundary_hyphen, 7);
+    !eightvo_gotm_page_start_is_word_boundary(boundary_ascii, 4) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_ascii, 5) &&
+    eightvo_gotm_page_start_is_word_boundary(boundary_ascii, 7) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_utf8, 4) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_utf8, 5) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_utf8, 7) &&
+    eightvo_gotm_page_start_is_word_boundary(boundary_utf8, 9) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_hyphen, 4) &&
+    !eightvo_gotm_page_start_is_word_boundary(boundary_hyphen, 5) &&
+    eightvo_gotm_page_start_is_word_boundary(boundary_hyphen, 7);
   RenderTextCacheStats cache_stats = {0};
   U32 first_zero_page_count_step = ScanPageCount;
   SourceReaderPageRange first_zero_before_page = {0};
@@ -20298,8 +20298,8 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   checkpoint = 1;
   if (!pixels || !held_pixels || !path || !path[0] ||
       !output_prefix || !output_prefix[0] ||
-      !lectern0_app_init(&app, Width, Height, 1, 0) ||
-      !lectern0_open_path(&app, path))
+      !eightvo_app_init(&app, Width, Height, 1, 0) ||
+      !eightvo_open_path(&app, path))
     goto cleanup;
   render_buffer_init(&buffer, pixels, Width, Height, Width);
   render_buffer_init(&held_buffer, held_pixels,
@@ -20310,7 +20310,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   for (U32 step = 0; step < ScanPageCount; step += 1)
   {
     U64 render_start = os_time_ticks();
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     U64 render_ticks = os_time_ticks() - render_start;
     render_total_ticks += render_ticks;
     render_max_ticks = MAX(render_max_ticks, render_ticks);
@@ -20321,10 +20321,10 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     if (app.reader.current_page.spine_page_count == 0)
       zero_page_or_frame_count += 1;
     B32 canonical_nonempty =
-      lectern0_gotm_navigation_frame_is_canonical_nonempty(
+      eightvo_gotm_navigation_frame_is_canonical_nonempty(
         &app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows);
     if (app.frame.image_count == 0 &&
-        app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+        app.reader.spine_text.size >= EightvoGotmMinimumProseSpineBytes)
     {
       gotm_text_frame_count += 1;
       gotm_minimum_text_bytes = MIN(gotm_minimum_text_bytes, text_bytes);
@@ -20351,7 +20351,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     B32 move_warm_pending_before = app.adjacent_warm_pending;
     B32 move_warm_ready_before = app.adjacent_warm_frame_ready;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = lectern0_move_page(&app, 1);
+    EpubReaderResult move = eightvo_move_page(&app, 1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
@@ -20385,16 +20385,16 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     forward_path[forward_count] = move_after_page;
   }
   if (forward_count != ScanPageCount) goto cleanup;
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_render_to_buffer(&app, &buffer);
   forward_endpoint_valid =
-    lectern0_gotm_navigation_frame_is_canonical_nonempty(
+    eightvo_gotm_navigation_frame_is_canonical_nonempty(
       &app, 0, 0, 0, 0) &&
     app.reader_view_ready && app.reader_view_layout.toolbar_visible &&
     app.reader_view_frame.error_flags == ReaderViewFrameError_None &&
     app.draw_commands.overflow_count == 0 &&
-    lectern0_canonical_page_identity_equal(
-      lectern0_canonical_page_identity(app.reader.current_page),
-      lectern0_canonical_page_identity(forward_path[ScanPageCount]));
+    eightvo_canonical_page_identity_equal(
+      eightvo_canonical_page_identity(app.reader.current_page),
+      eightvo_canonical_page_identity(forward_path[ScanPageCount]));
   if (!forward_endpoint_valid) goto cleanup;
 
   checkpoint = 20;
@@ -20403,7 +20403,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     SourceReaderPageRange move_before_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_before = app.reader.navigation_stats;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = lectern0_move_page(&app, -1);
+    EpubReaderResult move = eightvo_move_page(&app, -1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
@@ -20421,12 +20421,12 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     }
     SourceReaderPageRange expected_reverse_page =
       forward_path[forward_count - step - 1];
-    if (!lectern0_canonical_page_identity_equal(
-          lectern0_canonical_page_identity(move_after_page),
-          lectern0_canonical_page_identity(expected_reverse_page)))
+    if (!eightvo_canonical_page_identity_equal(
+          eightvo_canonical_page_identity(move_after_page),
+          eightvo_canonical_page_identity(expected_reverse_page)))
     {
       fprintf(stderr,
-              "lectern0_page_turn_reverse_mismatch step=%u expected=%u:%llu-%llu:%llu/%llu actual=%u:%llu-%llu:%llu/%llu\n",
+              "eightvo_page_turn_reverse_mismatch step=%u expected=%u:%llu-%llu:%llu/%llu actual=%u:%llu-%llu:%llu/%llu\n",
               step,
               expected_reverse_page.spine_index,
               (unsigned long long)expected_reverse_page.first_byte,
@@ -20452,7 +20452,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     move_max_ticks = MAX(move_max_ticks, move_ticks);
     backward_count += 1;
     U64 render_start = os_time_ticks();
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     U64 render_ticks = os_time_ticks() - render_start;
     render_total_ticks += render_ticks;
     render_max_ticks = MAX(render_max_ticks, render_ticks);
@@ -20463,10 +20463,10 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     if (app.reader.current_page.spine_page_count == 0)
       zero_page_or_frame_count += 1;
     B32 canonical_nonempty =
-      lectern0_gotm_navigation_frame_is_canonical_nonempty(
+      eightvo_gotm_navigation_frame_is_canonical_nonempty(
         &app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows);
     if (app.frame.image_count == 0 &&
-        app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+        app.reader.spine_text.size >= EightvoGotmMinimumProseSpineBytes)
     {
       gotm_text_frame_count += 1;
       gotm_minimum_text_bytes = MIN(gotm_minimum_text_bytes, text_bytes);
@@ -20491,9 +20491,9 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     }
   }
   if (backward_count != ScanPageCount) goto cleanup;
-  returned_to_forward_start = lectern0_canonical_page_identity_equal(
-    lectern0_canonical_page_identity(app.reader.current_page),
-    lectern0_canonical_page_identity(forward_path[0]));
+  returned_to_forward_start = eightvo_canonical_page_identity_equal(
+    eightvo_canonical_page_identity(app.reader.current_page),
+    eightvo_canonical_page_identity(forward_path[0]));
   if (!returned_to_forward_start ||
       reverse_exact_match_count != ScanPageCount)
     goto cleanup;
@@ -20502,16 +20502,16 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   if (!epub_reader_rebuild_search(&app.reader,
                                   str8_from_cstr("1161st Year")) ||
       app.reader.search_match_count == 0 ||
-      lectern0_navigate_to_search_match(
+      eightvo_navigate_to_search_match(
         &app, 0, &(EpubReaderSearchNavigationResult){0}) != EpubReaderResult_Ok)
     goto cleanup;
   reader_view_state_init(&app.reader_view_state);
-  app.host_focus_control = Lectern0HostControl_None;
+  app.host_focus_control = EightvoHostControl_None;
   app.width = HeldWidth;
   app.height = HeldHeight;
-  lectern0_cancel_adjacent_warm(&app);
-  lectern0_invalidate_adjacent_page(&app);
-  lectern0_render_to_buffer(&app, &held_buffer);
+  eightvo_cancel_adjacent_warm(&app);
+  eightvo_invalidate_adjacent_page(&app);
+  eightvo_render_to_buffer(&app, &held_buffer);
   if (!app.reader_view_ready || !app.reader_view_layout.toolbar_visible ||
       app.reader_view_frame.error_flags != ReaderViewFrameError_None)
     goto cleanup;
@@ -20520,20 +20520,20 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   U64 deferred_emitted_before = app.page_action_emitted_count;
   U64 deferred_presented_before = app.page_action_presented_count;
   U32 deferred_overlap_before = app.page_action_overlap_count;
-  if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
-  lectern0_page_action_note_emitted(&app);
-  lectern0_begin_page_repeat(&app, VK_RIGHT, 1);
-  lectern0_page_action_defer(&app, VK_LEFT, -1, 1);
-  lectern0_page_action_release_key(&app, VK_LEFT);
+  if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  eightvo_page_action_note_emitted(&app);
+  eightvo_begin_page_repeat(&app, VK_RIGHT, 1);
+  eightvo_page_action_defer(&app, VK_LEFT, -1, 1);
+  eightvo_page_action_release_key(&app, VK_LEFT);
   if (app.page_repeat_active || !app.page_action_waiting_for_present ||
       !app.page_action_pending || app.page_action_pending_arm_repeat)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &held_buffer);
+  eightvo_render_to_buffer(&app, &held_buffer);
   B32 deferred_forward_presented =
-    lectern0_frame_presentation_is_complete(&app) &&
-    lectern0_capture_rendered_presentation_identity(
+    eightvo_frame_presentation_is_complete(&app) &&
+    eightvo_capture_rendered_presentation_identity(
       &app, &app.last_surface_identity);
-  lectern0_page_repeat_note_presented_frame(&app,
+  eightvo_page_repeat_note_presented_frame(&app,
                                              deferred_forward_presented);
   SourceReaderPageRange deferred_reversal_return = app.reader.current_page;
   if (!deferred_forward_presented || app.page_repeat_active ||
@@ -20544,14 +20544,14 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       deferred_reversal_return.one_past_last_byte !=
         deferred_reversal_origin.one_past_last_byte)
     goto cleanup;
-  lectern0_render_to_buffer(&app, &held_buffer);
+  eightvo_render_to_buffer(&app, &held_buffer);
   B32 deferred_return_presented =
-    lectern0_frame_presentation_is_complete(&app) &&
-    lectern0_capture_rendered_presentation_identity(
+    eightvo_frame_presentation_is_complete(&app) &&
+    eightvo_capture_rendered_presentation_identity(
       &app, &app.last_surface_identity);
-  lectern0_page_repeat_note_presented_frame(&app,
+  eightvo_page_repeat_note_presented_frame(&app,
                                              deferred_return_presented);
-  lectern0_page_action_release_key(&app, VK_RIGHT);
+  eightvo_page_action_release_key(&app, VK_RIGHT);
   if (!deferred_return_presented || app.page_action_waiting_for_present ||
       app.page_action_pending || app.page_repeat_active ||
       app.page_action_emitted_count != deferred_emitted_before + 2 ||
@@ -20564,54 +20564,54 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     S32 repeat_direction = repeat_pass == 0 ? 1 : -1;
     WPARAM repeat_key = repeat_direction > 0 ? VK_RIGHT : VK_LEFT;
     checkpoint = 32 + repeat_pass;
-    lectern0_stop_page_repeat(&app);
-    lectern0_cancel_adjacent_warm(&app);
-    lectern0_invalidate_adjacent_page(&app);
+    eightvo_stop_page_repeat(&app);
+    eightvo_cancel_adjacent_warm(&app);
+    eightvo_invalidate_adjacent_page(&app);
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache) ||
-        lectern0_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
+        eightvo_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
       goto cleanup;
-    lectern0_page_action_note_emitted(&app);
+    eightvo_page_action_note_emitted(&app);
 
     /* A production keydown moves immediately and then arms repeat. Lock the
        same wall-clock due time, complete-presentation gate, active/same-key
        native coalescing, and no-catch-up ordering used by the Win32 loop. */
-    lectern0_begin_page_repeat(&app, repeat_key, repeat_direction);
+    eightvo_begin_page_repeat(&app, repeat_key, repeat_direction);
     S32 coalesced_direction = 0;
     WPARAM alternate_key = repeat_direction > 0 ? VK_NEXT : VK_PRIOR;
     WPARAM opposite_key = repeat_direction > 0 ? VK_LEFT : VK_RIGHT;
-    if (!lectern0_page_repeat_should_coalesce_keydown(
+    if (!eightvo_page_repeat_should_coalesce_keydown(
           &app, repeat_key, (LPARAM)0x40000001, &coalesced_direction) ||
         coalesced_direction != repeat_direction ||
-        lectern0_page_repeat_should_coalesce_keydown(
+        eightvo_page_repeat_should_coalesce_keydown(
           &app, repeat_key, (LPARAM)1, 0) ||
-        lectern0_page_repeat_should_coalesce_keydown(
+        eightvo_page_repeat_should_coalesce_keydown(
           &app, alternate_key, (LPARAM)0x40000001, 0) ||
-        lectern0_page_repeat_should_coalesce_keydown(
+        eightvo_page_repeat_should_coalesce_keydown(
           &app, opposite_key, (LPARAM)0x40000001, 0))
       goto cleanup;
     held_native_repeat_coalesced_count += 1;
 
     U64 initial_due_ticks = app.page_repeat_next_move_ticks;
-    Lectern0PageRepeatFrameResult blocked_tick =
-      lectern0_page_repeat_frame_step(&app, initial_due_ticks);
+    EightvoPageRepeatFrameResult blocked_tick =
+      eightvo_page_repeat_frame_step(&app, initial_due_ticks);
     if (!blocked_tick.action_due || blocked_tick.action_emitted ||
         !blocked_tick.action_waiting_for_render)
       goto cleanup;
-    lectern0_page_repeat_note_presented_frame(&app, 0);
+    eightvo_page_repeat_note_presented_frame(&app, 0);
     if (!app.page_action_waiting_for_present)
       goto cleanup;
     held_render_gate_block_count += 1;
-    lectern0_render_to_buffer(&app, &held_buffer);
+    eightvo_render_to_buffer(&app, &held_buffer);
     B32 initial_present_complete =
-      lectern0_frame_presentation_is_complete(&app) &&
-      lectern0_capture_rendered_presentation_identity(
+      eightvo_frame_presentation_is_complete(&app) &&
+      eightvo_capture_rendered_presentation_identity(
         &app, &app.last_surface_identity);
-    lectern0_page_repeat_note_presented_frame(&app,
+    eightvo_page_repeat_note_presented_frame(&app,
                                                initial_present_complete);
     if (!initial_present_complete || app.page_action_waiting_for_present)
       goto cleanup;
-    Lectern0PageRepeatFrameResult early_tick =
-      lectern0_page_repeat_frame_step(
+    EightvoPageRepeatFrameResult early_tick =
+      eightvo_page_repeat_frame_step(
         &app, initial_due_ticks > 0 ? initial_due_ticks - 1 : 0);
     if (early_tick.action_due || early_tick.action_emitted ||
         early_tick.action_waiting_for_render)
@@ -20623,8 +20623,8 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     {
       U64 repeat_now_ticks = app.page_repeat_next_move_ticks;
       U64 held_step_start = os_time_ticks();
-      Lectern0PageRepeatFrameResult tick =
-        lectern0_page_repeat_frame_step(&app, repeat_now_ticks);
+      EightvoPageRepeatFrameResult tick =
+        eightvo_page_repeat_frame_step(&app, repeat_now_ticks);
       U64 held_step_ticks = os_time_ticks() - held_step_start;
       if (!tick.action_due || !tick.action_emitted ||
           tick.action_waiting_for_render)
@@ -20637,7 +20637,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       else repeat_backward_move_count += 1;
 
       U64 held_render_start = os_time_ticks();
-      lectern0_render_to_buffer(&app, &held_buffer);
+      eightvo_render_to_buffer(&app, &held_buffer);
       U64 held_render_ticks = os_time_ticks() - held_render_start;
       held_render_total_ticks += held_render_ticks;
       held_render_max_ticks = MAX(held_render_max_ticks, held_render_ticks);
@@ -20645,18 +20645,18 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       held_action_total_ticks += held_action_ticks;
       held_action_max_ticks = MAX(held_action_max_ticks, held_action_ticks);
       B32 held_present_complete =
-        lectern0_frame_presentation_is_complete(&app) &&
-        lectern0_capture_rendered_presentation_identity(
+        eightvo_frame_presentation_is_complete(&app) &&
+        eightvo_capture_rendered_presentation_identity(
           &app, &app.last_surface_identity);
-      lectern0_page_repeat_note_presented_frame(&app,
+      eightvo_page_repeat_note_presented_frame(&app,
                                                  held_present_complete);
       if (!held_present_complete || app.page_action_waiting_for_present)
         goto cleanup;
       if (repeat_step + 1 < 2)
       {
         U64 next_due_ticks = app.page_repeat_next_move_ticks;
-        Lectern0PageRepeatFrameResult before_due_tick =
-          lectern0_page_repeat_frame_step(
+        EightvoPageRepeatFrameResult before_due_tick =
+          eightvo_page_repeat_frame_step(
             &app, next_due_ticks > 0 ? next_due_ticks - 1 : 0);
         if (before_due_tick.action_due || before_due_tick.action_emitted ||
             before_due_tick.action_waiting_for_render)
@@ -20668,26 +20668,26 @@ lectern0_run_page_turn_regression_smoke(const char *path,
         held_pixels, held_pixel_count * sizeof(*held_pixels));
     }
     if (pass_move_count != 2 || pass_warmed_hash == 0) goto cleanup;
-    lectern0_stop_page_repeat(&app);
-    if (lectern0_page_repeat_should_coalesce_keydown(
+    eightvo_stop_page_repeat(&app);
+    if (eightvo_page_repeat_should_coalesce_keydown(
           &app, repeat_key, (LPARAM)0x40000001, 0))
       goto cleanup;
-    lectern0_cancel_adjacent_warm(&app);
-    lectern0_invalidate_adjacent_page(&app);
+    eightvo_cancel_adjacent_warm(&app);
+    eightvo_invalidate_adjacent_page(&app);
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache))
       goto cleanup;
-    lectern0_render_to_buffer(&app, &held_buffer);
+    eightvo_render_to_buffer(&app, &held_buffer);
     U64 cold_hash = u64_hash_bytes(
       held_pixels, held_pixel_count * sizeof(*held_pixels));
     if (pass_warmed_hash != cold_hash) goto cleanup;
     held_pixel_exact_count += 1;
   }
-  lectern0_stop_page_repeat(&app);
-  lectern0_cancel_adjacent_warm(&app);
+  eightvo_stop_page_repeat(&app);
+  eightvo_cancel_adjacent_warm(&app);
   app.width = Width;
   app.height = Height;
-  lectern0_invalidate_adjacent_page(&app);
-  lectern0_render_to_buffer(&app, &buffer);
+  eightvo_invalidate_adjacent_page(&app);
+  eightvo_render_to_buffer(&app, &buffer);
 
   checkpoint = 40;
   for (U32 attempt = 0;
@@ -20696,12 +20696,12 @@ lectern0_run_page_turn_regression_smoke(const char *path,
   {
     checkpoint = 41;
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache)) goto cleanup;
-    lectern0_schedule_adjacent_warm(&app);
+    eightvo_schedule_adjacent_warm(&app);
     for (U32 warm_step = 0;
          app.adjacent_warm_pending && warm_step < 1024;
          warm_step += 1)
     {
-      (void)lectern0_adjacent_warm_step(&app);
+      (void)eightvo_adjacent_warm_step(&app);
       adjacent_warm_step_count += 1;
     }
     checkpoint = 42;
@@ -20711,19 +20711,19 @@ lectern0_run_page_turn_regression_smoke(const char *path,
         !app.adjacent_page_ready)
     {
       checkpoint = 43;
-      if (lectern0_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
-      lectern0_render_to_buffer(&app, &buffer);
+      if (eightvo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+      eightvo_render_to_buffer(&app, &buffer);
       continue;
     }
     checkpoint = 44;
     U64 prepared_move_start = os_time_ticks();
-    EpubReaderResult prepared_move = lectern0_move_page(&app, 1);
+    EpubReaderResult prepared_move = eightvo_move_page(&app, 1);
     U64 prepared_move_ticks = os_time_ticks() - prepared_move_start;
     if (prepared_move != EpubReaderResult_Ok) goto cleanup;
     prepared_move_total_ticks += prepared_move_ticks;
     prepared_move_max_ticks = MAX(prepared_move_max_ticks, prepared_move_ticks);
     U64 warmed_start = os_time_ticks();
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     U64 warmed_render_ticks = os_time_ticks() - warmed_start;
     warmed_render_total_ticks += warmed_render_ticks;
     warmed_render_max_ticks = MAX(warmed_render_max_ticks, warmed_render_ticks);
@@ -20732,13 +20732,13 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     U64 warmed_hash = u64_hash_bytes(
       pixels, pixel_count * sizeof(*pixels));
 
-    lectern0_cancel_adjacent_warm(&app);
-    lectern0_invalidate_adjacent_page(&app);
+    eightvo_cancel_adjacent_warm(&app);
+    eightvo_invalidate_adjacent_page(&app);
     checkpoint = 45;
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache))
       goto cleanup;
     U64 cold_start = os_time_ticks();
-    lectern0_render_to_buffer(&app, &buffer);
+    eightvo_render_to_buffer(&app, &buffer);
     cold_render_total_ticks += os_time_ticks() - cold_start;
     U64 cold_hash = u64_hash_bytes(
       pixels, pixel_count * sizeof(*pixels));
@@ -20747,7 +20747,7 @@ lectern0_run_page_turn_regression_smoke(const char *path,
     pixel_exact_count += 1;
     performance_pair_count += 1;
     if (performance_pair_count < PerformancePairCount &&
-        lectern0_move_page(&app, 1) != EpubReaderResult_Ok)
+        eightvo_move_page(&app, 1) != EpubReaderResult_Ok)
       goto cleanup;
   }
   checkpoint = 50;
@@ -20763,8 +20763,8 @@ lectern0_run_page_turn_regression_smoke(const char *path,
       !returned_to_forward_start ||
       !deferred_reversal_keyup_passed || !boundary_oracle_self_test ||
       gotm_text_frame_count == 0 ||
-      gotm_minimum_text_bytes < Lectern0GotmMinimumProseTextBytes ||
-      gotm_minimum_text_rows < Lectern0GotmMinimumProseTextRows ||
+      gotm_minimum_text_bytes < EightvoGotmMinimumProseTextBytes ||
+      gotm_minimum_text_rows < EightvoGotmMinimumProseTextRows ||
       canonical_nonempty_frame_count != ScanPageCount * 2 ||
       zero_page_or_frame_count != 0 || orphan_text_page_count != 0 ||
       invalid_word_start_page_count != 0 ||
@@ -20778,7 +20778,7 @@ cleanup:
   if (result == 0)
   {
     fprintf(stdout,
-            "lectern0_page_turn_regression_smoke result=pass forward=%u backward=%u direct_traversal=64+64_exact forward_endpoint_valid=%d/1 reverse_range_exact=%u/%u returned_to_start=%d/1 canonical_nonempty_frames=%u/%u zero_pages_or_frames=%u/0 orphan_text_pages=%u/0 invalid_word_start_pages=%u/0 boundary_oracle=raw_spine_utf8_word_start gotm_prose_scope=active_spine_text_ge_128 boundary_oracle_self_test=%d/1 row_coverage=%u/%u gotm_minimum_text_bytes=%llu/%d gotm_minimum_text_rows=%u/%d deferred_reversal_keyup=%d/1 prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=wall_clock24_interval3_coalesced_no_catch_up repeat_moves=%u held_repeat=action_first_render_gated_no_speculative held_viewport=%ux%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u/2 held_native_repeats_coalesced=%u/2 held_render_gate_blocks=%u/2 held_warm_on_action=%u held_warm_steps=%u held_warm_avg_ms=%.3f held_warm_max_ms=%.3f held_move_avg_ms=%.3f held_move_max_ms=%.3f held_render_avg_ms=%.3f held_render_max_ms=%.3f held_action_total_avg_ms=%.3f held_action_total_max_ms=%.3f prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
+            "eightvo_page_turn_regression_smoke result=pass forward=%u backward=%u direct_traversal=64+64_exact forward_endpoint_valid=%d/1 reverse_range_exact=%u/%u returned_to_start=%d/1 canonical_nonempty_frames=%u/%u zero_pages_or_frames=%u/0 orphan_text_pages=%u/0 invalid_word_start_pages=%u/0 boundary_oracle=raw_spine_utf8_word_start gotm_prose_scope=active_spine_text_ge_128 boundary_oracle_self_test=%d/1 row_coverage=%u/%u gotm_minimum_text_bytes=%llu/%d gotm_minimum_text_rows=%u/%d deferred_reversal_keyup=%d/1 prepared_warm_pages=%u warm_steps=%u pixel_exact=%u/%u warmed_cache_hits=%u/%u repeat=wall_clock24_interval3_coalesced_no_catch_up repeat_moves=%u held_repeat=action_first_render_gated_no_speculative held_viewport=%ux%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u/2 held_native_repeats_coalesced=%u/2 held_render_gate_blocks=%u/2 held_warm_on_action=%u held_warm_steps=%u held_warm_avg_ms=%.3f held_warm_max_ms=%.3f held_move_avg_ms=%.3f held_move_max_ms=%.3f held_render_avg_ms=%.3f held_render_max_ms=%.3f held_action_total_avg_ms=%.3f held_action_total_max_ms=%.3f prepared_move_avg_ms=%.3f prepared_move_max_ms=%.3f warmed_render_avg_ms=%.3f warmed_render_max_ms=%.3f cold_render_avg_ms=%.3f move_avg_ms=%.3f move_max_ms=%.3f scan_render_avg_ms=%.3f scan_render_max_ms=%.3f draw_overflow=%u shaped_overflow=%u raster_overflow=%u run_overflow=%u output=%s\n",
             forward_count, backward_count,
             forward_endpoint_valid,
             reverse_exact_match_count, ScanPageCount,
@@ -20788,9 +20788,9 @@ cleanup:
             invalid_word_start_page_count, boundary_oracle_self_test,
             canonical_nonempty_frame_count, ScanPageCount * 2,
             (unsigned long long)gotm_minimum_text_bytes,
-            Lectern0GotmMinimumProseTextBytes,
+            EightvoGotmMinimumProseTextBytes,
             gotm_minimum_text_rows,
-            Lectern0GotmMinimumProseTextRows,
+            EightvoGotmMinimumProseTextRows,
             deferred_reversal_keyup_passed,
             adjacent_warm_page_count, adjacent_warm_step_count,
             pixel_exact_count, performance_pair_count,
@@ -20866,7 +20866,7 @@ cleanup:
       }
     }
     fprintf(stderr,
-            "lectern0_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d warm_direction=%d pixel_exact=%u/%u repeat_moves=%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u held_native_repeats_coalesced=%u held_render_gate_blocks=%u held_warm_on_action=%u held_warm_steps=%u held_warm_max_ms=%.3f held_move_max_ms=%.3f held_render_max_ms=%.3f held_action_total_max_ms=%.3f ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu frame_page_summary=%llu/%llu canonical_page=%u:%llu-%llu:%llu/%llu frame_visible=%llu+%llu frame_images=%u frame_rows=%u frame_rows_complete=%d frame_non_whitespace=%llu active_spine_text_bytes=%llu prose_scope=%d location=%llu/%llu canonical_zero_step=%u zero_before=%u:%llu-%llu:%llu/%llu zero_after=%u:%llu-%llu:%llu/%llu zero_producer=%d zero_diagnostic=%d zero_resolved=%u:%llu-%llu zero_prepared_hit=%d zero_adjacent_kind=%d zero_prepared_build=%llu>%llu zero_prepared_hits=%llu>%llu zero_prepared_misses=%llu>%llu zero_ring=%u>%u zero_host_warm=%d/%d failure_result=%d failure_before=%u:%llu-%llu:%llu/%llu failure_after=%u:%llu-%llu:%llu/%llu failure_producer=%d failure_diagnostic=%d failure_resolved=%u:%llu-%llu failure_prepared_hit=%d failure_adjacent_kind=%d failure_prepared_build=%llu>%llu failure_prepared_hits=%llu>%llu failure_prepared_misses=%llu>%llu status=\"%s\"\n",
+            "eightvo_page_turn_regression_smoke result=fail checkpoint=%u direction=%s step=%u forward=%u backward=%u prepared_warm_pages=%u warm_steps=%u warm_next=%u warm_shaped=%u warm_pending=%d warm_frame_ready=%d warm_direction=%d pixel_exact=%u/%u repeat_moves=%u held_forward=%u held_backward=%u held_cache_hits=%u held_pixel_exact=%u held_native_repeats_coalesced=%u held_render_gate_blocks=%u held_warm_on_action=%u held_warm_steps=%u held_warm_max_ms=%.3f held_move_max_ms=%.3f held_render_max_ms=%.3f held_action_total_max_ms=%.3f ready=%d toolbar=%d error_flags=%u change_flags=%u draw_overflow=%u spine=%u byte=%llu frame_page_summary=%llu/%llu canonical_page=%u:%llu-%llu:%llu/%llu frame_visible=%llu+%llu frame_images=%u frame_rows=%u frame_rows_complete=%d frame_non_whitespace=%llu active_spine_text_bytes=%llu prose_scope=%d location=%llu/%llu canonical_zero_step=%u zero_before=%u:%llu-%llu:%llu/%llu zero_after=%u:%llu-%llu:%llu/%llu zero_producer=%d zero_diagnostic=%d zero_resolved=%u:%llu-%llu zero_prepared_hit=%d zero_adjacent_kind=%d zero_prepared_build=%llu>%llu zero_prepared_hits=%llu>%llu zero_prepared_misses=%llu>%llu zero_ring=%u>%u zero_host_warm=%d/%d failure_result=%d failure_before=%u:%llu-%llu:%llu/%llu failure_after=%u:%llu-%llu:%llu/%llu failure_producer=%d failure_diagnostic=%d failure_resolved=%u:%llu-%llu failure_prepared_hit=%d failure_adjacent_kind=%d failure_prepared_build=%llu>%llu failure_prepared_hits=%llu>%llu failure_prepared_misses=%llu>%llu status=\"%s\"\n",
             checkpoint, failure_backward ? "backward" : "forward", failure_step,
             forward_count, backward_count, adjacent_warm_page_count,
             adjacent_warm_step_count, app.adjacent_warm_next_text_command,
@@ -20905,11 +20905,11 @@ cleanup:
             (unsigned long long)app.frame.visible_text.size,
             app.frame.image_count,
             app.frame.style_row_count,
-            lectern0_frame_text_rows_are_complete(&app.frame, 0, 0),
+            eightvo_frame_text_rows_are_complete(&app.frame, 0, 0),
             (unsigned long long)
-              lectern0_frame_non_whitespace_byte_count(&app.frame),
+              eightvo_frame_non_whitespace_byte_count(&app.frame),
             (unsigned long long)app.reader.spine_text.size,
-            app.reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes,
+            app.reader.spine_text.size >= EightvoGotmMinimumProseSpineBytes,
             (unsigned long long)location.location_index,
             (unsigned long long)location.location_count,
             first_zero_page_count_step,
@@ -20972,12 +20972,12 @@ cleanup:
   }
   free(pixels);
   free(held_pixels);
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_set_sandbox_paths(Lectern0App *app)
+eightvo_page_repeat_probe_set_sandbox_paths(EightvoApp *app)
 {
   if (!app || app->app_directory[0] || app->state_path[0] ||
       app->catalog_path[0] || app->settings_path[0] ||
@@ -20985,7 +20985,7 @@ lectern0_page_repeat_probe_set_sandbox_paths(Lectern0App *app)
   {
     return 0;
   }
-  char temp_root[Lectern0PathCap] = {0};
+  char temp_root[EightvoPathCap] = {0};
   DWORD temp_root_size = GetTempPathA((DWORD)ARRAY_COUNT(temp_root),
                                       temp_root);
   if (temp_root_size == 0 || temp_root_size >= ARRAY_COUNT(temp_root))
@@ -20993,7 +20993,7 @@ lectern0_page_repeat_probe_set_sandbox_paths(Lectern0App *app)
   U64 nonce = os_time_ticks();
   if (cstr_format(app->app_directory,
                   ARRAY_COUNT(app->app_directory),
-                  "%slectern0_page_repeat_%u_%llu",
+                  "%seightvo_page_repeat_%u_%llu",
                   temp_root,
                   (U32)GetCurrentProcessId(),
                   (unsigned long long)nonce) == 0 ||
@@ -21024,40 +21024,40 @@ lectern0_page_repeat_probe_set_sandbox_paths(Lectern0App *app)
 }
 
 FUNCTION void
-lectern0_page_repeat_probe_delete_atomic_path(const char *path)
+eightvo_page_repeat_probe_delete_atomic_path(const char *path)
 {
   if (!path || !path[0]) return;
-  char temp_path[Lectern0PathCap] = {0};
+  char temp_path[EightvoPathCap] = {0};
   (void)os_file_delete(path);
   if (os_make_temp_path(temp_path, ARRAY_COUNT(temp_path), path))
     (void)os_file_delete(temp_path);
 }
 
 FUNCTION void
-lectern0_page_repeat_probe_cleanup_sandbox_files(Lectern0App *app)
+eightvo_page_repeat_probe_cleanup_sandbox_files(EightvoApp *app)
 {
   if (!app || !app->app_directory[0]) return;
   for (U32 entry_index = 0;
        entry_index < app->library.entry_count;
        entry_index += 1)
   {
-    char thumbnail_path[Lectern0PathCap] = {0};
-    if (lectern0_library_thumbnail_path(
+    char thumbnail_path[EightvoPathCap] = {0};
+    if (eightvo_library_thumbnail_path(
           app, app->library.entries[entry_index].entry_id,
           thumbnail_path, ARRAY_COUNT(thumbnail_path)))
     {
-      lectern0_page_repeat_probe_delete_atomic_path(thumbnail_path);
+      eightvo_page_repeat_probe_delete_atomic_path(thumbnail_path);
     }
   }
-  lectern0_page_repeat_probe_delete_atomic_path(app->state_path);
-  lectern0_page_repeat_probe_delete_atomic_path(app->catalog_path);
-  lectern0_page_repeat_probe_delete_atomic_path(app->settings_path);
-  lectern0_page_repeat_probe_delete_atomic_path(app->annotations_path);
-  lectern0_page_repeat_probe_delete_atomic_path(app->export_path);
+  eightvo_page_repeat_probe_delete_atomic_path(app->state_path);
+  eightvo_page_repeat_probe_delete_atomic_path(app->catalog_path);
+  eightvo_page_repeat_probe_delete_atomic_path(app->settings_path);
+  eightvo_page_repeat_probe_delete_atomic_path(app->annotations_path);
+  eightvo_page_repeat_probe_delete_atomic_path(app->export_path);
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_remove_sandbox_directory(const char *directory)
+eightvo_page_repeat_probe_remove_sandbox_directory(const char *directory)
 {
   if (!directory || !directory[0]) return 0;
   const char *names[] = {
@@ -21070,11 +21070,11 @@ lectern0_page_repeat_probe_remove_sandbox_directory(const char *directory)
          name_index < ARRAY_COUNT(names);
          name_index += 1)
     {
-      char path[Lectern0PathCap] = {0};
+      char path[EightvoPathCap] = {0};
       if (cstr_format(path, ARRAY_COUNT(path), "%s\\%s",
                       directory, names[name_index]) > 0)
       {
-        lectern0_page_repeat_probe_delete_atomic_path(path);
+        eightvo_page_repeat_probe_delete_atomic_path(path);
       }
     }
     if (RemoveDirectoryA(directory)) return 1;
@@ -21090,16 +21090,16 @@ lectern0_page_repeat_probe_remove_sandbox_directory(const char *directory)
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_cleanup_sandbox(Lectern0App *app)
+eightvo_page_repeat_probe_cleanup_sandbox(EightvoApp *app)
 {
   if (!app || !app->app_directory[0]) return 0;
-  lectern0_page_repeat_probe_cleanup_sandbox_files(app);
-  return lectern0_page_repeat_probe_remove_sandbox_directory(
+  eightvo_page_repeat_probe_cleanup_sandbox_files(app);
+  return eightvo_page_repeat_probe_remove_sandbox_directory(
     app->app_directory);
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_file_snapshot(const char *path,
+eightvo_page_repeat_probe_file_snapshot(const char *path,
                                           U64 size_cap,
                                           OS_FileProperties *out_properties,
                                           U64 *out_content_hash)
@@ -21132,13 +21132,13 @@ lectern0_page_repeat_probe_file_snapshot(const char *path,
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_prepare_persistence(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_probe_prepare_persistence(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!app || !probe || !app->persistence_enabled ||
       !app->state_path[0] || !app->catalog_path[0] ||
-      !lectern0_save_state(app))
+      !eightvo_save_state(app))
   {
     return 0;
   }
@@ -21147,14 +21147,14 @@ lectern0_page_repeat_probe_prepare_persistence(
   probe->persistence_transaction_success_before =
     app->state_save_transaction_success_count;
   probe->persistence_baseline_ready =
-    lectern0_page_repeat_probe_file_snapshot(
+    eightvo_page_repeat_probe_file_snapshot(
       app->state_path,
-      Lectern0StateFileCap,
+      EightvoStateFileCap,
       &state_properties,
       &probe->persistence_state_content_hash_before) &&
-    lectern0_page_repeat_probe_file_snapshot(
+    eightvo_page_repeat_probe_file_snapshot(
       app->catalog_path,
-      Lectern0LibraryCatalogFileCap,
+      EightvoLibraryCatalogFileCap,
       &catalog_properties,
       &probe->persistence_catalog_content_hash_before) &&
     state_properties.modified_time > 0 &&
@@ -21168,9 +21168,9 @@ lectern0_page_repeat_probe_prepare_persistence(
 }
 
 FUNCTION void
-lectern0_page_repeat_probe_capture_hold_persistence(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_probe_capture_hold_persistence(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!app || !probe || probe->persistence_hold_checked) return;
   U64 now = os_time_ticks();
@@ -21181,14 +21181,14 @@ lectern0_page_repeat_probe_capture_hold_persistence(
   }
   OS_FileProperties state_properties = {0};
   OS_FileProperties catalog_properties = {0};
-  B32 state_snapshot = lectern0_page_repeat_probe_file_snapshot(
+  B32 state_snapshot = eightvo_page_repeat_probe_file_snapshot(
     app->state_path,
-    Lectern0StateFileCap,
+    EightvoStateFileCap,
     &state_properties,
     &probe->persistence_state_content_hash_during_hold);
-  B32 catalog_snapshot = lectern0_page_repeat_probe_file_snapshot(
+  B32 catalog_snapshot = eightvo_page_repeat_probe_file_snapshot(
     app->catalog_path,
-    Lectern0LibraryCatalogFileCap,
+    EightvoLibraryCatalogFileCap,
     &catalog_properties,
     &probe->persistence_catalog_content_hash_during_hold);
   probe->persistence_transaction_success_during_hold =
@@ -21212,38 +21212,38 @@ lectern0_page_repeat_probe_capture_hold_persistence(
       probe->persistence_catalog_content_hash_before;
   U64 frequency = os_time_frequency();
   U64 wait_ticks = frequency > UINT64_MAX /
-      Lectern0PageRepeatProbePersistenceWaitMs ?
+      EightvoPageRepeatProbePersistenceWaitMs ?
     UINT64_MAX :
-    frequency * Lectern0PageRepeatProbePersistenceWaitMs / 1000;
+    frequency * EightvoPageRepeatProbePersistenceWaitMs / 1000;
   probe->persistence_wait_deadline_ticks =
     now > UINT64_MAX - wait_ticks ? UINT64_MAX : now + wait_ticks;
   if (!probe->persistence_hold_unchanged) probe->failed = 1;
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_page_equal(SourceReaderPageRange a,
+eightvo_page_repeat_probe_page_equal(SourceReaderPageRange a,
                                        SourceReaderPageRange b)
 {
-  return lectern0_canonical_page_identity_equal(
-    lectern0_canonical_page_identity(a),
-    lectern0_canonical_page_identity(b));
+  return eightvo_canonical_page_identity_equal(
+    eightvo_canonical_page_identity(a),
+    eightvo_canonical_page_identity(b));
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_seek_anchor(Lectern0App *app)
+eightvo_page_repeat_probe_seek_anchor(EightvoApp *app)
 {
   B32 rebuilt = app && epub_reader_rebuild_search(
     &app->reader, str8_from_cstr("1161st Year"));
   EpubReaderResult navigation_result = rebuilt &&
     app->reader.search_match_count > 0 ?
-      lectern0_navigate_to_search_match(
+      eightvo_navigate_to_search_match(
         app, 0, &(EpubReaderSearchNavigationResult){0}) :
       EpubReaderResult_DocError;
   if (!app || !rebuilt || app->reader.search_match_count == 0 ||
       navigation_result != EpubReaderResult_Ok)
   {
     fprintf(stderr,
-            "lectern0_page_repeat_anchor result=fail rebuilt=%d matches=%u navigation=%d status=%s\n",
+            "eightvo_page_repeat_anchor result=fail rebuilt=%d matches=%u navigation=%d status=%s\n",
             rebuilt,
             app ? app->reader.search_match_count : 0,
             (int)navigation_result,
@@ -21258,14 +21258,14 @@ lectern0_page_repeat_probe_seek_anchor(Lectern0App *app)
      cleared, so probing backward from that jump tests the deliberate
      fail-closed contract rather than held-key reversal. */
   for (U32 index = 0;
-       index < Lectern0PageRepeatProbeBoundarySearchCap;
+       index < EightvoPageRepeatProbeBoundarySearchCap;
        index += 1)
   {
-    EpubReaderResult move = lectern0_move_page(app, 1);
+    EpubReaderResult move = eightvo_move_page(app, 1);
     if (move != EpubReaderResult_Ok)
     {
       fprintf(stderr,
-              "lectern0_page_repeat_anchor result=fail step=%u move=%d status=%s\n",
+              "eightvo_page_repeat_anchor result=fail step=%u move=%d status=%s\n",
               index,
               (int)move,
               app->status);
@@ -21279,39 +21279,39 @@ lectern0_page_repeat_probe_seek_anchor(Lectern0App *app)
   }
   if (!crossed_boundary) return 0;
   for (U32 index = 0;
-       index < Lectern0PageRepeatProbeBoundaryLeadPageCount;
+       index < EightvoPageRepeatProbeBoundaryLeadPageCount;
        index += 1)
   {
-    if (lectern0_move_page(app, -1) != EpubReaderResult_Ok) return 0;
+    if (eightvo_move_page(app, -1) != EpubReaderResult_Ok) return 0;
   }
-  lectern0_cancel_adjacent_warm(app);
-  lectern0_invalidate_adjacent_page(app);
+  eightvo_cancel_adjacent_warm(app);
+  eightvo_invalidate_adjacent_page(app);
   return 1;
 }
 
 FUNCTION B32
-lectern0_page_repeat_probe_build_expected(const char *path,
-  SourceReaderPageRange forward[Lectern0PageRepeatProbePageCount],
-  SourceReaderPageRange backward[Lectern0PageRepeatProbePageCount],
+eightvo_page_repeat_probe_build_expected(const char *path,
+  SourceReaderPageRange forward[EightvoPageRepeatProbePageCount],
+  SourceReaderPageRange backward[EightvoPageRepeatProbePageCount],
   SourceReaderPageRange *out_anchor,
   SourceReaderPageRange *out_endpoint)
 {
-  Lectern0App app = {0};
+  EightvoApp app = {0};
   B32 inputs_ok = path && path[0] && forward && backward && out_anchor &&
     out_endpoint;
-  B32 init_ok = inputs_ok && lectern0_app_init(
+  B32 init_ok = inputs_ok && eightvo_app_init(
     &app,
-    Lectern0PageRepeatProbeWidth,
-    Lectern0PageRepeatProbeHeight,
+    EightvoPageRepeatProbeWidth,
+    EightvoPageRepeatProbeHeight,
     0,
     0);
-  B32 open_ok = init_ok && lectern0_open_path(&app, path);
-  B32 anchor_ok = open_ok && lectern0_page_repeat_probe_seek_anchor(&app);
+  B32 open_ok = init_ok && eightvo_open_path(&app, path);
+  B32 anchor_ok = open_ok && eightvo_page_repeat_probe_seek_anchor(&app);
   B32 result = inputs_ok && init_ok && open_ok && anchor_ok;
   if (!result)
   {
     fprintf(stderr,
-            "lectern0_page_repeat_reference_setup inputs=%d init=%d open=%d anchor=%d status=%s\n",
+            "eightvo_page_repeat_reference_setup inputs=%d init=%d open=%d anchor=%d status=%s\n",
             inputs_ok,
             init_ok,
             open_ok,
@@ -21324,11 +21324,11 @@ lectern0_page_repeat_probe_build_expected(const char *path,
   U32 backward_moves = 0;
   EpubReaderResult last_move_result = EpubReaderResult_Ok;
   for (U32 index = 0;
-       result && index < Lectern0PageRepeatProbePageCount;
+       result && index < EightvoPageRepeatProbePageCount;
        index += 1)
   {
     SourceReaderPageRange before = app.reader.current_page;
-    last_move_result = lectern0_move_page(&app, 1);
+    last_move_result = eightvo_move_page(&app, 1);
     result = last_move_result == EpubReaderResult_Ok;
     if (result)
     {
@@ -21341,11 +21341,11 @@ lectern0_page_repeat_probe_build_expected(const char *path,
   if (result) *out_endpoint = app.reader.current_page;
   U32 backward_crossings = 0;
   for (U32 index = 0;
-       result && index < Lectern0PageRepeatProbePageCount;
+       result && index < EightvoPageRepeatProbePageCount;
        index += 1)
   {
     SourceReaderPageRange before = app.reader.current_page;
-    last_move_result = lectern0_move_page(&app, -1);
+    last_move_result = eightvo_move_page(&app, -1);
     result = last_move_result == EpubReaderResult_Ok;
     if (result)
     {
@@ -21356,16 +21356,16 @@ lectern0_page_repeat_probe_build_expected(const char *path,
     }
   }
   result = result && forward_crossings > 0 && backward_crossings > 0 &&
-    lectern0_page_repeat_probe_page_equal(app.reader.current_page,
+    eightvo_page_repeat_probe_page_equal(app.reader.current_page,
                                            *out_anchor);
   if (!result)
   {
     fprintf(stderr,
-            "lectern0_page_repeat_reference result=fail forward=%u/%u backward=%u/%u cross_spine=%u+%u move_result=%d anchor=%u:%llu-%llu endpoint=%u:%llu-%llu final=%u:%llu-%llu\n",
+            "eightvo_page_repeat_reference result=fail forward=%u/%u backward=%u/%u cross_spine=%u+%u move_result=%d anchor=%u:%llu-%llu endpoint=%u:%llu-%llu final=%u:%llu-%llu\n",
             forward_moves,
-            Lectern0PageRepeatProbePageCount,
+            EightvoPageRepeatProbePageCount,
             backward_moves,
-            Lectern0PageRepeatProbePageCount,
+            EightvoPageRepeatProbePageCount,
             forward_crossings,
             backward_crossings,
             (int)last_move_result,
@@ -21379,17 +21379,17 @@ lectern0_page_repeat_probe_build_expected(const char *path,
             (unsigned long long)app.reader.current_page.first_byte,
             (unsigned long long)app.reader.current_page.one_past_last_byte);
   }
-  lectern0_app_release(&app);
+  eightvo_app_release(&app);
   return result;
 }
 
 FUNCTION void
-lectern0_page_repeat_win32_probe_note_page(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_win32_probe_note_page(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!app || !probe ||
-      probe->kind != Lectern0PageRepeatWin32Probe_Direction ||
+      probe->kind != EightvoPageRepeatWin32Probe_Direction ||
       probe->actual_page_count >= ARRAY_COUNT(probe->actual_pages))
   {
     return;
@@ -21407,7 +21407,7 @@ lectern0_page_repeat_win32_probe_note_page(
   if (app->reader.current_page.spine_page_count == 0 ||
       !app->frame.ready || !app->frame.document_open)
     probe->zero_page_or_frame_count += 1;
-  if (lectern0_gotm_navigation_frame_is_canonical_nonempty(
+  if (eightvo_gotm_navigation_frame_is_canonical_nonempty(
         app, &orphan_text, &invalid_word_start, &text_bytes, &text_rows))
     probe->valid_frame_count += 1;
   else
@@ -21417,14 +21417,14 @@ lectern0_page_repeat_win32_probe_note_page(
     probe->failed = 1;
   }
   if (app->frame.image_count == 0 &&
-      app->reader.spine_text.size >= Lectern0GotmMinimumProseSpineBytes)
+      app->reader.spine_text.size >= EightvoGotmMinimumProseSpineBytes)
   {
     probe->text_frame_count += 1;
     probe->minimum_text_bytes = MIN(probe->minimum_text_bytes, text_bytes);
     probe->minimum_text_rows = MIN(probe->minimum_text_rows, text_rows);
   }
   if (index < probe->expected_page_count &&
-      lectern0_page_repeat_probe_page_equal(probe->actual_pages[index],
+      eightvo_page_repeat_probe_page_equal(probe->actual_pages[index],
                                              probe->expected_pages[index]))
   {
     probe->canonical_match_count += 1;
@@ -21437,13 +21437,13 @@ lectern0_page_repeat_win32_probe_note_page(
 }
 
 FUNCTION void
-lectern0_page_repeat_win32_probe_note_stable_presentation(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_win32_probe_note_stable_presentation(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!app || !probe ||
-      probe->kind != Lectern0PageRepeatWin32Probe_Direction ||
-      probe->stable_present_count >= Lectern0PageRepeatProbePageCount ||
+      probe->kind != EightvoPageRepeatWin32Probe_Direction ||
+      probe->stable_present_count >= EightvoPageRepeatProbePageCount ||
       app->page_action_presented_count <=
         probe->page_action_presented_before + probe->stable_present_count)
   {
@@ -21494,14 +21494,14 @@ lectern0_page_repeat_win32_probe_note_stable_presentation(
     probe->stable_present_interval_total_ticks += interval;
     probe->stable_present_interval_count += 1;
   }
-  lectern0_page_repeat_win32_probe_note_page(app, probe);
+  eightvo_page_repeat_win32_probe_note_page(app, probe);
   probe->stable_present_count += 1;
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_probe_post_native(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_win32_probe_post_native(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!app || !app->window || !probe || !probe->enabled ||
       probe->native_repeats_per_frame == 0)
@@ -21521,15 +21521,15 @@ lectern0_page_repeat_win32_probe_post_native(
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_probe_post_mutations(
-  Lectern0App *app)
+eightvo_page_repeat_win32_probe_post_mutations(
+  EightvoApp *app)
 {
   if (!app || !app->window) return 0;
-  for (U32 index = 0; index < Lectern0PageRepeatProbeMutationCount;
+  for (U32 index = 0; index < EightvoPageRepeatProbeMutationCount;
        index += 1)
   {
     if (!PostMessageW(app->window,
-                      Lectern0PageRepeatProbeMutationMessage,
+                      EightvoPageRepeatProbeMutationMessage,
                       index,
                       0))
     {
@@ -21540,9 +21540,9 @@ lectern0_page_repeat_win32_probe_post_mutations(
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_probe_post_cancelled_repeat(
-  Lectern0App *app,
-  Lectern0PageRepeatWin32Probe *probe,
+eightvo_page_repeat_win32_probe_post_cancelled_repeat(
+  EightvoApp *app,
+  EightvoPageRepeatWin32Probe *probe,
   UINT message)
 {
   if (!app || !app->window || !probe ||
@@ -21556,10 +21556,10 @@ lectern0_page_repeat_win32_probe_post_cancelled_repeat(
 }
 
 FUNCTION void
-lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
-                                         Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_win32_probe_finish(EightvoWin32 *win32,
+                                         EightvoPageRepeatWin32Probe *probe)
 {
-  Lectern0App *app = win32 ? &win32->app : 0;
+  EightvoApp *app = win32 ? &win32->app : 0;
   if (!app || !probe || !probe->enabled) return;
   U64 now = os_time_ticks();
   if (probe->elapsed_ticks == 0)
@@ -21622,14 +21622,14 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
   }
   OS_FileProperties state_properties = {0};
   OS_FileProperties catalog_properties = {0};
-  B32 state_snapshot = lectern0_page_repeat_probe_file_snapshot(
+  B32 state_snapshot = eightvo_page_repeat_probe_file_snapshot(
     app->state_path,
-    Lectern0StateFileCap,
+    EightvoStateFileCap,
     &state_properties,
     &probe->persistence_state_content_hash_after);
-  B32 catalog_snapshot = lectern0_page_repeat_probe_file_snapshot(
+  B32 catalog_snapshot = eightvo_page_repeat_probe_file_snapshot(
     app->catalog_path,
-    Lectern0LibraryCatalogFileCap,
+    EightvoLibraryCatalogFileCap,
     &catalog_properties,
     &probe->persistence_catalog_content_hash_after);
   probe->persistence_transaction_success_after =
@@ -21670,10 +21670,10 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
     probe->persistence_hold_checked && probe->persistence_hold_unchanged &&
     probe->persistence_post_stop_advanced &&
     probe->queue_drain_batch_max_count <=
-      Lectern0PageRepeatProbeQueueDrainCap &&
+      EightvoPageRepeatProbeQueueDrainCap &&
     probe->native_repeat_coalesced_count ==
       probe->native_repeat_posted_count;
-  if (probe->kind == Lectern0PageRepeatWin32Probe_Direction)
+  if (probe->kind == EightvoPageRepeatWin32Probe_Direction)
   {
     U32 expected_presented_frames = probe->target_frame_move_count + 1;
     probe->completed = common &&
@@ -21684,21 +21684,21 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
         expected_presented_frames * probe->native_repeats_per_frame &&
       probe->repeat_timing_count == probe->target_frame_move_count &&
       probe->move_interval_count == probe->target_frame_move_count - 1 &&
-      probe->expected_page_count == Lectern0PageRepeatProbePageCount &&
-      probe->actual_page_count == Lectern0PageRepeatProbePageCount &&
-      probe->stable_present_count == Lectern0PageRepeatProbePageCount &&
+      probe->expected_page_count == EightvoPageRepeatProbePageCount &&
+      probe->actual_page_count == EightvoPageRepeatProbePageCount &&
+      probe->stable_present_count == EightvoPageRepeatProbePageCount &&
       probe->stable_present_interval_count ==
-        Lectern0PageRepeatProbeMoveCount - 1 &&
-      probe->canonical_match_count == Lectern0PageRepeatProbePageCount &&
+        EightvoPageRepeatProbeMoveCount - 1 &&
+      probe->canonical_match_count == EightvoPageRepeatProbePageCount &&
       probe->cross_spine_transition_count > 0 &&
-      probe->valid_frame_count == Lectern0PageRepeatProbePageCount &&
+      probe->valid_frame_count == EightvoPageRepeatProbePageCount &&
       probe->zero_page_or_frame_count == 0 &&
       probe->orphan_text_page_count == 0 &&
       probe->invalid_word_start_page_count == 0 &&
       probe->text_frame_count > 0 &&
-      probe->minimum_text_bytes >= Lectern0GotmMinimumProseTextBytes &&
-      probe->minimum_text_rows >= Lectern0GotmMinimumProseTextRows &&
-      probe->page_action_emitted_count == Lectern0PageRepeatProbePageCount &&
+      probe->minimum_text_bytes >= EightvoGotmMinimumProseTextBytes &&
+      probe->minimum_text_rows >= EightvoGotmMinimumProseTextRows &&
+      probe->page_action_emitted_count == EightvoPageRepeatProbePageCount &&
       probe->paint_messages_posted &&
       probe->auxiliary_paint_dispatch_count == 1 &&
       probe->main_null_paint_dispatch_count == 1 &&
@@ -21710,7 +21710,7 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
       probe->persistence_deferred_count == probe->target_frame_move_count &&
       probe->persistence_rescheduled_count == 1;
   }
-  else if (probe->kind == Lectern0PageRepeatWin32Probe_MutationGate)
+  else if (probe->kind == EightvoPageRepeatWin32Probe_MutationGate)
   {
     probe->completed = common && app->page_repeat_frame_move_count == 0 &&
       probe->observed_move_count == 0 &&
@@ -21719,7 +21719,7 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
       probe->page_action_emitted_count == 1 &&
       probe->page_action_presented_count == 1 &&
       probe->page_action_mutation_drop_count ==
-        Lectern0PageRepeatProbeMutationCount &&
+        EightvoPageRepeatProbeMutationCount &&
       probe->mutation_cancel_count == 1 &&
       probe->cancelled_repeat_posted_count == 0 &&
       probe->cancelled_repeat_consumed_count == 0 &&
@@ -21727,19 +21727,19 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
       probe->persistence_deferred_count == 0 &&
       probe->persistence_rescheduled_count == 1 &&
       probe->expected_page_count == 1 &&
-      lectern0_page_repeat_probe_page_equal(
+      eightvo_page_repeat_probe_page_equal(
         app->reader.current_page, probe->expected_pages[0]);
   }
   else
   {
     U32 expected_modifier =
-      (probe->kind == Lectern0PageRepeatWin32Probe_ControlModifier ||
-       probe->kind == Lectern0PageRepeatWin32Probe_ShiftModifier ||
-       probe->kind == Lectern0PageRepeatWin32Probe_SystemModifier) ? 1 : 0;
+      (probe->kind == EightvoPageRepeatWin32Probe_ControlModifier ||
+       probe->kind == EightvoPageRepeatWin32Probe_ShiftModifier ||
+       probe->kind == EightvoPageRepeatWin32Probe_SystemModifier) ? 1 : 0;
     U32 expected_focus =
-      probe->kind == Lectern0PageRepeatWin32Probe_FocusLoss ? 1 : 0;
+      probe->kind == EightvoPageRepeatWin32Probe_FocusLoss ? 1 : 0;
     U32 expected_deactivate =
-      probe->kind == Lectern0PageRepeatWin32Probe_Deactivation ? 1 : 0;
+      probe->kind == EightvoPageRepeatWin32Probe_Deactivation ? 1 : 0;
     probe->completed = common && app->page_repeat_frame_move_count == 0 &&
       probe->observed_move_count == 0 &&
       probe->native_repeat_posted_count ==
@@ -21757,7 +21757,7 @@ lectern0_page_repeat_win32_probe_finish(Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_win32_repeat_owns_pending_paint(const Lectern0Win32 *win32,
+eightvo_win32_repeat_owns_pending_paint(const EightvoWin32 *win32,
                                          const MSG *message)
 {
   return win32 && message && message->message == WM_PAINT &&
@@ -21766,9 +21766,9 @@ lectern0_win32_repeat_owns_pending_paint(const Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_probe_post_paints(
-  Lectern0Win32 *win32,
-  Lectern0PageRepeatWin32Probe *probe)
+eightvo_page_repeat_win32_probe_post_paints(
+  EightvoWin32 *win32,
+  EightvoPageRepeatWin32Probe *probe)
 {
   if (!win32 || !probe || !probe->enabled || probe->paint_messages_posted ||
       !win32->window || !win32->page_repeat_probe_paint_window ||
@@ -21793,8 +21793,8 @@ lectern0_page_repeat_win32_probe_post_paints(
 }
 
 FUNCTION void
-lectern0_win32_run_message_loop(Lectern0Win32 *win32,
-                                 Lectern0PageRepeatWin32Probe *probe)
+eightvo_win32_run_message_loop(EightvoWin32 *win32,
+                                 EightvoPageRepeatWin32Probe *probe)
 {
   if (!win32) return;
   MSG message = {0};
@@ -21820,14 +21820,14 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         if (win32->app.state_save_transaction_success_count >
               probe->persistence_transaction_success_before)
         {
-          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          eightvo_page_repeat_win32_probe_finish(win32, probe);
           break;
         }
         if (probe->persistence_wait_deadline_ticks == 0 ||
             now >= probe->persistence_wait_deadline_ticks)
         {
           probe->failed = 1;
-          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          eightvo_page_repeat_win32_probe_finish(win32, probe);
           break;
         }
         DWORD wait_result = MsgWaitForMultipleObjectsEx(
@@ -21835,7 +21835,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         if (wait_result == WAIT_FAILED)
         {
           probe->failed = 1;
-          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          eightvo_page_repeat_win32_probe_finish(win32, probe);
           break;
         }
         while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
@@ -21873,23 +21873,23 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         {
           probe->failed = 1;
           probe->stop_posted = 1;
-          lectern0_page_repeat_win32_probe_finish(win32, probe);
+          eightvo_page_repeat_win32_probe_finish(win32, probe);
           break;
         }
       }
       if (probe && probe->enabled && probe->started &&
-          probe->kind == Lectern0PageRepeatWin32Probe_MutationGate &&
+          probe->kind == EightvoPageRepeatWin32Probe_MutationGate &&
           !probe->stop_posted && !win32->app.page_repeat_active &&
           !win32->app.page_action_waiting_for_present &&
           win32->app.page_action_mutation_drop_count ==
             probe->page_action_mutation_drop_before +
-              Lectern0PageRepeatProbeMutationCount)
+              EightvoPageRepeatProbeMutationCount)
       {
-        if (!lectern0_page_repeat_probe_page_equal(
+        if (!eightvo_page_repeat_probe_page_equal(
               win32->app.reader.current_page,
               probe->expected_pages[0]))
           probe->failed = 1;
-        lectern0_page_repeat_probe_capture_hold_persistence(
+        eightvo_page_repeat_probe_capture_hold_persistence(
           &win32->app, probe);
         if (!PostMessageW(win32->app.window,
                           WM_KEYUP,
@@ -21904,7 +21904,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
     U32 drained_message_count = 0;
     while (PeekMessageW(&message, 0, 0, 0, PM_NOREMOVE))
     {
-      if (lectern0_win32_repeat_owns_pending_paint(win32, &message)) break;
+      if (eightvo_win32_repeat_owns_pending_paint(win32, &message)) break;
       if (!PeekMessageW(&message, 0, 0, 0, PM_REMOVE)) break;
       drained_message_count += 1;
       if (message.message == WM_QUIT)
@@ -21915,7 +21915,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
       }
       TranslateMessage(&message);
       DispatchMessageW(&message);
-      if (drained_message_count >= Lectern0PageRepeatQueueDrainCap)
+      if (drained_message_count >= EightvoPageRepeatQueueDrainCap)
       {
         break;
       }
@@ -21925,7 +21925,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
       probe->queue_drain_batch_max_count = MAX(
         probe->queue_drain_batch_max_count, drained_message_count);
       probe->queue_drain_message_count += drained_message_count;
-      if (drained_message_count > Lectern0PageRepeatProbeQueueDrainCap)
+      if (drained_message_count > EightvoPageRepeatProbeQueueDrainCap)
         probe->failed = 1;
     }
     if (!running) break;
@@ -21949,9 +21949,9 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
       U64 repeat_frame_start = now;
       U32 frame_move_count_before =
         win32->app.page_repeat_frame_move_count;
-      Lectern0PageRepeatFrameTiming frame_timing = {0};
+      EightvoPageRepeatFrameTiming frame_timing = {0};
       B32 frame_presented =
-        lectern0_win32_page_repeat_frame(&win32->app,
+        eightvo_win32_page_repeat_frame(&win32->app,
                                           now,
                                           &frame_timing);
       U64 repeat_frame_end = os_time_ticks();
@@ -22021,7 +22021,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
             frame_timing.render_present_ticks);
           probe->repeat_timing_count += 1;
         }
-        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+        else if (probe->kind == EightvoPageRepeatWin32Probe_Direction &&
                  frame_presented && probe->frame_count == 0)
         {
           probe->cold_render_ticks = frame_timing.render_acquire_ticks +
@@ -22031,13 +22031,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         }
         U64 frame_ticks = repeat_frame_end >= repeat_frame_start ?
           repeat_frame_end - repeat_frame_start : 0;
-        lectern0_page_repeat_win32_probe_note_stable_presentation(
+        eightvo_page_repeat_win32_probe_note_stable_presentation(
           &win32->app, probe);
         probe->frame_max_ticks = MAX(probe->frame_max_ticks, frame_ticks);
         probe->frame_count += 1;
-        if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+        if (probe->kind == EightvoPageRepeatWin32Probe_Direction &&
             frame_presented && !probe->paint_messages_posted &&
-            !lectern0_page_repeat_win32_probe_post_paints(win32, probe))
+            !eightvo_page_repeat_win32_probe_post_paints(win32, probe))
         {
           probe->failed = 1;
         }
@@ -22046,14 +22046,14 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
           probe->failed = 1;
           probe->stop_posted = 1;
         }
-        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+        else if (probe->kind == EightvoPageRepeatWin32Probe_Direction &&
                  win32->app.page_repeat_frame_move_count >=
                    probe->target_frame_move_count)
         {
           probe->elapsed_ticks = probe->stable_present_count > 0 ?
             probe->stable_present_elapsed_ticks[
               probe->stable_present_count - 1] : 0;
-          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+          eightvo_page_repeat_probe_capture_hold_persistence(&win32->app,
                                                                probe);
           if (!PostMessageW(win32->app.window,
                             WM_KEYUP,
@@ -22065,7 +22065,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         else if (probe->frame_count >= probe->frame_cap)
         {
           probe->failed = 1;
-          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+          eightvo_page_repeat_probe_capture_hold_persistence(&win32->app,
                                                                probe);
           (void)PostMessageW(win32->app.window,
                              WM_KEYUP,
@@ -22073,16 +22073,16 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
                              (LPARAM)0xC0000001);
           probe->stop_posted = 1;
         }
-        else if (probe->kind != Lectern0PageRepeatWin32Probe_Direction &&
+        else if (probe->kind != EightvoPageRepeatWin32Probe_Direction &&
                  !probe->stop_posted && frame_presented)
         {
           B32 posted = 0;
-          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+          eightvo_page_repeat_probe_capture_hold_persistence(&win32->app,
                                                                probe);
-          if (probe->kind == Lectern0PageRepeatWin32Probe_FocusLoss)
+          if (probe->kind == EightvoPageRepeatWin32Probe_FocusLoss)
           {
             posted = PostMessageW(win32->app.window, WM_KILLFOCUS, 0, 0) &&
-              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+              eightvo_page_repeat_win32_probe_post_cancelled_repeat(
                 &win32->app, probe, WM_KEYDOWN) &&
               PostMessageW(win32->app.window,
                            WM_KEYUP,
@@ -22090,13 +22090,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
                            (LPARAM)0xC0000001);
           }
           else if (probe->kind ==
-                     Lectern0PageRepeatWin32Probe_ControlModifier)
+                     EightvoPageRepeatWin32Probe_ControlModifier)
           {
             posted = PostMessageW(win32->app.window,
                                   WM_KEYDOWN,
                                   VK_CONTROL,
                                   1) &&
-              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+              eightvo_page_repeat_win32_probe_post_cancelled_repeat(
                 &win32->app, probe, WM_KEYDOWN) &&
               PostMessageW(win32->app.window,
                            WM_KEYUP,
@@ -22108,13 +22108,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
                            (LPARAM)0xC0000001);
           }
           else if (probe->kind ==
-                     Lectern0PageRepeatWin32Probe_ShiftModifier)
+                     EightvoPageRepeatWin32Probe_ShiftModifier)
           {
             posted = PostMessageW(win32->app.window,
                                   WM_KEYDOWN,
                                   VK_SHIFT,
                                   1) &&
-              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+              eightvo_page_repeat_win32_probe_post_cancelled_repeat(
                 &win32->app, probe, WM_KEYDOWN) &&
               PostMessageW(win32->app.window,
                            WM_KEYUP,
@@ -22126,13 +22126,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
                            (LPARAM)0xC0000001);
           }
           else if (probe->kind ==
-                     Lectern0PageRepeatWin32Probe_SystemModifier)
+                     EightvoPageRepeatWin32Probe_SystemModifier)
           {
             posted = PostMessageW(win32->app.window,
                                   WM_SYSKEYDOWN,
                                   VK_MENU,
                                   1) &&
-              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+              eightvo_page_repeat_win32_probe_post_cancelled_repeat(
                 &win32->app, probe, WM_SYSKEYDOWN) &&
               PostMessageW(win32->app.window,
                            WM_SYSKEYUP,
@@ -22144,13 +22144,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
                            (LPARAM)0xC0000001);
           }
           else if (probe->kind ==
-                     Lectern0PageRepeatWin32Probe_Deactivation)
+                     EightvoPageRepeatWin32Probe_Deactivation)
           {
             posted = PostMessageW(win32->app.window,
                                   WM_ACTIVATEAPP,
                                   FALSE,
                                   0) &&
-              lectern0_page_repeat_win32_probe_post_cancelled_repeat(
+              eightvo_page_repeat_win32_probe_post_cancelled_repeat(
                 &win32->app, probe, WM_KEYDOWN) &&
               PostMessageW(win32->app.window,
                            WM_KEYUP,
@@ -22160,13 +22160,13 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
           if (!posted) probe->failed = 1;
           probe->stop_posted = 1;
         }
-        else if (probe->kind == Lectern0PageRepeatWin32Probe_Direction &&
+        else if (probe->kind == EightvoPageRepeatWin32Probe_Direction &&
                  frame_presented &&
-                 !lectern0_page_repeat_win32_probe_post_native(
+                 !eightvo_page_repeat_win32_probe_post_native(
                    &win32->app, probe))
         {
           probe->failed = 1;
-          lectern0_page_repeat_probe_capture_hold_persistence(&win32->app,
+          eightvo_page_repeat_probe_capture_hold_persistence(&win32->app,
                                                                probe);
           (void)PostMessageW(win32->app.window,
                              WM_KEYUP,
@@ -22185,7 +22185,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         !update_pending)
     {
       DWORD wait_result = MsgWaitForMultipleObjectsEx(
-        0, 0, Lectern0PresentationRetryMaxDelayMs,
+        0, 0, EightvoPresentationRetryMaxDelayMs,
         QS_ALLINPUT, MWMO_INPUTAVAILABLE);
       if (wait_result == WAIT_FAILED && probe && probe->enabled)
         probe->failed = 1;
@@ -22210,7 +22210,7 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
         /* Match Re10's proven split: due actions and completed presentation
            come first. Reader0-only logical preparation may consume remaining
            deadline slack; host frame/raster warming stays disabled. */
-        (void)lectern0_page_repeat_prepare_navigation_tail(&win32->app);
+        (void)eightvo_page_repeat_prepare_navigation_tail(&win32->app);
         continue;
       }
     }
@@ -22242,12 +22242,12 @@ lectern0_win32_run_message_loop(Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
+eightvo_page_repeat_win32_probe_present_anchor(EightvoWin32 *win32,
                                                  B32 seek_anchor)
 {
   if (!win32 || !win32->window) return 0;
   win32->app.persistence_enabled = 0;
-  lectern0_stop_page_repeat(&win32->app);
+  eightvo_stop_page_repeat(&win32->app);
   for (U32 pass = 0;
        pass < 16 && (win32->app.page_action_waiting_for_present ||
                      GetUpdateRect(win32->window, 0, FALSE));
@@ -22260,13 +22260,13 @@ lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
       win32->app.page_action_pending)
   {
     fprintf(stderr,
-            "lectern0_page_repeat_present_anchor result=fail setup=preexisting_gate gate=%d pending=%d status=%s\n",
+            "eightvo_page_repeat_present_anchor result=fail setup=preexisting_gate gate=%d pending=%d status=%s\n",
             win32->app.page_action_waiting_for_present,
             win32->app.page_action_pending,
             win32->app.status);
     return 0;
   }
-  (void)lectern0_save_state(&win32->app);
+  (void)eightvo_save_state(&win32->app);
   win32->app.page_repeat_cancelled_key = 0;
   if (seek_anchor)
   {
@@ -22275,19 +22275,19 @@ lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
        that becomes observable to the Win32 queue. */
     B32 prior_internal_dispatch = win32->app.page_action_internal_dispatch;
     win32->app.page_action_internal_dispatch = 1;
-    B32 anchor_ok = lectern0_page_repeat_probe_seek_anchor(&win32->app);
+    B32 anchor_ok = eightvo_page_repeat_probe_seek_anchor(&win32->app);
     win32->app.page_action_internal_dispatch = prior_internal_dispatch;
     if (!anchor_ok)
     {
       fprintf(stderr,
-              "lectern0_page_repeat_present_anchor result=fail setup=anchor status=%s\n",
+              "eightvo_page_repeat_present_anchor result=fail setup=anchor status=%s\n",
               win32->app.status);
       return 0;
     }
-    lectern0_page_action_note_emitted(&win32->app);
+    eightvo_page_action_note_emitted(&win32->app);
   }
   reader_view_state_init(&win32->app.reader_view_state);
-  win32->app.host_focus_control = Lectern0HostControl_None;
+  win32->app.host_focus_control = EightvoHostControl_None;
   win32->app.host_focus_visible = 0;
   (void)InvalidateRect(win32->window, 0, FALSE);
   for (U32 pass = 0;
@@ -22299,13 +22299,13 @@ lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
   B32 result = win32->app.last_present_complete &&
     !win32->app.page_action_waiting_for_present &&
     !win32->app.page_action_pending &&
-    lectern0_gotm_navigation_frame_is_canonical_nonempty(
+    eightvo_gotm_navigation_frame_is_canonical_nonempty(
       &win32->app, 0, 0, 0, 0) &&
     !GetUpdateRect(win32->window, 0, FALSE);
   if (!result)
   {
     fprintf(stderr,
-            "lectern0_page_repeat_present_anchor result=fail present=%d gate=%d pending=%d update=%d identity_mismatch=%u frame=%llu:%llu expected=%llu:%llu frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
+            "eightvo_page_repeat_present_anchor result=fail present=%d gate=%d pending=%d update=%d identity_mismatch=%u frame=%llu:%llu expected=%llu:%llu frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
             win32->app.last_present_complete,
             win32->app.page_action_waiting_for_present,
             win32->app.page_action_pending,
@@ -22335,7 +22335,7 @@ lectern0_page_repeat_win32_probe_present_anchor(Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_win32_present_until_gate_clear(Lectern0Win32 *win32,
+eightvo_win32_present_until_gate_clear(EightvoWin32 *win32,
                                          U32 pass_cap)
 {
   if (!win32 || !win32->window || pass_cap == 0) return 0;
@@ -22359,8 +22359,8 @@ lectern0_win32_present_until_gate_clear(Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_win32_pump_capture_retry_and_persistence(
-  Lectern0Win32 *win32,
+eightvo_win32_pump_capture_retry_and_persistence(
+  EightvoWin32 *win32,
   U32 retry_scheduled_before,
   U32 retry_fired_before,
   U32 persistence_transaction_before,
@@ -22391,7 +22391,7 @@ lectern0_win32_pump_capture_retry_and_persistence(
       TranslateMessage(&message);
       DispatchMessageW(&message);
       if (message.hwnd == win32->window && message.message == WM_TIMER &&
-          message.wParam == Lectern0PresentationRetryTimerId &&
+          message.wParam == EightvoPresentationRetryTimerId &&
           win32->app.page_action_presentation_retry_fired_count >
             retry_fired_before &&
           win32->app.page_action_waiting_for_present)
@@ -22407,10 +22407,10 @@ lectern0_win32_pump_capture_retry_and_persistence(
       !win32->app.page_action_pending &&
       win32->app.last_present_complete &&
       win32->app.last_surface_identity.kind ==
-        Lectern0PresentationIdentity_Page &&
-      lectern0_canonical_page_identity_equal(
+        EightvoPresentationIdentity_Page &&
+      eightvo_canonical_page_identity_equal(
         win32->app.last_surface_identity.page,
-        lectern0_canonical_page_identity(win32->app.reader.current_page));
+        eightvo_canonical_page_identity(win32->app.reader.current_page));
     B32 retry_recovered = retry_fired_while_gated && stable_page &&
       win32->app.page_action_presentation_retry_scheduled_count >
         retry_scheduled_before &&
@@ -22422,8 +22422,8 @@ lectern0_win32_pump_capture_retry_and_persistence(
     if (persistence_recovered)
     {
       MemoryZeroStruct(&win32->app.saved);
-      lectern0_load_state(&win32->app);
-      Lectern0LibraryEntry *entry = lectern0_library_catalog_find_path(
+      eightvo_load_state(&win32->app);
+      EightvoLibraryEntry *entry = eightvo_library_catalog_find_path(
         &win32->app.library, win32->app.current_path);
       persistence_recovered = win32->app.saved.valid && entry &&
         win32->app.saved.spine_index == win32->app.reader.active_spine_index &&
@@ -22442,8 +22442,8 @@ lectern0_win32_pump_capture_retry_and_persistence(
 }
 
 FUNCTION B32
-lectern0_win32_capture_failure_gate_regression(
-  Lectern0Win32 *win32,
+eightvo_win32_capture_failure_gate_regression(
+  EightvoWin32 *win32,
   const char *path,
   U32 *out_recovered,
   U32 *out_same_page_recovered,
@@ -22457,15 +22457,15 @@ lectern0_win32_capture_failure_gate_regression(
   if (out_retry_recovered) *out_retry_recovered = 0;
   if (out_persistence_recovered) *out_persistence_recovered = 0;
   if (!win32 || !path || !path[0] ||
-      !lectern0_page_repeat_win32_probe_present_anchor(win32, 1))
+      !eightvo_page_repeat_win32_probe_present_anchor(win32, 1))
     return 0;
 
   U32 recovery_before = win32->app.capture_frame_recovery_count;
   U32 mismatch_before = win32->app.page_action_identity_mismatch_count;
-  Lectern0CanonicalPageIdentity page_before =
-    lectern0_canonical_page_identity(win32->app.reader.current_page);
+  EightvoCanonicalPageIdentity page_before =
+    eightvo_canonical_page_identity(win32->app.reader.current_page);
   win32->app.persistence_enabled = 1;
-  if (!lectern0_save_state(&win32->app)) return 0;
+  if (!eightvo_save_state(&win32->app)) return 0;
   U32 persistence_transaction_before =
     win32->app.state_save_transaction_success_count;
   U32 retry_scheduled_before =
@@ -22478,7 +22478,7 @@ lectern0_win32_capture_failure_gate_regression(
     return 0;
   U32 retry_recovered = 0;
   U32 persistence_recovered = 0;
-  B32 pumped = lectern0_win32_pump_capture_retry_and_persistence(
+  B32 pumped = eightvo_win32_pump_capture_retry_and_persistence(
     win32,
     retry_scheduled_before,
     retry_fired_before,
@@ -22487,9 +22487,9 @@ lectern0_win32_capture_failure_gate_regression(
     &retry_recovered,
     &persistence_recovered);
   B32 page_changed = win32->app.reader.has_current_page &&
-    !lectern0_canonical_page_identity_equal(
+    !eightvo_canonical_page_identity_equal(
       page_before,
-      lectern0_canonical_page_identity(win32->app.reader.current_page));
+      eightvo_canonical_page_identity(win32->app.reader.current_page));
   B32 page_recovered = pumped && page_changed && retry_recovered &&
     persistence_recovered && !win32->app.page_action_waiting_for_present &&
     win32->app.capture_frame_recovery_count == recovery_before + 1 &&
@@ -22504,14 +22504,14 @@ lectern0_win32_capture_failure_gate_regression(
   mismatch_before = win32->app.page_action_identity_mismatch_count;
   SourceReaderPageRange same_page = win32->app.reader.current_page;
   win32->app.capture_frame_fail_count = 2;
-  lectern0_apply_reader_view_action(&win32->app, &(ReaderViewAction){
+  eightvo_apply_reader_view_action(&win32->app, &(ReaderViewAction){
     .kind = ReaderViewAction_FindChanged,
-    .text = lectern0_reader_view_text("same-page capture recovery"),
+    .text = eightvo_reader_view_text("same-page capture recovery"),
   });
   B32 same_page_recovered =
     win32->app.page_action_waiting_for_present &&
-    lectern0_win32_present_until_gate_clear(win32, 16) &&
-    lectern0_page_repeat_probe_page_equal(
+    eightvo_win32_present_until_gate_clear(win32, 16) &&
+    eightvo_page_repeat_probe_page_equal(
       same_page, win32->app.reader.current_page) &&
     win32->app.frame_capture_generation > same_page_capture_before &&
     win32->app.page_action_identity_mismatch_count == mismatch_before + 1;
@@ -22519,8 +22519,8 @@ lectern0_win32_capture_failure_gate_regression(
   if (out_same_page_recovered) *out_same_page_recovered = 1;
 
   U32 catalog_count_before_open = win32->app.library.entry_count;
-  if (!lectern0_close_book(&win32->app) ||
-      !lectern0_win32_present_until_gate_clear(win32, 16) ||
+  if (!eightvo_close_book(&win32->app) ||
+      !eightvo_win32_present_until_gate_clear(win32, 16) ||
       epub_reader_is_open(&win32->app.reader))
   {
     return 0;
@@ -22530,30 +22530,30 @@ lectern0_win32_capture_failure_gate_regression(
   U32 open_recovery_before = win32->app.capture_frame_recovery_count;
   mismatch_before = win32->app.page_action_identity_mismatch_count;
   win32->app.capture_frame_fail_count = 2;
-  B32 open_result = lectern0_open_path(&win32->app, path);
-  Lectern0LibraryEntry *catalog_entry =
-    lectern0_library_catalog_find_path(&win32->app.library,
+  B32 open_result = eightvo_open_path(&win32->app, path);
+  EightvoLibraryEntry *catalog_entry =
+    eightvo_library_catalog_find_path(&win32->app.library,
                                         win32->app.current_path);
   B32 open_catalog_recovered = open_result && catalog_entry &&
     epub_reader_is_open(&win32->app.reader) &&
     win32->app.reader.document_generation != closed_document_generation &&
     win32->app.library.entry_count == catalog_count_before_open &&
     win32->app.page_action_waiting_for_present &&
-    lectern0_win32_present_until_gate_clear(win32, 16) &&
+    eightvo_win32_present_until_gate_clear(win32, 16) &&
     win32->app.frame_capture_generation > open_capture_before &&
     win32->app.capture_frame_recovery_count == open_recovery_before + 1 &&
     win32->app.last_surface_identity.kind ==
-      Lectern0PresentationIdentity_Page &&
+      EightvoPresentationIdentity_Page &&
     win32->app.last_surface_identity.document_generation ==
       win32->app.reader.document_generation &&
-    lectern0_canonical_page_identity_equal(
+    eightvo_canonical_page_identity_equal(
       win32->app.last_surface_identity.page,
-      lectern0_canonical_page_identity(win32->app.reader.current_page)) &&
+      eightvo_canonical_page_identity(win32->app.reader.current_page)) &&
     win32->app.capture_frame_fail_count == 0;
   if (!open_catalog_recovered)
   {
     fprintf(stderr,
-            "lectern0_capture_failure_open result=fail open=%d catalog=%d reader_open=%d generation=%llu/%llu catalog_count=%u/%u gate=%d mismatch=%u/%u capture=%llu/%llu recovery=%u/%u failures_left=%u status=%s\n",
+            "eightvo_capture_failure_open result=fail open=%d catalog=%d reader_open=%d generation=%llu/%llu catalog_count=%u/%u gate=%d mismatch=%u/%u capture=%llu/%llu recovery=%u/%u failures_left=%u status=%s\n",
             open_result,
             catalog_entry != 0,
             epub_reader_is_open(&win32->app.reader),
@@ -22577,17 +22577,17 @@ lectern0_win32_capture_failure_gate_regression(
 }
 
 FUNCTION B32
-lectern0_win32_current_image_page_gate_is_exact(Lectern0Win32 *win32)
+eightvo_win32_current_image_page_gate_is_exact(EightvoWin32 *win32)
 {
   if (!win32 || !epub_reader_is_open(&win32->app.reader) ||
       win32->app.frame.image_count == 0)
     return 0;
   B32 image_identity_valid = 0;
-  U64 image_identity = lectern0_frame_image_visual_identity(
+  U64 image_identity = eightvo_frame_image_visual_identity(
     &win32->app.frame, &image_identity_valid);
-  Lectern0PresentationIdentity visible = win32->app.last_surface_identity;
+  EightvoPresentationIdentity visible = win32->app.last_surface_identity;
   return image_identity_valid && image_identity != 0 &&
-    visible.kind == Lectern0PresentationIdentity_Page &&
+    visible.kind == EightvoPresentationIdentity_Page &&
     visible.frame_generation == win32->app.page_action_frame_generation &&
     visible.frame_capture_generation == win32->app.frame_capture_generation &&
     visible.reader_frame_generation == win32->app.frame.generation &&
@@ -22597,26 +22597,26 @@ lectern0_win32_current_image_page_gate_is_exact(Lectern0Win32 *win32)
       epub_reader_layout_key_generation(win32->app.layout_key) &&
     visible.image_count == win32->app.frame.image_count &&
     visible.image_visual_identity == image_identity &&
-    lectern0_canonical_page_identity_equal(
+    eightvo_canonical_page_identity_equal(
       visible.page,
-      lectern0_canonical_page_identity(win32->app.reader.current_page));
+      eightvo_canonical_page_identity(win32->app.reader.current_page));
 }
 
 FUNCTION B32
-lectern0_win32_image_page_gate_regression(Lectern0Win32 *win32,
+eightvo_win32_image_page_gate_regression(EightvoWin32 *win32,
                                            U32 *out_image_pages)
 {
   if (out_image_pages) *out_image_pages = 0;
   if (!win32 || !epub_reader_is_open(&win32->app.reader)) return 0;
 
-  EpubReaderResult cover_navigation = lectern0_navigate_to_location(
+  EpubReaderResult cover_navigation = eightvo_navigate_to_location(
     &win32->app, 0, 0, EpubReaderNavigationReason_Location);
   if (cover_navigation != EpubReaderResult_Ok ||
-      !lectern0_win32_present_until_gate_clear(win32, 16) ||
-      !lectern0_win32_current_image_page_gate_is_exact(win32))
+      !eightvo_win32_present_until_gate_clear(win32, 16) ||
+      !eightvo_win32_current_image_page_gate_is_exact(win32))
   {
     fprintf(stderr,
-            "lectern0_image_page_gate result=fail case=cover navigation=%d spine=%u images=%u expected_kind=%d expected_images=%u expected_identity=%llu expected_frame=%llu:%llu visible_kind=%d visible_images=%u visible_identity=%llu visible_frame=%llu:%llu gate=%d present=%d mismatch=%u frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
+            "eightvo_image_page_gate result=fail case=cover navigation=%d spine=%u images=%u expected_kind=%d expected_images=%u expected_identity=%llu expected_frame=%llu:%llu visible_kind=%d visible_images=%u visible_identity=%llu visible_frame=%llu:%llu gate=%d present=%d mismatch=%u frame_doc=%llu:%llu reader_doc=%llu:%llu frame_page=%u:%llu/%llu:%llu+%llu reader_page=%u:%llu/%llu:%llu-%llu\n",
             (int)cover_navigation,
             win32->app.reader.active_spine_index,
             win32->app.frame.image_count,
@@ -22666,16 +22666,16 @@ lectern0_win32_image_page_gate_regression(Lectern0Win32 *win32,
                                      &nav_count) == DocError_Ok &&
       nav_count > 0)
   {
-    maps_navigation = lectern0_navigate_to_nav_point(
+    maps_navigation = eightvo_navigate_to_nav_point(
       &win32->app, 0, &navigation);
   }
   if (maps_navigation != EpubReaderResult_Ok ||
       win32->app.reader.active_spine_index != 9 ||
-      !lectern0_win32_present_until_gate_clear(win32, 16) ||
-      !lectern0_win32_current_image_page_gate_is_exact(win32))
+      !eightvo_win32_present_until_gate_clear(win32, 16) ||
+      !eightvo_win32_current_image_page_gate_is_exact(win32))
   {
     fprintf(stderr,
-            "lectern0_image_page_gate result=fail case=maps_1 navigation=%d nav_count=%u spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
+            "eightvo_image_page_gate result=fail case=maps_1 navigation=%d nav_count=%u spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
             (int)maps_navigation,
             nav_count,
             win32->app.reader.active_spine_index,
@@ -22690,13 +22690,13 @@ lectern0_win32_image_page_gate_regression(Lectern0Win32 *win32,
 
   for (U32 map_index = 2; map_index <= 3; map_index += 1)
   {
-    EpubReaderResult move = lectern0_move_page(&win32->app, 1);
+    EpubReaderResult move = eightvo_move_page(&win32->app, 1);
     if (move != EpubReaderResult_Ok ||
-        !lectern0_win32_present_until_gate_clear(win32, 16) ||
-        !lectern0_win32_current_image_page_gate_is_exact(win32))
+        !eightvo_win32_present_until_gate_clear(win32, 16) ||
+        !eightvo_win32_current_image_page_gate_is_exact(win32))
     {
       fprintf(stderr,
-              "lectern0_image_page_gate result=fail case=maps_%u move=%d spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
+              "eightvo_image_page_gate result=fail case=maps_%u move=%d spine=%u images=%u visible_images=%u visible_identity=%llu gate=%d\n",
               map_index,
               (int)move,
               win32->app.reader.active_spine_index,
@@ -22714,15 +22714,15 @@ lectern0_win32_image_page_gate_regression(Lectern0Win32 *win32,
 }
 
 FUNCTION B32
-lectern0_page_repeat_win32_run_probe(
-  Lectern0Win32 *win32,
+eightvo_page_repeat_win32_run_probe(
+  EightvoWin32 *win32,
   const char *path,
-  Lectern0PageRepeatWin32ProbeKind kind,
+  EightvoPageRepeatWin32ProbeKind kind,
   S32 direction,
   const SourceReaderPageRange *expected_pages,
   U32 expected_page_count,
   B32 seek_anchor,
-  Lectern0PageRepeatWin32Probe *out_probe)
+  EightvoPageRepeatWin32Probe *out_probe)
 {
   if (out_probe) MemoryZeroStruct(out_probe);
   if (!win32 || !win32->window || !path || !path[0] ||
@@ -22731,7 +22731,7 @@ lectern0_page_repeat_win32_run_probe(
     return 0;
   }
 
-  Lectern0PageRepeatWin32Probe probe = {0};
+  EightvoPageRepeatWin32Probe probe = {0};
   probe.minimum_text_bytes = UINT64_MAX;
   probe.minimum_text_rows = UINT32_MAX;
   probe.enabled = 1;
@@ -22739,12 +22739,12 @@ lectern0_page_repeat_win32_run_probe(
   probe.direction = direction < 0 ? -1 : 1;
   probe.key = probe.direction < 0 ? VK_LEFT : VK_RIGHT;
   probe.target_frame_move_count =
-    kind == Lectern0PageRepeatWin32Probe_Direction ?
-      Lectern0PageRepeatProbeMoveCount : 0;
+    kind == EightvoPageRepeatWin32Probe_Direction ?
+      EightvoPageRepeatProbeMoveCount : 0;
   probe.frame_cap =
-    kind == Lectern0PageRepeatWin32Probe_Direction ? 200 : 16;
+    kind == EightvoPageRepeatWin32Probe_Direction ? 200 : 16;
   probe.native_repeats_per_frame = 8;
-  if (kind == Lectern0PageRepeatWin32Probe_Direction)
+  if (kind == EightvoPageRepeatWin32Probe_Direction)
   {
     if (!expected_pages ||
         expected_page_count != ARRAY_COUNT(probe.expected_pages))
@@ -22756,7 +22756,7 @@ lectern0_page_repeat_win32_run_probe(
     for (U32 index = 0; index < expected_page_count; index += 1)
       probe.expected_pages[index] = expected_pages[index];
   }
-  else if (kind == Lectern0PageRepeatWin32Probe_MutationGate)
+  else if (kind == EightvoPageRepeatWin32Probe_MutationGate)
   {
     if (!expected_pages || expected_page_count != 1)
     {
@@ -22766,7 +22766,7 @@ lectern0_page_repeat_win32_run_probe(
     probe.expected_page_count = 1;
     probe.expected_pages[0] = expected_pages[0];
   }
-  if (!lectern0_page_repeat_win32_probe_present_anchor(win32, seek_anchor))
+  if (!eightvo_page_repeat_win32_probe_present_anchor(win32, seek_anchor))
   {
     *out_probe = probe;
     return 0;
@@ -22774,7 +22774,7 @@ lectern0_page_repeat_win32_run_probe(
   probe.start_page = win32->app.reader.current_page;
 
   win32->app.persistence_enabled = 1;
-  if (!lectern0_page_repeat_probe_prepare_persistence(&win32->app, &probe))
+  if (!eightvo_page_repeat_probe_prepare_persistence(&win32->app, &probe))
   {
     probe.failed = 1;
     win32->app.persistence_enabled = 0;
@@ -22786,7 +22786,7 @@ lectern0_page_repeat_win32_run_probe(
   {
     probe.failed = 1;
     win32->app.persistence_enabled = 0;
-    (void)lectern0_save_state(&win32->app);
+    (void)eightvo_save_state(&win32->app);
     *out_probe = probe;
     return 0;
   }
@@ -22803,22 +22803,22 @@ lectern0_page_repeat_win32_run_probe(
     win32->app.page_action_mutation_drop_count;
   probe.start_ticks = os_time_ticks();
   if (!PostMessageW(win32->window, WM_KEYDOWN, probe.key, 1) ||
-      !lectern0_page_repeat_win32_probe_post_native(&win32->app, &probe) ||
-      (kind == Lectern0PageRepeatWin32Probe_MutationGate &&
-       !lectern0_page_repeat_win32_probe_post_mutations(&win32->app)))
+      !eightvo_page_repeat_win32_probe_post_native(&win32->app, &probe) ||
+      (kind == EightvoPageRepeatWin32Probe_MutationGate &&
+       !eightvo_page_repeat_win32_probe_post_mutations(&win32->app)))
   {
     probe.failed = 1;
     win32->app.persistence_enabled = 0;
-    (void)lectern0_save_state(&win32->app);
+    (void)eightvo_save_state(&win32->app);
     *out_probe = probe;
     return 0;
   }
 
-  lectern0_win32_run_message_loop(win32, &probe);
+  eightvo_win32_run_message_loop(win32, &probe);
   win32->app.persistence_enabled = 0;
-  (void)lectern0_save_state(&win32->app);
+  (void)eightvo_save_state(&win32->app);
 
-  if (probe.kind == Lectern0PageRepeatWin32Probe_Direction)
+  if (probe.kind == EightvoPageRepeatWin32Probe_Direction)
   {
     U64 frequency = os_time_frequency();
     for (U32 index = 0;
@@ -22831,7 +22831,7 @@ lectern0_page_repeat_win32_run_probe(
         1000.0 * (double)probe.stable_present_transition_ticks[index] /
           (double)frequency : 0.0;
       fprintf(stderr,
-              "lectern0_page_repeat_transition direction=%d index=%u "
+              "eightvo_page_repeat_transition direction=%d index=%u "
               "from=%u:%llu-%llu to=%u:%llu-%llu cross_spine=%d "
               "initial_delay=%d interval_ms=%.3f\n",
               probe.direction,
@@ -22873,17 +22873,17 @@ lectern0_page_repeat_win32_run_probe(
       1000.0 * (double)probe.stable_present_interval_max_ticks /
         (double)frequency : 0.0;
     double visible_elapsed_ms = frequency > 0 &&
-      probe.stable_present_count == Lectern0PageRepeatProbePageCount ?
+      probe.stable_present_count == EightvoPageRepeatProbePageCount ?
         1000.0 * (double)(
           probe.stable_present_elapsed_ticks[
-            Lectern0PageRepeatProbePageCount - 1] -
+            EightvoPageRepeatProbePageCount - 1] -
           probe.stable_present_elapsed_ticks[0]) / (double)frequency : 0.0;
     double nominal_first_move_ms =
-      1000.0 * Lectern0PageRepeatInitialFrames /
-        Lectern0PageRepeatFrameRate;
+      1000.0 * EightvoPageRepeatInitialFrames /
+        EightvoPageRepeatFrameRate;
     double nominal_move_interval_ms =
-      1000.0 * Lectern0PageRepeatIntervalFrames /
-        Lectern0PageRepeatFrameRate;
+      1000.0 * EightvoPageRepeatIntervalFrames /
+        EightvoPageRepeatFrameRate;
     double nominal_elapsed_ms = nominal_first_move_ms +
       (probe.target_frame_move_count - 1) * nominal_move_interval_ms;
     double repeat_prepare_max_ms = frequency > 0 ?
@@ -22901,31 +22901,31 @@ lectern0_page_repeat_win32_run_probe(
     B32 timing_ok = frequency > 0 &&
       elapsed_ms >= nominal_elapsed_ms * 0.75 &&
       elapsed_ms <= nominal_elapsed_ms +
-        Lectern0PageRepeatProbeTimingToleranceMs &&
+        EightvoPageRepeatProbeTimingToleranceMs &&
       first_move_ms >= nominal_first_move_ms * 0.75 &&
       first_move_ms <= nominal_first_move_ms +
-        Lectern0PageRepeatProbeTimingToleranceMs &&
+        EightvoPageRepeatProbeTimingToleranceMs &&
       probe.move_interval_count == probe.target_frame_move_count - 1 &&
       move_interval_min_ms >= nominal_move_interval_ms * 0.5 &&
       move_interval_max_ms <= nominal_move_interval_ms +
-        Lectern0PageRepeatProbeIntervalToleranceMs &&
-      probe.stable_present_count == Lectern0PageRepeatProbePageCount &&
-      immediate_visible_ms < Lectern0PageRepeatProbeFrameBudgetMs &&
+        EightvoPageRepeatProbeIntervalToleranceMs &&
+      probe.stable_present_count == EightvoPageRepeatProbePageCount &&
+      immediate_visible_ms < EightvoPageRepeatProbeFrameBudgetMs &&
       visible_first_delay_ms >= nominal_first_move_ms * 0.75 &&
       visible_first_delay_ms <= nominal_first_move_ms +
-        Lectern0PageRepeatProbeTimingToleranceMs &&
+        EightvoPageRepeatProbeTimingToleranceMs &&
       probe.stable_present_interval_count ==
-        Lectern0PageRepeatProbeMoveCount - 1 &&
+        EightvoPageRepeatProbeMoveCount - 1 &&
       visible_interval_min_ms >= nominal_move_interval_ms * 0.5 &&
       visible_interval_max_ms <= nominal_move_interval_ms +
-        Lectern0PageRepeatProbeIntervalToleranceMs &&
+        EightvoPageRepeatProbeIntervalToleranceMs &&
       visible_elapsed_ms >= nominal_elapsed_ms * 0.75 &&
       visible_elapsed_ms <= nominal_elapsed_ms +
-        Lectern0PageRepeatProbeTimingToleranceMs &&
+        EightvoPageRepeatProbeTimingToleranceMs &&
       repeat_prepare_max_ms < move_prepare_budget_ms &&
       repeat_render_max_ms < render_budget_ms &&
       repeat_present_max_ms < present_budget_ms &&
-      frame_max_ms < Lectern0PageRepeatProbeFrameBudgetMs;
+      frame_max_ms < EightvoPageRepeatProbeFrameBudgetMs;
     probe.completed = probe.completed && timing_ok;
   }
   *out_probe = probe;
@@ -22933,16 +22933,16 @@ lectern0_page_repeat_win32_run_probe(
 }
 
 FUNCTION int
-lectern0_run_window_internal(const char *initial_path,
+eightvo_run_window_internal(const char *initial_path,
                              B32 page_repeat_probe_enabled)
 {
-  Lectern0Win32 win32 = {0};
+  EightvoWin32 win32 = {0};
   B32 page_repeat_sandbox_ready = 0;
   S32 initial_width = page_repeat_probe_enabled ?
-    Lectern0PageRepeatProbeWidth : 1100;
+    EightvoPageRepeatProbeWidth : 1100;
   S32 initial_height = page_repeat_probe_enabled ?
-    Lectern0PageRepeatProbeHeight : 760;
-  if (!lectern0_app_init(&win32.app,
+    EightvoPageRepeatProbeHeight : 760;
+  if (!eightvo_app_init(&win32.app,
                          initial_width,
                          initial_height,
                          1,
@@ -22954,14 +22954,14 @@ lectern0_run_window_internal(const char *initial_path,
   (void)SetProcessDPIAware();
   HINSTANCE instance = GetModuleHandleW(0);
   WNDCLASSW window_class = {0};
-  window_class.lpfnWndProc = lectern0_win32_proc;
+  window_class.lpfnWndProc = eightvo_win32_proc;
   window_class.hInstance = instance;
   window_class.lpszClassName = L"EightvoWindow";
   window_class.hCursor = LoadCursorW(0, IDC_ARROW);
   window_class.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   if (!RegisterClassW(&window_class))
   {
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
 
@@ -22986,7 +22986,7 @@ lectern0_run_window_internal(const char *initial_path,
                                  &win32);
   if (!win32.window)
   {
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   win32.app.window = win32.window;
@@ -22999,50 +22999,50 @@ lectern0_run_window_internal(const char *initial_path,
   if (!os_gfx_init(&win32.app.gfx, &gfx_params))
   {
     DestroyWindow(win32.window);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   win32.app.gfx_ready = 1;
   if (initial_path && initial_path[0] &&
-      !lectern0_open_path(&win32.app, initial_path))
+      !eightvo_open_path(&win32.app, initial_path))
   {
     if (page_repeat_probe_enabled)
       fprintf(stderr,
-              "lectern0_page_repeat_win32_smoke result=fail reason=open\n");
+              "eightvo_page_repeat_win32_smoke result=fail reason=open\n");
     DestroyWindow(win32.window);
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     return 1;
   }
   if (page_repeat_probe_enabled)
   {
     page_repeat_sandbox_ready =
-      lectern0_page_repeat_probe_set_sandbox_paths(&win32.app);
+      eightvo_page_repeat_probe_set_sandbox_paths(&win32.app);
     if (!page_repeat_sandbox_ready)
     {
       fprintf(stderr,
-              "lectern0_page_repeat_win32_smoke result=fail reason=sandbox_persistence\n");
-      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+              "eightvo_page_repeat_win32_smoke result=fail reason=sandbox_persistence\n");
+      (void)eightvo_page_repeat_probe_cleanup_sandbox(&win32.app);
       DestroyWindow(win32.window);
-      lectern0_app_release(&win32.app);
+      eightvo_app_release(&win32.app);
       return 1;
     }
     WNDCLASSW paint_probe_class = {0};
-    paint_probe_class.lpfnWndProc = lectern0_page_repeat_probe_paint_proc;
+    paint_probe_class.lpfnWndProc = eightvo_page_repeat_probe_paint_proc;
     paint_probe_class.hInstance = instance;
-    paint_probe_class.lpszClassName = L"Lectern0PageRepeatPaintProbeWindow";
+    paint_probe_class.lpszClassName = L"EightvoPageRepeatPaintProbeWindow";
     if (!RegisterClassW(&paint_probe_class))
     {
       fprintf(stderr,
-              "lectern0_page_repeat_win32_smoke result=fail reason=paint_probe_register\n");
-      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+              "eightvo_page_repeat_win32_smoke result=fail reason=paint_probe_register\n");
+      (void)eightvo_page_repeat_probe_cleanup_sandbox(&win32.app);
       DestroyWindow(win32.window);
-      lectern0_app_release(&win32.app);
+      eightvo_app_release(&win32.app);
       return 1;
     }
     win32.page_repeat_probe_paint_window = CreateWindowExW(
       WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
       paint_probe_class.lpszClassName,
-      L"lectern0 page-repeat paint probe",
+      L"eightvo page-repeat paint probe",
       WS_OVERLAPPEDWINDOW | WS_VISIBLE,
       -32000,
       -32000,
@@ -23055,11 +23055,11 @@ lectern0_run_window_internal(const char *initial_path,
     if (!win32.page_repeat_probe_paint_window)
     {
       fprintf(stderr,
-              "lectern0_page_repeat_win32_smoke result=fail reason=paint_probe_window\n");
+              "eightvo_page_repeat_win32_smoke result=fail reason=paint_probe_window\n");
       (void)UnregisterClassW(paint_probe_class.lpszClassName, instance);
-      (void)lectern0_page_repeat_probe_cleanup_sandbox(&win32.app);
+      (void)eightvo_page_repeat_probe_cleanup_sandbox(&win32.app);
       DestroyWindow(win32.window);
-      lectern0_app_release(&win32.app);
+      eightvo_app_release(&win32.app);
       return 1;
     }
     (void)UpdateWindow(win32.page_repeat_probe_paint_window);
@@ -23069,100 +23069,100 @@ lectern0_run_window_internal(const char *initial_path,
   if (page_repeat_probe_enabled)
   {
     U64 frequency = os_time_frequency();
-    Lectern0PageRepeatWin32Probe forward = {0};
-    Lectern0PageRepeatWin32Probe backward = {0};
-    Lectern0PageRepeatWin32Probe focus = {0};
-    Lectern0PageRepeatWin32Probe control_modifier = {0};
-    Lectern0PageRepeatWin32Probe shift_modifier = {0};
-    Lectern0PageRepeatWin32Probe system_modifier = {0};
-    Lectern0PageRepeatWin32Probe deactivate = {0};
-    Lectern0PageRepeatWin32Probe mutation_gate = {0};
-    SourceReaderPageRange expected_forward[Lectern0PageRepeatProbePageCount] =
+    EightvoPageRepeatWin32Probe forward = {0};
+    EightvoPageRepeatWin32Probe backward = {0};
+    EightvoPageRepeatWin32Probe focus = {0};
+    EightvoPageRepeatWin32Probe control_modifier = {0};
+    EightvoPageRepeatWin32Probe shift_modifier = {0};
+    EightvoPageRepeatWin32Probe system_modifier = {0};
+    EightvoPageRepeatWin32Probe deactivate = {0};
+    EightvoPageRepeatWin32Probe mutation_gate = {0};
+    SourceReaderPageRange expected_forward[EightvoPageRepeatProbePageCount] =
       {0};
-    SourceReaderPageRange expected_backward[Lectern0PageRepeatProbePageCount] =
+    SourceReaderPageRange expected_backward[EightvoPageRepeatProbePageCount] =
       {0};
     SourceReaderPageRange reversal_anchor = {0};
     SourceReaderPageRange reversal_endpoint = {0};
-    B32 expected_ok = lectern0_page_repeat_probe_build_expected(
+    B32 expected_ok = eightvo_page_repeat_probe_build_expected(
       initial_path,
       expected_forward,
       expected_backward,
       &reversal_anchor,
       &reversal_endpoint);
 
-    B32 forward_ok = expected_ok && lectern0_page_repeat_win32_run_probe(
+    B32 forward_ok = expected_ok && eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_Direction,
+      EightvoPageRepeatWin32Probe_Direction,
       1,
       expected_forward,
       ARRAY_COUNT(expected_forward),
       1,
       &forward);
     B32 backward_ok = forward_ok &&
-      lectern0_page_repeat_probe_page_equal(win32.app.reader.current_page,
+      eightvo_page_repeat_probe_page_equal(win32.app.reader.current_page,
                                              reversal_endpoint) &&
-      lectern0_page_repeat_win32_run_probe(
+      eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_Direction,
+      EightvoPageRepeatWin32Probe_Direction,
       -1,
       expected_backward,
       ARRAY_COUNT(expected_backward),
       0,
       &backward);
     B32 returned_to_anchor = backward_ok &&
-      lectern0_page_repeat_probe_page_equal(win32.app.reader.current_page,
+      eightvo_page_repeat_probe_page_equal(win32.app.reader.current_page,
                                              reversal_anchor);
-    B32 focus_ok = lectern0_page_repeat_win32_run_probe(
+    B32 focus_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_FocusLoss,
+      EightvoPageRepeatWin32Probe_FocusLoss,
       1,
       0,
       0,
       1,
       &focus);
-    B32 control_modifier_ok = lectern0_page_repeat_win32_run_probe(
+    B32 control_modifier_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_ControlModifier,
+      EightvoPageRepeatWin32Probe_ControlModifier,
       1,
       0,
       0,
       1,
       &control_modifier);
-    B32 shift_modifier_ok = lectern0_page_repeat_win32_run_probe(
+    B32 shift_modifier_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_ShiftModifier,
+      EightvoPageRepeatWin32Probe_ShiftModifier,
       1,
       0,
       0,
       1,
       &shift_modifier);
-    B32 system_modifier_ok = lectern0_page_repeat_win32_run_probe(
+    B32 system_modifier_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_SystemModifier,
+      EightvoPageRepeatWin32Probe_SystemModifier,
       1,
       0,
       0,
       1,
       &system_modifier);
-    B32 deactivate_ok = lectern0_page_repeat_win32_run_probe(
+    B32 deactivate_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_Deactivation,
+      EightvoPageRepeatWin32Probe_Deactivation,
       1,
       0,
       0,
       1,
       &deactivate);
-    B32 mutation_gate_ok = lectern0_page_repeat_win32_run_probe(
+    B32 mutation_gate_ok = eightvo_page_repeat_win32_run_probe(
       &win32,
       initial_path,
-      Lectern0PageRepeatWin32Probe_MutationGate,
+      EightvoPageRepeatWin32Probe_MutationGate,
       1,
       expected_forward,
       1,
@@ -23174,7 +23174,7 @@ lectern0_run_window_internal(const char *initial_path,
     U32 capture_retry_recovered = 0;
     U32 capture_persistence_recovered = 0;
     B32 capture_failure_ok = mutation_gate_ok &&
-      lectern0_win32_capture_failure_gate_regression(
+      eightvo_win32_capture_failure_gate_regression(
         &win32,
         initial_path,
         &capture_page_recovered,
@@ -23184,7 +23184,7 @@ lectern0_run_window_internal(const char *initial_path,
         &capture_persistence_recovered);
     U32 image_gate_pages = 0;
     B32 image_gate_ok = capture_failure_ok &&
-      lectern0_win32_image_page_gate_regression(&win32,
+      eightvo_win32_image_page_gate_regression(&win32,
                                                  &image_gate_pages);
 
     double forward_first_move_ms = frequency > 0 ?
@@ -23221,9 +23221,9 @@ lectern0_run_window_internal(const char *initial_path,
       1000.0 * (double)forward.stable_present_interval_max_ticks /
         (double)frequency : 0.0;
     double forward_visible_elapsed_ms = frequency > 0 &&
-      forward.stable_present_count == Lectern0PageRepeatProbePageCount ?
+      forward.stable_present_count == EightvoPageRepeatProbePageCount ?
         1000.0 * (double)(forward.stable_present_elapsed_ticks[
-          Lectern0PageRepeatProbePageCount - 1] -
+          EightvoPageRepeatProbePageCount - 1] -
           forward.stable_present_elapsed_ticks[0]) /
           (double)frequency : 0.0;
     double forward_frame_max_ms = frequency > 0 ?
@@ -23297,9 +23297,9 @@ lectern0_run_window_internal(const char *initial_path,
       1000.0 * (double)backward.stable_present_interval_max_ticks /
         (double)frequency : 0.0;
     double backward_visible_elapsed_ms = frequency > 0 &&
-      backward.stable_present_count == Lectern0PageRepeatProbePageCount ?
+      backward.stable_present_count == EightvoPageRepeatProbePageCount ?
         1000.0 * (double)(backward.stable_present_elapsed_ticks[
-          Lectern0PageRepeatProbePageCount - 1] -
+          EightvoPageRepeatProbePageCount - 1] -
           backward.stable_present_elapsed_ticks[0]) /
           (double)frequency : 0.0;
     double backward_frame_max_ms = frequency > 0 ?
@@ -23340,13 +23340,13 @@ lectern0_run_window_internal(const char *initial_path,
       1000.0 * (double)backward.navigation_prepare_max_ticks /
         (double)frequency : 0.0;
     double nominal_first_move_ms =
-      1000.0 * Lectern0PageRepeatInitialFrames /
-        Lectern0PageRepeatFrameRate;
+      1000.0 * EightvoPageRepeatInitialFrames /
+        EightvoPageRepeatFrameRate;
     double nominal_move_interval_ms =
-      1000.0 * Lectern0PageRepeatIntervalFrames /
-        Lectern0PageRepeatFrameRate;
+      1000.0 * EightvoPageRepeatIntervalFrames /
+        EightvoPageRepeatFrameRate;
     double nominal_elapsed_ms = nominal_first_move_ms +
-      (Lectern0PageRepeatProbeMoveCount - 1) * nominal_move_interval_ms;
+      (EightvoPageRepeatProbeMoveCount - 1) * nominal_move_interval_ms;
     U32 native_posted = forward.native_repeat_posted_count +
       backward.native_repeat_posted_count;
     U32 native_coalesced = forward.native_repeat_coalesced_count +
@@ -23461,7 +23461,7 @@ lectern0_run_window_internal(const char *initial_path,
       system_modifier.queue_drain_message_count +
       deactivate.queue_drain_message_count +
       mutation_gate.queue_drain_message_count;
-    U32 expected_presented_frames = Lectern0PageRepeatProbeMoveCount + 1;
+    U32 expected_presented_frames = EightvoPageRepeatProbeMoveCount + 1;
     U32 idle_presentations =
       (forward.logical_frame_count > expected_presented_frames ?
          forward.logical_frame_count - expected_presented_frames : 0) +
@@ -23470,20 +23470,20 @@ lectern0_run_window_internal(const char *initial_path,
     U32 expected_native_repeats =
       expected_presented_frames * 2 * forward.native_repeats_per_frame;
     win32.app.persistence_enabled = 0;
-    char sandbox_directory[Lectern0PathCap] = {0};
-    lectern0_copy_cstr(sandbox_directory,
+    char sandbox_directory[EightvoPathCap] = {0};
+    eightvo_copy_cstr(sandbox_directory,
                        ARRAY_COUNT(sandbox_directory),
                        win32.app.app_directory);
-    lectern0_page_repeat_probe_cleanup_sandbox_files(&win32.app);
+    eightvo_page_repeat_probe_cleanup_sandbox_files(&win32.app);
     win32.page_repeat_probe_track_paints = 0;
     DestroyWindow(win32.page_repeat_probe_paint_window);
     win32.page_repeat_probe_paint_window = 0;
-    (void)UnregisterClassW(L"Lectern0PageRepeatPaintProbeWindow", instance);
+    (void)UnregisterClassW(L"EightvoPageRepeatPaintProbeWindow", instance);
     DestroyWindow(win32.window);
     win32.window = 0;
-    lectern0_app_release(&win32.app);
+    eightvo_app_release(&win32.app);
     B32 persistence_cleanup_ok =
-      lectern0_page_repeat_probe_remove_sandbox_directory(sandbox_directory);
+      eightvo_page_repeat_probe_remove_sandbox_directory(sandbox_directory);
     B32 passed = frequency > 0 && page_repeat_sandbox_ready &&
       persistence_cleanup_ok &&
       expected_ok && forward_ok && backward_ok && returned_to_anchor &&
@@ -23496,8 +23496,8 @@ lectern0_run_window_internal(const char *initial_path,
       canonical_valid_frames == 26 && cross_spine_directions == 2 &&
       zero_page_or_frame_count == 0 && orphan_text_page_count == 0 &&
       invalid_word_start_page_count == 0 && gotm_text_frame_count > 0 &&
-      gotm_minimum_text_bytes >= Lectern0GotmMinimumProseTextBytes &&
-      gotm_minimum_text_rows >= Lectern0GotmMinimumProseTextRows &&
+      gotm_minimum_text_bytes >= EightvoGotmMinimumProseTextBytes &&
+      gotm_minimum_text_rows >= EightvoGotmMinimumProseTextRows &&
       page_actions_emitted == 26 && page_actions_presented == 26 &&
       page_action_overlaps == 0 &&
       interval_sample_count == 22 && repeat_timing_sample_count == 24 &&
@@ -23515,10 +23515,10 @@ lectern0_run_window_internal(const char *initial_path,
       backward.synchronous_window_rebuild_move_count == 0 &&
       forward.synchronous_adjacent_measured_move_count == 0 &&
       backward.synchronous_adjacent_measured_move_count == 0 &&
-      queue_drain_batch_max <= Lectern0PageRepeatProbeQueueDrainCap &&
+      queue_drain_batch_max <= EightvoPageRepeatProbeQueueDrainCap &&
       auxiliary_paint_dispatches == 2 && main_null_paint_dispatches == 2 &&
       mutation_gate.page_action_mutation_drop_count ==
-        Lectern0PageRepeatProbeMutationCount &&
+        EightvoPageRepeatProbeMutationCount &&
       mutation_gate.mutation_cancel_count == 1 &&
       capture_page_recovered == 1 && capture_same_page_recovered == 1 &&
       capture_open_catalog_recovered == 1 && capture_retry_recovered == 1 &&
@@ -23528,7 +23528,7 @@ lectern0_run_window_internal(const char *initial_path,
       persistence_post_stop_advanced == 8 &&
       cancelled_repeat_posted == 5 && cancelled_repeat_consumed == 5;
     fprintf(passed ? stdout : stderr,
-            "lectern0_page_repeat_win32_smoke result=%s viewport=%dx%d "
+            "eightvo_page_repeat_win32_smoke result=%s viewport=%dx%d "
             "directions=%d/2 reversal=forward_then_backward "
             "returned_to_anchor=%d/1 cross_spine_directions=%u/2 "
             "cross_spine_transitions=%u "
@@ -23616,17 +23616,17 @@ lectern0_run_window_internal(const char *initial_path,
              "backward_navigation_prepare_avg_ms=%.3f "
              "backward_navigation_prepare_max_ms=%.3f\n",
             passed ? "pass" : "fail",
-            Lectern0PageRepeatProbeWidth,
-            Lectern0PageRepeatProbeHeight,
+            EightvoPageRepeatProbeWidth,
+            EightvoPageRepeatProbeHeight,
             forward_ok + backward_ok,
             returned_to_anchor,
             cross_spine_directions,
             cross_spine_transitions,
-            Lectern0PageRepeatFrameRate,
-            Lectern0PageRepeatInitialFrames,
-            Lectern0PageRepeatIntervalFrames,
-            Lectern0PageRepeatProbeMoveCount,
-            Lectern0PageRepeatProbeMoveCount,
+            EightvoPageRepeatFrameRate,
+            EightvoPageRepeatInitialFrames,
+            EightvoPageRepeatIntervalFrames,
+            EightvoPageRepeatProbeMoveCount,
+            EightvoPageRepeatProbeMoveCount,
             forward.logical_frame_count,
             backward.logical_frame_count,
             expected_presented_frames,
@@ -23638,9 +23638,9 @@ lectern0_run_window_internal(const char *initial_path,
             orphan_text_page_count,
             invalid_word_start_page_count,
             (unsigned long long)gotm_minimum_text_bytes,
-            Lectern0GotmMinimumProseTextBytes,
+            EightvoGotmMinimumProseTextBytes,
             gotm_minimum_text_rows,
-            Lectern0GotmMinimumProseTextRows,
+            EightvoGotmMinimumProseTextRows,
             (unsigned long long)page_actions_emitted,
             (unsigned long long)page_actions_presented,
             page_action_overlaps,
@@ -23671,7 +23671,7 @@ lectern0_run_window_internal(const char *initial_path,
             stable_presentation_count,
             visible_interval_sample_count,
             queue_drain_batch_max,
-            Lectern0PageRepeatProbeQueueDrainCap,
+            EightvoPageRepeatProbeQueueDrainCap,
             queue_drained_message_count,
             forward.keyup_cancel_count + backward.keyup_cancel_count,
             focus.focus_cancel_count,
@@ -23685,7 +23685,7 @@ lectern0_run_window_internal(const char *initial_path,
             cancelled_repeat_consumed,
             cancelled_repeat_posted,
             mutation_gate.page_action_mutation_drop_count,
-            Lectern0PageRepeatProbeMutationCount,
+            EightvoPageRepeatProbeMutationCount,
             mutation_gate.mutation_cancel_count,
             capture_page_recovered,
             capture_same_page_recovered,
@@ -23705,7 +23705,7 @@ lectern0_run_window_internal(const char *initial_path,
             forward_first_move_ms,
             backward_first_move_ms,
             nominal_move_interval_ms,
-            Lectern0PageRepeatProbeIntervalToleranceMs,
+            EightvoPageRepeatProbeIntervalToleranceMs,
             forward_interval_min_ms,
             forward_interval_avg_ms,
             forward_interval_max_ms,
@@ -23713,7 +23713,7 @@ lectern0_run_window_internal(const char *initial_path,
             backward_interval_avg_ms,
             backward_interval_max_ms,
             nominal_elapsed_ms,
-            Lectern0PageRepeatProbeTimingToleranceMs,
+            EightvoPageRepeatProbeTimingToleranceMs,
             forward_elapsed_ms,
             backward_elapsed_ms,
             forward_immediate_visible_ms,
@@ -23728,7 +23728,7 @@ lectern0_run_window_internal(const char *initial_path,
             backward_visible_interval_avg_ms,
             backward_visible_interval_max_ms,
             backward_visible_elapsed_ms,
-            Lectern0PageRepeatProbeFrameBudgetMs,
+            EightvoPageRepeatProbeFrameBudgetMs,
             forward_frame_max_ms,
             backward_frame_max_ms,
             forward_cold_render_ms,
@@ -23756,21 +23756,21 @@ lectern0_run_window_internal(const char *initial_path,
 
   InvalidateRect(win32.window, 0, FALSE);
 
-  lectern0_win32_run_message_loop(&win32, 0);
-  lectern0_app_release(&win32.app);
+  eightvo_win32_run_message_loop(&win32, 0);
+  eightvo_app_release(&win32.app);
   return 0;
 }
 
 FUNCTION int
-lectern0_run_window(const char *initial_path)
+eightvo_run_window(const char *initial_path)
 {
-  return lectern0_run_window_internal(initial_path, 0);
+  return eightvo_run_window_internal(initial_path, 0);
 }
 
 FUNCTION int
-lectern0_run_page_repeat_win32_smoke(const char *path)
+eightvo_run_page_repeat_win32_smoke(const char *path)
 {
-  return lectern0_run_window_internal(path, 1);
+  return eightvo_run_window_internal(path, 1);
 }
 
 int
@@ -23794,111 +23794,111 @@ main(int argc, char **argv)
         !byte_end || *byte_end != 0)
     {
       fprintf(stderr,
-              "lectern0_saved_position_first_load_smoke result=fail reason=args\n");
+              "eightvo_saved_position_first_load_smoke result=fail reason=args\n");
       result = 2;
     }
     else
     {
-      result = lectern0_run_saved_position_first_load_smoke(
+      result = eightvo_run_saved_position_first_load_smoke(
         argv[2], (U32)parsed_spine, (U64)parsed_byte);
     }
   }
   else if (argc == 3 && strcmp(argv[1], "--headless") == 0)
   {
-    result = lectern0_run_headless(argv[2]);
+    result = eightvo_run_headless(argv[2]);
   }
   else if (argc == 4 && strcmp(argv[1], "--render-smoke") == 0)
   {
-    result = lectern0_run_render_smoke(argv[2], argv[3]);
+    result = eightvo_run_render_smoke(argv[2], argv[3]);
   }
   else if (argc == 5 && strcmp(argv[1], "--image-smoke") == 0)
   {
-    result = lectern0_run_image_smoke(argv[2], argv[3], argv[4]);
+    result = eightvo_run_image_smoke(argv[2], argv[3], argv[4]);
   }
   else if (argc == 4 && strcmp(argv[1], "--reader-image-fit-smoke") == 0)
   {
-    result = lectern0_run_reader_image_fit_smoke(argv[2], argv[3]);
+    result = eightvo_run_reader_image_fit_smoke(argv[2], argv[3]);
   }
   else if (argc == 4 && strcmp(argv[1], "--page-turn-regression-smoke") == 0)
   {
-    result = lectern0_run_page_turn_regression_smoke(argv[2], argv[3]);
+    result = eightvo_run_page_turn_regression_smoke(argv[2], argv[3]);
   }
   else if (argc == 3 &&
            strcmp(argv[1], "--page-repeat-win32-smoke") == 0)
   {
-    result = lectern0_run_page_repeat_win32_smoke(argv[2]);
+    result = eightvo_run_page_repeat_win32_smoke(argv[2]);
   }
   else if (argc == 4 && strcmp(argv[1], "--library-smoke") == 0)
   {
-    result = lectern0_run_library_smoke(argv[2], argv[3]);
+    result = eightvo_run_library_smoke(argv[2], argv[3]);
   }
   else if (argc == 4 && strcmp(argv[1], "--reader-view-smoke") == 0)
   {
-    result = lectern0_run_reader_view_smoke(argv[2], argv[3]);
+    result = eightvo_run_reader_view_smoke(argv[2], argv[3]);
   }
   else if (argc == 4 &&
            strcmp(argv[1], "--publisher-typography-spacing-smoke") == 0)
   {
-    result = lectern0_run_publisher_typography_spacing_smoke(
+    result = eightvo_run_publisher_typography_spacing_smoke(
       argv[2], argv[3]);
   }
   else if (argc == 4 &&
            strcmp(argv[1], "--reader-view-post-action-arrow-smoke") == 0)
   {
-    result = lectern0_run_reader_view_post_action_arrow_smoke(
+    result = eightvo_run_reader_view_post_action_arrow_smoke(
       argv[2], argv[3]);
   }
   else if (argc == 4 &&
            strcmp(argv[1], "--reader-view-find-active-contrast-smoke") == 0)
   {
-    result = lectern0_run_reader_view_find_active_contrast_smoke(
+    result = eightvo_run_reader_view_find_active_contrast_smoke(
       argv[2], argv[3]);
   }
   else if (argc == 4 &&
            strcmp(argv[1], "--reader-view-find-snippet-context-smoke") == 0)
   {
-    result = lectern0_run_reader_view_find_snippet_context_smoke(
+    result = eightvo_run_reader_view_find_snippet_context_smoke(
       argv[2], argv[3]);
   }
   else if (argc == 2 &&
            strcmp(argv[1], "--reader-view-startup-interaction-smoke") == 0)
   {
-    result = lectern0_run_reader_view_startup_interaction_smoke();
+    result = eightvo_run_reader_view_startup_interaction_smoke();
   }
   else if (argc == 4 &&
            strcmp(argv[1], "--reader-view-selection-menu-smoke") == 0)
   {
-    result = lectern0_run_reader_view_selection_menu_smoke(
+    result = eightvo_run_reader_view_selection_menu_smoke(
       argv[2], argv[3]);
   }
   else if ((argc == 12 || argc == 13 || argc == 14) &&
            strcmp(argv[1], "--reader-view-parity-capture") == 0)
   {
-    result = lectern0_run_reader_view_parity_capture(
+    result = eightvo_run_reader_view_parity_capture(
       argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8],
       argv[9], argv[10], argv[11], argc >= 13 ? argv[12] : "none",
       argc == 14 ? argv[13] : "none");
   }
   else if (argc == 3 && strcmp(argv[1], "--accessibility-smoke") == 0)
   {
-    result = lectern0_run_accessibility_smoke(argv[2]);
+    result = eightvo_run_accessibility_smoke(argv[2]);
   }
   else if (argc == 2 && strcmp(argv[1], "--data-migration-smoke") == 0)
   {
-    result = lectern0_run_data_migration_smoke();
+    result = eightvo_run_data_migration_smoke();
   }
   else if (argc == 2 && strcmp(argv[1], "--version") == 0)
   {
     fprintf(stdout,
             "8vo %s reader0_api=%d ui0_api=%d readerview0_api=%d\n",
-            LECTERN0_VERSION_STRING,
+            EIGHTVO_VERSION_STRING,
             READER0_API_VERSION,
             UI0_API_VERSION,
             READERVIEW0_API_VERSION);
   }
   else if (argc <= 2)
   {
-    result = lectern0_run_window(argc == 2 ? argv[1] : 0);
+    result = eightvo_run_window(argc == 2 ? argv[1] : 0);
   }
   else
   {

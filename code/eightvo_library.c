@@ -1,4 +1,4 @@
-#include "lectern0_library.h"
+#include "eightvo_library.h"
 
 #include "base/base_format.h"
 
@@ -6,24 +6,24 @@
 #include <string.h>
 #include <windows.h>
 
-#define LECTERN0_LIBRARY_CATALOG_MAGIC 0x4C304C4942524152ull
-#define LECTERN0_LIBRARY_CATALOG_VERSION 1u
+#define EIGHTVO_LIBRARY_CATALOG_MAGIC 0x4C304C4942524152ull
+#define EIGHTVO_LIBRARY_CATALOG_VERSION 1u
 
-typedef struct Lectern0LibraryCatalogFile
+typedef struct EightvoLibraryCatalogFile
 {
   U64 magic;
   U32 version;
   U32 entry_count;
   U64 next_entry_id;
-  Lectern0LibraryEntry entries[Lectern0LibraryEntryCap];
-} Lectern0LibraryCatalogFile;
+  EightvoLibraryEntry entries[EightvoLibraryEntryCap];
+} EightvoLibraryCatalogFile;
 
-_Static_assert(sizeof(Lectern0LibraryCatalogFile) <=
-                 Lectern0LibraryCatalogFileCap,
-               "lectern0 library catalog exceeds its file cap");
+_Static_assert(sizeof(EightvoLibraryCatalogFile) <=
+                 EightvoLibraryCatalogFileCap,
+               "eightvo library catalog exceeds its file cap");
 
 FUNCTION void
-lectern0_library_copy_cstr(char *dst, U64 cap, const char *src)
+eightvo_library_copy_cstr(char *dst, U64 cap, const char *src)
 {
   if (!dst || cap == 0) return;
   U64 at = 0;
@@ -39,7 +39,7 @@ lectern0_library_copy_cstr(char *dst, U64 cap, const char *src)
 }
 
 void
-lectern0_library_catalog_init(Lectern0LibraryCatalog *catalog)
+eightvo_library_catalog_init(EightvoLibraryCatalog *catalog)
 {
   if (!catalog) return;
   MemoryZeroStruct(catalog);
@@ -47,7 +47,7 @@ lectern0_library_catalog_init(Lectern0LibraryCatalog *catalog)
 }
 
 FUNCTION B32
-lectern0_library_entry_strings_valid(Lectern0LibraryEntry *entry)
+eightvo_library_entry_strings_valid(EightvoLibraryEntry *entry)
 {
   if (!entry) return 0;
   entry->source_path[ARRAY_COUNT(entry->source_path) - 1] = 0;
@@ -58,33 +58,33 @@ lectern0_library_entry_strings_valid(Lectern0LibraryEntry *entry)
 }
 
 B32
-lectern0_library_catalog_load(Lectern0LibraryCatalog *catalog,
+eightvo_library_catalog_load(EightvoLibraryCatalog *catalog,
                               const char *catalog_path)
 {
   if (!catalog || !catalog_path || !catalog_path[0]) return 0;
-  Lectern0LibraryCatalogFile file = {0};
+  EightvoLibraryCatalogFile file = {0};
   U64 size = 0;
   if (!os_read_entire_file(catalog_path, &file, sizeof(file), &size) ||
-      size < offsetof(Lectern0LibraryCatalogFile, entries) ||
-      file.magic != LECTERN0_LIBRARY_CATALOG_MAGIC ||
-      file.version != LECTERN0_LIBRARY_CATALOG_VERSION ||
-      file.entry_count > Lectern0LibraryEntryCap)
+      size < offsetof(EightvoLibraryCatalogFile, entries) ||
+      file.magic != EIGHTVO_LIBRARY_CATALOG_MAGIC ||
+      file.version != EIGHTVO_LIBRARY_CATALOG_VERSION ||
+      file.entry_count > EightvoLibraryEntryCap)
   {
     return 0;
   }
-  U64 expected_size = offsetof(Lectern0LibraryCatalogFile, entries) +
+  U64 expected_size = offsetof(EightvoLibraryCatalogFile, entries) +
     sizeof(file.entries[0]) * (U64)file.entry_count;
   if (size != expected_size) return 0;
 
-  Lectern0LibraryCatalog loaded = {0};
+  EightvoLibraryCatalog loaded = {0};
   loaded.entry_count = file.entry_count;
   loaded.next_entry_id = MAX(file.next_entry_id, 1ull);
   U64 maximum_id = 0;
   for (U32 index = 0; index < file.entry_count; index += 1)
   {
-    Lectern0LibraryEntry entry = file.entries[index];
+    EightvoLibraryEntry entry = file.entries[index];
     entry.runtime_missing = 0;
-    if (!lectern0_library_entry_strings_valid(&entry)) return 0;
+    if (!eightvo_library_entry_strings_valid(&entry)) return 0;
     for (U32 previous = 0; previous < index; previous += 1)
       if (loaded.entries[previous].entry_id == entry.entry_id) return 0;
     loaded.entries[index] = entry;
@@ -93,21 +93,21 @@ lectern0_library_catalog_load(Lectern0LibraryCatalog *catalog,
   loaded.next_entry_id = MAX(loaded.next_entry_id, maximum_id + 1);
   loaded.revision = 1;
   *catalog = loaded;
-  lectern0_library_catalog_refresh_missing(catalog);
-  lectern0_library_catalog_sort(catalog);
+  eightvo_library_catalog_refresh_missing(catalog);
+  eightvo_library_catalog_sort(catalog);
   return 1;
 }
 
 B32
-lectern0_library_catalog_save(const Lectern0LibraryCatalog *catalog,
+eightvo_library_catalog_save(const EightvoLibraryCatalog *catalog,
                               const char *catalog_path)
 {
   if (!catalog || !catalog_path || !catalog_path[0] ||
-      catalog->entry_count > Lectern0LibraryEntryCap)
+      catalog->entry_count > EightvoLibraryEntryCap)
     return 0;
-  Lectern0LibraryCatalogFile file = {0};
-  file.magic = LECTERN0_LIBRARY_CATALOG_MAGIC;
-  file.version = LECTERN0_LIBRARY_CATALOG_VERSION;
+  EightvoLibraryCatalogFile file = {0};
+  file.magic = EIGHTVO_LIBRARY_CATALOG_MAGIC;
+  file.version = EIGHTVO_LIBRARY_CATALOG_VERSION;
   file.entry_count = catalog->entry_count;
   file.next_entry_id = MAX(catalog->next_entry_id, 1ull);
   for (U32 index = 0; index < catalog->entry_count; index += 1)
@@ -115,14 +115,14 @@ lectern0_library_catalog_save(const Lectern0LibraryCatalog *catalog,
     file.entries[index] = catalog->entries[index];
     file.entries[index].runtime_missing = 0;
   }
-  U64 size = offsetof(Lectern0LibraryCatalogFile, entries) +
+  U64 size = offsetof(EightvoLibraryCatalogFile, entries) +
     sizeof(file.entries[0]) * (U64)file.entry_count;
-  return size <= Lectern0LibraryCatalogFileCap &&
+  return size <= EightvoLibraryCatalogFileCap &&
     os_write_entire_file_atomic(catalog_path, &file, size);
 }
 
 void
-lectern0_library_catalog_refresh_missing(Lectern0LibraryCatalog *catalog)
+eightvo_library_catalog_refresh_missing(EightvoLibraryCatalog *catalog)
 {
   if (!catalog) return;
   for (U32 index = 0; index < catalog->entry_count; index += 1)
@@ -135,8 +135,8 @@ lectern0_library_catalog_refresh_missing(Lectern0LibraryCatalog *catalog)
 }
 
 FUNCTION S32
-lectern0_library_entry_compare(const Lectern0LibraryEntry *left,
-                               const Lectern0LibraryEntry *right)
+eightvo_library_entry_compare(const EightvoLibraryEntry *left,
+                               const EightvoLibraryEntry *right)
 {
   if (left->last_opened_time != right->last_opened_time)
     return left->last_opened_time > right->last_opened_time ? -1 : 1;
@@ -149,15 +149,15 @@ lectern0_library_entry_compare(const Lectern0LibraryEntry *left,
 }
 
 void
-lectern0_library_catalog_sort(Lectern0LibraryCatalog *catalog)
+eightvo_library_catalog_sort(EightvoLibraryCatalog *catalog)
 {
   if (!catalog) return;
   for (U32 index = 1; index < catalog->entry_count; index += 1)
   {
-    Lectern0LibraryEntry entry = catalog->entries[index];
+    EightvoLibraryEntry entry = catalog->entries[index];
     U32 insert = index;
     while (insert > 0 &&
-           lectern0_library_entry_compare(&entry,
+           eightvo_library_entry_compare(&entry,
                                            &catalog->entries[insert - 1]) < 0)
     {
       catalog->entries[insert] = catalog->entries[insert - 1];
@@ -167,8 +167,8 @@ lectern0_library_catalog_sort(Lectern0LibraryCatalog *catalog)
   }
 }
 
-Lectern0LibraryEntry *
-lectern0_library_catalog_find_path(Lectern0LibraryCatalog *catalog,
+EightvoLibraryEntry *
+eightvo_library_catalog_find_path(EightvoLibraryCatalog *catalog,
                                    const char *normalized_path)
 {
   if (!catalog || !normalized_path || !normalized_path[0]) return 0;
@@ -178,16 +178,16 @@ lectern0_library_catalog_find_path(Lectern0LibraryCatalog *catalog,
   return 0;
 }
 
-Lectern0LibraryEntry *
-lectern0_library_catalog_find_id(Lectern0LibraryCatalog *catalog, U64 entry_id)
+EightvoLibraryEntry *
+eightvo_library_catalog_find_id(EightvoLibraryCatalog *catalog, U64 entry_id)
 {
   if (!catalog || entry_id == 0) return 0;
-  S32 index = lectern0_library_catalog_index_for_id(catalog, entry_id);
+  S32 index = eightvo_library_catalog_index_for_id(catalog, entry_id);
   return index >= 0 ? catalog->entries + index : 0;
 }
 
 S32
-lectern0_library_catalog_index_for_id(const Lectern0LibraryCatalog *catalog,
+eightvo_library_catalog_index_for_id(const EightvoLibraryCatalog *catalog,
                                       U64 entry_id)
 {
   if (!catalog || entry_id == 0) return -1;
@@ -196,8 +196,8 @@ lectern0_library_catalog_index_for_id(const Lectern0LibraryCatalog *catalog,
   return -1;
 }
 
-Lectern0LibraryEntry *
-lectern0_library_catalog_upsert(Lectern0LibraryCatalog *catalog,
+EightvoLibraryEntry *
+eightvo_library_catalog_upsert(EightvoLibraryCatalog *catalog,
                                 const char *normalized_path,
                                 OS_FileProperties properties,
                                 U64 opened_time,
@@ -208,12 +208,12 @@ lectern0_library_catalog_upsert(Lectern0LibraryCatalog *catalog,
   if (!catalog || !normalized_path || !normalized_path[0] ||
       !properties.exists || properties.is_directory)
     return 0;
-  Lectern0LibraryEntry *entry = locate_entry_id ?
-    lectern0_library_catalog_find_id(catalog, locate_entry_id) :
-    lectern0_library_catalog_find_path(catalog, normalized_path);
+  EightvoLibraryEntry *entry = locate_entry_id ?
+    eightvo_library_catalog_find_id(catalog, locate_entry_id) :
+    eightvo_library_catalog_find_path(catalog, normalized_path);
   if (!entry)
   {
-    if (catalog->entry_count >= Lectern0LibraryEntryCap) return 0;
+    if (catalog->entry_count >= EightvoLibraryEntryCap) return 0;
     entry = catalog->entries + catalog->entry_count;
     MemoryZeroStruct(entry);
     entry->entry_id = MAX(catalog->next_entry_id, 1ull);
@@ -223,7 +223,7 @@ lectern0_library_catalog_upsert(Lectern0LibraryCatalog *catalog,
     catalog->entry_count += 1;
     if (out_created) *out_created = 1;
   }
-  lectern0_library_copy_cstr(entry->source_path,
+  eightvo_library_copy_cstr(entry->source_path,
                              ARRAY_COUNT(entry->source_path),
                              normalized_path);
   entry->file_size = properties.size;
@@ -235,10 +235,10 @@ lectern0_library_catalog_upsert(Lectern0LibraryCatalog *catalog,
 }
 
 B32
-lectern0_library_catalog_remove(Lectern0LibraryCatalog *catalog, U64 entry_id)
+eightvo_library_catalog_remove(EightvoLibraryCatalog *catalog, U64 entry_id)
 {
   if (!catalog) return 0;
-  S32 found = lectern0_library_catalog_index_for_id(catalog, entry_id);
+  S32 found = eightvo_library_catalog_index_for_id(catalog, entry_id);
   if (found < 0) return 0;
   U32 index = (U32)found;
   for (U32 move = index + 1; move < catalog->entry_count; move += 1)
@@ -250,7 +250,7 @@ lectern0_library_catalog_remove(Lectern0LibraryCatalog *catalog, U64 entry_id)
 }
 
 B32
-lectern0_library_normalize_path(const char *path,
+eightvo_library_normalize_path(const char *path,
                                 char *out_path,
                                 U64 out_path_cap)
 {
@@ -258,8 +258,8 @@ lectern0_library_normalize_path(const char *path,
   if (!path || !path[0] || !out_path || out_path_cap == 0 ||
       out_path_cap > INT32_MAX)
     return 0;
-  wchar_t input[Lectern0LibraryPathCap] = {0};
-  wchar_t absolute[Lectern0LibraryPathCap] = {0};
+  wchar_t input[EightvoLibraryPathCap] = {0};
+  wchar_t absolute[EightvoLibraryPathCap] = {0};
   if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
                           input, ARRAY_COUNT(input)) <= 0)
     return 0;
@@ -272,7 +272,7 @@ lectern0_library_normalize_path(const char *path,
 }
 
 void
-lectern0_library_fallback_title(const char *path,
+eightvo_library_fallback_title(const char *path,
                                 char *out_title,
                                 U64 out_title_cap)
 {
@@ -282,13 +282,13 @@ lectern0_library_fallback_title(const char *path,
   const char *base = path;
   for (const char *at = path; *at; at += 1)
     if (*at == '\\' || *at == '/') base = at + 1;
-  lectern0_library_copy_cstr(out_title, out_title_cap, base);
+  eightvo_library_copy_cstr(out_title, out_title_cap, base);
   char *dot = strrchr(out_title, '.');
   if (dot && _stricmp(dot, ".epub") == 0) *dot = 0;
 }
 
 U64
-lectern0_library_now(void)
+eightvo_library_now(void)
 {
   FILETIME time = {0};
   GetSystemTimeAsFileTime(&time);
@@ -299,7 +299,7 @@ lectern0_library_now(void)
 }
 
 B32
-lectern0_library_format_last_opened(U64 timestamp,
+eightvo_library_format_last_opened(U64 timestamp,
                                     char *out_text,
                                     U64 out_text_cap)
 {
@@ -307,7 +307,7 @@ lectern0_library_format_last_opened(U64 timestamp,
   out_text[0] = 0;
   if (timestamp == 0)
   {
-    lectern0_library_copy_cstr(out_text, out_text_cap, "Not opened yet");
+    eightvo_library_copy_cstr(out_text, out_text_cap, "Not opened yet");
     return 1;
   }
   ULARGE_INTEGER value = {0};
