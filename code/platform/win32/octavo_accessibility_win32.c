@@ -1,23 +1,23 @@
 #include <oleacc.h>
 
-struct EightvoAccessibility
+struct OctavoAccessibility
 {
   IAccessible iface;
   volatile LONG reference_count;
   HWND window;
-  EightvoApp *app;
+  OctavoApp *app;
   U64 semantic_hash;
   UI0ID focused_id;
 };
 
-FUNCTION EightvoAccessibility *
-eightvo_accessibility_from_iface(IAccessible *iface)
+FUNCTION OctavoAccessibility *
+octavo_accessibility_from_iface(IAccessible *iface)
 {
-  return CONTAINING_RECORD(iface, EightvoAccessibility, iface);
+  return CONTAINING_RECORD(iface, OctavoAccessibility, iface);
 }
 
 FUNCTION long
-eightvo_accessibility_child_count(const EightvoAccessibility *accessibility)
+octavo_accessibility_child_count(const OctavoAccessibility *accessibility)
 {
   if (!accessibility || !accessibility->app) return 0;
   return (long)accessibility->app->reader_view_frame.semantic_node_count +
@@ -25,8 +25,8 @@ eightvo_accessibility_child_count(const EightvoAccessibility *accessibility)
 }
 
 FUNCTION long
-eightvo_accessibility_host_insertion_shared_count(
-  const EightvoAccessibility *accessibility)
+octavo_accessibility_host_insertion_shared_count(
+  const OctavoAccessibility *accessibility)
 {
   if (!accessibility || !accessibility->app) return 0;
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
@@ -37,8 +37,8 @@ eightvo_accessibility_host_insertion_shared_count(
 }
 
 FUNCTION B32
-eightvo_accessibility_resolve_child(
-  const EightvoAccessibility *accessibility,
+octavo_accessibility_resolve_child(
+  const OctavoAccessibility *accessibility,
   long child_id,
   long *out_shared_index,
   long *out_host_index)
@@ -52,7 +52,7 @@ eightvo_accessibility_resolve_child(
     (long)accessibility->app->reader_view_frame.semantic_node_count;
   long host_count = (long)accessibility->app->host_control_count;
   long insertion =
-    eightvo_accessibility_host_insertion_shared_count(accessibility);
+    octavo_accessibility_host_insertion_shared_count(accessibility);
   if (logical_index < insertion)
   {
     if (logical_index >= shared_count) return 0;
@@ -71,8 +71,8 @@ eightvo_accessibility_resolve_child(
 }
 
 long
-eightvo_accessibility_shared_child_id(
-  const EightvoAccessibility *accessibility,
+octavo_accessibility_shared_child_id(
+  const OctavoAccessibility *accessibility,
   long shared_index)
 {
   if (!accessibility || !accessibility->app || shared_index < 0 ||
@@ -80,41 +80,41 @@ eightvo_accessibility_shared_child_id(
         (long)accessibility->app->reader_view_frame.semantic_node_count)
     return 0;
   long insertion =
-    eightvo_accessibility_host_insertion_shared_count(accessibility);
+    octavo_accessibility_host_insertion_shared_count(accessibility);
   long host_count = (long)accessibility->app->host_control_count;
   return shared_index + (shared_index < insertion ? 1 : host_count + 1);
 }
 
 long
-eightvo_accessibility_host_child_id(
-  const EightvoAccessibility *accessibility,
+octavo_accessibility_host_child_id(
+  const OctavoAccessibility *accessibility,
   long host_index)
 {
   if (!accessibility || !accessibility->app || host_index < 0 ||
       host_index >= (long)accessibility->app->host_control_count)
     return 0;
-  return eightvo_accessibility_host_insertion_shared_count(accessibility) +
+  return octavo_accessibility_host_insertion_shared_count(accessibility) +
          host_index + 1;
 }
 
-FUNCTION EightvoHostControlIdentity
-eightvo_accessibility_host_identity(const EightvoAccessibility *accessibility,
+FUNCTION OctavoHostControlIdentity
+octavo_accessibility_host_identity(const OctavoAccessibility *accessibility,
                                      VARIANT child)
 {
   if (!accessibility || !accessibility->app || child.vt != VT_I4 ||
       child.lVal <= CHILDID_SELF)
-    return EightvoHostControl_None;
+    return OctavoHostControl_None;
   long host_index = -1;
-  if (!eightvo_accessibility_resolve_child(accessibility, child.lVal,
+  if (!octavo_accessibility_resolve_child(accessibility, child.lVal,
                                              0, &host_index))
-    return EightvoHostControl_None;
+    return OctavoHostControl_None;
   if (host_index < 0 || host_index >= (long)accessibility->app->host_control_count)
-    return EightvoHostControl_None;
+    return OctavoHostControl_None;
   return accessibility->app->host_controls[host_index].identity;
 }
 
 FUNCTION const ReaderViewSemanticNode *
-eightvo_accessibility_node(const EightvoAccessibility *accessibility,
+octavo_accessibility_node(const OctavoAccessibility *accessibility,
                             VARIANT child,
                             long *out_child_id)
 {
@@ -124,7 +124,7 @@ eightvo_accessibility_node(const EightvoAccessibility *accessibility,
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
   long shared_index = -1;
   long host_index = -1;
-  if (!eightvo_accessibility_resolve_child(accessibility, child.lVal,
+  if (!octavo_accessibility_resolve_child(accessibility, child.lVal,
                                              &shared_index, &host_index))
     return 0;
   if (shared_index >= 0)
@@ -141,7 +141,7 @@ eightvo_accessibility_node(const EightvoAccessibility *accessibility,
 }
 
 FUNCTION BSTR
-eightvo_accessibility_bstr(ReaderViewText text)
+octavo_accessibility_bstr(ReaderViewText text)
 {
   if (!text.data || text.size <= 0) return SysAllocStringLen(L"", 0);
   int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
@@ -161,7 +161,7 @@ eightvo_accessibility_bstr(ReaderViewText text)
 }
 
 FUNCTION long
-eightvo_accessibility_role(ReaderViewSemanticRole role)
+octavo_accessibility_role(ReaderViewSemanticRole role)
 {
   switch (role)
   {
@@ -185,7 +185,7 @@ eightvo_accessibility_role(ReaderViewSemanticRole role)
 }
 
 FUNCTION long
-eightvo_accessibility_state(const ReaderViewSemanticNode *node)
+octavo_accessibility_state(const ReaderViewSemanticNode *node)
 {
   if (!node) return 0;
   long result = 0;
@@ -202,7 +202,7 @@ eightvo_accessibility_state(const ReaderViewSemanticNode *node)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_query_interface(IAccessible *iface,
+octavo_accessibility_query_interface(IAccessible *iface,
                                        REFIID riid,
                                        void **out_object)
 {
@@ -214,28 +214,28 @@ eightvo_accessibility_query_interface(IAccessible *iface,
     return E_NOINTERFACE;
   *out_object = iface;
   (void)InterlockedIncrement(
-    &eightvo_accessibility_from_iface(iface)->reference_count);
+    &octavo_accessibility_from_iface(iface)->reference_count);
   return S_OK;
 }
 
 FUNCTION ULONG STDMETHODCALLTYPE
-eightvo_accessibility_add_ref(IAccessible *iface)
+octavo_accessibility_add_ref(IAccessible *iface)
 {
   return (ULONG)InterlockedIncrement(
-    &eightvo_accessibility_from_iface(iface)->reference_count);
+    &octavo_accessibility_from_iface(iface)->reference_count);
 }
 
 FUNCTION ULONG STDMETHODCALLTYPE
-eightvo_accessibility_release(IAccessible *iface)
+octavo_accessibility_release(IAccessible *iface)
 {
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   LONG remaining = InterlockedDecrement(&accessibility->reference_count);
   if (remaining == 0) free(accessibility);
   return (ULONG)remaining;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_type_info_count(IAccessible *iface, UINT *out_count)
+octavo_accessibility_get_type_info_count(IAccessible *iface, UINT *out_count)
 {
   (void)iface;
   if (!out_count) return E_POINTER;
@@ -244,7 +244,7 @@ eightvo_accessibility_get_type_info_count(IAccessible *iface, UINT *out_count)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_type_info(IAccessible *iface, UINT index,
+octavo_accessibility_get_type_info(IAccessible *iface, UINT index,
                                      LCID locale, ITypeInfo **out_info)
 {
   (void)iface; (void)index; (void)locale;
@@ -253,7 +253,7 @@ eightvo_accessibility_get_type_info(IAccessible *iface, UINT index,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_ids_of_names(IAccessible *iface, REFIID riid,
+octavo_accessibility_get_ids_of_names(IAccessible *iface, REFIID riid,
                                         LPOLESTR *names, UINT name_count,
                                         LCID locale, DISPID *out_ids)
 {
@@ -263,7 +263,7 @@ eightvo_accessibility_get_ids_of_names(IAccessible *iface, REFIID riid,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_invoke(IAccessible *iface, DISPID member, REFIID riid,
+octavo_accessibility_invoke(IAccessible *iface, DISPID member, REFIID riid,
                               LCID locale, WORD flags, DISPPARAMS *params,
                               VARIANT *out_result, EXCEPINFO *out_exception,
                               UINT *out_argument_error)
@@ -275,11 +275,11 @@ eightvo_accessibility_invoke(IAccessible *iface, DISPID member, REFIID riid,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_parent(IAccessible *iface, IDispatch **out_parent)
+octavo_accessibility_get_parent(IAccessible *iface, IDispatch **out_parent)
 {
   if (!out_parent) return E_POINTER;
   *out_parent = 0;
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   IAccessible *parent = 0;
   HRESULT result = AccessibleObjectFromWindow(accessibility->window,
                                                OBJID_WINDOW,
@@ -290,59 +290,59 @@ eightvo_accessibility_get_parent(IAccessible *iface, IDispatch **out_parent)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_child_count(IAccessible *iface, long *out_count)
+octavo_accessibility_get_child_count(IAccessible *iface, long *out_count)
 {
   if (!out_count) return E_POINTER;
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
-  *out_count = eightvo_accessibility_child_count(accessibility);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
+  *out_count = octavo_accessibility_child_count(accessibility);
   return S_OK;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_child(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_child(IAccessible *iface, VARIANT child,
                                  IDispatch **out_child)
 {
   if (!out_child) return E_POINTER;
   *out_child = 0;
-  return eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0) ? S_FALSE : E_INVALIDARG;
+  return octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0) ? S_FALSE : E_INVALIDARG;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_name(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_name(IAccessible *iface, VARIANT child,
                                 BSTR *out_name)
 {
   if (!out_name) return E_POINTER;
   *out_name = 0;
   if (child.vt == VT_I4 && child.lVal == CHILDID_SELF)
   {
-    EightvoAccessibility *accessibility =
-      eightvo_accessibility_from_iface(iface);
+    OctavoAccessibility *accessibility =
+      octavo_accessibility_from_iface(iface);
     *out_name = SysAllocString(accessibility->app &&
-                               eightvo_library_active(accessibility->app) ?
+                               octavo_library_active(accessibility->app) ?
                                L"8vo Library" :
                                L"8vo reader");
     return *out_name ? S_OK : E_OUTOFMEMORY;
   }
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0);
   if (!node) return E_INVALIDARG;
-  *out_name = eightvo_accessibility_bstr(node->name);
+  *out_name = octavo_accessibility_bstr(node->name);
   return *out_name ? S_OK : E_OUTOFMEMORY;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_value(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_value(IAccessible *iface, VARIANT child,
                                  BSTR *out_value)
 {
   if (!out_value) return E_POINTER;
   *out_value = 0;
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0);
   if (!node) return child.vt == VT_I4 && child.lVal == CHILDID_SELF ? S_FALSE : E_INVALIDARG;
   if (node->value.data && node->value.size > 0)
   {
-    *out_value = eightvo_accessibility_bstr(node->value);
+    *out_value = octavo_accessibility_bstr(node->value);
   }
   else if (node->role == ReaderViewSemantic_Slider)
   {
@@ -357,7 +357,7 @@ eightvo_accessibility_get_value(IAccessible *iface, VARIANT child,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_no_text(IAccessible *iface, VARIANT child,
+octavo_accessibility_no_text(IAccessible *iface, VARIANT child,
                                BSTR *out_text)
 {
   (void)iface; (void)child;
@@ -367,7 +367,7 @@ eightvo_accessibility_no_text(IAccessible *iface, VARIANT child,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_role(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_role(IAccessible *iface, VARIANT child,
                                 VARIANT *out_role)
 {
   if (!out_role) return E_POINTER;
@@ -378,30 +378,30 @@ eightvo_accessibility_get_role(IAccessible *iface, VARIANT child,
     out_role->lVal = ROLE_SYSTEM_CLIENT;
     return S_OK;
   }
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0);
   if (!node) return E_INVALIDARG;
-  out_role->lVal = eightvo_accessibility_role(node->role);
+  out_role->lVal = octavo_accessibility_role(node->role);
   return S_OK;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_state(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_state(IAccessible *iface, VARIANT child,
                                  VARIANT *out_state)
 {
   if (!out_state) return E_POINTER;
   VariantInit(out_state);
   out_state->vt = VT_I4;
   if (child.vt == VT_I4 && child.lVal == CHILDID_SELF) return S_OK;
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0);
   if (!node) return E_INVALIDARG;
-  out_state->lVal = eightvo_accessibility_state(node);
+  out_state->lVal = octavo_accessibility_state(node);
   return S_OK;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_help_topic(IAccessible *iface, BSTR *out_file,
+octavo_accessibility_get_help_topic(IAccessible *iface, BSTR *out_file,
                                       VARIANT child, long *out_topic)
 {
   (void)iface; (void)child;
@@ -412,11 +412,11 @@ eightvo_accessibility_get_help_topic(IAccessible *iface, BSTR *out_file,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
+octavo_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
 {
   if (!out_child) return E_POINTER;
   VariantInit(out_child);
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   if (!accessibility->app) return S_FALSE;
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
   for (U32 index = 0; index < accessibility->app->host_control_count; index += 1)
@@ -426,7 +426,7 @@ eightvo_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
     {
       out_child->vt = VT_I4;
       out_child->lVal =
-        eightvo_accessibility_host_child_id(accessibility, (long)index);
+        octavo_accessibility_host_child_id(accessibility, (long)index);
       return S_OK;
     }
   }
@@ -436,7 +436,7 @@ eightvo_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
     {
       out_child->vt = VT_I4;
       out_child->lVal =
-        eightvo_accessibility_shared_child_id(accessibility, (long)index);
+        octavo_accessibility_shared_child_id(accessibility, (long)index);
       return S_OK;
     }
   }
@@ -444,11 +444,11 @@ eightvo_accessibility_get_focus(IAccessible *iface, VARIANT *out_child)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_selection(IAccessible *iface, VARIANT *out_child)
+octavo_accessibility_get_selection(IAccessible *iface, VARIANT *out_child)
 {
   if (!out_child) return E_POINTER;
   VariantInit(out_child);
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   if (!accessibility->app) return S_FALSE;
   const ReaderViewFrame *frame = &accessibility->app->reader_view_frame;
   for (UI0S32 index = 0; index < frame->semantic_node_count; index += 1)
@@ -457,7 +457,7 @@ eightvo_accessibility_get_selection(IAccessible *iface, VARIANT *out_child)
     {
       out_child->vt = VT_I4;
       out_child->lVal =
-        eightvo_accessibility_shared_child_id(accessibility, (long)index);
+        octavo_accessibility_shared_child_id(accessibility, (long)index);
       return S_OK;
     }
   }
@@ -465,13 +465,13 @@ eightvo_accessibility_get_selection(IAccessible *iface, VARIANT *out_child)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_get_default_action(IAccessible *iface, VARIANT child,
+octavo_accessibility_get_default_action(IAccessible *iface, VARIANT child,
                                           BSTR *out_action)
 {
   if (!out_action) return E_POINTER;
   *out_action = 0;
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
-    eightvo_accessibility_from_iface(iface), child, 0);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
+    octavo_accessibility_from_iface(iface), child, 0);
   if (!node || !(node->flags & ReaderViewSemantic_Focusable))
     return node ? S_FALSE : E_INVALIDARG;
   const wchar_t *label = L"Activate";
@@ -483,27 +483,27 @@ eightvo_accessibility_get_default_action(IAccessible *iface, VARIANT child,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_select(IAccessible *iface, long flags, VARIANT child)
+octavo_accessibility_select(IAccessible *iface, long flags, VARIANT child)
 {
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
     accessibility, child, 0);
   if (!node || !(node->flags & ReaderViewSemantic_Focusable))
     return E_INVALIDARG;
   if (flags & (SELFLAG_TAKEFOCUS | SELFLAG_TAKESELECTION))
   {
     (void)SetFocus(accessibility->window);
-    EightvoHostControlIdentity host_identity =
-      eightvo_accessibility_host_identity(accessibility, child);
-    if (host_identity != EightvoHostControl_None)
+    OctavoHostControlIdentity host_identity =
+      octavo_accessibility_host_identity(accessibility, child);
+    if (host_identity != OctavoHostControl_None)
     {
-      if (!eightvo_host_focus_set(accessibility->app, host_identity, 1))
+      if (!octavo_host_focus_set(accessibility->app, host_identity, 1))
         return E_FAIL;
       (void)InvalidateRect(accessibility->window, 0, FALSE);
       return S_OK;
     }
-    (void)eightvo_host_focus_set(accessibility->app,
-                                  EightvoHostControl_None,
+    (void)octavo_host_focus_set(accessibility->app,
+                                  OctavoHostControl_None,
                                   0);
     if (!reader_view_accessibility_focus(&accessibility->app->reader_view_state,
                                          node->id))
@@ -515,13 +515,13 @@ eightvo_accessibility_select(IAccessible *iface, long flags, VARIANT child)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_location(IAccessible *iface,
+octavo_accessibility_location(IAccessible *iface,
                                 long *out_left, long *out_top,
                                 long *out_width, long *out_height,
                                 VARIANT child)
 {
   if (!out_left || !out_top || !out_width || !out_height) return E_POINTER;
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   RECT rect = {0};
   if (child.vt == VT_I4 && child.lVal == CHILDID_SELF)
   {
@@ -529,7 +529,7 @@ eightvo_accessibility_location(IAccessible *iface,
   }
   else
   {
-    const ReaderViewSemanticNode *node = eightvo_accessibility_node(
+    const ReaderViewSemanticNode *node = octavo_accessibility_node(
       accessibility, child, 0);
     if (!node) return E_INVALIDARG;
     rect.left = node->rect.x;
@@ -547,13 +547,13 @@ eightvo_accessibility_location(IAccessible *iface,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_navigate(IAccessible *iface, long direction,
+octavo_accessibility_navigate(IAccessible *iface, long direction,
                                 VARIANT start, VARIANT *out_destination)
 {
   if (!out_destination) return E_POINTER;
   VariantInit(out_destination);
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
-  long count = eightvo_accessibility_child_count(accessibility);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
+  long count = octavo_accessibility_child_count(accessibility);
   long candidate = 0;
   long step = 0;
   if (start.vt != VT_I4) return E_INVALIDARG;
@@ -584,7 +584,7 @@ eightvo_accessibility_navigate(IAccessible *iface, long direction,
     child.vt = VT_I4;
     child.lVal = candidate;
     const ReaderViewSemanticNode *node =
-      eightvo_accessibility_node(accessibility, child, 0);
+      octavo_accessibility_node(accessibility, child, 0);
     if (node &&
         (node->flags & (ReaderViewSemantic_Enabled |
                         ReaderViewSemantic_Focusable)) ==
@@ -600,16 +600,16 @@ eightvo_accessibility_navigate(IAccessible *iface, long direction,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_hit_test(IAccessible *iface, long screen_x,
+octavo_accessibility_hit_test(IAccessible *iface, long screen_x,
                                long screen_y, VARIANT *out_child)
 {
   if (!out_child) return E_POINTER;
   VariantInit(out_child);
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
   if (!accessibility->app) return S_FALSE;
   POINT point = {screen_x, screen_y};
   if (!ScreenToClient(accessibility->window, &point)) return E_FAIL;
-  long count = eightvo_accessibility_child_count(accessibility);
+  long count = octavo_accessibility_child_count(accessibility);
   for (long index = count - 1; index >= 0; index -= 1)
   {
     VARIANT child;
@@ -617,7 +617,7 @@ eightvo_accessibility_hit_test(IAccessible *iface, long screen_x,
     child.vt = VT_I4;
     child.lVal = index + 1;
     const ReaderViewSemanticNode *node =
-      eightvo_accessibility_node(accessibility, child, 0);
+      octavo_accessibility_node(accessibility, child, 0);
     if (!node) continue;
     const UI0Rect rect = node->rect;
     if (point.x >= rect.x && point.y >= rect.y &&
@@ -634,26 +634,26 @@ eightvo_accessibility_hit_test(IAccessible *iface, long screen_x,
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_do_default_action(IAccessible *iface, VARIANT child)
+octavo_accessibility_do_default_action(IAccessible *iface, VARIANT child)
 {
-  EightvoAccessibility *accessibility = eightvo_accessibility_from_iface(iface);
-  const ReaderViewSemanticNode *node = eightvo_accessibility_node(
+  OctavoAccessibility *accessibility = octavo_accessibility_from_iface(iface);
+  const ReaderViewSemanticNode *node = octavo_accessibility_node(
     accessibility, child, 0);
   if (!node || !(node->flags & ReaderViewSemantic_Enabled) ||
       !(node->flags & ReaderViewSemantic_Focusable))
     return E_INVALIDARG;
-  EightvoHostControlIdentity host_identity =
-    eightvo_accessibility_host_identity(accessibility, child);
-  if (host_identity != EightvoHostControl_None)
+  OctavoHostControlIdentity host_identity =
+    octavo_accessibility_host_identity(accessibility, child);
+  if (host_identity != OctavoHostControl_None)
   {
-    if (!eightvo_host_focus_set(accessibility->app, host_identity, 1) ||
-        !eightvo_host_control_invoke(accessibility->app, host_identity))
+    if (!octavo_host_focus_set(accessibility->app, host_identity, 1) ||
+        !octavo_host_control_invoke(accessibility->app, host_identity))
       return E_FAIL;
     (void)InvalidateRect(accessibility->window, 0, FALSE);
     return S_OK;
   }
-  (void)eightvo_host_focus_set(accessibility->app,
-                                EightvoHostControl_None,
+  (void)octavo_host_focus_set(accessibility->app,
+                                OctavoHostControl_None,
                                 0);
   if (node->role == ReaderViewSemantic_Slider)
   {
@@ -671,55 +671,55 @@ eightvo_accessibility_do_default_action(IAccessible *iface, VARIANT child)
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
-eightvo_accessibility_put_text(IAccessible *iface, VARIANT child, BSTR value)
+octavo_accessibility_put_text(IAccessible *iface, VARIANT child, BSTR value)
 {
   (void)iface; (void)child; (void)value;
   return E_ACCESSDENIED;
 }
 
-static const IAccessibleVtbl eightvo_accessibility_vtable =
+static const IAccessibleVtbl octavo_accessibility_vtable =
 {
-  eightvo_accessibility_query_interface,
-  eightvo_accessibility_add_ref,
-  eightvo_accessibility_release,
-  eightvo_accessibility_get_type_info_count,
-  eightvo_accessibility_get_type_info,
-  eightvo_accessibility_get_ids_of_names,
-  eightvo_accessibility_invoke,
-  eightvo_accessibility_get_parent,
-  eightvo_accessibility_get_child_count,
-  eightvo_accessibility_get_child,
-  eightvo_accessibility_get_name,
-  eightvo_accessibility_get_value,
-  eightvo_accessibility_no_text,
-  eightvo_accessibility_get_role,
-  eightvo_accessibility_get_state,
-  eightvo_accessibility_no_text,
-  eightvo_accessibility_get_help_topic,
-  eightvo_accessibility_no_text,
-  eightvo_accessibility_get_focus,
-  eightvo_accessibility_get_selection,
-  eightvo_accessibility_get_default_action,
-  eightvo_accessibility_select,
-  eightvo_accessibility_location,
-  eightvo_accessibility_navigate,
-  eightvo_accessibility_hit_test,
-  eightvo_accessibility_do_default_action,
-  eightvo_accessibility_put_text,
-  eightvo_accessibility_put_text,
+  octavo_accessibility_query_interface,
+  octavo_accessibility_add_ref,
+  octavo_accessibility_release,
+  octavo_accessibility_get_type_info_count,
+  octavo_accessibility_get_type_info,
+  octavo_accessibility_get_ids_of_names,
+  octavo_accessibility_invoke,
+  octavo_accessibility_get_parent,
+  octavo_accessibility_get_child_count,
+  octavo_accessibility_get_child,
+  octavo_accessibility_get_name,
+  octavo_accessibility_get_value,
+  octavo_accessibility_no_text,
+  octavo_accessibility_get_role,
+  octavo_accessibility_get_state,
+  octavo_accessibility_no_text,
+  octavo_accessibility_get_help_topic,
+  octavo_accessibility_no_text,
+  octavo_accessibility_get_focus,
+  octavo_accessibility_get_selection,
+  octavo_accessibility_get_default_action,
+  octavo_accessibility_select,
+  octavo_accessibility_location,
+  octavo_accessibility_navigate,
+  octavo_accessibility_hit_test,
+  octavo_accessibility_do_default_action,
+  octavo_accessibility_put_text,
+  octavo_accessibility_put_text,
 };
 
 B32
-eightvo_accessibility_create(HWND window,
-                              EightvoApp *app,
-                              EightvoAccessibility **out_accessibility)
+octavo_accessibility_create(HWND window,
+                              OctavoApp *app,
+                              OctavoAccessibility **out_accessibility)
 {
   if (!window || !app || !out_accessibility) return 0;
   *out_accessibility = 0;
-  EightvoAccessibility *accessibility =
-    (EightvoAccessibility *)calloc(1, sizeof(*accessibility));
+  OctavoAccessibility *accessibility =
+    (OctavoAccessibility *)calloc(1, sizeof(*accessibility));
   if (!accessibility) return 0;
-  accessibility->iface.lpVtbl = (IAccessibleVtbl *)&eightvo_accessibility_vtable;
+  accessibility->iface.lpVtbl = (IAccessibleVtbl *)&octavo_accessibility_vtable;
   accessibility->reference_count = 1;
   accessibility->window = window;
   accessibility->app = app;
@@ -728,18 +728,18 @@ eightvo_accessibility_create(HWND window,
 }
 
 void
-eightvo_accessibility_destroy(EightvoAccessibility *accessibility)
+octavo_accessibility_destroy(OctavoAccessibility *accessibility)
 {
   if (!accessibility) return;
-  EightvoApp *app = accessibility->app;
+  OctavoApp *app = accessibility->app;
   accessibility->app = 0;
   accessibility->window = 0;
   if (app && app->accessibility == accessibility) app->accessibility = 0;
-  (void)eightvo_accessibility_release(&accessibility->iface);
+  (void)octavo_accessibility_release(&accessibility->iface);
 }
 
 LRESULT
-eightvo_accessibility_get_object(EightvoAccessibility *accessibility,
+octavo_accessibility_get_object(OctavoAccessibility *accessibility,
                                   WPARAM w_param,
                                   LPARAM l_param)
 {
@@ -750,14 +750,14 @@ eightvo_accessibility_get_object(EightvoAccessibility *accessibility,
 }
 
 void
-eightvo_accessibility_publish_frame(EightvoAccessibility *accessibility,
+octavo_accessibility_publish_frame(OctavoAccessibility *accessibility,
                                      const ReaderViewFrame *frame)
 {
   if (!accessibility || !accessibility->window || !frame) return;
   U64 hash = 1469598103934665603ull;
   UI0ID focused_id = 0;
   long focused_child = 0;
-  long count = eightvo_accessibility_child_count(accessibility);
+  long count = octavo_accessibility_child_count(accessibility);
   for (long index = 0; index < count; index += 1)
   {
     VARIANT child;
@@ -765,7 +765,7 @@ eightvo_accessibility_publish_frame(EightvoAccessibility *accessibility,
     child.vt = VT_I4;
     child.lVal = index + 1;
     const ReaderViewSemanticNode *node =
-      eightvo_accessibility_node(accessibility, child, 0);
+      octavo_accessibility_node(accessibility, child, 0);
     if (!node) continue;
     hash ^= node->id; hash *= 1099511628211ull;
     hash ^= node->parent_id; hash *= 1099511628211ull;

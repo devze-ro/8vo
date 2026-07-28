@@ -25,14 +25,14 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
+      throw "strict Octavo build failed with exit code $LASTEXITCODE"
     }
   } finally {
     Pop-Location
   }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Eightvo executable: $Exe"
+  throw "missing Octavo executable: $Exe"
 }
 
 $Out = if ([System.IO.Path]::IsPathRooted($OutDir)) {
@@ -54,15 +54,15 @@ function Invoke-ExactRoutingRun {
   $Output = & $Exe --reader-view-post-action-arrow-smoke $Book $Prefix 2>&1
   if ($LASTEXITCODE -ne 0) {
     $Output | Write-Host
-    throw "Eightvo exact-book routing run failed: $RunName"
+    throw "Octavo exact-book routing run failed: $RunName"
   }
   $Line = $Output | Where-Object {
-    $_ -match '^eightvo_reader_view_post_action_arrow result=pass '
+    $_ -match '^octavo_reader_view_post_action_arrow result=pass '
   } | Select-Object -Last 1
   if (!$Line -or $Line -notmatch 'checkpoint=7 ' -or
       $Line -notmatch 'find=ParaXn ') {
     $Output | Write-Host
-    throw "Eightvo exact-book routing evidence is incomplete: $RunName"
+    throw "Octavo exact-book routing evidence is incomplete: $RunName"
   }
   $Hashes = [ordered]@{}
   foreach ($Name in $Names) {
@@ -130,4 +130,4 @@ $Summary | ConvertTo-Json -Depth 8 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
 
 Write-Host $Second.line
-Write-Host "win32_eightvo_post_action_arrow_routing_smoke result=pass repeat=2 summary=$SummaryPath"
+Write-Host "win32_octavo_post_action_arrow_routing_smoke result=pass repeat=2 summary=$SummaryPath"

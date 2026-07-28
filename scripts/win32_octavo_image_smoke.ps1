@@ -6,12 +6,12 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Exe = Join-Path $Root "build\win32\8vo.exe"
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing eightvo executable: $Exe"
+  throw "missing octavo executable: $Exe"
 }
 
 $Out = Join-Path $Root $OutDir
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
-$Epub = Join-Path $Out "eightvo_images.epub"
+$Epub = Join-Path $Out "octavo_images.epub"
 $CoverBmp = Join-Path $Out "cover.bmp"
 $InlineBmp = Join-Path $Out "inline.bmp"
 if (Test-Path -LiteralPath $Epub) { Remove-Item -LiteralPath $Epub -Force }
@@ -104,8 +104,8 @@ try {
 <?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">eightvo-image-slice5a</dc:identifier>
-    <dc:title>Eightvo Image Slice 5A</dc:title>
+    <dc:identifier id="bookid">octavo-image-slice5a</dc:identifier>
+    <dc:title>Octavo Image Slice 5A</dc:title>
     <dc:language>en</dc:language>
     <meta name="cover" content="cover-image"/>
   </metadata>
@@ -120,12 +120,12 @@ try {
 "@
   Write-ZipTextEntry $zip "OEBPS/cover.xhtml" @"
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title></head>
-<body><div><img src="images/cover.png" alt="Eightvo Slice 5A cover"/></div></body></html>
+<body><div><img src="images/cover.png" alt="Octavo Slice 5A cover"/></div></body></html>
 "@
   Write-ZipTextEntry $zip "OEBPS/chapter.xhtml" @"
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Images</title></head>
 <body><h1>Shared decoder proof</h1><p>The inline resource is decoded by the same foundation mechanism.</p>
-<img src="images/inline.png" alt="Eightvo Slice 5A inline image"/>
+<img src="images/inline.png" alt="Octavo Slice 5A inline image"/>
 <p>The host retains cache identity, status mapping, and final presentation.</p></body></html>
 "@
   Write-ZipBytesEntry $zip "OEBPS/images/cover.png" $coverPng
@@ -138,20 +138,20 @@ function Invoke-ImageSmoke {
   $output = & $Exe --image-smoke $Epub $CoverBmp $InlineBmp 2>&1
   if ($LASTEXITCODE -ne 0) {
     $output | Write-Host
-    throw "eightvo image smoke failed with exit code $LASTEXITCODE"
+    throw "octavo image smoke failed with exit code $LASTEXITCODE"
   }
-  $line = $output | Where-Object { $_ -match '^eightvo_image_smoke result=pass ' } |
+  $line = $output | Where-Object { $_ -match '^octavo_image_smoke result=pass ' } |
     Select-Object -Last 1
   if (!$line -or
       $line -notmatch 'cover_loaded=([1-9][0-9]*) inline_loaded=([1-9][0-9]*)' -or
       $line -notmatch 'entries=2 lookups=5 hits=3 misses=2' -or
       $line -notmatch 'cover_hash=([0-9a-fA-F]{16}) inline_hash=([0-9a-fA-F]{16})') {
     $output | Write-Host
-    throw "eightvo image smoke did not report loaded cover/inline evidence"
+    throw "octavo image smoke did not report loaded cover/inline evidence"
   }
   if (!(Test-Path -LiteralPath $CoverBmp -PathType Leaf) -or
       !(Test-Path -LiteralPath $InlineBmp -PathType Leaf)) {
-    throw "eightvo image smoke did not write both BMP files"
+    throw "octavo image smoke did not write both BMP files"
   }
   [pscustomobject]@{
     Line = [string]$line
@@ -165,8 +165,8 @@ $second = Invoke-ImageSmoke
 if ($first.Line -ne $second.Line -or
     $first.CoverFileHash -ne $second.CoverFileHash -or
     $first.InlineFileHash -ne $second.InlineFileHash) {
-  throw "eightvo image smoke is not repeatable"
+  throw "octavo image smoke is not repeatable"
 }
 
 Write-Host $second.Line
-Write-Host "win32_eightvo_image_smoke result=pass repeat=2 fixture=$Epub cover=$CoverBmp inline=$InlineBmp"
+Write-Host "win32_octavo_image_smoke result=pass repeat=2 fixture=$Epub cover=$CoverBmp inline=$InlineBmp"

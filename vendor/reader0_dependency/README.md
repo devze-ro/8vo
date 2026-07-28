@@ -8,7 +8,7 @@ Current pinned reader0 consumer dependency:
 - commit: `98a6a2ba5a4946971b9c088781cf3728aeb16b1a`
 
 This directory contains dependency metadata, not a source snapshot. 8vo
-locates the live reader0 checkout through `EIGHTVO_READER0_DIR` or
+locates the live reader0 checkout through `OCTAVO_READER0_DIR` or
 `../reader0`, adds `reader0/code` to its include path, and compiles the
 supported `reader0.c` unity source exactly once.
 

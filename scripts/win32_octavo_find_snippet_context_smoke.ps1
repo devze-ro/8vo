@@ -30,12 +30,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
+      throw "strict Octavo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Eightvo executable: $Exe"
+  throw "missing Octavo executable: $Exe"
 }
 
 $Bmp = Join-Path $Out "gotm_paran_first_result.bmp"
@@ -44,23 +44,23 @@ $Log = Join-Path $Out "run.log"
 & $Exe --reader-view-find-snippet-context-smoke $Book $Bmp *> $Log
 if ($LASTEXITCODE -ne 0) {
   $Tail = (Get-Content -LiteralPath $Log -Tail 50) -join "`n"
-  throw "Eightvo Find snippet-context smoke failed`n$Tail"
+  throw "Octavo Find snippet-context smoke failed`n$Tail"
 }
 $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-  $_ -match '^eightvo_reader_view_find_snippet_context result=pass '
+  $_ -match '^octavo_reader_view_find_snippet_context result=pass '
 } | Select-Object -Last 1
-if (!$PassLine) { throw "Eightvo Find snippet-context pass line is missing" }
+if (!$PassLine) { throw "Octavo Find snippet-context pass line is missing" }
 $Match = [regex]::Match(
   $PassLine,
-  '^eightvo_reader_view_find_snippet_context result=pass checkpoint=5 query=Paran active_index=0 visible_bytes=(\d+) match_start=(\d+) match_size=5 highlight_draws=(\d+) highlight_pixels=(\d+) bmp=(.+)$')
+  '^octavo_reader_view_find_snippet_context result=pass checkpoint=5 query=Paran active_index=0 visible_bytes=(\d+) match_start=(\d+) match_size=5 highlight_draws=(\d+) highlight_pixels=(\d+) bmp=(.+)$')
 if (!$Match.Success -or [int]$Match.Groups[1].Value -le 5 -or
     [int]$Match.Groups[3].Value -le 0 -or
     [UInt64]$Match.Groups[4].Value -eq 0) {
-  throw "Eightvo Find snippet-context result is incomplete: $PassLine"
+  throw "Octavo Find snippet-context result is incomplete: $PassLine"
 }
 if (!(Test-Path -LiteralPath $Bmp -PathType Leaf) -or
     (Get-Item -LiteralPath $Bmp).Length -le 54) {
-  throw "missing rendered Eightvo evidence: $Bmp"
+  throw "missing rendered Octavo evidence: $Bmp"
 }
 Add-Type -AssemblyName System.Drawing
 $Image = [System.Drawing.Image]::FromFile($Bmp)
@@ -96,4 +96,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 6 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_eightvo_find_snippet_context_smoke result=pass summary=$SummaryPath"
+Write-Host "win32_octavo_find_snippet_context_smoke result=pass summary=$SummaryPath"

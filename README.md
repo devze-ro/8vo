@@ -4,6 +4,9 @@
 supported format; the product name and public interface are intentionally not
 tied to a particular file format.
 
+The name `8vo` is the bibliographic abbreviation for *octavo* and is
+pronounced *octavo*.
+
 The current Windows application is a concrete host for the EPUB-focused
 reader0 backend, readerview0, UI0, and ground0. It has no re10 source
 dependency and does not define a generic document-provider layer.
@@ -159,21 +162,21 @@ From a linked worktree, point the dependency variables at exact clean
 checkouts:
 
 ```powershell
-$env:EIGHTVO_READER0_DIR = 'C:\path\to\reader0-api5-worktree'
-$env:EIGHTVO_UI0_DIR = 'C:\path\to\ui0'
-$env:EIGHTVO_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
-$env:EIGHTVO_GROUND0_DIR = 'C:\path\to\ground0'
+$env:OCTAVO_READER0_DIR = 'C:\path\to\reader0-api5-worktree'
+$env:OCTAVO_UI0_DIR = 'C:\path\to\ui0'
+$env:OCTAVO_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
+$env:OCTAVO_GROUND0_DIR = 'C:\path\to\ground0'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies_current.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
 cmd /c build\win32_build.bat no_run
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_host_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_data_migration_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_library_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_reader_view_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_reader_view_startup_interaction_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_accessibility_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_visual_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_image_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_host_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_data_migration_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_library_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_reader_view_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_reader_view_startup_interaction_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_accessibility_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_visual_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_image_smoke.ps1
 ```
 
 The former `LECTERN0_*` dependency and compiler environment variables remain

@@ -30,12 +30,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
+      throw "strict Octavo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Eightvo executable: $Exe"
+  throw "missing Octavo executable: $Exe"
 }
 
 $Prefix = Join-Path $Out "gotm"
@@ -43,10 +43,10 @@ $Log = Join-Path $Out "run.log"
 & $Exe --publisher-typography-spacing-smoke $Book $Prefix *> $Log
 if ($LASTEXITCODE -ne 0) {
   $Tail = (Get-Content -LiteralPath $Log -Tail 80) -join "`n"
-  throw "Eightvo publisher typography/spacing smoke failed`n$Tail"
+  throw "Octavo publisher typography/spacing smoke failed`n$Tail"
 }
 $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-  $_ -match '^eightvo_publisher_typography_spacing result=pass '
+  $_ -match '^octavo_publisher_typography_spacing result=pass '
 } | Select-Object -Last 1
 if (!$PassLine) { throw "publisher typography/spacing pass line is missing" }
 foreach ($Token in @(
@@ -206,4 +206,4 @@ $Summary = [pscustomobject]@{
 $SummaryPath = Join-Path $Out "summary.json"
 $Summary | ConvertTo-Json -Depth 8 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
-Write-Host "win32_eightvo_publisher_typography_spacing_smoke result=pass summary=$SummaryPath"
+Write-Host "win32_octavo_publisher_typography_spacing_smoke result=pass summary=$SummaryPath"

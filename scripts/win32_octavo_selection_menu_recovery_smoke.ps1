@@ -30,12 +30,12 @@ if (!$SkipBuild) {
   try {
     & cmd /c build\win32_build.bat no_run
     if ($LASTEXITCODE -ne 0) {
-      throw "strict Eightvo build failed with exit code $LASTEXITCODE"
+      throw "strict Octavo build failed with exit code $LASTEXITCODE"
     }
   } finally { Pop-Location }
 }
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing Eightvo executable: $Exe"
+  throw "missing Octavo executable: $Exe"
 }
 
 function Invoke-SelectionMenuRun {
@@ -45,25 +45,25 @@ function Invoke-SelectionMenuRun {
   & $Exe --reader-view-selection-menu-smoke $Book $Prefix *> $Log
   if ($LASTEXITCODE -ne 0) {
     $Tail = (Get-Content -LiteralPath $Log -Tail 50) -join "`n"
-    throw "Eightvo selection-menu recovery smoke failed: $Name`n$Tail"
+    throw "Octavo selection-menu recovery smoke failed: $Name`n$Tail"
   }
   $PassLine = Get-Content -LiteralPath $Log | Where-Object {
-    $_ -match '^eightvo_reader_view_selection_menu result=pass '
+    $_ -match '^octavo_reader_view_selection_menu result=pass '
   } | Select-Object -Last 1
-  if (!$PassLine) { throw "Eightvo selection-menu pass line is missing: $Name" }
+  if (!$PassLine) { throw "Octavo selection-menu pass line is missing: $Name" }
   $Match = [regex]::Match(
     $PassLine,
-    '^eightvo_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
+    '^octavo_reader_view_selection_menu result=pass checkpoint=6 rows=(\d+),(\d+) range=(\d+)\.\.(\d+) geometry=glyph_stops first_drag=adjacent_presentation_restored release=popup_safe click=single_dismiss_clear_without_glyph substring=remove_containing_highlight menu=compact_clamped mouse=set_pink keyboard=remove_pink escape=concrete_selection output=(.+)$')
   if (!$Match.Success -or
       [UInt64]$Match.Groups[4].Value -le [UInt64]$Match.Groups[3].Value) {
-    throw "Eightvo selection-menu result is incomplete: $PassLine"
+    throw "Octavo selection-menu result is incomplete: $PassLine"
   }
   $Hashes = [ordered]@{}
   foreach ($EvidenceName in @("multiline_light", "selected_dark_focus")) {
     $Bmp = "${Prefix}_${EvidenceName}.bmp"
     if (!(Test-Path -LiteralPath $Bmp -PathType Leaf) -or
         (Get-Item -LiteralPath $Bmp).Length -le 54) {
-      throw "missing rendered Eightvo evidence: $Bmp"
+      throw "missing rendered Octavo evidence: $Bmp"
     }
     $Hashes[$EvidenceName] =
       (Get-FileHash -Algorithm SHA256 -LiteralPath $Bmp).Hash
@@ -97,7 +97,7 @@ foreach ($Name in $BmpPaths.Keys) {
   $Bmp = $BmpPaths[$Name]
   if (!(Test-Path -LiteralPath $Bmp -PathType Leaf) -or
       (Get-Item -LiteralPath $Bmp).Length -le 54) {
-    throw "missing rendered Eightvo evidence: $Bmp"
+    throw "missing rendered Octavo evidence: $Bmp"
   }
   $Png = Join-Path $Out "$Name.png"
   $Image = [System.Drawing.Image]::FromFile($Bmp)
@@ -154,4 +154,4 @@ $Summary | ConvertTo-Json -Depth 8 |
   Set-Content -Encoding ASCII -LiteralPath $SummaryPath
 
 Write-Host $Second.PassLine
-Write-Host "win32_eightvo_selection_menu_recovery_smoke result=pass repeat=2 summary=$SummaryPath"
+Write-Host "win32_octavo_selection_menu_recovery_smoke result=pass repeat=2 summary=$SummaryPath"

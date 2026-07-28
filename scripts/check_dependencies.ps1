@@ -58,14 +58,14 @@ function Require-Dependency {
   }
 }
 
-$reader0 = Resolve-DependencyPath "EIGHTVO_READER0_DIR" "LECTERN0_READER0_DIR" "reader0"
-$ui0 = Resolve-DependencyPath "EIGHTVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
+$reader0 = Resolve-DependencyPath "OCTAVO_READER0_DIR" "LECTERN0_READER0_DIR" "reader0"
+$ui0 = Resolve-DependencyPath "OCTAVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
 $readerview0 = Resolve-DependencyPath `
-  "EIGHTVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
-$ground0 = if ($env:EIGHTVO_GROUND0_DIR) {
-  (Resolve-Path -LiteralPath $env:EIGHTVO_GROUND0_DIR).Path
-} elseif ($env:EIGHTVO_ZERO_FOUNDATION_DIR) {
-  (Resolve-Path -LiteralPath $env:EIGHTVO_ZERO_FOUNDATION_DIR).Path
+  "OCTAVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
+$ground0 = if ($env:OCTAVO_GROUND0_DIR) {
+  (Resolve-Path -LiteralPath $env:OCTAVO_GROUND0_DIR).Path
+} elseif ($env:OCTAVO_ZERO_FOUNDATION_DIR) {
+  (Resolve-Path -LiteralPath $env:OCTAVO_ZERO_FOUNDATION_DIR).Path
 } elseif ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:LECTERN0_ZERO_FOUNDATION_DIR).Path
 } elseif ($env:GROUND0_DIR) {
@@ -73,7 +73,7 @@ $ground0 = if ($env:EIGHTVO_GROUND0_DIR) {
 } elseif ($env:ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:ZERO_FOUNDATION_DIR).Path
 } else {
-  Resolve-DependencyPath "EIGHTVO_GROUND0_DIR" "" "ground0"
+  Resolve-DependencyPath "OCTAVO_GROUND0_DIR" "" "ground0"
 }
 
 Require-Dependency "reader0" $reader0 (Join-Path $RepoRoot "vendor\reader0_dependency") `
@@ -108,4 +108,4 @@ if ($currentPresentationApi -ne $requiredPresentationApi) {
   throw "ground0 Presentation Engine API mismatch"
 }
 
-Write-Host "eightvo dependency status: current"
+Write-Host "octavo dependency status: current"

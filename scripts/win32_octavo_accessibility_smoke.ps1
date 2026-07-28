@@ -1,12 +1,12 @@
 param(
-  [string]$BookPath = "local\slice1_host_smoke\eightvo_slice1.epub"
+  [string]$BookPath = "local\slice1_host_smoke\octavo_slice1.epub"
 )
 
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Exe = Join-Path $Root "build\win32\8vo.exe"
 if (!(Test-Path -LiteralPath $Exe -PathType Leaf)) {
-  throw "missing eightvo executable: $Exe"
+  throw "missing octavo executable: $Exe"
 }
 
 $ResolvedBook = if ([System.IO.Path]::IsPathRooted($BookPath)) {
@@ -14,7 +14,7 @@ $ResolvedBook = if ([System.IO.Path]::IsPathRooted($BookPath)) {
 } else {
   $candidate = Join-Path $Root $BookPath
   if (!(Test-Path -LiteralPath $candidate -PathType Leaf)) {
-    & (Join-Path $PSScriptRoot "win32_eightvo_host_smoke.ps1") | Write-Host
+    & (Join-Path $PSScriptRoot "win32_octavo_host_smoke.ps1") | Write-Host
   }
   (Resolve-Path -LiteralPath $candidate).Path
 }
@@ -24,10 +24,10 @@ for ($run = 0; $run -lt 2; $run += 1) {
   $output = & $Exe --accessibility-smoke $ResolvedBook 2>&1
   if ($LASTEXITCODE -ne 0) {
     $output | Write-Host
-    throw "eightvo accessibility smoke failed with exit code $LASTEXITCODE"
+    throw "octavo accessibility smoke failed with exit code $LASTEXITCODE"
   }
   $line = $output | Where-Object {
-    $_ -match '^eightvo_accessibility_smoke result=pass '
+    $_ -match '^octavo_accessibility_smoke result=pass '
   } | Select-Object -Last 1
   if (!$line -or
       $line -notmatch 'close_child=[0-9]+' -or
@@ -36,13 +36,13 @@ for ($run = 0; $run -lt 2; $run += 1) {
       $line -notmatch 'focus=shared_disabled_host' -or
       $line -notmatch 'action=disabled_guard_shared_host_close_to_library') {
     $output | Write-Host
-    throw "eightvo accessibility smoke did not report native adapter evidence"
+    throw "octavo accessibility smoke did not report native adapter evidence"
   }
   $lines += [string]$line
 }
 if ($lines[0] -ne $lines[1]) {
-  throw "eightvo accessibility smoke is not repeatable"
+  throw "octavo accessibility smoke is not repeatable"
 }
 
 Write-Host $lines[1]
-Write-Host "win32_eightvo_accessibility_smoke result=pass repeat=2"
+Write-Host "win32_octavo_accessibility_smoke result=pass repeat=2"

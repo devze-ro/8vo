@@ -3,10 +3,10 @@ param(
   [Parameter(Mandatory = $true)][string]$Reader0Root,
   [string]$Re10Reader0Root = "",
   [Parameter(Mandatory = $true)][string]$UI0Root,
-  [string]$EightvoUI0Root = "",
+  [string]$OctavoUI0Root = "",
   [Parameter(Mandatory = $true)][string]$ZeroFoundationRoot,
   [Parameter(Mandatory = $true)][string]$Readerview0Root,
-  [string]$EightvoReaderview0Root = "",
+  [string]$OctavoReaderview0Root = "",
   [string]$Re10VcpkgRoot = "",
   [string]$OutDir = "local\stage2b0_reader_view_parity",
   [int]$AutoExitMs = 24000,
@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$EightvoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$OctavoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $Re10Root = (Resolve-Path -LiteralPath $Re10Root).Path
 $Reader0Root = (Resolve-Path -LiteralPath $Reader0Root).Path
 $Re10Reader0Root = if ([string]::IsNullOrWhiteSpace($Re10Reader0Root)) {
@@ -24,22 +24,22 @@ $Re10Reader0Root = if ([string]::IsNullOrWhiteSpace($Re10Reader0Root)) {
   (Resolve-Path -LiteralPath $Re10Reader0Root).Path
 }
 $Re10UI0Root = (Resolve-Path -LiteralPath $UI0Root).Path
-$EightvoUI0Root = if ([string]::IsNullOrWhiteSpace($EightvoUI0Root)) {
+$OctavoUI0Root = if ([string]::IsNullOrWhiteSpace($OctavoUI0Root)) {
   $Re10UI0Root
 } else {
-  (Resolve-Path -LiteralPath $EightvoUI0Root).Path
+  (Resolve-Path -LiteralPath $OctavoUI0Root).Path
 }
 $ZeroFoundationRoot = (Resolve-Path -LiteralPath $ZeroFoundationRoot).Path
 $Re10Readerview0Root = (Resolve-Path -LiteralPath $Readerview0Root).Path
-$EightvoReaderview0Root = if ([string]::IsNullOrWhiteSpace($EightvoReaderview0Root)) {
+$OctavoReaderview0Root = if ([string]::IsNullOrWhiteSpace($OctavoReaderview0Root)) {
   $Re10Readerview0Root
 } else {
-  (Resolve-Path -LiteralPath $EightvoReaderview0Root).Path
+  (Resolve-Path -LiteralPath $OctavoReaderview0Root).Path
 }
 $OutputRoot = if ([System.IO.Path]::IsPathRooted($OutDir)) {
   [System.IO.Path]::GetFullPath($OutDir)
 } else {
-  [System.IO.Path]::GetFullPath((Join-Path $EightvoRoot $OutDir))
+  [System.IO.Path]::GetFullPath((Join-Path $OctavoRoot $OutDir))
 }
 $Artifacts = Join-Path $OutputRoot "artifacts"
 $Generated = Join-Path $OutputRoot "generated"
@@ -55,7 +55,7 @@ $trimmedOutput = $OutputRoot.TrimEnd('\')
 $trimmedDrive = $outputRootDrive.TrimEnd('\')
 if ([string]::IsNullOrWhiteSpace($trimmedOutput) -or
     $trimmedOutput -eq $trimmedDrive -or
-    $trimmedOutput -eq $EightvoRoot.TrimEnd('\') -or
+    $trimmedOutput -eq $OctavoRoot.TrimEnd('\') -or
     $trimmedOutput -eq $Re10Root.TrimEnd('\')) {
   throw "unsafe parity output root: $OutputRoot"
 }
@@ -84,36 +84,36 @@ function Require-CleanTree([string]$Name, [string]$Root) {
   }
 }
 
-$EightvoReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\readerview0_dependency\COMMIT")
-$ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\ground0_dependency\COMMIT")
-$Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\reader0_dependency\COMMIT")
+$OctavoReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\readerview0_dependency\COMMIT")
+$ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\ground0_dependency\COMMIT")
+$Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\reader0_dependency\COMMIT")
 $Re10Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\reader0_dependency\COMMIT")
-$EightvoUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\ui0_dependency\COMMIT")
+$OctavoUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\ui0_dependency\COMMIT")
 $Re10ReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\readerview0_dependency\COMMIT")
 $Re10UI0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\ui0_dependency\COMMIT")
 $CrossRevisionConformance =
   $Re10Reader0Commit.Trim() -ne $Reader0Commit.Trim() -or
-  $Re10ReaderviewCommit.Trim() -ne $EightvoReaderviewCommit.Trim() -or
-  $Re10UI0Commit.Trim() -ne $EightvoUI0Commit.Trim()
+  $Re10ReaderviewCommit.Trim() -ne $OctavoReaderviewCommit.Trim() -or
+  $Re10UI0Commit.Trim() -ne $OctavoUI0Commit.Trim()
 $StageLabel = if ($CrossRevisionConformance) { "Stage 2B-2" } else { "Stage 2B-0" }
 if (!$AllowDirty) {
   Require-CleanTree "re10" $Re10Root
-  Require-CleanTree "eightvo" $EightvoRoot
-  Require-CleanTree "eightvo reader0" $Reader0Root
+  Require-CleanTree "octavo" $OctavoRoot
+  Require-CleanTree "octavo reader0" $Reader0Root
   Require-CleanTree "re10 reader0" $Re10Reader0Root
   Require-CleanTree "re10 ui0" $Re10UI0Root
-  Require-CleanTree "eightvo ui0" $EightvoUI0Root
+  Require-CleanTree "octavo ui0" $OctavoUI0Root
   Require-CleanTree "ground0" $ZeroFoundationRoot
   Require-CleanTree "re10 readerview0" $Re10Readerview0Root
-  Require-CleanTree "eightvo readerview0" $EightvoReaderview0Root
+  Require-CleanTree "octavo readerview0" $OctavoReaderview0Root
 }
 Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
-Require-ExactCommit "eightvo readerview0" $EightvoReaderview0Root $EightvoReaderviewCommit
+Require-ExactCommit "octavo readerview0" $OctavoReaderview0Root $OctavoReaderviewCommit
 Require-ExactCommit "ground0" $ZeroFoundationRoot $ZeroCommit
-Require-ExactCommit "eightvo reader0" $Reader0Root $Reader0Commit
+Require-ExactCommit "octavo reader0" $Reader0Root $Reader0Commit
 Require-ExactCommit "re10 reader0" $Re10Reader0Root $Re10Reader0Commit
 Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
-Require-ExactCommit "eightvo ui0" $EightvoUI0Root $EightvoUI0Commit
+Require-ExactCommit "octavo ui0" $OctavoUI0Root $OctavoUI0Commit
 New-Item -ItemType Directory -Force -Path $Artifacts, $Generated, $Vaults, $Logs | Out-Null
 
 if (!$SkipBuild) {
@@ -137,21 +137,21 @@ if (!$SkipBuild) {
     Pop-Location
   }
 
-  $env:EIGHTVO_READER0_DIR = $Reader0Root
-  $env:EIGHTVO_UI0_DIR = $EightvoUI0Root
-  $env:EIGHTVO_READERVIEW0_DIR = $EightvoReaderview0Root
-  $env:EIGHTVO_ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
-  Push-Location $EightvoRoot
+  $env:OCTAVO_READER0_DIR = $Reader0Root
+  $env:OCTAVO_UI0_DIR = $OctavoUI0Root
+  $env:OCTAVO_READERVIEW0_DIR = $OctavoReaderview0Root
+  $env:OCTAVO_ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
+  Push-Location $OctavoRoot
   try {
     & .\build\win32_build.bat no_run
-    if ($LASTEXITCODE -ne 0) { throw "eightvo build failed: $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "octavo build failed: $LASTEXITCODE" }
   } finally {
     Pop-Location
   }
 }
 
 $Re10Exe = (Resolve-Path -LiteralPath (Join-Path $Re10Root "build\win32\re10.exe")).Path
-$EightvoExe = (Resolve-Path -LiteralPath (Join-Path $EightvoRoot "build\win32\8vo.exe")).Path
+$OctavoExe = (Resolve-Path -LiteralPath (Join-Path $OctavoRoot "build\win32\8vo.exe")).Path
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -378,12 +378,12 @@ function Invoke-Re10Capture([object]$Case, [int]$Run) {
   }
 }
 
-function Invoke-EightvoCapture([object]$Case, [int]$Run) {
+function Invoke-OctavoCapture([object]$Case, [int]$Run) {
   $caseDir = Join-Path $Artifacts $Case.name
   New-Item -ItemType Directory -Force -Path $caseDir | Out-Null
-  $evidence = Join-Path $caseDir "eightvo.$Run.evidence.txt"
-  $bmp = Join-Path $caseDir "eightvo.$Run.reader.bmp"
-  $log = Join-Path $Logs "$($Case.name).eightvo.$Run.log"
+  $evidence = Join-Path $caseDir "octavo.$Run.evidence.txt"
+  $bmp = Join-Path $caseDir "octavo.$Run.reader.bmp"
+  $log = Join-Path $Logs "$($Case.name).octavo.$Run.log"
   $focus = if ($Case.focus) { [string]$Case.focus } else { "none" }
   $annotation = if ($Case.PSObject.Properties.Name -contains "annotation") {
     [string]$Case.annotation
@@ -391,9 +391,9 @@ function Invoke-EightvoCapture([object]$Case, [int]$Run) {
     "none"
   }
   [void][ReaderViewParityCursor]::SetCursorPos(0, 0)
-  & $EightvoExe --reader-view-parity-capture $Fixture ([string]$Case.width) ([string]$Case.height) $Case.theme $Case.left $Case.right $Case.popup $Case.query $evidence $bmp $focus $annotation *> $log
+  & $OctavoExe --reader-view-parity-capture $Fixture ([string]$Case.width) ([string]$Case.height) $Case.theme $Case.left $Case.right $Case.popup $Case.query $evidence $bmp $focus $annotation *> $log
   if ($LASTEXITCODE -ne 0 -or !(Test-Path $evidence) -or !(Test-Path $bmp)) {
-    throw "eightvo capture failed: case=$($Case.name) run=$Run exit=$LASTEXITCODE log=$log"
+    throw "octavo capture failed: case=$($Case.name) run=$Run exit=$LASTEXITCODE log=$log"
   }
   return [pscustomobject]@{
     evidence = $evidence
@@ -418,18 +418,18 @@ $AllPixelExact = $true
 foreach ($case in $Cases) {
   $re10A = Invoke-Re10Capture $case 1
   $re10B = Invoke-Re10Capture $case 2
-  $eightvoA = Invoke-EightvoCapture $case 1
-  $eightvoB = Invoke-EightvoCapture $case 2
+  $octavoA = Invoke-OctavoCapture $case 1
+  $octavoB = Invoke-OctavoCapture $case 2
   $re10Stable = $re10A.evidence_sha256 -eq $re10B.evidence_sha256 -and
                 $re10A.pixel_sha256 -eq $re10B.pixel_sha256
-  $eightvoStable = $eightvoA.evidence_sha256 -eq $eightvoB.evidence_sha256 -and
-                   $eightvoA.pixel_sha256 -eq $eightvoB.pixel_sha256
-  if (!$re10Stable -or !$eightvoStable) { $Deterministic = $false }
+  $octavoStable = $octavoA.evidence_sha256 -eq $octavoB.evidence_sha256 -and
+                   $octavoA.pixel_sha256 -eq $octavoB.pixel_sha256
+  if (!$re10Stable -or !$octavoStable) { $Deterministic = $false }
   $componentMatches = [ordered]@{}
   foreach ($key in $CompareKeys) {
-    $componentMatches[$key] = $re10A.values[$key] -eq $eightvoA.values[$key]
+    $componentMatches[$key] = $re10A.values[$key] -eq $octavoA.values[$key]
   }
-  $pixelsMatch = $re10A.pixel_sha256 -eq $eightvoA.pixel_sha256
+  $pixelsMatch = $re10A.pixel_sha256 -eq $octavoA.pixel_sha256
   if (!$pixelsMatch) { $AllPixelExact = $false }
   $caseExact = $pixelsMatch -and !($componentMatches.Values -contains $false)
   if (!$caseExact) { $AllExact = $false }
@@ -448,12 +448,12 @@ foreach ($case in $Cases) {
       "none"
     }
     re10_repeatable = $re10Stable
-    eightvo_repeatable = $eightvoStable
+    octavo_repeatable = $octavoStable
     component_matches = $componentMatches
     pixel_match = $pixelsMatch
     exact_parity = $caseExact
     re10 = $re10A
-    eightvo = $eightvoA
+    octavo = $octavoA
   }
   $label = if ($caseExact) {
     "EXACT"
@@ -462,7 +462,7 @@ foreach ($case in $Cases) {
   } else {
     "BASELINE-DIFFERENT"
   }
-  Write-Host "$label $($case.name) re10_repeatable=$re10Stable eightvo_repeatable=$eightvoStable pixels=$pixelsMatch"
+  Write-Host "$label $($case.name) re10_repeatable=$re10Stable octavo_repeatable=$octavoStable pixels=$pixelsMatch"
 }
 
 $Manifest = [pscustomobject]@{
@@ -491,13 +491,13 @@ $Manifest = [pscustomobject]@{
   fixed_reader_client_pixels = $true
   re10_outer_shell_inset = 10
   re10_head = Get-Head $Re10Root
-  eightvo_head = Get-Head $EightvoRoot
+  octavo_head = Get-Head $OctavoRoot
   re10_readerview0_head = Get-Head $Re10Readerview0Root
-  eightvo_readerview0_head = Get-Head $EightvoReaderview0Root
-  eightvo_reader0_head = Get-Head $Reader0Root
+  octavo_readerview0_head = Get-Head $OctavoReaderview0Root
+  octavo_reader0_head = Get-Head $Reader0Root
   re10_reader0_head = Get-Head $Re10Reader0Root
   re10_ui0_head = Get-Head $Re10UI0Root
-  eightvo_ui0_head = Get-Head $EightvoUI0Root
+  octavo_ui0_head = Get-Head $OctavoUI0Root
   ground0_head = Get-Head $ZeroFoundationRoot
   results = $Results
 }
@@ -511,7 +511,7 @@ $DifferenceSummary = if ($AllPixelExact) {
 
 $Report = @(
   if ($CrossRevisionConformance) {
-    "# Reader View Stage 2B-2 eightvo reference conformance"
+    "# Reader View Stage 2B-2 octavo reference conformance"
   } else {
     "# Reader View Stage 2B-0 deterministic parity baseline"
   },
@@ -524,12 +524,12 @@ $Report = @(
   "",
   "Fixture SHA-256: $($Manifest.fixture_sha256)",
   "",
-  "| Case | re10 repeatable | eightvo repeatable | record equality | pixel equality |",
+  "| Case | re10 repeatable | octavo repeatable | record equality | pixel equality |",
   "| --- | --- | --- | --- | --- |"
 )
 foreach ($result in $Results) {
   $recordEqual = !($result.component_matches.Values -contains $false)
-  $Report += "| $($result.name) | $($result.re10_repeatable) | $($result.eightvo_repeatable) | $recordEqual | $($result.pixel_match) |"
+  $Report += "| $($result.name) | $($result.re10_repeatable) | $($result.octavo_repeatable) | $recordEqual | $($result.pixel_match) |"
 }
 $Report += @(
   "",
