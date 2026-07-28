@@ -179,4 +179,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_eightvo_image_
 The former `LECTERN0_*` dependency and compiler environment variables remain
 accepted as compatibility fallbacks during the rename.
 
-No remote is configured for this repository.
+## License
+
+Unless otherwise noted, first-party source code and documentation in this
+repository are licensed under the Mozilla Public License 2.0 (`MPL-2.0`). See
+[LICENSE](LICENSE).
+
+Bundled and source-consumed third-party materials remain under their original
+licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
