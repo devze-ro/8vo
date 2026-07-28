@@ -12,11 +12,8 @@ I am building 8vo to explore how far coding agents such as Codex can go in
 creating a large, working software project. I set the direction, review the
 results, and evaluate the software, while agents do the implementation work.
 
-The experiment asks a simple question: **Can AI coding agents build and
-maintain substantial software that actually works?**
-
-8vo is early-stage research software. It is under active development, has no
-public binary release yet, and is not ready for general use.
+8vo is under active development, has no public binary release yet, and is not
+ready for general use.
 
 ## Build and test
 
