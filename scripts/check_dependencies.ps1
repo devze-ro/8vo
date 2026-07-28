@@ -34,6 +34,10 @@ function Resolve-DependencyPath {
     $path = Resolve-EnvironmentDirectory $LegacyEnvironmentName -IgnoreMissing
     if ($path) { return $path }
   }
+  $local = Join-Path $RepoRoot "local\dependencies\$SiblingName"
+  if (Test-Path -LiteralPath $local -PathType Container) {
+    return (Resolve-Path -LiteralPath $local).Path
+  }
   $sibling = Join-Path $RepoRoot "..\$SiblingName"
   if (!(Test-Path -LiteralPath $sibling -PathType Container)) {
     throw "$SiblingName checkout not found; set $EnvironmentName"

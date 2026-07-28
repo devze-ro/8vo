@@ -11,9 +11,28 @@ listed below and must not silently advance them.
 | [ui0](https://github.com/devze-ro/ui0) | `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
 | [ground0](https://github.com/devze-ro/ground0) | `fa7f680f933c23d84f9b74e15887a3b8bb78d2f9` | 0.4.3-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
 
+## Bootstrap
+
+From the 8vo repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
+```
+
+The script reads the commit files above, clones the public repositories into
+ignored `local/dependencies/` directories, checks out the exact revisions in
+detached-HEAD mode, and verifies every commit and working tree. It is safe to
+run again: clean exact checkouts are reused, while a dirty checkout stops the
+bootstrap instead of overwriting local work.
+
+The build and dependency guard automatically use these local checkouts.
+
+## Manual checkouts
+
 The build accepts explicit `OCTAVO_*_DIR` environment variables and otherwise
-looks for sibling checkouts. `scripts/check_dependencies.ps1` verifies each
-checkout's revision, version, API, and cleanliness before compilation.
+looks first in `local/dependencies/` and then for sibling checkouts.
+`scripts/check_dependencies.ps1` verifies each checkout's revision, version,
+API, and cleanliness before compilation.
 
 ## Licensing
 

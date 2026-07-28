@@ -1,5 +1,17 @@
 # Validation scripts
 
+## Dependency bootstrap
+
+`bootstrap_dependencies.ps1` clones the four public source dependencies into
+ignored `local/dependencies/` directories at the exact revisions recorded
+under `vendor/`. It verifies repository identity, commit identity, and
+cleanliness, configures the existing `OCTAVO_*_DIR` variables for its
+verification process, and runs the strict dependency guard.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
+```
+
 ## Public smoke suite
 
 `run_public_smoke.ps1` is the reproducible public validation entry point. It

@@ -20,13 +20,17 @@ ready for general use.
 Building requires 64-bit Windows, Git, PowerShell 5.1 or newer, and Visual
 Studio 2022 or Build Tools 2022 with the C++ workload and a Windows SDK.
 
-8vo compiles four first-party repositories from exact revisions. See
-[DEPENDENCIES.md](DEPENDENCIES.md) for the required source checkouts and
-environment variables. Once they are configured:
+8vo compiles four first-party repositories from exact revisions. Bootstrap
+those revisions into the ignored local dependency directory, then build and
+run the public smoke suite:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 ```
+
+See [DEPENDENCIES.md](DEPENDENCIES.md) for the exact pins and manual checkout
+options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
