@@ -1,5 +1,11 @@
 # Lectern0 Reader View Stage 2B-0 parity harness
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-17
 
 Lectern0 now aligns its exact zero_foundation source closure to promoted

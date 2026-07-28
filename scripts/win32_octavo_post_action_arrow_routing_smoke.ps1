@@ -1,6 +1,6 @@
 param(
   [string]$OutDir = "local\validation\rv-focus1a",
-  [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
+  [Parameter(Mandatory = $true)][string]$BookPath,
   [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
 )

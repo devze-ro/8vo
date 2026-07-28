@@ -1,9 +1,15 @@
 # Lectern0 held-navigation performance slice 5
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-20
 
 Status: implemented, validated, and promoted fast-forward-only to the
-local-only `main` branch on 2026-07-20
+local `main` branch on 2026-07-20
 
 ## Reproduced regression
 
@@ -132,7 +138,7 @@ Clean retained evidence also passes:
 
 The clean 15-state Re10/Lectern0 matrix rebuilt both hosts in-harness:
 
-- manifest: `C:\Temp\ln5cross_20260720_2\manifest.json`;
+- manifest: `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `DC84E5A5154C213740E209E87E0F643F115AB0CB3C3C1ED6C48415DE8D4E7A2D`;
 - deterministic: 15/15;
@@ -153,7 +159,7 @@ Promotion was explicitly approved and completed in dependency order on
 - Re10 `main` and `origin/main` advanced fast-forward-only from
   `e504c87fee4d10f3c4c836925966c766971b1be8` to
   `9969a1ed121bf3da25483ae55eb2e18e4ab3f274`; and
-- local-only Lectern0 `main` advanced fast-forward-only from
+- local Lectern0 `main` advanced fast-forward-only from
   `d0c9f641fe24121027c1b1bb2508f2b43008ca17` through the validated
   implementation and evidence at
   `aef6b5e6120c090bf908bfd17e34c1cb6a48f38b`, followed only by this
@@ -164,9 +170,9 @@ architecture audit, and strict MSVC C11 `/W4 /WX` build. It used the retained
 exact zero_foundation 0.4.1 checkout at `3eab21c`; the independently advanced
 zero_foundation 0.4.3-dev `master` was not absorbed into this repair.
 
-Lectern0 remains local-only and no remote was created. No merge commit,
-rebase, reset, amendment, cherry-pick, or history rewrite was performed. UI0,
-Readerview0, zero_foundation, and the protected Re10 extraction worktree were
+At the time, the validated commits remained in the local checkout. No merge
+commit, rebase, reset, amendment, cherry-pick, or history rewrite was
+performed. UI0, Readerview0, zero_foundation, and the isolated Re10 reference checkout were
 not modified by promotion.
 
 ## 2026-07-20 scheduling recovery follow-up
@@ -181,5 +187,5 @@ frame construction or raster warming while the key remains held. The current
 contract may still run Reader0-only logical preparation after stable
 presentation and within remaining deadline slack. The diagnosis, contract, and focused evidence are
 recorded in
-`docs/slices/lectern0_held_navigation_scheduling_slice6.md`. Reader0's
+`docs/archive/slices/lectern0_held_navigation_scheduling_slice6.md`. Reader0's
 navigation-preparation API and ordinary idle warming remain unchanged.

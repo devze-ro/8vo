@@ -1,5 +1,11 @@
 # Lectern0 saved-position window restore and highlight close icon
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 ## Consumer integration
 
 Lectern0 pins Reader0 API 5 commit

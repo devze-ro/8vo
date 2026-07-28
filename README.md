@@ -30,7 +30,7 @@ database. The reserved digest field is a future sync seam, not a cross-device
 book identity or a sync implementation.
 
 The integrated host provides a native window, an EPUB file picker and
-command-line open, canonical-frame rendering, concrete reader0 API 4 page and
+command-line open, canonical-frame rendering, concrete reader0 API 5 page and
 semantic navigation, resize repagination, and host-owned position, settings,
 bookmark, highlight, and note persistence. Reader View API 3 composes the
 accepted reference UI0 chrome shared with re10: top toolbar, page gutters, progress
@@ -158,26 +158,31 @@ events, native Close Book invocation, and shared-action execution in the applica
 
 ## Build and validate
 
-From a linked worktree, point the dependency variables at exact clean
-checkouts:
+The current application builds on 64-bit Windows with:
+
+- Git and PowerShell 5.1 or newer
+- Visual Studio 2022 or Build Tools 2022 with the Desktop development with C++
+  workload, MSVC, and a Windows SDK
+
+8vo source-consumes four first-party repositories at exact revisions. See
+[DEPENDENCIES.md](DEPENDENCIES.md) for the repository URLs, pins, APIs, and
+licensing details. Point the dependency variables at clean checkouts of those
+exact revisions:
 
 ```powershell
 $env:OCTAVO_READER0_DIR = 'C:\path\to\reader0-api5-worktree'
 $env:OCTAVO_UI0_DIR = 'C:\path\to\ui0'
 $env:OCTAVO_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
 $env:OCTAVO_GROUND0_DIR = 'C:\path\to\ground0'
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies_current.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
-cmd /c build\win32_build.bat no_run
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_host_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_data_migration_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_library_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_reader_view_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_reader_view_startup_interaction_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_accessibility_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_visual_smoke.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_image_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 ```
+
+The public entry point verifies the dependency revisions and architecture,
+builds with warnings treated as errors, generates its own fixtures, and runs
+seven smoke tests. It writes only to ignored `build/win32/` and `local/`
+directories. Historical exact-book regression scripts require an explicit
+external fixture; see
+[`scripts/README.md`](scripts/README.md).
 
 The former `LECTERN0_*` dependency and compiler environment variables remain
 accepted as compatibility fallbacks during the rename.
@@ -190,3 +195,6 @@ repository are licensed under the Mozilla Public License 2.0 (`MPL-2.0`). See
 
 Bundled and source-consumed third-party materials remain under their original
 licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Exact first-party dependency revisions and their licensing status are recorded
+in [DEPENDENCIES.md](DEPENDENCIES.md).

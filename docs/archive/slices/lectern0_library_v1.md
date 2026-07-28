@@ -1,8 +1,14 @@
 # Lectern0 library v1
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Status: implemented and validated on the dedicated
 `codex/lectern0-library-v1` branch, then promoted fast-forward-only to the
-local-only `main` branch on 2026-07-20.
+local `main` branch on 2026-07-20.
 
 ## Exact inputs
 
@@ -142,7 +148,7 @@ framework is present in this slice.
 
 Exact book:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`
+- path: `<external-fixture>\gotm_new.epub`
 - size: 955125 bytes
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`
@@ -150,7 +156,7 @@ Exact book:
 Clean summary:
 
 - path:
-  `C:\Users\ankur\Documents\Codex\2026-07-20\please-resume-the-epub-reader-regression\work\lectern0_library_v1_clean_f38f05d_20260720_1\summary.json`
+  `<historical-evidence-not-retained>`
 - SHA-256:
   `8E41BD584C7D45AA25D227F6EBA38CD06162C7F305BCF24646F5B7F162536400`
 - clean tree: pass
@@ -197,7 +203,7 @@ The following pass on the exact dependency pins:
 Clean cross-host manifest:
 
 - path:
-  `C:\Users\ankur\Documents\Codex\2026-07-20\please-resume-the-epub-reader-regression\work\lectern0_library_v1_cross_host_clean_20260720_1\manifest.json`
+  `<historical-evidence-not-retained>`
 - SHA-256:
   `89E2B28193F7B490292438DCAB812D1C4285264E29EF53AA5F9AB99FF7127CE5`
 - in-harness Re10 and Lectern0 builds: pass
@@ -218,13 +224,13 @@ order using fast-forward-only updates:
   `3d7a81a9bd5e2a90d9221f434cc9485f46a633bd` to
   `c7b63d9cb38829219f41795ae2c89bf80707b2cf` (API 4,
   version `0.4.0-dev`); and
-- local-only Lectern0 `main` advanced from
+- local Lectern0 `main` advanced from
   `97d5211af7bc648e7e1048c9fc3c7b6bfe4911c2` through the library
   implementation and evidence commit
   `b385543836897b651458dfa9563aa1891a51113e`, followed by this
   documentation-only promotion record.
 
-Lectern0 still has no remote. Re10, UI0, zero_foundation, and readerview0 were
-not advanced. The protected reader-core extraction worktree and the retired
+At that time, Lectern0 had not been published. Re10, UI0, zero_foundation, and readerview0 were
+not advanced. The isolated reader-core reference checkout and the retired
 image-fit worktree were verified clean at their locked commits before
 promotion and were not modified.

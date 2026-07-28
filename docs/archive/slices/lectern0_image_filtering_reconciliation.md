@@ -1,5 +1,11 @@
 # Lectern0 image-filtering reconciliation
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 ## Scope
 
 This slice reconciles Lectern0 to the current source dependencies and applies

@@ -1,5 +1,11 @@
 # Lectern0 Reader View Slice 5B API 1 adoption
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-16
 
 ## Objective
@@ -101,8 +107,8 @@ both images are still decoded exactly once and cache ownership is unchanged.
 
 ## Deferred work
 
-Readerview0 and lectern0 remain local-only. No GitHub repository or remote was
-created. Re10 adoption requires a new fetch and explicit editor-work
+At the time, Readerview0 and lectern0 remained local; publication occurred
+later. Re10 adoption required a new fetch and explicit editor-work
 reconciliation before any branch or source change. Visual comparison with re10
 and promotion of a re10 dependency are therefore the next Stage 1 gate, not
 part of this lectern0 commit.

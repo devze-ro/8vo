@@ -1,5 +1,11 @@
 # Lectern0 host images Slice 5A
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-15
 
 ## Objective

@@ -1,6 +1,6 @@
 param(
   [string]$OutDir = "local\validation\reader-image-fit-slice6",
-  [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
+  [Parameter(Mandatory = $true)][string]$BookPath,
   [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
 )

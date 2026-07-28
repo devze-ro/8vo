@@ -1,9 +1,15 @@
 # Lectern0 Reader0 navigation-performance parity slice 2
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-20
 
 Status: implemented, validated, and promoted fast-forward-only to the
-local-only `main` branch on 2026-07-20
+local `main` branch on 2026-07-20
 
 ## Objective
 
@@ -130,13 +136,13 @@ order:
   `3b86a1f7c1eae281fbb6c0c5fdc65e3616317bea`;
 - Re10 `main` and `origin/main` advanced fast-forward-only to
   `e504c87fee4d10f3c4c836925966c766971b1be8`; and
-- local-only Lectern0 `main` advanced fast-forward-only through the regression
+- local Lectern0 `main` advanced fast-forward-only through the regression
   repair, implementation, and clean evidence at
   `ca3257733ebfe02f0261936d311fe9da7f124b28`, followed only by this
   documentation completion record.
 
-No Lectern0 remote was created. UI0, Readerview0, zero_foundation, and the
-protected Re10 extraction worktree were not modified by promotion.
+publication was outside this slice. UI0, Readerview0, zero_foundation, and the
+isolated Re10 reference checkout were not modified by promotion.
 
 ## 2026-07-20 held-navigation regression follow-up
 
@@ -144,7 +150,7 @@ The complete held-input deferral recorded above is historical policy and was
 superseded after exact-book reproduction showed that it forced every
 timer-driven repeat to render cold. The bounded directional preparation and
 adapter hot-path repair are recorded in
-`docs/slices/lectern0_held_navigation_performance_slice5.md`. Reader0's API and
+`docs/archive/slices/lectern0_held_navigation_performance_slice5.md`. Reader0's API and
 ownership remain unchanged.
 
 ## 2026-07-20 held-scheduling recovery follow-up
@@ -152,7 +158,7 @@ ownership remain unchanged.
 The held-only directional preparation above was subsequently shown to compete
 with the accepted repeat action at a production-sized viewport. It is
 superseded by the action-first, render-gated scheduling contract recorded in
-`docs/slices/lectern0_held_navigation_scheduling_slice6.md`. That contract
+`docs/archive/slices/lectern0_held_navigation_scheduling_slice6.md`. That contract
 forbids host frame/raster warming while held but may run Reader0-only logical
 preparation after stable presentation and within deadline slack. Ordinary idle
 preparation and the Reader0 API remain unchanged.

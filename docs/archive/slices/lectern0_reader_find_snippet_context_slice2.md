@@ -1,9 +1,14 @@
 # Lectern0 Reader Find Slice 2: visible result-snippet context
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-19
 
-Status: implementation and acceptance candidate; local-only, unpromoted, and
-unpushed
+Status: implementation and acceptance candidate; unpromoted at the time
 
 ## Outcome and ownership
 
@@ -26,15 +31,15 @@ exactly at `6ff78cf47258ff21f79fa3473973a85066fea899`. Reader0 remains
 `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec`, and zero_foundation remains
 `eee57edc1b0c7af5bef7afca26f3c27a32fb6e7c`.
 
-Lectern0 remains local-only with no remote. This slice does not create or
-authorize a GitHub repository. No API version changes and no callback, provider
+Repository publication occurred later as separate project work. No API version
+changes and no callback, provider
 table, vtable, event bus, dependency injection, allocation, generic document
 interface, or mutable process-global state is introduced.
 
 ## Exact native app regression
 
 The exact book is
-`C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`, 955125 bytes,
+`<external-fixture>\gotm_new.epub`, 955125 bytes,
 SHA-256
 `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
 
@@ -89,7 +94,7 @@ The committed implementation candidate is
 - manifest-recorded Git status: empty.
 
 The clean cross-host manifest is
-`C:\Temp\re10_lectern_find_snippet_final_clean_20260719_0300\manifest.json`,
+`<historical-evidence-not-retained>`,
 SHA-256
 `25B5131BBEC10153543F655302E44B55DBA9ADEDFD2878F47FA3310A09B60E4F`.
 All 15/15 Re10/Lectern0 cases are deterministic and decoded-pixel exact; 9
@@ -98,7 +103,7 @@ differences. The harness enforced clean trees, exact pins, and in-run strict
 builds against Readerview0
 `6ff78cf47258ff21f79fa3473973a85066fea899`.
 
-The canonical zero_foundation checkout gained one clean local-only commit while
+The canonical zero_foundation checkout gained one clean local commit while
 validation was running. It was neither absorbed nor modified. Final acceptance
 used the dedicated exact-pin validation worktree at
 `eee57edc1b0c7af5bef7afca26f3c27a32fb6e7c`, matching this host's dependency

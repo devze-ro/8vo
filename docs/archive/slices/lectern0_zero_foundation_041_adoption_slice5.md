@@ -1,5 +1,11 @@
 # Lectern0 zero_foundation 0.4.1 adoption slice 5
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-19
 
 ## Scope and ownership
@@ -39,9 +45,9 @@ The dedicated worktree and branch are:
 The fresh-fetch gate found Re10 at
 `4d197e23cdaea8b9979c064593fbf8210ffd2d1d`, equal to `origin/main`, clean,
 and 0/0 divergent. Reader0, UI0, Readerview0, and zero_foundation were also
-clean and 0/0 divergent from their upstreams. Lectern0 remained local-only,
-clean on `main` at the base above, with no remote configured. The protected
-extraction worktree remained clean on
+clean and 0/0 divergent from their upstreams. Lectern0 remained local,
+clean on `main` at the base above in a local checkout. The isolated extraction
+worktree remained clean on
 `codex/reader-core-extraction-slice3` at
 `420068fc1509fcf9c9b9eae7f4dcacfe2e046f54`.
 
@@ -95,7 +101,7 @@ expected pixels, bounds, and surrounding page composition.
 
 All real-book work used:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes; and
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -128,7 +134,7 @@ The final 15-case Re10/Lectern0 matrix used a fresh output root and rebuilt both
 hosts in-run at the exact commits above:
 
 - manifest:
-  `C:\Temp\lectern0_zero041_final_clean_20260719_1\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `131399049C59E9584D16A0E5611311F88AE17378F8153BE2BEA827CCE3255B91`;
 - deterministic: 15/15;
@@ -158,8 +164,7 @@ it, and compare the cover and every map page directly with Re10.
 
 ## Promotion
 
-The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
-`main` was fast-forwarded from
+Canonical Lectern0 `main` was fast-forwarded on 2026-07-19 from
 `92af52220007a76a5db46e25abdce7c5258b612b` through the validated
 implementation and evidence commits. The canonical no-override command
 `.\build\win32_build.bat no_run` then passed the exact dependency guards,
@@ -167,6 +172,5 @@ architecture audit, and strict compile against the sibling repositories. This
 promotion record is documentation only and is fast-forwarded on top of the
 approved tip.
 
-Lectern0 remains local-only with no remote configured. No repository was
-created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
-history rewrite was performed.
+Repository publication occurred later as separate project work. This promotion
+used no merge commit, rebase, reset, amendment, cherry-pick, or history rewrite.

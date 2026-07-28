@@ -1,5 +1,11 @@
 # Lectern0 Reader0 backward-adjacency adoption slice 3
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-20
 
 ## Objective
@@ -28,4 +34,4 @@ advance is included.
 - strict MSVC C11 `/W4 /WX` build and retained reader regressions pass;
 - exact-book forward/backward navigation remains exactly adjacent, including
   return across all 64 forward scan moves; and
-- source and protected worktrees remain unchanged and clean.
+- source and isolated reference checkouts remain unchanged and clean.

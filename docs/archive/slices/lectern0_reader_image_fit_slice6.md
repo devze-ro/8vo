@@ -1,5 +1,11 @@
 # Lectern0 full-page reader image-fit Slice 6
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-19
 
 ## Objective and isolation
@@ -10,12 +16,12 @@ the extracted architecture and leave true in-flow publisher images unchanged.
 
 - branch: `codex/lectern-reader-image-fit-slice6`;
 - linked worktree:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\worktrees\lectern0-reader-image-fit-slice6`;
+  `<historical-evidence-not-retained>`;
 - base: `128ff1a6f471566b1eb31051de8ef8ebcdf0282b`;
 - implementation: `1b309d0d06da194c15298d205ced74a708c84a01`;
 - canonical Lectern0 `main` remained unchanged while this record was written;
   and
-- Lectern0 remains local-only with no remote.
+- Repository publication occurred later as separate project work.
 
 Exact dependency pins remained:
 
@@ -30,7 +36,7 @@ Exact dependency pins remained:
 
 Every real-book run used:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes; and
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -185,7 +191,7 @@ The clean-tree harness rebuilt both applications at Re10
 `1b309d0d06da194c15298d205ced74a708c84a01`:
 
 - manifest:
-  `C:\Temp\lectern0_image_fit_slice6_final_clean_20260719_1\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `B929913567DCBF87959BB1D45A613596C85E7D56ABBAE60E372CF9BE54BBCB89`;
 - deterministic: 15/15;
@@ -222,8 +228,7 @@ ownership definition before implementation. No Kindle-gap, PDF, reader0 Slice
 
 ## Promotion
 
-The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
-`main` was clean at
+Canonical Lectern0 `main` was clean on 2026-07-19 at
 `128ff1a6f471566b1eb31051de8ef8ebcdf0282b` and was fast-forwarded through the
 validated implementation and evidence tip
 `d4b6b5e057d3373c81e0195741e3391e9490a180`. The canonical no-override
@@ -231,6 +236,5 @@ validated implementation and evidence tip
 guards, the architecture audit, and strict MSVC C11 `/W4 /WX`. This
 documentation-only promotion record was fast-forwarded on top.
 
-Lectern0 remains local-only with no remote configured. No repository was
-created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
-history rewrite was performed.
+Repository publication occurred later as separate project work. This promotion
+used no merge commit, rebase, reset, amendment, cherry-pick, or history rewrite.

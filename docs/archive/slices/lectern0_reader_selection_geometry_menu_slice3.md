@@ -1,8 +1,14 @@
 # Lectern0 Reader selection geometry and menu Slice 3
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-19
 
-Status: validated local-only reconciliation; promotion authorized
+Status: validated local reconciliation; subsequently promoted
 
 ## Scope and ownership
 
@@ -31,7 +37,7 @@ introduced. The app owns a fixed 1024-stop scratch array.
 ## Commits
 
 The dedicated branch `codex/lectern-selection-geometry-menu-slice3` starts at
-local-only main commit `44f2dee48780296db9e6674e754c583114fdd83a`.
+local main commit `44f2dee48780296db9e6674e754c583114fdd83a`.
 The code was committed without amendment or history rewriting as:
 
 1. `843869e749290f5ac70ad5bbc2fad548415f8852`,
@@ -39,9 +45,8 @@ The code was committed without amendment or history rewriting as:
 2. `bef5f9c40e6a8a82ca7cb53ffbd8821252e0e164`,
    `Preserve exact note marker anchoring`.
 
-Both commits use `devze-ro <devze_ro@outlook.com>` as author and committer.
-Lectern0 still has no remote; no repository was created and nothing was
-pushed.
+Both commits use `devze-ro` as author and committer.
+Repository publication occurred later as separate project work.
 
 ## Reproduced causes
 
@@ -86,7 +91,7 @@ given the host's resolved theme-aware highlight color.
 
 The exact file is:
 
-- `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- `<external-fixture>\gotm_new.epub`;
 - 955125 bytes; and
 - SHA-256
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -137,7 +142,7 @@ The first clean 15-case run at Lectern0 commit `843869e7` was individually
 repeatable but differed in the two annotation cases:
 
 - manifest:
-  `C:\Users\ankur\Documents\Codex\acc_cross_s3_20260719\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - SHA-256:
   `AEE0A3ADDE38FD67014BA95C2017559BC8D1106D67EFA4FA5339E4E44D4BB323`.
 
@@ -150,7 +155,7 @@ The follow-up commit uses the exact caret x for zero-length anchors.
 The fresh clean retry then passed:
 
 - manifest:
-  `C:\Users\ankur\Documents\Codex\acc_cross_s3_retry1_20260719\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - SHA-256:
   `D4E35D5EE62548B51E12DBEDFB9FB5BDE69C00875B54D9119A2B09D8C04A5955`;
 - Re10 `c61c24726d5893dec15706151c4e6cad55290a2d`;
@@ -204,7 +209,7 @@ focus expectation in `scripts/win32_reader_view_stage2b0_parity.ps1`:
 The clean reconciled matrix rebuilt both applications and passed all 15 cases:
 
 - manifest:
-  `C:\Users\ankur\Documents\Codex\acc_cross_s3_reconcile_retry1_20260719\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `111252B8F71A232D42557FFC77060BC8E423B763EF6276FD5DF52E992E7482A0`;
 - Re10: `606c1d5274943e19458543a80be30b09662c88cb`;
@@ -214,5 +219,5 @@ The clean reconciled matrix rebuilt both applications and passed all 15 cases:
 - clean-tree, in-run builds, exact dependencies, and acceptance eligibility:
   true.
 
-Promotion is authorized for this local-only repository. No Lectern0 remote was
-created or configured.
+The validated changes were promoted locally at the time; repository publication
+occurred later.

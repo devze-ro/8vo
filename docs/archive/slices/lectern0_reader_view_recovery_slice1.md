@@ -1,8 +1,14 @@
 # Lectern0 Reader View recovery Slice 1
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-17
 
-Status: implemented and validated locally; not committed or promoted
+Status: implemented and validated locally; candidate state at the time
 
 ## Reference lock
 

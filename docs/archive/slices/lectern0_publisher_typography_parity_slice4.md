@@ -1,5 +1,11 @@
 # Lectern0 publisher typography parity slice 4
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-19
 
 ## Scope and ownership
@@ -52,7 +58,7 @@ worktree remained clean on `codex/reader-core-extraction-slice3` at
 
 All real-book work used:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes;
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -100,14 +106,14 @@ for genuinely justified rows.
 ## Exact-book application regression
 
 `scripts/win32_lectern0_publisher_typography_spacing_smoke.ps1` guards the
-private fixture identity, performs a strict MSVC C11 `/W4 /WX` build, executes
+external fixture identity, performs a strict MSVC C11 `/W4 /WX` build, executes
 the real Reader View setting action for all three choices, and captures decoded
 rendered evidence at 1536 by 912.
 
 Final summary:
 
 - path:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\artifacts\typography_slice4_final2\summary.json`;
+  `<historical-evidence-not-retained>`;
 - SHA-256:
   `6819BF2E69E9580F607450E4B2340799FAB82302B1944CE82759126D2ECEF240`;
 - result: pass;
@@ -123,15 +129,15 @@ Final summary:
 The directly inspected PNGs are:
 
 - Compact:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\artifacts\typography_slice4_final2\gotm_spacing_0.png`,
+  `<historical-evidence-not-retained>`,
   SHA-256
   `DD324B254C710DB229E8C423C2593CE1957AB940703BC3D68B2E8EA535677B5E`;
 - Comfortable:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\artifacts\typography_slice4_final2\gotm_spacing_1.png`,
+  `<historical-evidence-not-retained>`,
   SHA-256
   `BB690C94488B2905823E4FCB64E94B86A4478E7D7BDDDFC15BF4B1BE73B09ECE`;
 - Spacious:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\artifacts\typography_slice4_final2\gotm_spacing_2.png`,
+  `<historical-evidence-not-retained>`,
   SHA-256
   `C759C0D6ED9B1941E830AA04760B493EE997F169E4BF73D86A6A7530BA90CD09`.
 
@@ -159,7 +165,7 @@ The clean 15-case Re10/Lectern0 matrix rebuilt both hosts in-harness at the
 exact commits above:
 
 - manifest:
-  `C:\Users\ankur\Documents\Codex\2026-07-18\please-resume-the-epub-reader-regression\artifacts\typography_slice4_cross_acceptance\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `B7FF27B181D05CB3DE860434CBA02C628FE50E98545BDB4332BC7AFF8AB7C616`;
 - deterministic: 15/15;
@@ -210,15 +216,13 @@ determinism, not real-book page-fit scale or cross-host rendered size.
 
 ## Promotion
 
-The user explicitly authorized promotion on 2026-07-19. Canonical Lectern0
-`main` was fast-forwarded from
+Canonical Lectern0 `main` was fast-forwarded on 2026-07-19 from
 `ea4679b8653f86b47c6f8652fd4246a475ce60de` through the validated
 implementation and evidence commits. This promotion record is documentation
 only and is fast-forwarded on top of that approved tip.
 
-Lectern0 remains local-only with no remote configured. No repository was
-created and no push, merge commit, rebase, reset, amendment, cherry-pick, or
-history rewrite was performed.
+Repository publication occurred later as separate project work. This promotion
+used no merge commit, rebase, reset, amendment, cherry-pick, or history rewrite.
 
 ## 2026-07-20 regression addendum: font and pagination parity
 

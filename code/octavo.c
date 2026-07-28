@@ -19837,6 +19837,13 @@ octavo_run_accessibility_smoke(const char *path)
     return 1;
   }
   win32.app.window = win32.window;
+  /*
+  The accessibility adapter needs a real HWND, but this smoke presents frames
+  into an offscreen buffer and does not run a native WM_PAINT loop. Mark its
+  synthetic actions as internal dispatch so window-creation messages cannot
+  leave the live-present mutation gate waiting for a paint the harness omits.
+  */
+  win32.app.page_action_internal_dispatch = 1;
 
   IAccessible *accessible = 0;
   HRESULT access_result = AccessibleObjectFromWindow(win32.window,
@@ -19899,6 +19906,15 @@ octavo_run_accessibility_smoke(const char *path)
   long width = 0;
   long height = 0;
   U32 accessibility_checkpoint = 0;
+  U32 progress_before_spine = 0;
+  U32 progress_after_spine = 0;
+  U64 progress_before_offset = 0;
+  U64 progress_after_offset = 0;
+  U64 progress_location_index = 0;
+  U64 progress_location_count = 0;
+  U64 progress_action_location = 0;
+  U32 progress_target_spine = 0;
+  U64 progress_target_offset = 0;
 
   B32 valid = SUCCEEDED(access_result) && accessible && contents_index >= 0 &&
     find_index >= 0 && fullscreen_index >= 0 && previous_index >= 0 &&
@@ -19988,7 +20004,8 @@ octavo_run_accessibility_smoke(const char *path)
     slider_child.lVal = octavo_accessibility_shared_child_id(
       win32.app.accessibility, slider_index);
     progress_child_id = slider_child.lVal;
-    U64 before_offset = win32.app.reader.view_byte_offset;
+    progress_before_spine = win32.app.reader.active_spine_index;
+    progress_before_offset = win32.app.reader.view_byte_offset;
     valid = SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
                                                              slider_child));
     if (valid)
@@ -20000,12 +20017,47 @@ octavo_run_accessibility_smoke(const char *path)
     if (valid) accessibility_checkpoint = 5;
     if (valid)
     {
-      win32.app.input.move_delta = 10;
+      /*
+      Drive the focused slider to its upper endpoint. A valid seek can cross
+      into a different spine whose first canonical page also begins at byte
+      offset zero, so the assertion below compares the complete location.
+      */
+      win32.app.input.move_delta = INT32_MAX - 1;
       octavo_render_to_buffer(&win32.app, &buffer);
+      progress_location_index =
+        win32.app.reader_view_projection.progress.location_index;
+      progress_location_count =
+        win32.app.reader_view_projection.progress.location_count;
+      for (UI0S32 action_index = 0;
+           action_index < win32.app.reader_view_frame.action_count;
+           action_index += 1)
+      {
+        if (win32.app.reader_view_frame.actions[action_index].kind ==
+            ReaderViewAction_SeekLocation)
+        {
+          progress_action_location =
+            win32.app.reader_view_frame.actions[action_index].value;
+          break;
+        }
+      }
       valid = octavo_reader_view_has_action(&win32.app.reader_view_frame,
                                               ReaderViewAction_SeekLocation);
+      if (valid)
+      {
+        U64 target_location_count = 0;
+        valid = epub_reader_location_target(
+          &win32.app.reader,
+          progress_action_location,
+          &progress_target_spine,
+          &progress_target_offset,
+          &target_location_count);
+      }
       octavo_apply_reader_view_actions(&win32.app);
-      valid = valid && win32.app.reader.view_byte_offset != before_offset;
+      progress_after_spine = win32.app.reader.active_spine_index;
+      progress_after_offset = win32.app.reader.view_byte_offset;
+      valid = valid &&
+        (progress_after_spine != progress_before_spine ||
+         progress_after_offset != progress_before_offset);
     }
     if (valid) accessibility_checkpoint = 6;
   }
@@ -20177,7 +20229,7 @@ octavo_run_accessibility_smoke(const char *path)
   if (!valid)
   {
     fprintf(stderr,
-            "octavo_accessibility_smoke result=fail reason=contract checkpoint=%u hr=%08lx nodes=%ld contents=%d previous=%d slider=%d exit=%ld role=%ld rect=%ldx%ld\n",
+            "octavo_accessibility_smoke result=fail reason=contract checkpoint=%u hr=%08lx nodes=%ld contents=%d previous=%d slider=%d exit=%ld role=%ld rect=%ldx%ld progress=%llu/%llu action=%llu target=%u:%llu location=%u:%llu->%u:%llu status=%s\n",
             accessibility_checkpoint,
             (unsigned long)access_result,
             child_count,
@@ -20187,7 +20239,17 @@ octavo_run_accessibility_smoke(const char *path)
             exit_child_id,
             role_value,
             width,
-            height);
+            height,
+            (unsigned long long)progress_location_index,
+            (unsigned long long)progress_location_count,
+            (unsigned long long)progress_action_location,
+            progress_target_spine,
+            (unsigned long long)progress_target_offset,
+            progress_before_spine,
+            (unsigned long long)progress_before_offset,
+            progress_after_spine,
+            (unsigned long long)progress_after_offset,
+            win32.app.status);
     free(pixels);
     octavo_app_release(&win32.app);
     return 1;

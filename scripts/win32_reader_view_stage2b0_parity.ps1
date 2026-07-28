@@ -4,7 +4,7 @@ param(
   [string]$Re10Reader0Root = "",
   [Parameter(Mandatory = $true)][string]$UI0Root,
   [string]$OctavoUI0Root = "",
-  [Parameter(Mandatory = $true)][string]$ZeroFoundationRoot,
+  [Parameter(Mandatory = $true)][string]$Ground0Root,
   [Parameter(Mandatory = $true)][string]$Readerview0Root,
   [string]$OctavoReaderview0Root = "",
   [string]$Re10VcpkgRoot = "",
@@ -29,7 +29,7 @@ $OctavoUI0Root = if ([string]::IsNullOrWhiteSpace($OctavoUI0Root)) {
 } else {
   (Resolve-Path -LiteralPath $OctavoUI0Root).Path
 }
-$ZeroFoundationRoot = (Resolve-Path -LiteralPath $ZeroFoundationRoot).Path
+$Ground0Root = (Resolve-Path -LiteralPath $Ground0Root).Path
 $Re10Readerview0Root = (Resolve-Path -LiteralPath $Readerview0Root).Path
 $OctavoReaderview0Root = if ([string]::IsNullOrWhiteSpace($OctavoReaderview0Root)) {
   $Re10Readerview0Root
@@ -85,7 +85,7 @@ function Require-CleanTree([string]$Name, [string]$Root) {
 }
 
 $OctavoReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\readerview0_dependency\COMMIT")
-$ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\ground0_dependency\COMMIT")
+$Ground0Commit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\ground0_dependency\COMMIT")
 $Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\reader0_dependency\COMMIT")
 $Re10Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\reader0_dependency\COMMIT")
 $OctavoUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $OctavoRoot "vendor\ui0_dependency\COMMIT")
@@ -103,13 +103,13 @@ if (!$AllowDirty) {
   Require-CleanTree "re10 reader0" $Re10Reader0Root
   Require-CleanTree "re10 ui0" $Re10UI0Root
   Require-CleanTree "octavo ui0" $OctavoUI0Root
-  Require-CleanTree "ground0" $ZeroFoundationRoot
+  Require-CleanTree "ground0" $Ground0Root
   Require-CleanTree "re10 readerview0" $Re10Readerview0Root
   Require-CleanTree "octavo readerview0" $OctavoReaderview0Root
 }
 Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
 Require-ExactCommit "octavo readerview0" $OctavoReaderview0Root $OctavoReaderviewCommit
-Require-ExactCommit "ground0" $ZeroFoundationRoot $ZeroCommit
+Require-ExactCommit "ground0" $Ground0Root $Ground0Commit
 Require-ExactCommit "octavo reader0" $Reader0Root $Reader0Commit
 Require-ExactCommit "re10 reader0" $Re10Reader0Root $Re10Reader0Commit
 Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
@@ -120,7 +120,10 @@ if (!$SkipBuild) {
   $env:RE10_READER0_DIR = $Re10Reader0Root
   $env:RE10_UI0_DIR = $Re10UI0Root
   $env:RE10_READERVIEW0_DIR = $Re10Readerview0Root
-  $env:ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
+  # re10 accepts the current name and retains the former variable as a
+  # compatibility fallback for older pinned revisions.
+  $env:GROUND0_DIR = $Ground0Root
+  $env:ZERO_FOUNDATION_DIR = $Ground0Root
   if (![string]::IsNullOrWhiteSpace($Re10VcpkgRoot)) {
     $Re10VcpkgRoot = (Resolve-Path -LiteralPath $Re10VcpkgRoot).Path
     $env:RE10_SQLITE_DIR = $Re10VcpkgRoot
@@ -140,7 +143,7 @@ if (!$SkipBuild) {
   $env:OCTAVO_READER0_DIR = $Reader0Root
   $env:OCTAVO_UI0_DIR = $OctavoUI0Root
   $env:OCTAVO_READERVIEW0_DIR = $OctavoReaderview0Root
-  $env:OCTAVO_ZERO_FOUNDATION_DIR = $ZeroFoundationRoot
+  $env:OCTAVO_GROUND0_DIR = $Ground0Root
   Push-Location $OctavoRoot
   try {
     & .\build\win32_build.bat no_run
@@ -498,7 +501,7 @@ $Manifest = [pscustomobject]@{
   re10_reader0_head = Get-Head $Re10Reader0Root
   re10_ui0_head = Get-Head $Re10UI0Root
   octavo_ui0_head = Get-Head $OctavoUI0Root
-  ground0_head = Get-Head $ZeroFoundationRoot
+  ground0_head = Get-Head $Ground0Root
   results = $Results
 }
 $ManifestPath = Join-Path $OutputRoot "manifest.json"

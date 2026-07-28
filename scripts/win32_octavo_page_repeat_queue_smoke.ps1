@@ -1,6 +1,6 @@
 param(
-  [string]$OutDir = "C:\Temp\octavo_page_repeat_queue",
-  [string]$BookPath = "C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub",
+  [string]$OutDir = "local\validation\page-repeat-queue",
+  [Parameter(Mandatory = $true)][string]$BookPath,
   [string]$ExePath = "build\win32\8vo.exe",
   [switch]$SkipBuild
 )

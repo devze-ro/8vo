@@ -1,5 +1,11 @@
 # Lectern0 library regression Slice 1
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-20
 
 ## Objective and isolation
@@ -15,9 +21,9 @@ the extracted repository boundaries or beginning the Re10 Books destination:
 5. ordinary adjacent page turns were materially slower than Re10.
 
 Work was isolated on `codex/lectern0-library-regression-slice1` from Lectern0
-`813afe546de4642f607e09d25c7a834e62577f6a`. Canonical local-only `main`
+`813afe546de4642f607e09d25c7a834e62577f6a`. Canonical local `main`
 remained unchanged while this record was written. The retired image-fit
-worktree and protected Reader0 extraction worktree were not reused or changed.
+worktree and isolated Reader0 reference checkout were not reused or changed.
 
 Exact dependencies remained:
 
@@ -36,7 +42,7 @@ none of the parallel zero_foundation work was absorbed.
 
 All real-book diagnosis and acceptance used:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes; and
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -185,6 +191,6 @@ were distinct, a card open accepted Right immediately, and the toolbar
 remained visible on the next and restored pages.
 
 Implementation is confined to Lectern0 and was promoted fast-forward-only to
-the local-only `main` branch on 2026-07-20 as part of the validated navigation
+the local `main` branch on 2026-07-20 as part of the validated navigation
 parity chain through `ca3257733ebfe02f0261936d311fe9da7f124b28`. No Re10
 Books work is part of this slice.

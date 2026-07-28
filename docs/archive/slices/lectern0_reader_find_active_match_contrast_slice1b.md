@@ -1,8 +1,14 @@
 # Lectern0 Reader Find Slice 1B: perceptible active-match distinction
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-18
 
-Status: implementation candidate; unpromoted; Lectern0 has no remote
+Status: implementation candidate; unpromoted; Lectern0 had not been published at that time
 
 ## Scope and ownership
 
@@ -12,9 +18,9 @@ snippets, page geometry, Reader View architecture, persistence, dependency
 pins, or any dependency repository.
 
 The dedicated branch `codex/reader-find-active-contrast-slice1b` starts at the
-local-only promoted Lectern0 commit
-`8a6652eab6da1be53ca1e58ad95c423f34912b81`. Lectern0 remains local-only;
-no remote or GitHub repository is created.
+local promoted Lectern0 commit
+`8a6652eab6da1be53ca1e58ad95c423f34912b81`. Lectern0 remains local;
+publication is outside this slice.
 
 Reader0 already marks the correct active match, and Lectern0 already renders
 inactive ranges first and the active range last. Readerview0 owns shared Find
@@ -33,9 +39,9 @@ introduced.
 
 ## Exact real-book workflow
 
-The exact private EPUB is:
+The exact external EPUB is:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes; and
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -127,9 +133,8 @@ with its canonical generated EPUB. Supplying `gotm_new.epub` to that unrelated
 fixture gate violates its fixed gutter expectation; real-book Find coverage is
 provided by the new dedicated gate.
 
-Clean candidate commits and clean-tree closeout evidence are recorded below
-after they exist. Nothing in this record authorizes local-main promotion, push,
-remote creation, or history rewriting.
+Clean candidate commits and clean-tree closeout evidence are recorded below.
+The record captures the candidate state before later promotion.
 
 ## Clean candidate closeout
 
@@ -138,14 +143,14 @@ history rewriting as:
 
 - commit: `4a69da4aa4bd58e1a3de2b30fbc3d5ec100ad230`;
 - subject: `Strengthen Lectern active Find highlights`;
-- author and committer: `devze-ro <devze_ro@outlook.com>`; and
-- ancestry: one commit directly ahead of local-only promoted `8a6652ea`.
+- author and committer: `devze-ro`; and
+- ancestry: one commit directly ahead of local promoted `8a6652ea`.
 
 The post-commit exact-book run rebuilt Lectern0 with its strict dependency and
 architecture gate, then passed all six themes:
 
 - summary:
-  `C:\Temp\lectern0_find1b_exact_clean_20260719\summary.json`;
+  `<historical-evidence-not-retained>`;
 - summary SHA-256:
   `674123758BAC869B228B88E1B6EFF3D6A9910CD47271DD568E1CF5F276D6FFCE`;
 - executable SHA-256:
@@ -158,7 +163,7 @@ architecture gate, then passed all six themes:
 The final clean-tree re10/Lectern0 matrix rebuilt both implementation commits:
 
 - manifest:
-  `C:\Temp\re10_lectern_find1b_15_clean_20260719_retry1\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `25B7E2341028AB7D97940B9853051282458396321A0727AF7652223511A1B48A`;
 - re10 commit: `6d5756585ff9fc0c5806f384fd6e585a3a0bc74e`;
@@ -195,13 +200,13 @@ The refinement was committed without history rewriting as:
 
 - commit: `2a9d2e87302c4bf05f92b17dbbc1a690f826f15c`;
 - subject: `Separate Lectern active and dormant Find fills`; and
-- author and committer: `devze-ro <devze_ro@outlook.com>`.
+- author and committer: `devze-ro`.
 
 The clean post-commit exact-book gate rebuilt that commit and passed all six
 themes:
 
 - summary:
-  `C:\Temp\lectern0_find1b_primary_neutral_clean_20260719\summary.json`;
+  `<historical-evidence-not-retained>`;
 - summary SHA-256:
   `4932FC4CBEAF9CB258533B516C484D88B35C1516839DE0D5E3E9415FC7C7BED8`;
 - executable SHA-256:
@@ -214,7 +219,7 @@ themes:
 The clean 15-case re10/Lectern0 matrix rebuilt both refinement commits:
 
 - manifest:
-  `C:\Temp\re10_lectern_find1b_primary_neutral_15_clean_20260719\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `D63F70577210F6FDA3AA36394D071FB4A3068CC57E690289791066653092DB0C`;
 - re10 commit: `733c45f0672f015fbe0d63ca215b6458e990b778`;
@@ -222,14 +227,12 @@ The clean 15-case re10/Lectern0 matrix rebuilt both refinement commits:
 - result: 15/15 deterministic with exact decoded-pixel parity; and
 - clean-tree, in-run-build, exact-dependency acceptance eligibility: true.
 
-This is the final validated, unpromoted local-only candidate. Lectern0 still
-has no remote, and nothing in this record authorizes local-main promotion,
-remote creation, or history rewriting.
+This was the final validated local candidate before later promotion and
+publication.
 
 ## Reconciled re10 cross-host evidence
 
-Re10's Find slice was subsequently replayed, with explicit user authorization,
-onto canonical re10 editor head
+Re10's Find slice was subsequently replayed onto canonical re10 editor head
 `9a695470681190f7605f42a8711d8a586137ab2f`. The reconciled tested re10 commit
 is `228a38c49768fedae4beaf8c648db2ba2778e11f`. Lectern0 required no replay or
 code change and remained at tested commit
@@ -238,11 +241,11 @@ code change and remained at tested commit
 The clean cross-host harness rebuilt those exact tips:
 
 - manifest:
-  `C:\Temp\re10_lectern_find1b_primary_neutral_reconciled_15_clean_20260719\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `7B2BEFEE6C1DA46E939107CB908CCB7E7B2683AC5AD881F50CB1B385CB8D5670`;
 - result: 15/15 deterministic with exact decoded-pixel parity; and
 - clean-tree, in-run-build, exact-dependency acceptance eligibility: true.
 
 The reconciliation therefore preserves Lectern0 parity with the combined
-editor-plus-Reader re10 candidate. Lectern0 remains local-only and unpromoted.
+editor-plus-Reader re10 candidate. Lectern0 remains local and unpromoted.

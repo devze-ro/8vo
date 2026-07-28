@@ -5,18 +5,40 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 
+function Resolve-EnvironmentDirectory {
+  param(
+    [string]$EnvironmentName,
+    [switch]$IgnoreMissing
+  )
+  $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
+  if (!$value) { return "" }
+  if (Test-Path -LiteralPath $value -PathType Container) {
+    return (Resolve-Path -LiteralPath $value).Path
+  }
+  if ($IgnoreMissing) {
+    Write-Warning "ignoring stale $EnvironmentName path: $value"
+    return ""
+  }
+  throw "$EnvironmentName does not name an existing directory: $value"
+}
+
 function Resolve-DependencyPath {
   param(
     [string]$EnvironmentName,
     [string]$LegacyEnvironmentName,
     [string]$SiblingName
   )
-  $value = [Environment]::GetEnvironmentVariable($EnvironmentName)
-  if (!$value -and $LegacyEnvironmentName) {
-    $value = [Environment]::GetEnvironmentVariable($LegacyEnvironmentName)
+  $path = Resolve-EnvironmentDirectory $EnvironmentName
+  if ($path) { return $path }
+  if ($LegacyEnvironmentName) {
+    $path = Resolve-EnvironmentDirectory $LegacyEnvironmentName -IgnoreMissing
+    if ($path) { return $path }
   }
-  if ($value) { return (Resolve-Path -LiteralPath $value).Path }
-  return (Resolve-Path -LiteralPath (Join-Path $RepoRoot "..\$SiblingName")).Path
+  $sibling = Join-Path $RepoRoot "..\$SiblingName"
+  if (!(Test-Path -LiteralPath $sibling -PathType Container)) {
+    throw "$SiblingName checkout not found; set $EnvironmentName"
+  }
+  return (Resolve-Path -LiteralPath $sibling).Path
 }
 
 function Require-Dependency {
@@ -62,18 +84,22 @@ $reader0 = Resolve-DependencyPath "OCTAVO_READER0_DIR" "LECTERN0_READER0_DIR" "r
 $ui0 = Resolve-DependencyPath "OCTAVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
 $readerview0 = Resolve-DependencyPath `
   "OCTAVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
-$ground0 = if ($env:OCTAVO_GROUND0_DIR) {
-  (Resolve-Path -LiteralPath $env:OCTAVO_GROUND0_DIR).Path
-} elseif ($env:OCTAVO_ZERO_FOUNDATION_DIR) {
-  (Resolve-Path -LiteralPath $env:OCTAVO_ZERO_FOUNDATION_DIR).Path
-} elseif ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
-  (Resolve-Path -LiteralPath $env:LECTERN0_ZERO_FOUNDATION_DIR).Path
-} elseif ($env:GROUND0_DIR) {
-  (Resolve-Path -LiteralPath $env:GROUND0_DIR).Path
-} elseif ($env:ZERO_FOUNDATION_DIR) {
-  (Resolve-Path -LiteralPath $env:ZERO_FOUNDATION_DIR).Path
-} else {
-  Resolve-DependencyPath "OCTAVO_GROUND0_DIR" "" "ground0"
+$ground0 = Resolve-EnvironmentDirectory "OCTAVO_GROUND0_DIR"
+if (!$ground0) {
+  foreach ($legacyName in @(
+    "OCTAVO_ZERO_FOUNDATION_DIR",
+    "LECTERN0_ZERO_FOUNDATION_DIR",
+    "ZERO_FOUNDATION_DIR"
+  )) {
+    $ground0 = Resolve-EnvironmentDirectory $legacyName -IgnoreMissing
+    if ($ground0) { break }
+  }
+}
+if (!$ground0) {
+  $ground0 = Resolve-EnvironmentDirectory "GROUND0_DIR"
+}
+if (!$ground0) {
+  $ground0 = Resolve-DependencyPath "OCTAVO_GROUND0_DIR" "" "ground0"
 }
 
 Require-Dependency "reader0" $reader0 (Join-Path $RepoRoot "vendor\reader0_dependency") `

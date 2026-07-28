@@ -1,8 +1,14 @@
 # Lectern0 Reader View Stage 2B-3 visual parity closure
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-17
 
-Status: implemented and validated locally; lectern0 remains local-only
+Status: implemented and validated locally; lectern0 remains local
 
 ## Outcome
 

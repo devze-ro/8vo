@@ -246,7 +246,7 @@ substitution from silently changing the accepted Annotations toolbar. All
 other shared icons use UI0's canonical caller-rasterized pixels. UI0 does not
 render EPUB content and is not a reader0 dependency.
 
-Zero_foundation owns arenas, file/atomic-write facilities, font providers,
+Ground0 owns arenas, file/atomic-write facilities, font providers,
 Presentation Engine API 1 block-flow geometry, draw commands, software
 rendering, the Win32 DIB graphics seam, and the caller-owned encoded-image
 decoder with its WIC backend. 8vo owns HWND/WndProc, DPI/input mapping,
@@ -281,7 +281,7 @@ adapter. Loaded image-only media has no synthetic card background. 8vo
 prepares area-filtered target surfaces for shrink, linear-filtered surfaces for
 enlargement, and exact-size nearest surfaces; the prepared surface is then
 drawn one-to-one. The same policy applies to publisher in-flow images.
-Zero_foundation owns the resampling mechanism while 8vo owns the bounded
+Ground0 owns the resampling mechanism while 8vo owns the bounded
 host cache and product policy. Library thumbnails use the same area filter,
 persist as thumbnail format version 2 so legacy nearest thumbnails are
 invalidated, and use explicit area/linear sampling for their final card fit.

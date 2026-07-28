@@ -1,5 +1,11 @@
 # Lectern0 Reader0 navigation-recovery adoption
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-21
 
 Status: Lectern0 host adoption and clean two-process acceptance complete at
@@ -209,7 +215,7 @@ Final evidence directory:
 Final summary SHA-256:
 `1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`
 
-No promotion or Lectern0 remote creation is authorized by this record.
+This record captures validation state only; publication occurred later.
 
 ## Post-recovery Reader0 reduction adoption
 
@@ -247,4 +253,4 @@ the combined summary is 30055 bytes, SHA-256
 An earlier same-day candidate attempt and two unchanged `8eb1db6` controls
 missed only the same 84 ms environmental interval ceiling; no harness or
 budget was changed. The accepted final wrapper and Re10's frozen `c5_*` matrix
-are green. Promotion remains subject to explicit user approval.
+were green at this checkpoint.

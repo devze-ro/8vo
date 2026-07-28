@@ -1,5 +1,11 @@
 # Lectern0 Reader View Stage 2B-2 reference adoption
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-17
 
 ## Revision closure
@@ -16,9 +22,8 @@ reader-view dependencies:
 - zero_foundation remains
   `eee57edc1b0c7af5bef7afca26f3c27a32fb6e7c` with Presentation Engine API 1.
 
-The work is local-only. No lectern0/readerview0 remote was created, no re10
-source or dependency was changed, and the preserved re10 Slice 3 worktree was
-not touched.
+At the time, the work was local. No re10 source or dependency was changed, and
+the preserved re10 Slice 3 worktree was not touched.
 
 ## Adopted reference policy
 
@@ -90,6 +95,6 @@ copy, color, and responsive structure now align, but the content page and book
 typography still expose host-policy differences.
 
 Stage 2B-3 should use this deterministic matrix to close those residuals. It
-must fresh-fetch and reconcile re10 again before any re10 adoption, and must
-not silently absorb editor work. No readerview0 GitHub repository or re10
-dependency promotion is authorized by this local slice.
+required a fresh fetch and reconciliation of re10 before any adoption, without
+silently absorbing editor work. Supporting-repository publication occurred
+later as separate project work.

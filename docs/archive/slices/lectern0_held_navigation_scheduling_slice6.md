@@ -1,5 +1,11 @@
 # Lectern0 held-navigation scheduling recovery slice 6
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-21
 
 Status: host implementation and clean two-process acceptance complete at
@@ -319,8 +325,8 @@ Queue summary SHA-256:
 Final summary SHA-256:
 `1F5F80CCC7A153352FC4D2ADD0592602CCD581964E8F55F16015C4DEA339E82D`
 
-The implementation and evidence records remain separate non-promoted commits,
-and promotion still requires explicit approval.
+The implementation and evidence records remained separate candidate commits at
+this checkpoint.
 
 ## Final reduced-Reader qualification
 
@@ -348,5 +354,4 @@ Queue summary SHA-256:
 Combined summary SHA-256:
 `092BDF70F477EB59B1EE34A975BE7BC64A6071D3F58C97C072A57B5389DDB37B`
 
-This completes the clean held-scheduling gate; promotion still requires the
-user's explicit approval.
+This completed the clean held-scheduling gate recorded at the time.

@@ -1,8 +1,14 @@
 # Lectern0 Reader View Slice 1A: post-action horizontal key routing
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 Date: 2026-07-18
 
-Status: promoted to local-only `main`; no remote exists
+Status: promoted to local `main`; publication had not occurred at that time
 
 ## Scope and ownership
 
@@ -12,9 +18,9 @@ counterpart to re10's promoted Slice 1A and does not change reader0,
 zero_foundation, UI0, readerview0, dependency pins, EPUB layout, persistence,
 or shared Reader View architecture.
 
-The branch `codex/lectern-reader-view-focus-key-routing-slice1a` starts at
-Lectern0 commit `501a007143508fabd73a4a540f49b3fdbef78b3d`. Lectern0 remains
-local-only with no remote. No repository or remote is created by this work.
+The branch `codex/lectern-reader-view-focus-key-routing-slice1a` started at
+Lectern0 commit `501a007143508fabd73a4a540f49b3fdbef78b3d`. At the time, this was
+a local integration record.
 
 Readerview0 correctly retains bounded semantic focus. Lectern0 owns the Win32
 key boundary and must distinguish a control that intentionally owns horizontal
@@ -71,7 +77,7 @@ controls and the production native key router to execute:
 
 The exact EPUB is:
 
-- path: `C:\Users\ankur\workspace\projects\devze-ro\gotm_new.epub`;
+- path: `<external-fixture>\gotm_new.epub`;
 - size: 955125 bytes; and
 - SHA-256:
   `D5365766478A7D853821299B72432D15583F8DD10F94C2C2CF20D52E783E77F9`.
@@ -124,8 +130,8 @@ history rewriting as:
 
 - commit: `7bbdcec3e2db3abaa454120a3667b82144a280af`;
 - subject: `Restore Lectern arrow routing after actions`;
-- author and committer: `devze-ro <devze_ro@outlook.com>`; and
-- ancestry: one commit directly ahead of local-only main `501a0071`.
+- author and committer: `devze-ro`; and
+- ancestry: one commit directly ahead of local main `501a0071`.
 
 The post-commit exact-book run rebuilt the candidate with strict warnings as
 errors from a clean tree and completed twice:
@@ -157,7 +163,7 @@ The final clean-tree re10/Lectern0 matrix completed with both hosts rebuilt
 inside the run:
 
 - manifest:
-  `C:\Temp\re10_lectern_lecternfocus1a_15_20260718\manifest.json`;
+  `<historical-evidence-not-retained>`;
 - manifest SHA-256:
   `698FA58018FF472713255EBD97CB633F6B63B68F5A77E8D9FE2FE77B0F87FC4D`;
 - re10 head: `3e475cfaeb90f8a6c02ae7a8a887952fb1a48f2c`;
@@ -173,12 +179,12 @@ by this native key-routing correction.
 
 ## Promotion
 
-After explicit user authorization on 2026-07-18, local-only Lectern0 `main`
-was fast-forwarded from `501a007143508fabd73a4a540f49b3fdbef78b3d` to the
+On 2026-07-18, local Lectern0 `main` was fast-forwarded from
+`501a007143508fabd73a4a540f49b3fdbef78b3d` to the
 validated candidate `d4e3f4e0dfe058c4fe1dd3f5037a0b1cf82469ca`. This
 promotion record is the only post-validation change and is itself applied by a
 second fast-forward. No merge commit, rebase, reset, amendment, replay, or
 history rewrite was used.
 
-Lectern0 still has no remote, so nothing was pushed and no GitHub repository
-was created. This closes the slice as promoted local-only work.
+Repository publication occurred later. This closed the slice as promoted local
+work.

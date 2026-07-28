@@ -1,5 +1,11 @@
 # Lectern0 Reader View recovery Slice 2
 
+> [!NOTE]
+> This is an archived engineering record from before the public 8vo release.
+> Repository names, paths, remotes, visibility, and branch status describe
+> the historical slice only. For current instructions, see
+> [the project README](../../../README.md).
+
 ## Purpose
 
 Recovery Slice 2 restores the accepted pre-extraction re10 reader-chrome
@@ -269,7 +275,7 @@ readerview0 `27e2ac64bc9db87412cf076eac313dea902792eb`, UI0
 
 The preceding panel prototype passed the frozen-a6b and two-host Stage 2B
 matrices recorded at
-`C:\Temp\re10_lectern_rv2_slice2_final\manifest.json`. That historical result
+`<historical-evidence-not-retained>`. That historical result
 does not by itself accept the final readerview0 `27e2ac6` pin. The root-owned
 integration gate must rerun the expanded frozen-reference and two-host matrices,
 including dark Contents plus a same-theme wide-light Contents chain, Find, the
