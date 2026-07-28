@@ -1,7 +1,9 @@
 # 8vo
 
-8vo is an experimental desktop reader for Windows. It currently supports
-EPUB; other document and comic-book formats may be explored later.
+8vo is an experimental native reader. The working application currently
+targets Windows and supports EPUB; an Android port is being developed in
+bounded milestones. Other document and comic-book formats may be explored
+later.
 
 The name `8vo` is the bibliographic abbreviation for *octavo* and is
 pronounced *octavo*.
@@ -15,7 +17,7 @@ results, and evaluate the software, while agents do the implementation work.
 8vo is under active development, has no public binary release yet, and is not
 ready for general use.
 
-## Build and test
+## Windows build and test
 
 Building requires 64-bit Windows, Git, PowerShell 5.1 or newer, and Visual
 Studio 2022 or Build Tools 2022 with the C++ workload and a Windows SDK.
@@ -33,6 +35,26 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the exact pins and manual checkout
 options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
+
+## Android Port 0
+
+The first Android milestone provides a Gradle application, a thin Java
+activity and surface host, and a caller-owned JNI bootstrap. It proves the
+Android lifecycle and native-library boundary; it does not yet render or open
+books.
+
+After bootstrapping the exact dependencies, open `android/` in Android Studio
+or build and test it from a JDK 17 command prompt:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
+cd android
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest
+```
+
+The Android SDK, NDK, emulator/device workflow, current scope, and acceptance
+criteria are documented in [docs/android_port0.md](docs/android_port0.md).
 
 ## License
 

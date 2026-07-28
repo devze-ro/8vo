@@ -1,8 +1,11 @@
 # 8vo architecture
 
-8vo is a Windows desktop reader with a format-neutral application shell. EPUB
-is its only document backend today. The project does not introduce a generic
-document framework in anticipation of formats that do not yet exist.
+8vo is a native reader with a format-neutral application shell. The working
+product host is Windows and EPUB is its only document backend today. The
+Android host is at Port 0: it proves Gradle, activity, surface, and JNI
+lifecycle boundaries but does not yet compile or run the reader application.
+The project does not introduce a generic document framework in anticipation of
+formats that do not yet exist.
 
 ## System map
 
@@ -31,7 +34,7 @@ flowchart TD
 
 | Component | Owns |
 | --- | --- |
-| **8vo** | Win32 lifecycle and input, the library surface, commands, persistence, document selection, rendering integration, accessibility adapters, and product cache policy |
+| **8vo** | Product lifecycle and input, the library surface, commands, persistence, document selection, rendering integration, accessibility adapters, and product cache policy; concrete Win32 production and Android bootstrap hosts |
 | **reader0** | EPUB parsing, metadata, layout, pagination, search, selection, navigation, and canonical reader frames |
 | **readerview0** | Shared reader chrome, panel and popup layout, transient interaction state, semantic records, and bounded actions |
 | **ui0** | Product-neutral controls, focus and input mechanics, layout, themes, and renderer-independent draw records |
@@ -123,13 +126,20 @@ presentation policy.
 
 ## Platform and accessibility
 
-8vo owns the window, message loop, DPI and input translation, native file
-picker, fullscreen behavior, clipboard integration, and MSAA adapter.
+8vo owns each platform's window or surface, lifecycle, input translation,
+native file picker, fullscreen behavior, clipboard integration, and
+accessibility adapter.
 
 Readerview0 publishes portable semantic and focus records. 8vo exposes those
-records through the native accessibility object and adds its host-owned
-controls, such as Close Book. Native object lifetime and execution of returned
-actions remain in the application.
+records through the Win32 MSAA object and adds its host-owned controls, such as
+Close Book. Native object lifetime and execution of returned actions remain in
+the application.
+
+The Android Port 0 host is deliberately smaller. Java owns the `Activity` and
+`SurfaceView`; one caller-owned native handle owns the corresponding
+`ANativeWindow`. No full reader frame, Android accessibility adapter, or
+Android file picker is claimed yet. The milestone contract is in
+[`android_port0.md`](android_port0.md).
 
 ## Adding another format
 

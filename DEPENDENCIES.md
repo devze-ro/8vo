@@ -6,10 +6,10 @@ listed below and must not silently advance them.
 
 | Repository | Revision | Version / API | Metadata |
 | --- | --- | --- | --- |
-| [reader0](https://github.com/devze-ro/reader0) | `98a6a2ba5a4946971b9c088781cf3728aeb16b1a` | 0.5.0-dev / API 5 | `vendor/reader0_dependency/` |
+| [reader0](https://github.com/devze-ro/reader0) | `b604556723c5a196ed7d2b1249f56bd3d976edb4` | 0.5.0-dev / API 5 | `vendor/reader0_dependency/` |
 | [readerview0](https://github.com/devze-ro/readerview0) | `f97f9d38cf857c2cff1f90357cf5d2e5cf40dc03` | 0.3.0-dev / API 3 | `vendor/readerview0_dependency/` |
 | [ui0](https://github.com/devze-ro/ui0) | `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
-| [ground0](https://github.com/devze-ro/ground0) | `fa7f680f933c23d84f9b74e15887a3b8bb78d2f9` | 0.4.3-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
+| [ground0](https://github.com/devze-ro/ground0) | `770b970b4655facfa9700c3d1025d96102365631` | 0.4.3-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
 
 ## Bootstrap
 

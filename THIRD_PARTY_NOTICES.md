@@ -4,6 +4,16 @@ The following bundled or source-consumed components are not covered by 8vo's
 Mozilla Public License 2.0. They remain available under their original
 licenses.
 
+## Gradle Wrapper
+
+- **Project:** [Gradle](https://github.com/gradle/gradle)
+- **Version:** 9.5.0
+- **Source revision:** `v9.5.0`
+- **Use:** Reproducible Android build bootstrap
+- **License:** Apache License 2.0
+- **Complete license text:** `META-INF/LICENSE` inside
+  [`android/gradle/wrapper/gradle-wrapper.jar`](android/gradle/wrapper/gradle-wrapper.jar)
+
 ## miniz
 
 - **Project:** [miniz](https://github.com/richgel999/miniz)
