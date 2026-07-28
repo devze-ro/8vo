@@ -117,7 +117,7 @@ for ($Index = 0; $Index -lt $CaseNames.Count; $Index += 1) {
 }
 
 $Dependencies = @{}
-foreach ($Name in @("reader0", "ui0", "readerview0", "zero_foundation")) {
+foreach ($Name in @("reader0", "ui0", "readerview0", "ground0")) {
   $CommitPath = Join-Path $Root "vendor\${Name}_dependency\COMMIT"
   $Dependencies[$Name] = (Get-Content -Raw -LiteralPath $CommitPath).Trim()
 }
@@ -146,7 +146,7 @@ $Summary = [pscustomobject]@{
     canonical_visual_units="reader0"
     media_geometry="eightvo_host_presentation"
     aspect_fit="eightvo_host_rendering"
-    sampling="zero_foundation_area_prepared"
+    sampling="ground0_area_prepared"
   }
   result=$Second.PassLine
   repeat=2

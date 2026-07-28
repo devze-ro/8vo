@@ -85,7 +85,7 @@ function Require-CleanTree([string]$Name, [string]$Root) {
 }
 
 $EightvoReaderviewCommit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\readerview0_dependency\COMMIT")
-$ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\zero_foundation_dependency\COMMIT")
+$ZeroCommit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\ground0_dependency\COMMIT")
 $Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\reader0_dependency\COMMIT")
 $Re10Reader0Commit = Get-Content -Raw -LiteralPath (Join-Path $Re10Root "vendor\reader0_dependency\COMMIT")
 $EightvoUI0Commit = Get-Content -Raw -LiteralPath (Join-Path $EightvoRoot "vendor\ui0_dependency\COMMIT")
@@ -103,13 +103,13 @@ if (!$AllowDirty) {
   Require-CleanTree "re10 reader0" $Re10Reader0Root
   Require-CleanTree "re10 ui0" $Re10UI0Root
   Require-CleanTree "eightvo ui0" $EightvoUI0Root
-  Require-CleanTree "zero_foundation" $ZeroFoundationRoot
+  Require-CleanTree "ground0" $ZeroFoundationRoot
   Require-CleanTree "re10 readerview0" $Re10Readerview0Root
   Require-CleanTree "eightvo readerview0" $EightvoReaderview0Root
 }
 Require-ExactCommit "re10 readerview0" $Re10Readerview0Root $Re10ReaderviewCommit
 Require-ExactCommit "eightvo readerview0" $EightvoReaderview0Root $EightvoReaderviewCommit
-Require-ExactCommit "zero_foundation" $ZeroFoundationRoot $ZeroCommit
+Require-ExactCommit "ground0" $ZeroFoundationRoot $ZeroCommit
 Require-ExactCommit "eightvo reader0" $Reader0Root $Reader0Commit
 Require-ExactCommit "re10 reader0" $Re10Reader0Root $Re10Reader0Commit
 Require-ExactCommit "re10 ui0" $Re10UI0Root $Re10UI0Commit
@@ -498,7 +498,7 @@ $Manifest = [pscustomobject]@{
   re10_reader0_head = Get-Head $Re10Reader0Root
   re10_ui0_head = Get-Head $Re10UI0Root
   eightvo_ui0_head = Get-Head $EightvoUI0Root
-  zero_foundation_head = Get-Head $ZeroFoundationRoot
+  ground0_head = Get-Head $ZeroFoundationRoot
   results = $Results
 }
 $ManifestPath = Join-Path $OutputRoot "manifest.json"

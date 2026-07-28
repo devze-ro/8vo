@@ -5,13 +5,13 @@
 8vo is a format-neutral Windows reader application. EPUB is its only current
 document backend: the host owns one caller-allocated `EpubReader`, one bounded
 `EpubReaderFrameStorage`, the current layout key and configuration, a Win32
-window/backbuffer, readerview0/UI0 frame storage, zero_foundation draw/render
+window/backbuffer, readerview0/UI0 frame storage, ground0 draw/render
 state, and versioned host persistence records.
 
 The application shell is library-first: launch and Close Book resolve to a
 8vo-owned Library surface, while an open EPUB resolves to Readerview0's
 Reader surface. The library catalog is a bounded 512-entry, versioned binary
-record written through zero_foundation's atomic-file mechanism. 8vo owns
+record written through ground0's atomic-file mechanism. 8vo owns
 normalized absolute paths, local entry IDs, file size/modified-time
 fingerprints, MRU ordering, import/remove/locate behavior, canonical-progress
 persistence, native picker use, responsive cover cards, and its bounded
@@ -21,7 +21,7 @@ and thumbnail state. Existing `state.v1` position data seeds the catalog once
 when no catalog exists.
 
 Reader0 supplies EPUB title, author, cover-resource access, and canonical
-spine/byte locations. zero_foundation supplies decoding, drawing, and atomic
+spine/byte locations. ground0 supplies decoding, drawing, and atomic
 file replacement. UI0 and Readerview0 gain no library API in this slice: the
 grid and cards are concrete host composition, while Readerview0 remains the
 open-book experience. Re10 can later compose a Books destination using the
@@ -142,12 +142,12 @@ annotations/bookmarks panel shells, settings and row-action popups, selection
 tools, note-editor interaction state, focus order, portable semantic records,
 bounded returned actions, and product-neutral page/content rectangles. Its
 projection/action/geometry API does not name reader0 types and has no reader0
-or direct zero_foundation dependency.
+or direct ground0 dependency.
 
 Reader View text bindings carry one finite portable style identity. 8vo
 maps `ChromeTitle` through the accepted system-UI box raster at scale 2 and
 `MenuItem`, `ChromeMetadata`, and `Default` at scale 1. `NoteEditor` draft rows
-instead carry explicit Body typography metadata and use zero_foundation's
+instead carry explicit Body typography metadata and use ground0's
 `TextEngineEditableRow` shaped painter at its 18-pixel height; the visible
 caret x is derived from that same shaped row. The TextArea's 25-pixel line
 advance remains layout geometry, not a font size. Find-result parent semantics
@@ -238,7 +238,7 @@ origin-sensitive host cleanup without a persistent mutation.
 
 UI0 owns generic signal, control, token, layout, draw, text-edit records, and
 the six shared reader-chrome profiles. A narrow 8vo adapter converts every
-UI0 draw operation into clipped zero_foundation draw commands and binds semantic
+UI0 draw operation into clipped ground0 draw commands and binds semantic
 typography roles to host font metrics. The generic `Filter` icon intent is
 adapted only at this Reader View boundary to the frozen re10 SlidersVertical
 24 by 24 geometry; an exact 18 by 18 raster hash prevents a portable-sprite
@@ -263,14 +263,14 @@ without moving a renderer or font cache into reader0.
 
 8vo also owns one bounded 64-entry image cache keyed by concrete reader0
 document/resource identity. It fetches encoded resource bytes through reader0,
-passes them to the explicit zero_foundation decoder, maps decoder failures into
+passes them to the explicit ground0 decoder, maps decoder failures into
 canonical frame image status, and attaches arena-owned BGRA8 views to the
 current frame. A separate 16-entry/64 MiB presentation cache retains
-target-sized zero_foundation resamples for the active page and layout key.
+target-sized ground0 resamples for the active page and layout key.
 The host retains cache capacity/full policy, failed-attempt retention,
 media-type exclusions, cache reset on successful document open, resampling
 policy, and final aspect-fit sprite/fallback presentation. Neither reader0 nor
-zero_foundation owns product cache policy.
+ground0 owns product cache policy.
 
 Image-only canonical rows are a distinct host-presentation case. Reader0 owns
 their classification and `visual_units`; 8vo allocates the full content
@@ -344,7 +344,7 @@ Annotations open, forward traversal after Progress and reverse traversal before
 Contents delegate to Reader View's published panel tail. A bounded regression
 checks both boundaries for all three panels, visible focus, and zero actions.
 The draw bridge uses UI0's 32 by 32 public raster bound and passes its caller-
-owned 32-pixel stride to zero_foundation sprites. Focused host regressions hash
+owned 32-pixel stride to ground0 sprites. Focused host regressions hash
 the frozen 18 by 32 page-caret pixels and exercise both keyboard and pointer
 gutter navigation; no host line-art fallback is permitted.
 

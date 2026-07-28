@@ -62,15 +62,18 @@ $reader0 = Resolve-DependencyPath "EIGHTVO_READER0_DIR" "LECTERN0_READER0_DIR" "
 $ui0 = Resolve-DependencyPath "EIGHTVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
 $readerview0 = Resolve-DependencyPath `
   "EIGHTVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
-$zero = if ($env:EIGHTVO_ZERO_FOUNDATION_DIR) {
+$ground0 = if ($env:EIGHTVO_GROUND0_DIR) {
+  (Resolve-Path -LiteralPath $env:EIGHTVO_GROUND0_DIR).Path
+} elseif ($env:EIGHTVO_ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:EIGHTVO_ZERO_FOUNDATION_DIR).Path
 } elseif ($env:LECTERN0_ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:LECTERN0_ZERO_FOUNDATION_DIR).Path
+} elseif ($env:GROUND0_DIR) {
+  (Resolve-Path -LiteralPath $env:GROUND0_DIR).Path
 } elseif ($env:ZERO_FOUNDATION_DIR) {
   (Resolve-Path -LiteralPath $env:ZERO_FOUNDATION_DIR).Path
 } else {
-  Resolve-DependencyPath `
-    "EIGHTVO_ZERO_FOUNDATION_DIR" "LECTERN0_ZERO_FOUNDATION_DIR" "zero_foundation"
+  Resolve-DependencyPath "EIGHTVO_GROUND0_DIR" "" "ground0"
 }
 
 Require-Dependency "reader0" $reader0 (Join-Path $RepoRoot "vendor\reader0_dependency") `
@@ -79,16 +82,16 @@ Require-Dependency "ui0" $ui0 (Join-Path $RepoRoot "vendor\ui0_dependency") `
   "code\ui0_version.h" "UI0_VERSION_STRING" "UI0_API_VERSION"
 Require-Dependency "readerview0" $readerview0 (Join-Path $RepoRoot "vendor\readerview0_dependency") `
   "code\readerview0_version.h" "READERVIEW0_VERSION_STRING" "READERVIEW0_API_VERSION"
-Require-Dependency "zero_foundation" $zero (Join-Path $RepoRoot "vendor\zero_foundation_dependency") `
+Require-Dependency "ground0" $ground0 (Join-Path $RepoRoot "vendor\ground0_dependency") `
   "code\foundation\version.h" "ZERO_FOUNDATION_VERSION_STRING"
 
-$presentationMetadata = Join-Path $RepoRoot "vendor\zero_foundation_dependency\PRESENTATION_ENGINE_API_VERSION"
-$presentationHeader = Join-Path $zero "code\presentation_engine\presentation_engine.h"
+$presentationMetadata = Join-Path $RepoRoot "vendor\ground0_dependency\PRESENTATION_ENGINE_API_VERSION"
+$presentationHeader = Join-Path $ground0 "code\presentation_engine\presentation_engine.h"
 if (!(Test-Path -LiteralPath $presentationMetadata -PathType Leaf)) {
-  throw "zero_foundation Presentation Engine API metadata is missing"
+  throw "ground0 Presentation Engine API metadata is missing"
 }
 if (!(Test-Path -LiteralPath $presentationHeader -PathType Leaf)) {
-  throw "zero_foundation Presentation Engine header is missing"
+  throw "ground0 Presentation Engine header is missing"
 }
 $requiredPresentationApi = [int](Get-Content -Raw -LiteralPath $presentationMetadata).Trim()
 $presentationHeaderText = [System.IO.File]::ReadAllText($presentationHeader)
@@ -96,13 +99,13 @@ $presentationApiMatch = [regex]::Match(
   $presentationHeaderText,
   "#define\s+PRESENTATION_ENGINE_API_VERSION\s+(\d+)")
 if (!$presentationApiMatch.Success) {
-  throw "zero_foundation Presentation Engine API macro is missing"
+  throw "ground0 Presentation Engine API macro is missing"
 }
 $currentPresentationApi = [int]$presentationApiMatch.Groups[1].Value
-Write-Host "zero_foundation Presentation Engine required API: $requiredPresentationApi"
-Write-Host "zero_foundation Presentation Engine current API:  $currentPresentationApi"
+Write-Host "ground0 Presentation Engine required API: $requiredPresentationApi"
+Write-Host "ground0 Presentation Engine current API:  $currentPresentationApi"
 if ($currentPresentationApi -ne $requiredPresentationApi) {
-  throw "zero_foundation Presentation Engine API mismatch"
+  throw "ground0 Presentation Engine API mismatch"
 }
 
 Write-Host "eightvo dependency status: current"

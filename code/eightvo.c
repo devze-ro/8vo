@@ -21,7 +21,7 @@
 #include "text_engine/text_engine_display_span_row.h"
 
 #if !defined(PRESENTATION_ENGINE_API_VERSION)
-#  error "zero_foundation presentation_engine.h must define PRESENTATION_ENGINE_API_VERSION"
+#  error "ground0 presentation_engine.h must define PRESENTATION_ENGINE_API_VERSION"
 #endif
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "eightvo requires Presentation Engine API 1"

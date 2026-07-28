@@ -198,7 +198,7 @@ function Invoke-PageTurnSmoke {
 $First = Invoke-PageTurnSmoke "run_1"
 $Second = Invoke-PageTurnSmoke "run_2"
 $Dependencies = @{}
-foreach ($Name in @("reader0", "ui0", "readerview0", "zero_foundation")) {
+foreach ($Name in @("reader0", "ui0", "readerview0", "ground0")) {
   $CommitPath = Join-Path $Root "vendor\${Name}_dependency\COMMIT"
   $Dependencies[$Name] = (Get-Content -Raw -LiteralPath $CommitPath).Trim()
 }

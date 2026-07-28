@@ -164,7 +164,7 @@ for ($Index = 0; $Index -lt 5; $Index += 1) {
 }
 
 $Dependencies = @{}
-foreach ($Name in @("reader0", "ui0", "readerview0", "zero_foundation")) {
+foreach ($Name in @("reader0", "ui0", "readerview0", "ground0")) {
   $CommitPath = Join-Path $Root "vendor\${Name}_dependency\COMMIT"
   $Dependencies[$Name] = (Get-Content -Raw -LiteralPath $CommitPath).Trim()
 }

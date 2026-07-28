@@ -456,7 +456,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('eightvo_image_cache_prepare') -lt 0 -or
       $app.IndexOf('render_resample_bgra8') -lt 0 -or
       $app.IndexOf('DrawSpriteSampleKind_Area') -lt 0) {
-    $failures.Add("eightvo image pages must consume reader0 visual units and retain bounded zero_foundation area-prepared sampling evidence")
+    $failures.Add("eightvo image pages must consume reader0 visual units and retain bounded ground0 area-prepared sampling evidence")
   }
   if ($app.IndexOf('#include "presentation_engine/presentation_engine.h"') -lt 0 -or
       $app.IndexOf('PRESENTATION_ENGINE_API_VERSION != 1') -lt 0 -or
@@ -486,7 +486,7 @@ if ($failures.Count -eq 0) {
     $failures.Add("the local library core must not introduce a database or indirect provider/event architecture")
   }
   if ($app -match 'IWIC|CLSID_WIC|wincodec\.h') {
-    $failures.Add("eightvo must not duplicate the zero_foundation WIC backend")
+    $failures.Add("eightvo must not duplicate the ground0 WIC backend")
   }
   if ($build -match '(?i)re10' -or
       $app -match '(?im)^\s*#\s*include[^\r\n]*re10' -or
@@ -501,4 +501,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "eightvo architecture audit: pass"
-Write-Host "boundary: Eightvo library shell/persistence + zero_foundation presentation/image/render + readerview0/UI0 open-book chrome + reader0 concrete EPUB core"
+Write-Host "boundary: Eightvo library shell/persistence + ground0 presentation/image/render + readerview0/UI0 open-book chrome + reader0 concrete EPUB core"

@@ -20,17 +20,21 @@ for %%I in ("%SCRIPT_DIR%..") do set "ROOT=%%~fI"
 if not defined EIGHTVO_READER0_DIR if defined LECTERN0_READER0_DIR set "EIGHTVO_READER0_DIR=%LECTERN0_READER0_DIR%"
 if not defined EIGHTVO_UI0_DIR if defined LECTERN0_UI0_DIR set "EIGHTVO_UI0_DIR=%LECTERN0_UI0_DIR%"
 if not defined EIGHTVO_READERVIEW0_DIR if defined LECTERN0_READERVIEW0_DIR set "EIGHTVO_READERVIEW0_DIR=%LECTERN0_READERVIEW0_DIR%"
-if not defined EIGHTVO_ZERO_FOUNDATION_DIR if defined LECTERN0_ZERO_FOUNDATION_DIR set "EIGHTVO_ZERO_FOUNDATION_DIR=%LECTERN0_ZERO_FOUNDATION_DIR%"
+if not defined EIGHTVO_GROUND0_DIR if defined EIGHTVO_ZERO_FOUNDATION_DIR set "EIGHTVO_GROUND0_DIR=%EIGHTVO_ZERO_FOUNDATION_DIR%"
+if not defined EIGHTVO_GROUND0_DIR if defined LECTERN0_ZERO_FOUNDATION_DIR set "EIGHTVO_GROUND0_DIR=%LECTERN0_ZERO_FOUNDATION_DIR%"
 if not defined EIGHTVO_READER0_DIR for %%I in ("%ROOT%\..\reader0") do set "EIGHTVO_READER0_DIR=%%~fI"
 if not defined EIGHTVO_UI0_DIR for %%I in ("%ROOT%\..\ui0") do set "EIGHTVO_UI0_DIR=%%~fI"
 if not defined EIGHTVO_READERVIEW0_DIR for %%I in ("%ROOT%\..\readerview0") do set "EIGHTVO_READERVIEW0_DIR=%%~fI"
-if defined EIGHTVO_ZERO_FOUNDATION_DIR (
-  set "ZF_ROOT=%EIGHTVO_ZERO_FOUNDATION_DIR%"
+if defined EIGHTVO_GROUND0_DIR (
+  set "ZF_ROOT=%EIGHTVO_GROUND0_DIR%"
+) else if defined GROUND0_DIR (
+  set "ZF_ROOT=%GROUND0_DIR%"
 ) else if defined ZERO_FOUNDATION_DIR (
   set "ZF_ROOT=%ZERO_FOUNDATION_DIR%"
 ) else (
-  for %%I in ("%ROOT%\..\zero_foundation") do set "ZF_ROOT=%%~fI"
+  for %%I in ("%ROOT%\..\ground0") do set "ZF_ROOT=%%~fI"
 )
+set "EIGHTVO_GROUND0_DIR=%ZF_ROOT%"
 set "EIGHTVO_ZERO_FOUNDATION_DIR=%ZF_ROOT%"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\require_dependencies_current.ps1"

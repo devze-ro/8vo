@@ -5,7 +5,7 @@ supported format; the product name and public interface are intentionally not
 tied to a particular file format.
 
 The current Windows application is a concrete host for the EPUB-focused
-reader0 backend, readerview0, UI0, and zero_foundation. It has no re10 source
+reader0 backend, readerview0, UI0, and ground0. It has no re10 source
 dependency and does not define a generic document-provider layer.
 
 8vo stores application data under `%LOCALAPPDATA%\8vo`. On first launch it
@@ -85,7 +85,7 @@ geometry for pagination and EPUB presentation. Its draw adapter consumes every
 UI0 operation with resolved typography, canonical reader icon pixels, and
 clipped native draw commands. Chrome titles, ordinary panel labels, and
 metadata use the accepted system-UI text-box placement path at their frozen
-scales. Note-editor draft rows instead use zero_foundation's
+scales. Note-editor draft rows instead use ground0's
 `TextEngineEditableRow` shaped painter at the explicit 18-pixel Body carrier,
 and the visible caret x comes from that same shaped row. A separate bounded
 values table measures the current draft, incoming/transfer text, and
@@ -141,12 +141,12 @@ prove decoded-pixel parity and repeatability; the per-host Reader View, host,
 startup, and accessibility smokes prove action execution and native behavior.
 
 Slice 5A's 8vo-owned document/resource image cache remains over
-zero_foundation's caller-owned decoder, so EPUB cover and inline PNG, JPEG, BMP,
+ground0's caller-owned decoder, so EPUB cover and inline PNG, JPEG, BMP,
 and first-frame GIF resources render as decoded pixels. Unsupported, missing,
 oversized, corrupt, or cache-full resources retain visible alt-text fallbacks.
 
 The Presentation Engine API 1 adoption routes canonical EPUB row and image-box
-vertical geometry through zero_foundation's callback-free block-flow builder.
+vertical geometry through ground0's callback-free block-flow builder.
 8vo still resolves reader/host metrics, owns caller storage, draws the
 returned records, and retains every cache, persistence, and product decision.
 Its native MSAA adapter exposes readerview0's portable semantic records plus
@@ -162,7 +162,7 @@ checkouts:
 $env:EIGHTVO_READER0_DIR = 'C:\path\to\reader0-api5-worktree'
 $env:EIGHTVO_UI0_DIR = 'C:\path\to\ui0'
 $env:EIGHTVO_READERVIEW0_DIR = 'C:\path\to\readerview0-api3-worktree'
-$env:EIGHTVO_ZERO_FOUNDATION_DIR = 'C:\path\to\zero_foundation'
+$env:EIGHTVO_GROUND0_DIR = 'C:\path\to\ground0'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\require_dependencies_current.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\audit_architecture.ps1
 cmd /c build\win32_build.bat no_run
