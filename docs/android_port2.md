@@ -138,4 +138,16 @@ x86_64 emulator:
   `--document_engine_smoke` against its own exact Reader0, UI0, and
   Readerview0 revisions.
 
-The physical-device check remains outstanding.
+The same instrumentation test passed on 2026-07-29 on a physical vivo I2019
+(iQOO 9 SE) running Android 14/API 34 on `arm64-v8a`:
+
+- the 1,080 by 2,400 display produced a 1,080 by 2,196 system-inset-aware
+  render surface;
+- Reader0 again published 2,754 visible bytes with hash
+  `4f870e903f6fa2d7`;
+- Readerview0 again published three clean draw records;
+- PixelCopy, pause/resume, surface replacement, and Activity recreation passed
+  in the 3.068-second instrumentation run; and
+- the device crash buffer remained empty.
+
+This completes the Port 2 physical-device acceptance check.
