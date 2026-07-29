@@ -148,7 +148,14 @@ public final class OctavoBootstrapTest {
         assertTrue(snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_SIZE] > 0);
         assertTrue(snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH] != 0);
         assertTrue(snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] > 0);
-        assertTrue(snapshot[OctavoSurfaceView.STATE_PAGE_COUNT] > 0);
+        assertTrue(snapshot[OctavoSurfaceView.STATE_PAGE_COUNT] >= 4);
+        assertEquals(snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] - 1,
+                     snapshot[OctavoSurfaceView.STATE_PROGRESS_PAGE_INDEX]);
+        assertEquals(snapshot[OctavoSurfaceView.STATE_PAGE_COUNT],
+                     snapshot[OctavoSurfaceView.STATE_PROGRESS_PAGE_COUNT]);
+        assertEquals(0, snapshot[OctavoSurfaceView.STATE_NAVIGATION_FAILURE_COUNT]);
+        assertEquals(0,
+                     snapshot[OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
         assertEquals(1, snapshot[OctavoSurfaceView.STATE_READER_VIEW_READY]);
         assertEquals(0, snapshot[OctavoSurfaceView.STATE_READER_VIEW_ERRORS]);
         assertTrue(snapshot[OctavoSurfaceView.STATE_READER_VIEW_DRAW_COUNT] > 1);
@@ -213,7 +220,7 @@ public final class OctavoBootstrapTest {
                 assertEquals(activity.getFilesDir().getAbsolutePath(), filesPath.get());
                 assertEquals(activity.getCacheDir().getAbsolutePath(), cachePath.get());
                 assertEquals(new File(activity.getFilesDir(),
-                                      "port2/octavo_port2.epub").getAbsolutePath(),
+                                      "port3/octavo_port3.epub").getAbsolutePath(),
                              fixturePath.get());
             });
             assertNotNull(filesPath.get());
@@ -229,8 +236,8 @@ public final class OctavoBootstrapTest {
             assertTrue(visibleText.get().contains("First chapter paragraph"));
             File fixture = new File(fixturePath.get());
             assertTrue(fixture.isFile());
-            assertEquals(1927, fixture.length());
-            assertEquals("35EE6AB86D98D310BAAA0981905652D9D75BA4D814C34A6249AD2F66B45BE00A",
+            assertEquals(96704, fixture.length());
+            assertEquals("40EB1FD2CEF876C8EBD80BE7C62DBF5387DE68C4F918D31EEDC5C5E893F19991",
                          sha256(fixture));
             assertEquals(0, initial[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
             assertTrue(initial[OctavoSurfaceView.STATE_SURFACE_GENERATION] >= 1);
@@ -257,6 +264,22 @@ public final class OctavoBootstrapTest {
             assertTrue(resumed[OctavoSurfaceView.STATE_FRAME_COUNT]
                        > initial[OctavoSurfaceView.STATE_FRAME_COUNT]);
             assertEquals(0, resumed[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
+
+            long surfaceGeneration =
+                resumed[OctavoSurfaceView.STATE_SURFACE_GENERATION];
+            long surfaceDestroyCount =
+                resumed[OctavoSurfaceView.STATE_SURFACE_DESTROY_COUNT];
+            scenario.onActivity(activity ->
+                ((OctavoSurfaceView)activity.findViewById(R.id.octavo_surface))
+                    .replaceNativeSurfaceForTesting());
+            long[] replaced = state(scenario);
+            assertTrue(replaced[OctavoSurfaceView.STATE_SURFACE_GENERATION]
+                       > surfaceGeneration);
+            assertTrue(replaced[OctavoSurfaceView.STATE_SURFACE_DESTROY_COUNT]
+                       > surfaceDestroyCount);
+            assertEquals(resumed[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH],
+                         replaced[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+            assertEquals(0, replaced[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
 
             scenario.recreate();
             long[] recreated = awaitPresentedFrame(scenario);

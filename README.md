@@ -36,13 +36,15 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 2
+## Android Port 3
 
 The Android port now compiles the exact shared Ground0, Reader0, UI0, and
-Readerview0 sources, opens a bundled deterministic EPUB from app-private
-storage, and presents a static canonical Reader0 page through Readerview0's
-portable geometry and chrome. Pause/resume, surface recreation, and API-36
-system-bar insets remain explicit host responsibilities.
+Readerview0 sources, opens a bundled deterministic EPUB, and presents canonical
+Reader0 pages through Readerview0's portable geometry and chrome. Inset-aware
+left/right tap zones call Reader0's existing page-move API, and a successful
+presentation gate prevents rapid input from skipping an unpresented page.
+Pause/resume, surface replacement, Activity recreation, and API-36 system-bar
+insets remain explicit 8vo host responsibilities.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -55,10 +57,10 @@ cd android
 ```
 
 The current scope and acceptance criteria are documented in
-[docs/android_port2.md](docs/android_port2.md); the preceding lifecycle
-milestone is documented in [docs/android_port1.md](docs/android_port1.md), and
-the toolchain/shared-package foundation remains documented in
-[docs/android_port0.md](docs/android_port0.md).
+[docs/android_port3.md](docs/android_port3.md); the preceding static-page
+milestone is documented in [docs/android_port2.md](docs/android_port2.md), the
+lifecycle milestone in [docs/android_port1.md](docs/android_port1.md), and the
+toolchain/shared-package foundation in [docs/android_port0.md](docs/android_port0.md).
 
 ## License
 

@@ -9,6 +9,9 @@
 - [`android_port2.md`](android_port2.md) defines the exact shared-source EPUB,
   canonical Reader0 frame, Readerview0 projection, and static Android page
   milestone.
+- [`android_port3.md`](android_port3.md) defines deterministic touch page
+  navigation, Reader0-owned moves and boundaries, successful-presentation
+  gating, and the interactive Android reader milestone.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 

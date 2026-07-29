@@ -7,6 +7,9 @@ final class OctavoNative {
         System.loadLibrary("octavo");
     }
 
+    static final int TOUCH_HANDLED = 1;
+    static final int TOUCH_PRESENT_REQUESTED = 2;
+
     private OctavoNative() {
     }
 
@@ -28,15 +31,16 @@ final class OctavoNative {
                                     int top,
                                     int right,
                                     int bottom);
+    static native boolean present(long handle);
     static native long[] state(long handle);
     static native String filesPath(long handle);
     static native String cachePath(long handle);
     static native String fixturePath(long handle);
     static native String visibleText(long handle);
     static native int clearColorArgb();
-    static native boolean touch(long handle,
-                                int action,
-                                float x,
-                                float y,
-                                long eventTimeMillis);
+    static native int touch(long handle,
+                            int action,
+                            float x,
+                            float y,
+                            long eventTimeMillis);
 }

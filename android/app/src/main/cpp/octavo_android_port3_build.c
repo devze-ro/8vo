@@ -1,5 +1,5 @@
 /*
- * Android Port 2 application unity build.
+ * Android Port 3 application unity build.
  *
  * Each public source package is compiled exactly once through its stable
  * unity source. Ground0 modules remain explicit application dependencies,
@@ -37,5 +37,5 @@
 #  include "platform/android/os_time_android.c"
 #  include "octavo_android_jni.c"
 #else
-#  error "octavo_android_port2_build.c requires the Android NDK toolchain"
+#  error "octavo_android_port3_build.c requires the Android NDK toolchain"
 #endif

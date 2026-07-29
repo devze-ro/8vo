@@ -8,9 +8,9 @@ import java.io.IOException;
 import java.io.InputStream;
 
 final class OctavoFixture {
-    private static final String ASSET_PATH = "port2/octavo_port2.epub";
-    private static final String DIRECTORY_NAME = "port2";
-    private static final String FILE_NAME = "octavo_port2.epub";
+    private static final String ASSET_PATH = "port3/octavo_port3.epub";
+    private static final String DIRECTORY_NAME = "port3";
+    private static final String FILE_NAME = "octavo_port3.epub";
 
     private OctavoFixture() {
     }
@@ -18,7 +18,7 @@ final class OctavoFixture {
     static String install(Context context) {
         File directory = new File(context.getFilesDir(), DIRECTORY_NAME);
         if (!directory.isDirectory() && !directory.mkdirs()) {
-            throw new IllegalStateException("Unable to create the Port 2 fixture directory");
+            throw new IllegalStateException("Unable to create the Port 3 fixture directory");
         }
 
         File target = new File(directory, FILE_NAME);
@@ -34,13 +34,13 @@ final class OctavoFixture {
             output.getFD().sync();
         } catch (IOException exception) {
             temporary.delete();
-            throw new IllegalStateException("Unable to stage the Port 2 EPUB fixture",
+            throw new IllegalStateException("Unable to stage the Port 3 EPUB fixture",
                                             exception);
         }
 
         if ((target.exists() && !target.delete()) || !temporary.renameTo(target)) {
             temporary.delete();
-            throw new IllegalStateException("Unable to publish the Port 2 EPUB fixture");
+            throw new IllegalStateException("Unable to publish the Port 3 EPUB fixture");
         }
         return target.getAbsolutePath();
     }

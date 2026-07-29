@@ -12,6 +12,19 @@ verification process, and runs the strict dependency guard.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
 ```
 
+## Android fixture
+
+`build_android_fixture.ps1` reproducibly writes the Port 3 EPUB fixture in
+fixed ZIP-entry order with fixed timestamps and no compression:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts\build_android_fixture.ps1
+```
+
+The script prints the exact output length and SHA-256 documented in
+`docs/android_port3.md`.
+
 ## Public smoke suite
 
 `run_public_smoke.ps1` is the reproducible public validation entry point. It

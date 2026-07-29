@@ -33,10 +33,26 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_PAGE_SURFACE_Y = 23;
     static final int STATE_PAGE_SURFACE_WIDTH = 24;
     static final int STATE_PAGE_SURFACE_HEIGHT = 25;
-    static final int STATE_FIELD_COUNT = 26;
+    static final int STATE_PROGRESS_PAGE_INDEX = 26;
+    static final int STATE_PROGRESS_PAGE_COUNT = 27;
+    static final int STATE_TAP_INTENT_COUNT = 28;
+    static final int STATE_PAGE_MOVE_SUCCESS_COUNT = 29;
+    static final int STATE_PAGE_MOVE_PRESENTED_COUNT = 30;
+    static final int STATE_PAGE_MOVE_BOUNDARY_COUNT = 31;
+    static final int STATE_PAGE_MOVE_GATE_BLOCK_COUNT = 32;
+    static final int STATE_PAGE_MOVE_PRESENTATION_PENDING = 33;
+    static final int STATE_NAVIGATION_FAILURE_COUNT = 34;
+    static final int STATE_FIELD_COUNT = 35;
 
     private long nativeHandle;
     private boolean hostResumed;
+    private boolean presentationPosted;
+    private final Runnable presentPage = () -> {
+        presentationPosted = false;
+        if (nativeHandle != 0) {
+            OctavoNative.present(nativeHandle);
+        }
+    };
 
     OctavoSurfaceView(Context context, String fixturePath) {
         super(context);
@@ -91,11 +107,26 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (nativeHandle == 0) {
             return false;
         }
-        return OctavoNative.touch(nativeHandle,
-                                  event.getActionMasked(),
-                                  event.getX(),
-                                  event.getY(),
-                                  event.getEventTime());
+        int result = OctavoNative.touch(nativeHandle,
+                                        event.getActionMasked(),
+                                        event.getX(),
+                                        event.getY(),
+                                        event.getEventTime());
+        if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
+            requestNativePresentation();
+        }
+        return (result & OctavoNative.TOUCH_HANDLED) != 0;
+    }
+
+    private void requestNativePresentation() {
+        if (nativeHandle == 0 || presentationPosted) {
+            return;
+        }
+        presentationPosted = true;
+        if (!post(presentPage)) {
+            presentationPosted = false;
+            OctavoNative.present(nativeHandle);
+        }
     }
 
     void hostResumed() {
@@ -132,9 +163,21 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return nativeHandle == 0 ? null : OctavoNative.visibleText(nativeHandle);
     }
 
+    void replaceNativeSurfaceForTesting() {
+        if (nativeHandle == 0) {
+            return;
+        }
+        SurfaceHolder holder = getHolder();
+        surfaceDestroyed(holder);
+        surfaceCreated(holder);
+        surfaceChanged(holder, 0, getWidth(), getHeight());
+    }
+
     void release() {
         if (nativeHandle != 0) {
             hostPaused();
+            removeCallbacks(presentPage);
+            presentationPosted = false;
             getHolder().removeCallback(this);
             setOnApplyWindowInsetsListener(null);
             OctavoNative.destroy(nativeHandle);

@@ -4,6 +4,7 @@
 #include "readerview0.h"
 #include "ui0.h"
 
+#include <android/input.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
@@ -16,12 +17,16 @@
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 26
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 35
 
 enum
 {
   OCTAVO_ANDROID_TEXT_SCALE = 3,
   OCTAVO_ANDROID_APP_BACKGROUND = 0xFFF7F3EAu,
+  OCTAVO_ANDROID_TAP_MAX_DURATION_MILLIS = 500,
+  OCTAVO_ANDROID_TAP_SLOP_PIXELS = 24,
+  OCTAVO_ANDROID_TOUCH_HANDLED = 1u << 0,
+  OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED = 1u << 1,
 };
 
 typedef struct OctavoAndroidPixels
@@ -76,6 +81,20 @@ typedef struct OctavoAndroidApp
   uint64_t render_failure_count;
   uint64_t touch_count;
   uint64_t lifecycle_generation;
+  uint64_t tap_intent_count;
+  uint64_t page_move_success_count;
+  uint64_t page_move_presented_count;
+  uint64_t page_move_boundary_count;
+  uint64_t page_move_gate_block_count;
+  uint64_t navigation_failure_count;
+  uint64_t page_move_expected_byte_offset;
+  uint32_t page_move_expected_spine_index;
+  uint64_t touch_down_time_millis;
+  float touch_down_x;
+  float touch_down_y;
+  int32_t touch_direction;
+  int page_move_waiting_for_present;
+  int touch_active;
 } OctavoAndroidApp;
 
 static OctavoAndroidApp *
@@ -824,7 +843,7 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Readerview0 rejected Port 2 projection errors=0x%x",
+      "Readerview0 rejected Port 3 projection errors=0x%x",
       app->reader_view_frame.error_flags);
   }
   return app->reader_view_ready;
@@ -838,6 +857,85 @@ octavo_android_build_static_page(OctavoAndroidApp *app,
   return octavo_android_resolve_reader_layout(app, width, height) &&
          octavo_android_build_reader_frame(app) &&
          octavo_android_build_reader_view(app);
+}
+
+static S32
+octavo_android_touch_zone(const OctavoAndroidApp *app, float x, float y)
+{
+  if (!app || app->width <= 0 || app->height <= 0)
+  {
+    return 0;
+  }
+
+  S32 left = MAX(app->inset_left, 0);
+  S32 top = MAX(app->inset_top, 0);
+  S32 right = app->width - MAX(app->inset_right, 0);
+  S32 bottom = app->height - MAX(app->inset_bottom, 0);
+  if (left >= right || top >= bottom ||
+      x < (float)left || x >= (float)right ||
+      y < (float)top || y >= (float)bottom)
+  {
+    return 0;
+  }
+
+  float third = (float)(right - left) / 3.0f;
+  if (x < (float)left + third)
+  {
+    return -1;
+  }
+  if (x >= (float)right - third)
+  {
+    return 1;
+  }
+  return 0;
+}
+
+static int
+octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
+{
+  if (!app || (direction != -1 && direction != 1))
+  {
+    return 0;
+  }
+  if (app->page_move_waiting_for_present)
+  {
+    app->page_move_gate_block_count += 1u;
+    return 0;
+  }
+
+  app->layout_config.focused_spine_index = app->reader.active_spine_index;
+  EpubReaderChange change = {0};
+  EpubReaderResult result = epub_reader_move_page(
+    &app->reader,
+    direction,
+    app->layout_key,
+    app->layout_config,
+    (EpubReaderPageMoveOptions){0},
+    &change);
+  if (result == EpubReaderResult_Boundary)
+  {
+    app->page_move_boundary_count += 1u;
+    return 0;
+  }
+  if (result != EpubReaderResult_Ok || !change.changed ||
+      !change.after.has_page ||
+      change.after.global_page_index == UINT64_MAX)
+  {
+    app->navigation_failure_count += 1u;
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Android Port 3 page move failed result=%d diagnostic=%d",
+      (int)result,
+      (int)change.diagnostic);
+    return 0;
+  }
+
+  app->page_move_success_count += 1u;
+  app->page_move_waiting_for_present = 1;
+  app->page_move_expected_spine_index = change.after.spine_index;
+  app->page_move_expected_byte_offset = change.after.byte_offset;
+  return 1;
 }
 
 static int
@@ -899,7 +997,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       0xFF451F1Fu);
     (void)ANativeWindow_unlockAndPost(app->window);
     __android_log_print(
-      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 2 page");
+      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 3 page");
     return 0;
   }
 
@@ -934,15 +1032,42 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   app->width = buffer.width;
   app->height = buffer.height;
   app->frame_count += 1u;
+  if (app->page_move_waiting_for_present)
+  {
+    if (!app->reader_frame.ready || !app->reader.has_current_page ||
+        app->reader_frame.spine_index !=
+          app->page_move_expected_spine_index ||
+        app->reader_frame.view_byte_offset !=
+          app->page_move_expected_byte_offset)
+    {
+      app->render_failure_count += 1u;
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Android Port 3 presented page mismatch "
+        "expected=%u:%llu actual=%u:%llu",
+        (unsigned)app->page_move_expected_spine_index,
+        (unsigned long long)app->page_move_expected_byte_offset,
+        (unsigned)app->reader_frame.spine_index,
+        (unsigned long long)app->reader_frame.view_byte_offset);
+      return 0;
+    }
+    app->page_move_waiting_for_present = 0;
+    app->page_move_expected_spine_index = 0;
+    app->page_move_expected_byte_offset = 0;
+    app->page_move_presented_count += 1u;
+  }
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 2 frame=%llu surface=%llu size=%dx%d "
+    "Android Port 3 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
     "reader_bytes=%llu reader_hash=%016llx view_draws=%d",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
     app->width,
     app->height,
+    (unsigned long long)app->reader_frame.page_index,
+    (unsigned long long)app->reader_frame.page_count,
     (unsigned long long)app->reader_frame.visible_text.size,
     (unsigned long long)u64_hash_str8(app->reader_frame.visible_text),
     app->reader_view_frame.draw_command_count);
@@ -1026,7 +1151,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Unable to create the Android Port 2 reader state");
+      "Unable to create the Android Port 3 reader state");
     epub_reader_release(&app->reader);
     if (app->arena)
     {
@@ -1039,7 +1164,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 2 state created fixture=%s title=%s",
+    "Android Port 3 state created fixture=%s title=%s",
     app->fixture_path,
     app->document_title);
   return (jlong)(uintptr_t)app;
@@ -1104,6 +1229,8 @@ Java_ro_devze_octavo_OctavoNative_hostPaused(JNIEnv *environment,
   app->resumed = 0;
   app->pause_count += 1u;
   app->lifecycle_generation += 1u;
+  app->touch_active = 0;
+  app->touch_direction = 0;
 }
 
 JNIEXPORT void JNICALL
@@ -1186,6 +1313,8 @@ Java_ro_devze_octavo_OctavoNative_surfaceDestroyed(JNIEnv *environment,
   app->width = 0;
   app->height = 0;
   app->surface_destroy_count += 1u;
+  app->touch_active = 0;
+  app->touch_direction = 0;
 }
 
 JNIEXPORT void JNICALL
@@ -1209,6 +1338,21 @@ Java_ro_devze_octavo_OctavoNative_windowInsets(JNIEnv *environment,
   app->inset_right = (int32_t)right;
   app->inset_bottom = (int32_t)bottom;
   (void)octavo_android_present_frame(app);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_present(JNIEnv *environment,
+                                          jclass type,
+                                          jlong handle)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app)
+  {
+    return JNI_FALSE;
+  }
+  return octavo_android_present_frame(app) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -1250,6 +1394,15 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[23] = app->reader_view_layout.page_surface_rect.y;
   values[24] = app->reader_view_layout.page_surface_rect.w;
   values[25] = app->reader_view_layout.page_surface_rect.h;
+  values[26] = (jlong)app->reader_view_projection.progress.page_index;
+  values[27] = (jlong)app->reader_view_projection.progress.page_count;
+  values[28] = (jlong)app->tap_intent_count;
+  values[29] = (jlong)app->page_move_success_count;
+  values[30] = (jlong)app->page_move_presented_count;
+  values[31] = (jlong)app->page_move_boundary_count;
+  values[32] = (jlong)app->page_move_gate_block_count;
+  values[33] = app->page_move_waiting_for_present ? 1 : 0;
+  values[34] = (jlong)app->navigation_failure_count;
 
   jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
@@ -1324,7 +1477,7 @@ Java_ro_devze_octavo_OctavoNative_clearColorArgb(JNIEnv *environment,
   return (jint)OCTAVO_ANDROID_APP_BACKGROUND;
 }
 
-JNIEXPORT jboolean JNICALL
+JNIEXPORT jint JNICALL
 Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
                                         jclass type,
                                         jlong handle,
@@ -1335,15 +1488,73 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
 {
   (void)environment;
   (void)type;
-  (void)action;
-  (void)x;
-  (void)y;
-  (void)event_time_millis;
   OctavoAndroidApp *app = octavo_android_from_handle(handle);
   if (!app)
   {
-    return JNI_FALSE;
+    return 0;
   }
   app->touch_count += 1u;
-  return JNI_TRUE;
+
+  jint touch_result = OCTAVO_ANDROID_TOUCH_HANDLED;
+  if (action == AMOTION_EVENT_ACTION_DOWN)
+  {
+    app->touch_active = 0;
+    app->touch_direction = 0;
+    if (app->page_move_waiting_for_present)
+    {
+      app->page_move_gate_block_count += 1u;
+      return touch_result;
+    }
+    if (!app->resumed || !app->window ||
+        !app->reader_frame.ready || !app->reader_view_ready)
+    {
+      return touch_result;
+    }
+
+    S32 direction = octavo_android_touch_zone(app, x, y);
+    if (direction != 0 && event_time_millis >= 0)
+    {
+      app->touch_active = 1;
+      app->touch_direction = direction;
+      app->touch_down_x = x;
+      app->touch_down_y = y;
+      app->touch_down_time_millis = (uint64_t)event_time_millis;
+    }
+    return touch_result;
+  }
+
+  if (action == AMOTION_EVENT_ACTION_CANCEL)
+  {
+    app->touch_active = 0;
+    app->touch_direction = 0;
+    return touch_result;
+  }
+
+  if (action == AMOTION_EVENT_ACTION_UP)
+  {
+    int was_active = app->touch_active;
+    S32 direction = app->touch_direction;
+    uint64_t down_time_millis = app->touch_down_time_millis;
+    float delta_x = x - app->touch_down_x;
+    float delta_y = y - app->touch_down_y;
+    app->touch_active = 0;
+    app->touch_direction = 0;
+
+    if (was_active && event_time_millis >= 0 &&
+        (uint64_t)event_time_millis >= down_time_millis &&
+        (uint64_t)event_time_millis - down_time_millis <=
+          OCTAVO_ANDROID_TAP_MAX_DURATION_MILLIS &&
+        delta_x * delta_x + delta_y * delta_y <=
+          (float)(OCTAVO_ANDROID_TAP_SLOP_PIXELS *
+                  OCTAVO_ANDROID_TAP_SLOP_PIXELS) &&
+        octavo_android_touch_zone(app, x, y) == direction)
+    {
+      app->tap_intent_count += 1u;
+      if (octavo_android_move_page(app, direction))
+      {
+        touch_result |= OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED;
+      }
+    }
+  }
+  return touch_result;
 }
