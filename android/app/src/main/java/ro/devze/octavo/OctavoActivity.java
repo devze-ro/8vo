@@ -18,6 +18,22 @@ public final class OctavoActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (surfaceView != null) {
+            surfaceView.hostResumed();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (surfaceView != null) {
+            surfaceView.hostPaused();
+        }
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
         if (surfaceView != null) {
             surfaceView.release();

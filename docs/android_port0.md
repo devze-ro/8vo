@@ -124,9 +124,9 @@ Android 16/API 36 x86_64 Google APIs emulator, JDK 17.0.19, NDK
 
 The physical-device lifecycle check remains outstanding.
 
-## Next vertical slice
+## Subsequent vertical slice
 
-Port 1 should connect a minimal 8vo native application state to the Android
-surface, run one deterministic frame, and present a known clear color. It
-should also establish Android application-data paths and lifecycle-safe
-suspend/resume handling before EPUB loading is introduced.
+Port 1 delivered the minimal native application state, deterministic frame,
+Android application-data paths, and lifecycle-safe suspend/resume handling
+specified here. See [`android_port1.md`](android_port1.md) for its contract and
+validation record.

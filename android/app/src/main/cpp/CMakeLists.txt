@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(octavo_android_bootstrap LANGUAGES C)
+project(octavo_android_port1 LANGUAGES C)
 
 if(NOT ANDROID)
-  message(FATAL_ERROR "The 8vo Android bootstrap requires the Android NDK toolchain")
+  message(FATAL_ERROR "The 8vo Android host requires the Android NDK toolchain")
 endif()
 
 if(NOT DEFINED OCTAVO_REPO_ROOT)

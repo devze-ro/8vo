@@ -2,8 +2,10 @@
 
 - [`architecture.md`](architecture.md) describes the current 8vo ownership and
   source-consumption boundaries.
-- [`android_port0.md`](android_port0.md) defines the first Android milestone,
-  its build and test workflow, and the capabilities deliberately deferred.
+- [`android_port0.md`](android_port0.md) defines the Android toolchain, native
+  bootstrap, and coordinated Ground0/Reader0 foundation milestone.
+- [`android_port1.md`](android_port1.md) defines the native application state,
+  deterministic frame, app-data path, and lifecycle milestone.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 

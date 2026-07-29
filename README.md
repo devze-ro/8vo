@@ -36,12 +36,12 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 0
+## Android Port 1
 
-The first Android milestone provides a Gradle application, a thin Java
-activity and surface host, and a caller-owned JNI bootstrap. It proves the
-Android lifecycle and native-library boundary; it does not yet render or open
-books.
+The Android port now provides a Gradle application, a thin Java activity and
+surface host, caller-owned native application state, app-private data paths,
+and deterministic native frame presentation across pause/resume and surface
+recreation. It does not yet render or open books.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -53,8 +53,9 @@ cd android
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The Android SDK, NDK, emulator/device workflow, current scope, and acceptance
-criteria are documented in [docs/android_port0.md](docs/android_port0.md).
+The current scope and acceptance criteria are documented in
+[docs/android_port1.md](docs/android_port1.md); the toolchain and shared-package
+foundation remain documented in [docs/android_port0.md](docs/android_port0.md).
 
 ## License
 

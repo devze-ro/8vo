@@ -1,13 +1,16 @@
 # 8vo Android
 
-This directory is the Android application root. Port 0 intentionally keeps the
-host small:
+This directory is the Android application root. Port 1 keeps the host small and
+explicit:
 
 - `OctavoActivity` owns Android lifecycle.
-- `OctavoSurfaceView` translates surface and touch events.
+- `OctavoSurfaceView` translates lifecycle, surface, and touch events.
 - `OctavoNative` is the explicit Java/JNI boundary.
-- `octavo_android_jni.c` owns one native bootstrap per view and acquires and
-  releases its `ANativeWindow`.
+- `octavo_android_jni.c` owns one native application state per view, copies the
+  app-private files/cache paths into bounded storage, and acquires and releases
+  its `ANativeWindow`.
+- The native state presents a deterministic opaque `#181614` RGBA frame when a
+  resumed host has a usable surface.
 
 There is no process-global mutable application state. The Java view holds the
 native handle and destroys it when the activity is destroyed.
@@ -49,10 +52,11 @@ With an API 26 or newer emulator/device connected:
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The smoke verifies that the native library loads, reports the expected port
-version and platform, launches and recreates the activity, and creates the
-surface host on each lifecycle.
+The smoke verifies native loading and version/platform identity, the presented
+native pixel, private files/cache paths, pause/resume state, surface replacement,
+and Activity recreation. It rejects any recorded native presentation failure.
 
-Port 0 does not compile the full 8vo application core or render a reader frame.
-See [`../docs/android_port0.md`](../docs/android_port0.md) for the milestone
-boundary and coordinated Ground0 and Reader0 checks.
+Port 1 does not yet compile the full 8vo application core or render a reader
+page. See [`../docs/android_port1.md`](../docs/android_port1.md) for the current
+milestone boundary and [`../docs/android_port0.md`](../docs/android_port0.md)
+for the Android foundation and coordinated Ground0/Reader0 checks.
