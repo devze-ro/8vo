@@ -4,6 +4,7 @@ import android.content.Context;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.WindowInsets;
 
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
     static final int STATE_RESUMED = 0;
@@ -18,25 +19,50 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_RENDER_FAILURE_COUNT = 9;
     static final int STATE_TOUCH_COUNT = 10;
     static final int STATE_LIFECYCLE_GENERATION = 11;
-    static final int STATE_FIELD_COUNT = 12;
+    static final int STATE_READER_INITIALIZED = 12;
+    static final int STATE_DOCUMENT_OPEN = 13;
+    static final int STATE_READER_FRAME_READY = 14;
+    static final int STATE_VISIBLE_TEXT_SIZE = 15;
+    static final int STATE_VISIBLE_TEXT_HASH = 16;
+    static final int STATE_PAGE_INDEX = 17;
+    static final int STATE_PAGE_COUNT = 18;
+    static final int STATE_READER_VIEW_READY = 19;
+    static final int STATE_READER_VIEW_ERRORS = 20;
+    static final int STATE_READER_VIEW_DRAW_COUNT = 21;
+    static final int STATE_PAGE_SURFACE_X = 22;
+    static final int STATE_PAGE_SURFACE_Y = 23;
+    static final int STATE_PAGE_SURFACE_WIDTH = 24;
+    static final int STATE_PAGE_SURFACE_HEIGHT = 25;
+    static final int STATE_FIELD_COUNT = 26;
 
     private long nativeHandle;
     private boolean hostResumed;
 
-    OctavoSurfaceView(Context context) {
+    OctavoSurfaceView(Context context, String fixturePath) {
         super(context);
         nativeHandle = OctavoNative.create(context.getFilesDir().getAbsolutePath(),
-                                           context.getCacheDir().getAbsolutePath());
+                                           context.getCacheDir().getAbsolutePath(),
+                                           fixturePath);
         if (nativeHandle == 0) {
             throw new IllegalStateException("Unable to create the 8vo native application state");
         }
 
         setId(R.id.octavo_surface);
-        setBackgroundColor(OctavoNative.clearColorArgb());
         setContentDescription("8vo reader surface");
         setFocusable(true);
         setFocusableInTouchMode(true);
+        setOnApplyWindowInsetsListener((view, insets) -> {
+            if (nativeHandle != 0) {
+                OctavoNative.windowInsets(nativeHandle,
+                                          insets.getSystemWindowInsetLeft(),
+                                          insets.getSystemWindowInsetTop(),
+                                          insets.getSystemWindowInsetRight(),
+                                          insets.getSystemWindowInsetBottom());
+            }
+            return insets;
+        });
         getHolder().addCallback(this);
+        requestApplyInsets();
     }
 
     @Override
@@ -98,10 +124,19 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return nativeHandle == 0 ? null : OctavoNative.cachePath(nativeHandle);
     }
 
+    String fixturePathForTesting() {
+        return nativeHandle == 0 ? null : OctavoNative.fixturePath(nativeHandle);
+    }
+
+    String visibleTextForTesting() {
+        return nativeHandle == 0 ? null : OctavoNative.visibleText(nativeHandle);
+    }
+
     void release() {
         if (nativeHandle != 0) {
             hostPaused();
             getHolder().removeCallback(this);
+            setOnApplyWindowInsetsListener(null);
             OctavoNative.destroy(nativeHandle);
             nativeHandle = 0;
         }

@@ -36,12 +36,13 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 1
+## Android Port 2
 
-The Android port now provides a Gradle application, a thin Java activity and
-surface host, caller-owned native application state, app-private data paths,
-and deterministic native frame presentation across pause/resume and surface
-recreation. It does not yet render or open books.
+The Android port now compiles the exact shared Ground0, Reader0, UI0, and
+Readerview0 sources, opens a bundled deterministic EPUB from app-private
+storage, and presents a static canonical Reader0 page through Readerview0's
+portable geometry and chrome. Pause/resume, surface recreation, and API-36
+system-bar insets remain explicit host responsibilities.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -54,8 +55,10 @@ cd android
 ```
 
 The current scope and acceptance criteria are documented in
-[docs/android_port1.md](docs/android_port1.md); the toolchain and shared-package
-foundation remain documented in [docs/android_port0.md](docs/android_port0.md).
+[docs/android_port2.md](docs/android_port2.md); the preceding lifecycle
+milestone is documented in [docs/android_port1.md](docs/android_port1.md), and
+the toolchain/shared-package foundation remains documented in
+[docs/android_port0.md](docs/android_port0.md).
 
 ## License
 

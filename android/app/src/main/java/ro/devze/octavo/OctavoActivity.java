@@ -10,7 +10,7 @@ public final class OctavoActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        surfaceView = new OctavoSurfaceView(this);
+        surfaceView = new OctavoSurfaceView(this, OctavoFixture.install(this));
         setContentView(surfaceView,
                        new ViewGroup.LayoutParams(
                            ViewGroup.LayoutParams.MATCH_PARENT,

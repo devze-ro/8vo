@@ -6,6 +6,9 @@
   bootstrap, and coordinated Ground0/Reader0 foundation milestone.
 - [`android_port1.md`](android_port1.md) defines the native application state,
   deterministic frame, app-data path, and lifecycle milestone.
+- [`android_port2.md`](android_port2.md) defines the exact shared-source EPUB,
+  canonical Reader0 frame, Readerview0 projection, and static Android page
+  milestone.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 

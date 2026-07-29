@@ -1,16 +1,19 @@
 # 8vo Android
 
-This directory is the Android application root. Port 1 keeps the host small and
-explicit:
+This directory is the Android application root. Port 2 keeps the host small and
+explicit while exercising the real shared reader stack:
 
 - `OctavoActivity` owns Android lifecycle.
-- `OctavoSurfaceView` translates lifecycle, surface, and touch events.
+- `OctavoFixture` stages the packaged deterministic EPUB under app-private
+  files.
+- `OctavoSurfaceView` translates lifecycle, surface, system-inset, and touch
+  values.
 - `OctavoNative` is the explicit Java/JNI boundary.
-- `octavo_android_jni.c` owns one native application state per view, copies the
-  app-private files/cache paths into bounded storage, and acquires and releases
-  its `ANativeWindow`.
-- The native state presents a deterministic opaque `#181614` RGBA frame when a
-  resumed host has a usable surface.
+- `octavo_android_port2_build.c` source-consumes the exact Ground0, Reader0,
+  UI0, and Readerview0 revisions once.
+- `octavo_android_jni.c` owns one native application/reader/view state per
+  surface, acquires and releases its `ANativeWindow`, and presents one static
+  Reader0 EPUB page through Readerview0 geometry.
 
 There is no process-global mutable application state. The Java view holds the
 native handle and destroys it when the activity is destroyed.
@@ -52,11 +55,12 @@ With an API 26 or newer emulator/device connected:
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The smoke verifies native loading and version/platform identity, the presented
-native pixel, private files/cache paths, pause/resume state, surface replacement,
-and Activity recreation. It rejects any recorded native presentation failure.
+The smoke verifies native/shared version identity, the exact staged EPUB,
+canonical Reader0 text and page evidence, a clean Readerview0 frame, actual
+page and ink pixels, private paths, pause/resume, surface replacement, and
+Activity recreation. It rejects any recorded native presentation failure.
 
-Port 1 does not yet compile the full 8vo application core or render a reader
-page. See [`../docs/android_port1.md`](../docs/android_port1.md) for the current
-milestone boundary and [`../docs/android_port0.md`](../docs/android_port0.md)
-for the Android foundation and coordinated Ground0/Reader0 checks.
+Port 2 intentionally uses Ground0's deterministic bitmap font and does not yet
+add document picking, navigation, production typography, persistence, or
+sync. See [`../docs/android_port2.md`](../docs/android_port2.md) for the current
+milestone boundary.

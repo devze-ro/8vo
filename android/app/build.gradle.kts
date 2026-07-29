@@ -4,6 +4,28 @@ plugins {
     id("com.android.application")
 }
 
+fun exactDependencyPath(environmentName: String, siblingName: String): String {
+    val environmentPath = System.getenv(environmentName)
+    val candidate = if (!environmentPath.isNullOrBlank()) {
+        file(environmentPath)
+    } else {
+        val localCheckout =
+            rootProject.projectDir.parentFile.resolve("local/dependencies/$siblingName")
+        if (localCheckout.isDirectory) {
+            localCheckout
+        } else {
+            rootProject.projectDir.parentFile.parentFile.resolve(siblingName)
+        }
+    }
+    return candidate.canonicalPath.replace('\\', '/')
+}
+
+val ground0Path = exactDependencyPath("OCTAVO_GROUND0_DIR", "ground0")
+val reader0Path = exactDependencyPath("OCTAVO_READER0_DIR", "reader0")
+val ui0Path = exactDependencyPath("OCTAVO_UI0_DIR", "ui0")
+val readerview0Path =
+    exactDependencyPath("OCTAVO_READERVIEW0_DIR", "readerview0")
+
 android {
     namespace = "ro.devze.octavo"
     compileSdk = 36
@@ -24,7 +46,13 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += "-DOCTAVO_REPO_ROOT=${rootProject.projectDir.parentFile.absolutePath}"
+                arguments += listOf(
+                    "-DOCTAVO_REPO_ROOT=${rootProject.projectDir.parentFile.absolutePath}",
+                    "-DOCTAVO_GROUND0_DIR=$ground0Path",
+                    "-DOCTAVO_READER0_DIR=$reader0Path",
+                    "-DOCTAVO_UI0_DIR=$ui0Path",
+                    "-DOCTAVO_READERVIEW0_DIR=$readerview0Path"
+                )
             }
         }
     }
