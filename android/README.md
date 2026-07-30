@@ -1,24 +1,28 @@
 # 8vo Android
 
-This directory is the Android application root. Port 3 keeps the host small
-and explicit while adding bounded interaction to the real shared reader stack:
+This directory is the Android application root. Port 4 keeps the host explicit
+while replacing the temporary reading face with bounded proportional
+Typography:
 
 - `OctavoActivity` owns Android lifecycle.
 - `OctavoFixture` stages the packaged deterministic EPUB under app-private
   files.
-- `OctavoSurfaceView` forwards lifecycle, surface, system-inset, and raw touch
-  values and schedules requested native presentations.
+- `OctavoTypography` acquires fixed 18sp Android serif faces and publishes a
+  caller-owned regular/bold/italic/bold-italic alpha atlas and advance table.
+- `OctavoSurfaceView` owns the atlas creation call, forwards lifecycle,
+  surface, system-inset, and raw touch values, and schedules requested native
+  presentations.
 - `OctavoNative` is the explicit Java/JNI boundary.
-- `octavo_android_port3_build.c` source-consumes the exact Ground0, Reader0,
+- `octavo_android_port4_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once.
-- `octavo_android_jni.c` owns one native application/reader/view state per
-  surface, classifies inset-aware left/right tap zones, delegates page moves to
-  Reader0, enforces the successful-presentation gate, acquires/releases its
-  `ANativeWindow`, and presents canonical Reader0 EPUB pages through
-  Readerview0 geometry.
+- `octavo_android_jni.c` owns one native application/reader/view/typography
+  state per surface, gives Reader0 the exact atlas advances for wrapping,
+  paints canonical styled Reader0 rows, chooses handset content geometry
+  through Readerview0, classifies left/right taps, enforces successful
+  presentation, and owns its `ANativeWindow`.
 
 There is no process-global mutable application state. The Java view holds the
-native handle and destroys it when the activity is destroyed.
+native handle and destroys it when the Activity is destroyed.
 
 ## Prerequisites
 
@@ -57,17 +61,18 @@ With an API 26 or newer emulator/device connected:
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The suite verifies native/shared version identity, the exact staged EPUB,
-canonical Reader0 text and page evidence, a clean Readerview0 frame, actual page
-and ink pixels, exact adjacent next/previous indices, changed/restored text,
-pixels and progress, explicit cross-section identity with monotonic book-wide
-location, both boundary no-ops, rapid-tap presentation gating, private paths,
-pause/resume, surface replacement, and Activity recreation. It rejects any
-recorded native presentation or navigation failure.
+The suite verifies native/shared version identity, exact staged EPUB bytes,
+canonical Reader0 text/page evidence, a clean Readerview0 frame, proportional
+`i`/`W` advances, all four rasterized styles, readable size/line metrics, wide
+handset geometry, actual ink pixels, adjacent and cross-section navigation,
+changed/restored text/pixels/progress, both boundary no-ops, rapid-tap
+presentation gating, private paths, pause/resume, surface replacement, and
+Activity recreation. It rejects every recorded native presentation or
+navigation failure.
 
-Port 3 intentionally uses Ground0's small, pixelated, effectively monospaced
-deterministic bitmap font and does not yet add document picking, swipes/held
-navigation, production typography or text sizing, persistence, or sync. See
-[`../docs/android_port3.md`](../docs/android_port3.md) for the current milestone
-boundary and [`../docs/android_port2.md`](../docs/android_port2.md) for the
-preceding static-page slice.
+Port 4 intentionally remains a fixed readable default. User-selectable text
+settings, a bundled cross-device-identical font, full Unicode shaping,
+embedded EPUB fonts, and proportional title/progress chrome remain deferred.
+See [`../docs/android_port4.md`](../docs/android_port4.md) for the current
+milestone boundary and [`../docs/android_port3.md`](../docs/android_port3.md)
+for the preceding navigation slice.

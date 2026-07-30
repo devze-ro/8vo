@@ -1,0 +1,146 @@
+package ro.devze.octavo;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Typeface;
+import android.util.TypedValue;
+
+import java.nio.ByteBuffer;
+
+final class OctavoTypography {
+    static final int MAGIC = 0x4F545950;
+    static final int VERSION = 1;
+    static final int FIRST_CODEPOINT = 32;
+    static final int GLYPH_COUNT = 95;
+    static final int STYLE_COUNT = 4;
+    static final int COLUMN_COUNT = 16;
+    static final int HEADER_COUNT = 18;
+
+    final int[] metrics;
+    final byte[] alpha;
+
+    private OctavoTypography(int[] metrics, byte[] alpha) {
+        this.metrics = metrics;
+        this.alpha = alpha;
+    }
+
+    static OctavoTypography create(Context context) {
+        int textPx = Math.max(
+            Math.round(TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                18.0f,
+                context.getResources().getDisplayMetrics())),
+            18);
+        Paint[] paints = new Paint[] {
+            paint(textPx, Typeface.NORMAL),
+            paint(textPx, Typeface.BOLD),
+            paint(textPx, Typeface.ITALIC),
+            paint(textPx, Typeface.BOLD_ITALIC)
+        };
+
+        int ascent = 0;
+        int descent = 0;
+        int minimumLeft = 0;
+        int maximumRight = 0;
+        int maximumAdvance = 0;
+        Rect bounds = new Rect();
+        int[][] advances = new int[STYLE_COUNT][GLYPH_COUNT];
+        for (int style = 0; style < STYLE_COUNT; ++style) {
+            Paint.FontMetricsInt font = paints[style].getFontMetricsInt();
+            ascent = Math.max(ascent, -font.ascent);
+            descent = Math.max(descent, font.descent);
+            for (int glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
+                String text = Character.toString(
+                    (char)(FIRST_CODEPOINT + glyph));
+                paints[style].getTextBounds(text, 0, 1, bounds);
+                minimumLeft = Math.min(minimumLeft, bounds.left);
+                maximumRight = Math.max(maximumRight, bounds.right);
+                int advance = Math.max(
+                    Math.round(paints[style].measureText(text)), 1);
+                advances[style][glyph] = advance;
+                maximumAdvance = Math.max(maximumAdvance, advance);
+            }
+        }
+
+        int padding = Math.max(textPx / 8, 3);
+        int originX = padding - minimumLeft;
+        int baselineY = padding + ascent;
+        int cellWidth = Math.max(
+            maximumAdvance,
+            maximumRight - minimumLeft) + padding * 2;
+        int cellHeight = ascent + descent + padding * 2;
+        int rowsPerStyle =
+            (GLYPH_COUNT + COLUMN_COUNT - 1) / COLUMN_COUNT;
+        int atlasWidth = cellWidth * COLUMN_COUNT;
+        int atlasHeight = cellHeight * rowsPerStyle * STYLE_COUNT;
+        Bitmap bitmap = Bitmap.createBitmap(
+            atlasWidth, atlasHeight, Bitmap.Config.ALPHA_8);
+        try {
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(0);
+            for (int style = 0; style < STYLE_COUNT; ++style) {
+                for (int glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
+                    int column = glyph % COLUMN_COUNT;
+                    int row = glyph / COLUMN_COUNT +
+                        style * rowsPerStyle;
+                    canvas.drawText(
+                        Character.toString(
+                            (char)(FIRST_CODEPOINT + glyph)),
+                        column * cellWidth + originX,
+                        row * cellHeight + baselineY,
+                        paints[style]);
+                }
+            }
+
+            int stride = bitmap.getRowBytes();
+            ByteBuffer pixels =
+                ByteBuffer.allocate(bitmap.getAllocationByteCount());
+            bitmap.copyPixelsToBuffer(pixels);
+            int[] metrics = new int[
+                HEADER_COUNT + STYLE_COUNT * GLYPH_COUNT];
+            metrics[0] = MAGIC;
+            metrics[1] = VERSION;
+            metrics[2] = FIRST_CODEPOINT;
+            metrics[3] = GLYPH_COUNT;
+            metrics[4] = STYLE_COUNT;
+            metrics[5] = COLUMN_COUNT;
+            metrics[6] = rowsPerStyle;
+            metrics[7] = cellWidth;
+            metrics[8] = cellHeight;
+            metrics[9] = atlasWidth;
+            metrics[10] = atlasHeight;
+            metrics[11] = stride;
+            metrics[12] = textPx;
+            metrics[13] = ascent;
+            metrics[14] = descent;
+            metrics[15] = Math.max(
+                Math.round((ascent + descent) * 1.25f),
+                cellHeight - padding);
+            metrics[16] = originX;
+            metrics[17] = baselineY;
+            int at = HEADER_COUNT;
+            for (int style = 0; style < STYLE_COUNT; ++style) {
+                for (int glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
+                    metrics[at++] = advances[style][glyph];
+                }
+            }
+            return new OctavoTypography(metrics, pixels.array());
+        } finally {
+            bitmap.recycle();
+        }
+    }
+
+    private static Paint paint(int textPx, int style) {
+        Paint result = new Paint(
+            Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG |
+            Paint.SUBPIXEL_TEXT_FLAG);
+        result.setColor(0xFFFFFFFF);
+        result.setTextSize(textPx);
+        result.setTypeface(Typeface.create(Typeface.SERIF, style));
+        result.setHinting(Paint.HINTING_ON);
+        return result;
+    }
+}

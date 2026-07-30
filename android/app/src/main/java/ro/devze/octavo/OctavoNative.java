@@ -19,7 +19,11 @@ final class OctavoNative {
     static native String readerVersion();
     static native String uiVersion();
     static native String readerViewVersion();
-    static native long create(String filesPath, String cachePath, String fixturePath);
+    static native long create(String filesPath,
+                              String cachePath,
+                              String fixturePath,
+                              int[] typographyMetrics,
+                              byte[] typographyAlpha);
     static native void destroy(long handle);
     static native void hostResumed(long handle);
     static native void hostPaused(long handle);

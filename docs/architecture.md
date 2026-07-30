@@ -2,8 +2,10 @@
 
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
-Android host is at Port 0: it proves Gradle, activity, surface, and JNI
-lifecycle boundaries but does not yet compile or run the reader application.
+Android host is at Port 4: it compiles the same exact shared sources, opens a
+deterministic EPUB through Reader0, presents Readerview0 chrome and canonical
+styled pages, and supports gated tap navigation with a readable proportional
+serif default.
 The project does not introduce a generic document framework in anticipation of
 formats that do not yet exist.
 
@@ -34,7 +36,7 @@ flowchart TD
 
 | Component | Owns |
 | --- | --- |
-| **8vo** | Product lifecycle and input, the library surface, commands, persistence, document selection, rendering integration, accessibility adapters, and product cache policy; concrete Win32 production and Android bootstrap hosts |
+| **8vo** | Product lifecycle and input, the library surface, commands, persistence, document selection, rendering integration, accessibility adapters, and product cache policy; concrete Win32 production and Android native reader hosts |
 | **reader0** | EPUB parsing, metadata, layout, pagination, search, selection, navigation, and canonical reader frames |
 | **readerview0** | Shared reader chrome, panel and popup layout, transient interaction state, semantic records, and bounded actions |
 | **ui0** | Product-neutral controls, focus and input mechanics, layout, themes, and renderer-independent draw records |
@@ -62,7 +64,7 @@ document or host persistence.
 
 Each visible reader frame follows the same path:
 
-1. Win32 input is translated into host or reader intents.
+1. Platform input is translated into host or reader intents.
 2. 8vo applies host mutations or asks Reader0 to perform a document operation.
 3. Reader0 publishes a canonical frame into caller-owned bounded storage.
 4. 8vo projects that frame and host state into Readerview0.
@@ -74,7 +76,7 @@ Each visible reader frame follows the same path:
 
 Page navigation is gated by presentation: another page mutation cannot advance
 until the accepted Reader0 frame has been captured and shown. Key repeat,
-preparation scheduling, and cancellation remain Win32 host policy rather than
+preparation scheduling, and cancellation remain platform-host policy rather than
 Reader0 behavior.
 
 ## Ownership and lifetimes
@@ -118,7 +120,7 @@ software renderer. 8vo connects them and owns:
 - font and renderer bindings;
 - decoded-image, prepared-image, and thumbnail cache limits;
 - image fit and fallback policy;
-- the final Win32 backbuffer presentation.
+- the final Win32 backbuffer or Android native-window presentation.
 
 The same resolved font measurements are used for pagination and rasterization.
 Images remain Reader0 document resources, Ground0 decoding mechanisms, and 8vo
@@ -135,11 +137,15 @@ records through the Win32 MSAA object and adds its host-owned controls, such as
 Close Book. Native object lifetime and execution of returned actions remain in
 the application.
 
-The Android Port 0 host is deliberately smaller. Java owns the `Activity` and
-`SurfaceView`; one caller-owned native handle owns the corresponding
-`ANativeWindow`. No full reader frame, Android accessibility adapter, or
-Android file picker is claimed yet. The milestone contract is in
-[`android_port0.md`](android_port0.md).
+The Android Port 4 host remains deliberately bounded. Java owns the `Activity`
+and `SurfaceView`; one caller-owned native handle owns the corresponding
+`ANativeWindow`, Reader0/Readerview0 state, and copied platform-serif atlas.
+Android font acquisition stays in 8vo, and the exact copied advances are used
+for both Reader0 pagination and native raster placement. Touch navigation,
+lifecycle, inset handling, handset content geometry, and successful
+presentation are host policy. Android accessibility adaptation, a file picker,
+user typography settings, and full Unicode shaping are not claimed yet. The
+current milestone contract is in [`android_port4.md`](android_port4.md).
 
 ## Adding another format
 

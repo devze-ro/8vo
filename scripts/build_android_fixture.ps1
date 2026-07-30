@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 if (!$OutputPath) {
   $OutputPath = Join-Path $Root `
-    "android\app\src\main\assets\port3\octavo_port3.epub"
+    "android\app\src\main\assets\port4\octavo_port4.epub"
 } elseif (![System.IO.Path]::IsPathRooted($OutputPath)) {
   $OutputPath = Join-Path $Root $OutputPath
 }
@@ -25,7 +25,7 @@ function New-Chapter {
     "<body><h1 id=`"chapter-$ChapterIndex`">Chapter $NumberWord</h1>"
   )
   foreach ($paragraph in 1..256) {
-    $lines += "<p>$OrdinalWord chapter paragraph $paragraph carries unique deterministic Port 3 navigation content.</p>"
+    $lines += "<p><strong>$OrdinalWord chapter</strong> paragraph $paragraph carries <em>readable proportional</em> deterministic Port 4 typography with <strong><em>stable emphasis</em></strong>.</p>"
   }
   $lines += "</body></html>"
   return $lines -join "`n"
@@ -42,8 +42,8 @@ $package = @(
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">',
   '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">',
-  '    <dc:identifier id="bookid">octavo-android-port3</dc:identifier>',
-  '    <dc:title>Octavo Android Port 3</dc:title>',
+  '    <dc:identifier id="bookid">octavo-android-port4</dc:identifier>',
+  '    <dc:title>Octavo Android Port 4</dc:title>',
   '    <dc:language>en</dc:language>',
   '  </metadata>',
   '  <manifest>',
@@ -63,8 +63,8 @@ $package = @(
 $toc = @(
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<ncx xmlns="http://www.daisy.org/2005/ncx/" version="2005-1">',
-  '  <head><meta name="dtb:uid" content="octavo-android-port3"/></head>',
-  '  <docTitle><text>Octavo Android Port 3</text></docTitle>',
+  '  <head><meta name="dtb:uid" content="octavo-android-port4"/></head>',
+  '  <docTitle><text>Octavo Android Port 4</text></docTitle>',
   '  <navMap>',
   '    <navPoint id="nav-one" playOrder="1"><navLabel><text>Chapter One</text></navLabel><content src="chapter1.xhtml#chapter-1"/></navPoint>',
   '    <navPoint id="nav-two" playOrder="2"><navLabel><text>Chapter Two</text></navLabel><content src="chapter2.xhtml#chapter-2"/></navPoint>',

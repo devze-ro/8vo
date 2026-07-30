@@ -159,6 +159,27 @@ public final class OctavoBootstrapTest {
         assertEquals(1, snapshot[OctavoSurfaceView.STATE_READER_VIEW_READY]);
         assertEquals(0, snapshot[OctavoSurfaceView.STATE_READER_VIEW_ERRORS]);
         assertTrue(snapshot[OctavoSurfaceView.STATE_READER_VIEW_DRAW_COUNT] > 1);
+        assertEquals(1, snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_READY]);
+        assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_TEXT_PX] >= 18);
+        assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_LINE_ADVANCE_PX]
+                   > snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_TEXT_PX]);
+        assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_NARROW_ADVANCE_PX]
+                   < snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_WIDE_ADVANCE_PX]);
+        assertEquals(4, snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_STYLE_COUNT]);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_TYPOGRAPHY_RASTERIZED_GLYPH_COUNT]
+                   > 100);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_TYPOGRAPHY_REGULAR_GLYPH_COUNT]
+                   > 0);
+        assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_BOLD_GLYPH_COUNT]
+                   > 0);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_TYPOGRAPHY_ITALIC_GLYPH_COUNT]
+                   > 0);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_TYPOGRAPHY_BOLD_ITALIC_GLYPH_COUNT]
+                   > 0);
 
         int pageX = (int)snapshot[OctavoSurfaceView.STATE_PAGE_SURFACE_X];
         int pageY = (int)snapshot[OctavoSurfaceView.STATE_PAGE_SURFACE_Y];
@@ -169,6 +190,7 @@ public final class OctavoBootstrapTest {
         assertTrue(pageX >= 0);
         assertTrue(pageY >= 0);
         assertTrue(pageWidth > 0);
+        assertTrue(pageWidth * 100 >= bitmap.getWidth() * 90);
         assertTrue(pageHeight > 0);
         assertTrue(pageX + pageWidth <= bitmap.getWidth());
         assertTrue(pageY + pageHeight <= bitmap.getHeight());
@@ -220,7 +242,7 @@ public final class OctavoBootstrapTest {
                 assertEquals(activity.getFilesDir().getAbsolutePath(), filesPath.get());
                 assertEquals(activity.getCacheDir().getAbsolutePath(), cachePath.get());
                 assertEquals(new File(activity.getFilesDir(),
-                                      "port3/octavo_port3.epub").getAbsolutePath(),
+                                      "port4/octavo_port4.epub").getAbsolutePath(),
                              fixturePath.get());
             });
             assertNotNull(filesPath.get());
@@ -236,8 +258,8 @@ public final class OctavoBootstrapTest {
             assertTrue(visibleText.get().contains("First chapter paragraph"));
             File fixture = new File(fixturePath.get());
             assertTrue(fixture.isFile());
-            assertEquals(96704, fixture.length());
-            assertEquals("40EB1FD2CEF876C8EBD80BE7C62DBF5387DE68C4F918D31EEDC5C5E893F19991",
+            assertEquals(178644, fixture.length());
+            assertEquals("3D962705842816645B48E1F2909C2EA3EF44F9C39FE1DFFAB9BC687C82B42CC4",
                          sha256(fixture));
             assertEquals(0, initial[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
             assertTrue(initial[OctavoSurfaceView.STATE_SURFACE_GENERATION] >= 1);

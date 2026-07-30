@@ -14,7 +14,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependenci
 
 ## Android fixture
 
-`build_android_fixture.ps1` reproducibly writes the Port 3 EPUB fixture in
+`build_android_fixture.ps1` reproducibly writes the Port 4 EPUB fixture in
 fixed ZIP-entry order with fixed timestamps and no compression:
 
 ```powershell
@@ -23,7 +23,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 ```
 
 The script prints the exact output length and SHA-256 documented in
-`docs/android_port3.md`.
+`docs/android_port4.md`.
 
 ## Public smoke suite
 

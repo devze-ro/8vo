@@ -12,6 +12,9 @@
 - [`android_port3.md`](android_port3.md) defines deterministic touch page
   navigation, Reader0-owned moves and boundaries, successful-presentation
   gating, and the interactive Android reader milestone.
+- [`android_port4.md`](android_port4.md) defines the readable proportional
+  Android serif atlas, shared pagination/raster metrics, styled-row drawing,
+  and handset content-geometry milestone.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 

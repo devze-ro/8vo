@@ -74,7 +74,7 @@ public final class OctavoNavigationTest {
                 && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] == 1
                 && snapshot[
                     OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0,
-            "8vo did not present the initial Port 3 page");
+            "8vo did not present the initial Port 4 page");
     }
 
     private static long[] awaitPage(
@@ -170,7 +170,7 @@ public final class OctavoNavigationTest {
                 }
                 SystemClock.sleep(100);
             }
-            fail("PixelCopy could not read the Port 3 frame");
+            fail("PixelCopy could not read the Port 4 frame");
             bitmap.recycle();
             return null;
         } finally {
@@ -222,8 +222,8 @@ public final class OctavoNavigationTest {
                  ActivityScenario.launch(OctavoActivity.class)) {
             long[] initial = awaitInitialPage(scenario);
             long pageCount = initial[OctavoSurfaceView.STATE_PAGE_COUNT];
-            assertTrue("Port 3 fixture needs at least four pages", pageCount >= 4);
-            assertTrue("Port 3 fixture unexpectedly exceeds the test bound",
+            assertTrue("Port 4 fixture needs at least four pages", pageCount >= 4);
+            assertTrue("Port 4 fixture unexpectedly exceeds the test bound",
                        pageCount <= 64);
             assertPageAndProgress(initial, 1, pageCount);
             assertNavigationHealthy(initial);
@@ -294,7 +294,7 @@ public final class OctavoNavigationTest {
                 long startingBoundary =
                     restored[OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT];
                 boolean reachedEnd = false;
-                for (int attempt = 0; attempt < 128; ++attempt) {
+                for (int attempt = 0; attempt < 512; ++attempt) {
                     tap(scenario, true);
                     long successBefore = expectedSuccess;
                     long[] after = awaitState(
@@ -322,7 +322,7 @@ public final class OctavoNavigationTest {
                     atEnd = after;
                     assertNavigationHealthy(atEnd);
                 }
-                assertTrue("Port 3 did not reach the end-of-book boundary",
+                assertTrue("Port 4 did not reach the end-of-book boundary",
                            reachedEnd);
                 long endHash =
                     atEnd[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];

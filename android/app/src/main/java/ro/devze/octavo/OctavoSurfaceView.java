@@ -46,7 +46,18 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_SECTION_COUNT = 36;
     static final int STATE_PROGRESS_LOCATION_INDEX = 37;
     static final int STATE_PROGRESS_LOCATION_COUNT = 38;
-    static final int STATE_FIELD_COUNT = 39;
+    static final int STATE_TYPOGRAPHY_READY = 39;
+    static final int STATE_TYPOGRAPHY_TEXT_PX = 40;
+    static final int STATE_TYPOGRAPHY_LINE_ADVANCE_PX = 41;
+    static final int STATE_TYPOGRAPHY_NARROW_ADVANCE_PX = 42;
+    static final int STATE_TYPOGRAPHY_WIDE_ADVANCE_PX = 43;
+    static final int STATE_TYPOGRAPHY_STYLE_COUNT = 44;
+    static final int STATE_TYPOGRAPHY_RASTERIZED_GLYPH_COUNT = 45;
+    static final int STATE_TYPOGRAPHY_REGULAR_GLYPH_COUNT = 46;
+    static final int STATE_TYPOGRAPHY_BOLD_GLYPH_COUNT = 47;
+    static final int STATE_TYPOGRAPHY_ITALIC_GLYPH_COUNT = 48;
+    static final int STATE_TYPOGRAPHY_BOLD_ITALIC_GLYPH_COUNT = 49;
+    static final int STATE_FIELD_COUNT = 50;
 
     private long nativeHandle;
     private boolean hostResumed;
@@ -60,9 +71,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     OctavoSurfaceView(Context context, String fixturePath) {
         super(context);
+        OctavoTypography typography = OctavoTypography.create(context);
         nativeHandle = OctavoNative.create(context.getFilesDir().getAbsolutePath(),
                                            context.getCacheDir().getAbsolutePath(),
-                                           fixturePath);
+                                           fixturePath,
+                                           typography.metrics,
+                                           typography.alpha);
         if (nativeHandle == 0) {
             throw new IllegalStateException("Unable to create the 8vo native application state");
         }

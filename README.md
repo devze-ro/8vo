@@ -36,16 +36,15 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 3
+## Android Port 4
 
-The Android port now compiles the exact shared Ground0, Reader0, UI0, and
-Readerview0 sources, opens a bundled deterministic EPUB, and presents canonical
-Reader0 pages through Readerview0's portable geometry and chrome. Inset-aware
-left/right tap zones call Reader0's existing page-move API, and a successful
-presentation gate prevents rapid input from skipping an unpresented page.
-Section/page labels and Reader0's canonical book-wide location keep EPUB spine
-transitions explicit. Pause/resume, surface replacement, Activity recreation,
-and API-36 system-bar insets remain explicit 8vo host responsibilities.
+The Android port now presents Reader0's canonical EPUB rows with a fixed,
+readable 18sp proportional serif face. Android font acquisition and alpha-atlas
+ownership stay inside 8vo; the same regular, bold, italic, and bold-italic
+advance table drives both Reader0 pagination and native raster placement.
+Readerview0's public content-geometry resolver supplies a wider handset page,
+while Port 3's inset-aware navigation, boundaries, progress, lifecycle, and
+successful-presentation gate remain intact.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -58,8 +57,9 @@ cd android
 ```
 
 The current scope and acceptance criteria are documented in
-[docs/android_port3.md](docs/android_port3.md); the preceding static-page
-milestone is documented in [docs/android_port2.md](docs/android_port2.md), the
+[docs/android_port4.md](docs/android_port4.md); the interactive navigation
+milestone is documented in [docs/android_port3.md](docs/android_port3.md), the
+static-page milestone in [docs/android_port2.md](docs/android_port2.md), the
 lifecycle milestone in [docs/android_port1.md](docs/android_port1.md), and the
 toolchain/shared-package foundation in [docs/android_port0.md](docs/android_port0.md).
 
