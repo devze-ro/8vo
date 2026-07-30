@@ -36,15 +36,15 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 4
+## Android Port 5
 
-The Android port now presents Reader0's canonical EPUB rows with a fixed,
-readable 18sp proportional serif face. Android font acquisition and alpha-atlas
-ownership stay inside 8vo; the same regular, bold, italic, and bold-italic
-advance table drives both Reader0 pagination and native raster placement.
-Readerview0's public content-geometry resolver supplies a wider handset page,
-while Port 3's inset-aware navigation, boundaries, progress, lifecycle, and
-successful-presentation gate remain intact.
+The Android port can now open a user-selected EPUB through Android's document
+picker, copy it into app-private storage, and resume the last successfully
+presented Reader0 location after pause, surface replacement, or Activity/process
+recreation. Selection, managed-file ownership, and durable session policy stay
+inside 8vo. Reader0 remains authoritative for opening, pagination, navigation,
+canonical frames, and semantic location restore; Port 4's readable proportional
+serif typography remains intact.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -57,7 +57,8 @@ cd android
 ```
 
 The current scope and acceptance criteria are documented in
-[docs/android_port4.md](docs/android_port4.md); the interactive navigation
+[docs/android_port5.md](docs/android_port5.md); the readable typography
+milestone is documented in [docs/android_port4.md](docs/android_port4.md), the interactive navigation
 milestone is documented in [docs/android_port3.md](docs/android_port3.md), the
 static-page milestone in [docs/android_port2.md](docs/android_port2.md), the
 lifecycle milestone in [docs/android_port1.md](docs/android_port1.md), and the

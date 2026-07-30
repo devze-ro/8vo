@@ -14,6 +14,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependenci
 
 ## Android fixture
 
+For historical Port 4 validation,
 `build_android_fixture.ps1` reproducibly writes the Port 4 EPUB fixture in
 fixed ZIP-entry order with fixed timestamps and no compression:
 
@@ -24,6 +25,19 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 The script prints the exact output length and SHA-256 documented in
 `docs/android_port4.md`.
+
+`build_android_port5_fixtures.ps1` reproducibly writes Port 5's default fixture
+and the smaller, visibly distinct selected-book fixture used by import/resume
+instrumentation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts\build_android_port5_fixtures.ps1
+```
+
+Both outputs use fixed entry order, fixed timestamps, and no compression. The
+script prints the exact lengths and SHA-256 values documented in
+`docs/android_port5.md`.
 
 ## Public smoke suite
 

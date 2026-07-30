@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -14,8 +15,10 @@ import android.view.PixelCopy;
 
 import androidx.lifecycle.Lifecycle;
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -26,6 +29,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 public final class OctavoNavigationTest {
+    @Before
+    public void clearPort5Session() {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoDocumentStore.clearSessionForTesting(context);
+    }
     private interface StateCondition {
         boolean matches(long[] snapshot);
     }
@@ -74,7 +82,7 @@ public final class OctavoNavigationTest {
                 && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] == 1
                 && snapshot[
                     OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0,
-            "8vo did not present the initial Port 4 page");
+            "8vo did not present the initial Port 5 page");
     }
 
     private static long[] awaitPage(
@@ -170,7 +178,7 @@ public final class OctavoNavigationTest {
                 }
                 SystemClock.sleep(100);
             }
-            fail("PixelCopy could not read the Port 4 frame");
+            fail("PixelCopy could not read the Port 5 frame");
             bitmap.recycle();
             return null;
         } finally {
@@ -222,8 +230,8 @@ public final class OctavoNavigationTest {
                  ActivityScenario.launch(OctavoActivity.class)) {
             long[] initial = awaitInitialPage(scenario);
             long pageCount = initial[OctavoSurfaceView.STATE_PAGE_COUNT];
-            assertTrue("Port 4 fixture needs at least four pages", pageCount >= 4);
-            assertTrue("Port 4 fixture unexpectedly exceeds the test bound",
+            assertTrue("Port 5 fixture needs at least four pages", pageCount >= 4);
+            assertTrue("Port 5 fixture unexpectedly exceeds the test bound",
                        pageCount <= 64);
             assertPageAndProgress(initial, 1, pageCount);
             assertNavigationHealthy(initial);
@@ -322,7 +330,7 @@ public final class OctavoNavigationTest {
                     atEnd = after;
                     assertNavigationHealthy(atEnd);
                 }
-                assertTrue("Port 4 did not reach the end-of-book boundary",
+                assertTrue("Port 5 did not reach the end-of-book boundary",
                            reachedEnd);
                 long endHash =
                     atEnd[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];
@@ -542,14 +550,62 @@ public final class OctavoNavigationTest {
             assertNavigationHealthy(replaced);
 
             scenario.recreate();
-            long[] recreated = awaitInitialPage(scenario);
+            long[] recreated = awaitState(
+                scenario,
+                snapshot ->
+                    snapshot[OctavoSurfaceView.STATE_FRAME_COUNT] > 0
+                    && snapshot[
+                        OctavoSurfaceView.STATE_READER_FRAME_READY] == 1
+                    && snapshot[
+                        OctavoSurfaceView.STATE_RESTORE_SUCCEEDED] == 1
+                    && snapshot[
+                        OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                        == 0,
+                "8vo did not semantically restore the presented location");
+            assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_REQUESTED]);
+            assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_ATTEMPTED]);
+            assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_SUCCEEDED]);
+            assertEquals(0, recreated[OctavoSurfaceView.STATE_RESTORE_FAILURE_COUNT]);
+            assertTrue(recreated[
+                           OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH] != 0);
+            assertEquals(pageTwo[OctavoSurfaceView.STATE_SPINE_INDEX],
+                         recreated[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX]);
+            assertTrue(recreated[
+                           OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET]
+                       <= pageTwo[
+                           OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET]);
             assertNavigationHealthy(recreated);
+
+            long recreatedHash =
+                recreated[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];
+            long recreatedLocation =
+                recreated[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX];
             tap(scenario, true);
-            long[] recreatedNext = awaitPage(scenario, 2);
+            long[] recreatedNext = awaitState(
+                scenario,
+                snapshot ->
+                    snapshot[
+                        OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]
+                        > recreated[
+                            OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]
+                    && snapshot[
+                        OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                        == 0,
+                "8vo did not present the page after the restored location");
+            assertEquals(
+                recreated[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                recreatedNext[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                recreated[OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT] + 1,
+                recreatedNext[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT]);
             assertTrue(recreatedNext[
                            OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
-                       != recreated[
-                           OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+                       != recreatedHash);
+            assertTrue(recreatedNext[
+                           OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                       > recreatedLocation);
             assertNavigationHealthy(recreatedNext);
         }
     }

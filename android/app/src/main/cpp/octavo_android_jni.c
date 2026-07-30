@@ -17,7 +17,7 @@
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 50
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 59
 #define OCTAVO_ANDROID_TYPOGRAPHY_MAGIC 0x4F545950
 #define OCTAVO_ANDROID_TYPOGRAPHY_VERSION 1
 #define OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT 32
@@ -75,7 +75,7 @@ typedef struct OctavoAndroidApp
   ANativeWindow *window;
   char files_path[OCTAVO_ANDROID_PATH_CAPACITY];
   char cache_path[OCTAVO_ANDROID_PATH_CAPACITY];
-  char fixture_path[OCTAVO_ANDROID_PATH_CAPACITY];
+  char document_path[OCTAVO_ANDROID_PATH_CAPACITY];
   char document_title[OCTAVO_ANDROID_TITLE_CAPACITY];
   char progress_label[OCTAVO_ANDROID_PROGRESS_CAPACITY];
   OctavoAndroidTypography typography;
@@ -87,6 +87,14 @@ typedef struct OctavoAndroidApp
   EpubReaderLayoutKey layout_key;
   SourceReaderLayoutConfig layout_config;
   B32 reader_initialized;
+  U32 resume_spine_index;
+  U64 resume_byte_offset;
+  B32 restore_requested;
+  B32 restore_attempted;
+  B32 restore_succeeded;
+  uint64_t restore_failure_count;
+  uint64_t document_open_success_count;
+  uint64_t document_open_failure_count;
 
   ReaderViewState reader_view_state;
   ReaderViewLayout reader_view_layout;
@@ -1245,16 +1253,20 @@ octavo_android_initialize_reader(OctavoAndroidApp *app)
   app->reader_initialized = 1;
 
   EpubReaderOpenTransition transition = {0};
-  if (epub_reader_open(&app->reader,
-                       str8_from_cstr(app->fixture_path),
-                       DocSourceKind_EPUB,
-                       &transition) != EpubReaderResult_Ok ||
+  EpubReaderResult open_result = epub_reader_open(
+    &app->reader,
+    str8_from_cstr(app->document_path),
+    DocSourceKind_EPUB,
+    &transition);
+  if (open_result != EpubReaderResult_Ok ||
       !transition.changed ||
       !epub_reader_refresh_active_spine(&app->reader) ||
       !octavo_android_copy_document_title(app))
   {
+    app->document_open_failure_count += 1u;
     return 0;
   }
+  app->document_open_success_count += 1u;
 
   reader_view_state_init(&app->reader_view_state);
   reader_view_frame_storage_init(&app->reader_view_storage);
@@ -1383,11 +1395,56 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
       .measure_text = octavo_android_measure_reader_text,
       .measure_user = app,
     };
-    if (!epub_reader_rebuild_pagination(
+    B32 pagination_ready = 0;
+    if (app->restore_requested && !app->restore_attempted)
+    {
+      app->restore_attempted = 1;
+      app->layout_config.focused_spine_index = app->resume_spine_index;
+      epub_reader_request_window_pagination(&app->reader);
+      EpubReaderNavigationResult navigation = {0};
+      EpubReaderResult restore_result = epub_reader_navigate_to_location(
+        &app->reader,
+        app->resume_spine_index,
+        app->resume_byte_offset,
+        EpubReaderNavigationReason_Location,
+        app->layout_key,
+        app->layout_config,
+        (EpubReaderNavigationOptions){.suppress_history = 1},
+        &navigation);
+      U64 target_byte = navigation.target_byte_offset;
+      if (restore_result == EpubReaderResult_Ok &&
+          app->reader.has_current_page &&
+          app->reader.current_page.spine_index == app->resume_spine_index &&
+          app->reader.current_page.first_byte <= target_byte &&
+          app->reader.current_page.one_past_last_byte > target_byte)
+      {
+        app->restore_succeeded = 1;
+        pagination_ready = 1;
+      }
+      else
+      {
+        app->restore_failure_count += 1u;
+        __android_log_print(
+          ANDROID_LOG_WARN,
+          "8vo",
+          "Android Port 5 saved-location restore failed result=%d target=%u:%llu",
+          (int)restore_result,
+          (unsigned)app->resume_spine_index,
+          (unsigned long long)app->resume_byte_offset);
+      }
+    }
+    if (!pagination_ready)
+    {
+      app->layout_config.focused_spine_index =
+        app->reader.active_spine_index;
+    }
+    if (!pagination_ready &&
+        !epub_reader_rebuild_pagination(
           &app->reader, app->layout_key, app->layout_config, 0))
     {
       return 0;
     }
+    app->layout_config.focused_spine_index = app->reader.active_spine_index;
     for (U32 spine_index = 0;
          spine_index < spine_count &&
            !epub_reader_location_cache_ensure(&app->reader);
@@ -1517,7 +1574,7 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Readerview0 rejected Port 4 projection errors=0x%x",
+      "Readerview0 rejected Port 5 projection errors=0x%x",
       app->reader_view_frame.error_flags);
   }
   return app->reader_view_ready;
@@ -1599,7 +1656,7 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Android Port 4 page move failed result=%d diagnostic=%d",
+      "Android Port 5 page move failed result=%d diagnostic=%d",
       (int)result,
       (int)change.diagnostic);
     return 0;
@@ -1671,7 +1728,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       0xFF451F1Fu);
     (void)ANativeWindow_unlockAndPost(app->window);
     __android_log_print(
-      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 4 page");
+      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 5 page");
     return 0;
   }
 
@@ -1718,7 +1775,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       __android_log_print(
         ANDROID_LOG_ERROR,
         "8vo",
-        "Android Port 4 presented page mismatch "
+        "Android Port 5 presented page mismatch "
         "expected=%u:%llu actual=%u:%llu",
         (unsigned)app->page_move_expected_spine_index,
         (unsigned long long)app->page_move_expected_byte_offset,
@@ -1734,7 +1791,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 4 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
+    "Android Port 5 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
     "reader_bytes=%llu reader_hash=%016llx view_draws=%d",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
@@ -1799,7 +1856,10 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                          jclass type,
                                          jstring files_path,
                                          jstring cache_path,
-                                         jstring fixture_path,
+                                         jstring document_path,
+                                         jlong resume_spine_index,
+                                         jlong resume_byte_offset,
+                                         jboolean resume_requested,
                                          jintArray typography_metrics,
                                          jbyteArray typography_alpha)
 {
@@ -1810,6 +1870,18 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     return 0;
   }
 
+  if (resume_requested &&
+      (resume_spine_index < 0 ||
+       (uint64_t)resume_spine_index > UINT32_MAX ||
+       resume_byte_offset < 0))
+  {
+    free(app);
+    return 0;
+  }
+  app->restore_requested = resume_requested ? 1 : 0;
+  app->resume_spine_index = (U32)resume_spine_index;
+  app->resume_byte_offset = (U64)resume_byte_offset;
+
   if (!octavo_android_copy_path(environment,
                                 files_path,
                                 app->files_path,
@@ -1819,9 +1891,9 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                 app->cache_path,
                                 sizeof(app->cache_path)) ||
       !octavo_android_copy_path(environment,
-                                fixture_path,
-                                app->fixture_path,
-                                sizeof(app->fixture_path)) ||
+                                document_path,
+                                app->document_path,
+                                sizeof(app->document_path)) ||
       !octavo_android_import_typography(environment,
                                         typography_metrics,
                                         typography_alpha,
@@ -1831,7 +1903,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Unable to create the Android Port 4 reader state");
+      "Unable to create the Android Port 5 reader state");
     epub_reader_release(&app->reader);
     if (app->arena)
     {
@@ -1845,9 +1917,12 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 4 state created fixture=%s title=%s",
-    app->fixture_path,
-    app->document_title);
+    "Android Port 5 state created document=%s title=%s restore=%d:%u:%llu",
+    app->document_path,
+    app->document_title,
+    app->restore_requested,
+    (unsigned)app->resume_spine_index,
+    (unsigned long long)app->resume_byte_offset);
   return (jlong)(uintptr_t)app;
 }
 
@@ -2101,7 +2176,17 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[46] = (jlong)app->typography.rasterized_style_count[0];
   values[47] = (jlong)app->typography.rasterized_style_count[1];
   values[48] = (jlong)app->typography.rasterized_style_count[2];
-  values[49] = (jlong)app->typography.rasterized_style_count[3];  jlongArray result =
+  values[49] = (jlong)app->typography.rasterized_style_count[3];
+  values[50] = app->restore_requested ? 1 : 0;
+  values[51] = app->restore_attempted ? 1 : 0;
+  values[52] = app->restore_succeeded ? 1 : 0;
+  values[53] = (jlong)app->restore_failure_count;
+  values[54] = (jlong)app->reader_frame.spine_index;
+  values[55] = (jlong)app->reader_frame.view_byte_offset;
+  values[56] = (jlong)app->document_open_success_count;
+  values[57] = (jlong)app->document_open_failure_count;
+  values[58] = (jlong)app->reader.document_generation;
+  jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
   if (!result)
   {
@@ -2112,6 +2197,36 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
                                      0,
                                      OCTAVO_ANDROID_STATE_FIELD_COUNT,
                                      values);
+  return result;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_readingPosition(JNIEnv *environment,
+                                                   jclass type,
+                                                   jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app)
+  {
+    return 0;
+  }
+  B32 valid = app->frame_count > 0 &&
+    app->reader_frame.ready &&
+    app->reader_frame.document_open &&
+    app->reader.has_current_page &&
+    !app->page_move_waiting_for_present;
+  jlong values[3] = {
+    valid ? 1 : 0,
+    valid ? (jlong)app->reader_frame.spine_index : 0,
+    valid ? (jlong)app->reader_frame.view_byte_offset : 0,
+  };
+  jlongArray result = (*environment)->NewLongArray(environment, 3);
+  if (!result)
+  {
+    return 0;
+  }
+  (*environment)->SetLongArrayRegion(environment, result, 0, 3, values);
   return result;
 }
 
@@ -2136,13 +2251,25 @@ Java_ro_devze_octavo_OctavoNative_cachePath(JNIEnv *environment,
 }
 
 JNIEXPORT jstring JNICALL
-Java_ro_devze_octavo_OctavoNative_fixturePath(JNIEnv *environment,
-                                              jclass type,
-                                              jlong handle)
+Java_ro_devze_octavo_OctavoNative_documentPath(JNIEnv *environment,
+                                               jclass type,
+                                               jlong handle)
 {
   (void)type;
   OctavoAndroidApp *app = octavo_android_from_handle(handle);
-  return app ? (*environment)->NewStringUTF(environment, app->fixture_path) : 0;
+  return app ?
+    (*environment)->NewStringUTF(environment, app->document_path) : 0;
+}
+
+JNIEXPORT jstring JNICALL
+Java_ro_devze_octavo_OctavoNative_documentTitle(JNIEnv *environment,
+                                                jclass type,
+                                                jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  return app ?
+    (*environment)->NewStringUTF(environment, app->document_title) : 0;
 }
 
 JNIEXPORT jstring JNICALL

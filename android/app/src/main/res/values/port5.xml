@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="octavo_open_epub" type="id" />
+    <string name="open_epub">Open EPUB</string>
+</resources>

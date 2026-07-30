@@ -21,14 +21,20 @@ final class OctavoNative {
     static native String readerViewVersion();
     static native long create(String filesPath,
                               String cachePath,
-                              String fixturePath,
+                              String documentPath,
+                              long resumeSpineIndex,
+                              long resumeByteOffset,
+                              boolean resumeRequested,
                               int[] typographyMetrics,
                               byte[] typographyAlpha);
     static native void destroy(long handle);
     static native void hostResumed(long handle);
     static native void hostPaused(long handle);
     static native void surfaceCreated(long handle, Surface surface);
-    static native void surfaceChanged(long handle, int format, int width, int height);
+    static native void surfaceChanged(long handle,
+                                      int format,
+                                      int width,
+                                      int height);
     static native void surfaceDestroyed(long handle);
     static native void windowInsets(long handle,
                                     int left,
@@ -37,9 +43,11 @@ final class OctavoNative {
                                     int bottom);
     static native boolean present(long handle);
     static native long[] state(long handle);
+    static native long[] readingPosition(long handle);
     static native String filesPath(long handle);
     static native String cachePath(long handle);
-    static native String fixturePath(long handle);
+    static native String documentPath(long handle);
+    static native String documentTitle(long handle);
     static native String visibleText(long handle);
     static native String progressLabel(long handle);
     static native int clearColorArgb();

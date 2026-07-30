@@ -2,10 +2,11 @@
 
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
-Android host is at Port 4: it compiles the same exact shared sources, opens a
-deterministic EPUB through Reader0, presents Readerview0 chrome and canonical
-styled pages, and supports gated tap navigation with a readable proportional
-serif default.
+Android host is at Port 5: it compiles the same exact shared sources, opens
+either its deterministic fallback or one user-selected EPUB through Reader0,
+presents Readerview0 chrome and canonical styled pages, supports gated tap
+navigation with a readable proportional serif default, and durably resumes the
+last successfully presented semantic location.
 The project does not introduce a generic document framework in anticipation of
 formats that do not yet exist.
 
@@ -137,15 +138,25 @@ records through the Win32 MSAA object and adds its host-owned controls, such as
 Close Book. Native object lifetime and execution of returned actions remain in
 the application.
 
-The Android Port 4 host remains deliberately bounded. Java owns the `Activity`
-and `SurfaceView`; one caller-owned native handle owns the corresponding
+The Android Port 5 host remains deliberately bounded. Java owns the `Activity`,
+standard document picker, managed file copy, versioned session file, and
+`SurfaceView`; one caller-owned native handle owns the corresponding
 `ANativeWindow`, Reader0/Readerview0 state, and copied platform-serif atlas.
+8vo records the selected EPUB by SHA-256 identity in app-private storage and
+persists only a Reader0 spine/byte location that has passed the successful
+presentation gate. Writes are debounced during reading and synchronously
+flushed at lifecycle/surface teardown. Reader0's public location navigation
+reconstructs the canonical frame on launch; a corrupt or unavailable record
+falls back safely to the deterministic fixture.
+
 Android font acquisition stays in 8vo, and the exact copied advances are used
 for both Reader0 pagination and native raster placement. Touch navigation,
-lifecycle, inset handling, handset content geometry, and successful
-presentation are host policy. Android accessibility adaptation, a file picker,
-user typography settings, and full Unicode shaping are not claimed yet. The
-current milestone contract is in [`android_port4.md`](android_port4.md).
+lifecycle, inset handling, handset content geometry, document selection,
+persistence, and successful-presentation policy remain host responsibilities.
+Android accessibility adaptation, a full library/catalog, multi-book
+management, user typography settings, and full Unicode shaping are not claimed
+yet. The current milestone contract is in
+[`android_port5.md`](android_port5.md).
 
 ## Adding another format
 

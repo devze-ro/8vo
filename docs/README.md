@@ -15,6 +15,9 @@
 - [`android_port4.md`](android_port4.md) defines the readable proportional
   Android serif atlas, shared pagination/raster metrics, styled-row drawing,
   and handset content-geometry milestone.
+- [`android_port5.md`](android_port5.md) defines Android document selection,
+  digest-keyed app-private import, successfully-presented location
+  persistence, Reader0 semantic resume, and safe session fallback.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 
