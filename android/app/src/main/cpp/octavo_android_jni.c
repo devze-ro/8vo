@@ -17,7 +17,7 @@
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 35
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 39
 
 enum
 {
@@ -758,6 +758,12 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
     {
       return 0;
     }
+    for (U32 spine_index = 0;
+         spine_index < spine_count &&
+           !epub_reader_location_cache_ensure(&app->reader);
+         spine_index += 1)
+    {
+    }
     app->pagination_content_width = content.w;
     app->pagination_content_height = content.h;
   }
@@ -780,11 +786,14 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
   projection.features =
     ReaderViewFeature_Paging | ReaderViewFeature_Progress;
   projection.document_flags = ReaderViewDocument_Open;
-  if (app->reader_frame.page_index > 1)
+  if (app->reader_frame.spine_index > 0 ||
+      app->reader_frame.page_index > 1)
   {
     projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
   }
-  if (app->reader_frame.page_count == 0 ||
+  if (app->reader_frame.spine_index + 1u <
+        app->reader_frame.section_count ||
+      app->reader_frame.page_count == 0 ||
       app->reader_frame.page_index < app->reader_frame.page_count)
   {
     projection.document_flags |= ReaderViewDocument_CanGoNextPage;
@@ -804,24 +813,59 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
   {
     projection.progress.page_index = app->reader_frame.page_index - 1u;
     projection.progress.page_count = app->reader_frame.page_count;
+  }
+  if (app->reader_frame.location.available &&
+      app->reader_frame.location.location_index > 0 &&
+      app->reader_frame.location.location_count > 0)
+  {
     projection.progress.location_index =
-      app->reader_frame.page_index - 1u;
+      app->reader_frame.location.location_index - 1u;
     projection.progress.location_count =
-      app->reader_frame.page_count;
+      app->reader_frame.location.location_count;
+  }
+  else
+  {
+    projection.progress.location_index = projection.progress.page_index;
+    projection.progress.location_count = projection.progress.page_count;
+  }
+
+  U32 section_index = app->reader_frame.spine_index + 1u;
+  U32 section_count = app->reader_frame.section_count;
+  U64 progress_percent = app->reader_frame.location.available ?
+    app->reader_frame.location.percent : 0u;
+  if (app->reader_frame.page_count > 0 &&
+      app->reader_frame.page_index > 0)
+  {
     (void)snprintf(
       app->progress_label,
       sizeof(app->progress_label),
-      "Page %llu of %llu",
+      "Section %u of %u | Page %llu of %llu | %llu%%",
+      (unsigned)section_index,
+      (unsigned)section_count,
       (unsigned long long)app->reader_frame.page_index,
-      (unsigned long long)app->reader_frame.page_count);
+      (unsigned long long)app->reader_frame.page_count,
+      (unsigned long long)progress_percent);
+  }
+  else if (app->reader_frame.page_index > 0)
+  {
+    (void)snprintf(
+      app->progress_label,
+      sizeof(app->progress_label),
+      "Section %u of %u | Page %llu | %llu%%",
+      (unsigned)section_index,
+      (unsigned)section_count,
+      (unsigned long long)app->reader_frame.page_index,
+      (unsigned long long)progress_percent);
   }
   else
   {
     (void)snprintf(
       app->progress_label,
       sizeof(app->progress_label),
-      "Page %llu",
-      (unsigned long long)app->reader_frame.page_index);
+      "Section %u of %u | %llu%%",
+      (unsigned)section_index,
+      (unsigned)section_count,
+      (unsigned long long)progress_percent);
   }
   projection.progress.label =
     octavo_android_reader_view_text(app->progress_label);
@@ -1403,6 +1447,10 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[32] = (jlong)app->page_move_gate_block_count;
   values[33] = app->page_move_waiting_for_present ? 1 : 0;
   values[34] = (jlong)app->navigation_failure_count;
+  values[35] = (jlong)app->reader_frame.spine_index;
+  values[36] = (jlong)app->reader_frame.section_count;
+  values[37] = (jlong)app->reader_view_projection.progress.location_index;
+  values[38] = (jlong)app->reader_view_projection.progress.location_count;
 
   jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
@@ -1466,6 +1514,17 @@ Java_ro_devze_octavo_OctavoNative_visibleText(JNIEnv *environment,
   memcpy(text, app->reader_frame.visible_text.str, size);
   text[size] = 0;
   return (*environment)->NewStringUTF(environment, text);
+}
+
+JNIEXPORT jstring JNICALL
+Java_ro_devze_octavo_OctavoNative_progressLabel(JNIEnv *environment,
+                                                jclass type,
+                                                jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  return app ?
+    (*environment)->NewStringUTF(environment, app->progress_label) : 0;
 }
 
 JNIEXPORT jint JNICALL

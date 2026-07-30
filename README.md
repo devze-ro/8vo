@@ -43,8 +43,9 @@ Readerview0 sources, opens a bundled deterministic EPUB, and presents canonical
 Reader0 pages through Readerview0's portable geometry and chrome. Inset-aware
 left/right tap zones call Reader0's existing page-move API, and a successful
 presentation gate prevents rapid input from skipping an unpresented page.
-Pause/resume, surface replacement, Activity recreation, and API-36 system-bar
-insets remain explicit 8vo host responsibilities.
+Section/page labels and Reader0's canonical book-wide location keep EPUB spine
+transitions explicit. Pause/resume, surface replacement, Activity recreation,
+and API-36 system-bar insets remain explicit 8vo host responsibilities.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:

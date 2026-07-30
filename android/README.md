@@ -60,13 +60,14 @@ With an API 26 or newer emulator/device connected:
 The suite verifies native/shared version identity, the exact staged EPUB,
 canonical Reader0 text and page evidence, a clean Readerview0 frame, actual page
 and ink pixels, exact adjacent next/previous indices, changed/restored text,
-pixels and progress, both boundary no-ops, rapid-tap presentation gating,
-private paths, pause/resume, surface replacement, and Activity recreation. It
-rejects any recorded native presentation or navigation failure.
+pixels and progress, explicit cross-section identity with monotonic book-wide
+location, both boundary no-ops, rapid-tap presentation gating, private paths,
+pause/resume, surface replacement, and Activity recreation. It rejects any
+recorded native presentation or navigation failure.
 
-Port 3 intentionally uses Ground0's deterministic bitmap font and does not yet
-add document picking, swipes/held navigation, production typography,
-persistence, or sync. See
+Port 3 intentionally uses Ground0's small, pixelated, effectively monospaced
+deterministic bitmap font and does not yet add document picking, swipes/held
+navigation, production typography or text sizing, persistence, or sync. See
 [`../docs/android_port3.md`](../docs/android_port3.md) for the current milestone
 boundary and [`../docs/android_port2.md`](../docs/android_port2.md) for the
 preceding static-page slice.

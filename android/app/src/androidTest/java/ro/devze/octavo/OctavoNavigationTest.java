@@ -99,6 +99,16 @@ public final class OctavoNavigationTest {
         return result.get();
     }
 
+    private static String progressLabel(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<String> result = new AtomicReference<>();
+        scenario.onActivity(activity -> result.set(
+            ((OctavoSurfaceView)activity.findViewById(R.id.octavo_surface))
+                .progressLabelForTesting()));
+        assertNotNull(result.get());
+        return result.get();
+    }
+
     private static void dispatchTap(OctavoSurfaceView surface,
                                     boolean next,
                                     long eventTimeMillis) {
@@ -195,6 +205,14 @@ public final class OctavoNavigationTest {
                          OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT]);
         assertEquals(0,
                      snapshot[OctavoSurfaceView.STATE_READER_VIEW_ERRORS]);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT] > 0);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX] >= 0);
+        assertTrue(snapshot[
+                       OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                   < snapshot[
+                       OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT]);
     }
 
     @Test
@@ -337,6 +355,118 @@ public final class OctavoNavigationTest {
                 assertNavigationHealthy(endBoundary);
             } finally {
                 initialPixels.recycle();
+            }
+        }
+    }
+
+    @Test
+    public void crossSectionProgressIdentifiesForwardAndBackwardAdjacency()
+        throws InterruptedException {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            long[] initial = awaitInitialPage(scenario);
+            long firstSectionPageCount =
+                initial[OctavoSurfaceView.STATE_PAGE_COUNT];
+            long sectionCount = initial[OctavoSurfaceView.STATE_SECTION_COUNT];
+            assertEquals(0, initial[OctavoSurfaceView.STATE_SPINE_INDEX]);
+            assertEquals(4, sectionCount);
+            assertTrue(progressLabel(scenario).startsWith(
+                "Section 1 of 4 | Page 1 of "));
+            assertNavigationHealthy(initial);
+
+            for (long targetPage = 2;
+                 targetPage <= firstSectionPageCount;
+                 ++targetPage) {
+                tap(scenario, true);
+                long expectedPage = targetPage;
+                awaitState(
+                    scenario,
+                    snapshot ->
+                        snapshot[OctavoSurfaceView.STATE_SPINE_INDEX] == 0
+                        && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX]
+                            == expectedPage
+                        && snapshot[
+                            OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                            == 0,
+                    "8vo did not reach the expected first-section page");
+            }
+
+            long[] firstSectionEnd = state(scenario);
+            String firstSectionEndLabel = progressLabel(scenario);
+            String firstSectionEndText = visibleText(scenario);
+            Bitmap firstSectionEndPixels = copyFrame(surface(scenario));
+            assertNotNull(firstSectionEndPixels);
+            try {
+                assertEquals(firstSectionPageCount,
+                             firstSectionEnd[
+                                 OctavoSurfaceView.STATE_PAGE_INDEX]);
+                assertTrue(firstSectionEndLabel.startsWith(
+                    "Section 1 of 4 | Page " + firstSectionPageCount
+                    + " of " + firstSectionPageCount + " | "));
+
+                tap(scenario, true);
+                long[] secondSectionStart = awaitState(
+                    scenario,
+                    snapshot ->
+                        snapshot[OctavoSurfaceView.STATE_SPINE_INDEX] == 1
+                        && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] == 1
+                        && snapshot[
+                            OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                            == 0,
+                    "8vo did not present the adjacent second section");
+                assertEquals(sectionCount,
+                             secondSectionStart[
+                                 OctavoSurfaceView.STATE_SECTION_COUNT]);
+                assertTrue(secondSectionStart[
+                               OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                           > firstSectionEnd[
+                               OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]);
+                assertEquals(firstSectionEnd[
+                                 OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT],
+                             secondSectionStart[
+                                 OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT]);
+                String secondSectionLabel = progressLabel(scenario);
+                assertTrue(secondSectionLabel.startsWith(
+                    "Section 2 of 4 | Page 1 | "));
+                assertTrue(!visibleText(scenario).equals(firstSectionEndText));
+                Bitmap secondSectionPixels = copyFrame(surface(scenario));
+                assertNotNull(secondSectionPixels);
+                try {
+                    assertTrue("Cross-section pixels did not change",
+                               !firstSectionEndPixels.sameAs(
+                                   secondSectionPixels));
+                } finally {
+                    secondSectionPixels.recycle();
+                }
+                assertNavigationHealthy(secondSectionStart);
+
+                tap(scenario, false);
+                long[] restored = awaitState(
+                    scenario,
+                    snapshot ->
+                        snapshot[OctavoSurfaceView.STATE_SPINE_INDEX] == 0
+                        && snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                            == firstSectionEnd[
+                                OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                        && snapshot[
+                            OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                            == firstSectionEnd[
+                                OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                        && snapshot[
+                            OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                            == 0,
+                    "8vo did not restore the adjacent first section");
+                assertTrue(restored[OctavoSurfaceView.STATE_PAGE_INDEX] == 0
+                           || restored[OctavoSurfaceView.STATE_PAGE_INDEX]
+                               == firstSectionPageCount);
+                String restoredLabel = progressLabel(scenario);
+                assertTrue(restoredLabel.startsWith("Section 1 of 4 | "));
+                assertTrue(!restoredLabel.contains("Page 0"));
+                assertTrue(!restoredLabel.equals(secondSectionLabel));
+                assertEquals(firstSectionEndText, visibleText(scenario));
+                assertNavigationHealthy(restored);
+            } finally {
+                firstSectionEndPixels.recycle();
             }
         }
     }

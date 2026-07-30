@@ -37,6 +37,7 @@ final class OctavoNative {
     static native String cachePath(long handle);
     static native String fixturePath(long handle);
     static native String visibleText(long handle);
+    static native String progressLabel(long handle);
     static native int clearColorArgb();
     static native int touch(long handle,
                             int action,

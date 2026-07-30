@@ -16,7 +16,8 @@ Port 3 adds:
 - previous/next calls through Reader0's existing `epub_reader_move_page` API;
 - canonical Reader0-frame and Readerview0 projection rebuilds after every
   successful move;
-- updated reader text, section-local page progress, and progress chrome;
+- updated reader text, explicit section/page identity, canonical Reader0 book-wide
+  location progress, and progress chrome;
 - an explicit successful-presentation gate keyed by Reader0's canonical
   `(spine_index, byte_offset)` identity;
 - safe Reader0 `Boundary` handling with no page, frame, progress, or pixel
@@ -71,8 +72,16 @@ through Reader0 until a next tap reports the final boundary.
 
 Reader0's canonical frame page index/count are section-local. A prepared
 cross-section window may temporarily publish a known page index with
-`page_count == 0`; 8vo preserves that API meaning and does not manufacture a
-book-global progress model.
+`page_count == 0`, and a reverse bounded window may temporarily leave both
+values unknown. 8vo preserves those meanings: it never fabricates a page
+number, and omits the page component when the index is unknown.
+
+To keep a valid cross-section move from looking like wraparound, the visible
+label identifies Reader0's canonical spine as `Section n of m`, retains the
+known section-local page, and adds Reader0's book-wide location percentage.
+The Readerview0 progress range uses `EpubReaderFrame.location`, not the local
+page count. A transition from section 1 page 5 to section 2 page 1 therefore
+advances the global progress instead of resetting it.
 
 ## Deterministic fixture
 
@@ -112,7 +121,7 @@ No Android dependency or host policy enters a shared package.
 
 ## Automated coverage
 
-The Android suite contains three instrumentation tests:
+The Android suite contains four instrumentation tests:
 
 1. the Port 2 foundation test still verifies exact versions and paths, exact
    fixture bytes, canonical text/ink, Readerview0 output, pause/resume,
@@ -120,8 +129,12 @@ The Android suite contains three instrumentation tests:
 2. the adjacent-navigation test verifies first-page previous boundary,
    exact 1-to-2-to-1 page indices, visible-text hashes and strings, PixelCopy
    changes/restoration, progress changes/restoration, a complete Reader0-driven
-   walk to the final boundary, and zero native/render failures; and
-3. the rapid-input test dispatches two right-zone taps in one UI turn, observes
+   walk to the final boundary, and zero native/render failures;
+3. the cross-section regression advances through the first section, verifies
+   the exact section 1 to section 2 transition, changed text and pixels,
+   monotonic canonical book-wide location, explicit progress labels, and the
+   reverse transition back to the same Reader0 text/location identity; and
+4. the rapid-input test dispatches two right-zone taps in one UI turn, observes
    one successful move pending presentation plus one gated tap, then requires
    exactly page 2 to be presented before testing pause/resume, surface
    replacement, recreation, and navigation after recreation.
@@ -142,6 +155,10 @@ Port 3 does not add:
 - a background renderer.
 
 Ground0's deterministic bitmap font remains the temporary raster boundary.
+On the physical device it is intentionally small, pixelated, and effectively
+monospaced compared with a production e-reader. That is expected for Port 3;
+readable proportional typography and user-controlled text sizing remain a
+future milestone rather than a Port 3 acceptance criterion.
 
 ## Build and validation
 
@@ -166,23 +183,21 @@ Port 3 is accepted when:
 
 ## Validation record
 
-On 2026-07-29, the Android 16/API 36 x86_64 emulator passed all 3
-instrumentation tests in 15.871 seconds:
+The final corrected Port 3 suite passed all four instrumentation tests on the
+Android 16/API 36 x86_64 emulator on 2026-07-30. The exact dependency guards
+and both configured Android ABI builds passed. The suite verified:
 
-- the exact dependency guards passed;
-- both configured Android ABIs compiled;
-- the fixture reproduced byte-for-byte at the documented length and hash;
-- the initial 1,080 by 1,920 surface published page 1 of 6 with 3,489 visible
-  bytes, hash `5e00368df8356107`, and three clean Readerview0 draw records;
-- page 2 published different text, pixels, and progress, and page 1 was restored
-  exactly by a previous tap;
-- rapid input produced one pending move and one gated tap, then one successful
-  presentation;
-- the suite traversed all four sections and observed both book boundaries;
-- pause/resume, native-window replacement, and Activity recreation passed; and
-- no render or navigation failure was recorded.
+- exact adjacent page 1-to-2-to-1 text, pixels, and progress;
+- both book boundaries and a complete Reader0-driven traversal;
+- the explicit section 1-to-section 2 transition and reverse transition;
+- monotonic Reader0 book-wide location across the section boundary;
+- explicit section/page/percentage progress labels without fabricated unknown
+  page numbers;
+- rapid-input presentation gating;
+- pause/resume, native-window replacement, and Activity recreation; and
+- zero render, navigation, or Readerview0 projection failures.
 
-The strict Windows gates also passed on 2026-07-29:
+The strict Windows gates also passed again on 2026-07-30:
 
 - `scripts/run_public_smoke.ps1` completed the strict 8vo build, architecture
   and dependency guards, and all seven public smoke tests;
@@ -191,7 +206,21 @@ The strict Windows gates also passed on 2026-07-29:
 - unchanged re10's `--document_engine_smoke` passed with four anchors, final
   spine index 3, and hash `f3c13a55f0349720`.
 
-The emulator crash buffer remained empty after instrumentation and direct
-right/left tap smoke input. The required physical-device instrumentation and
-hands-on tap check remain pending. Port 3 is not physically accepted until
-both pass on the iQOO.
+The vivo I2019/iQOO 9 SE running Android 14/API 34 on ARM64 passed all four
+corrected instrumentation tests in 9.658 seconds. Its 1,080 by 2,196 reader
+surface initially published page 1 of 5 with 4,095 visible bytes and hash
+`286e35e493c35c13`.
+
+The first hands-on traversal correctly crossed from the final page of one EPUB
+section to the first page of the next, but the original section-local-only
+label made that valid move look like wraparound. 8vo was corrected to project
+Reader0's section identity and canonical book-wide location. Emulator and
+physical regression tests then passed, and the user confirmed that the
+cross-section presentation issue was fixed. Left/right navigation and safe
+boundary behavior are physically accepted.
+
+The physical screenshots also confirmed the deliberately temporary typography
+boundary: the Ground0 bitmap font is much smaller and more monospaced than a
+production Kindle reading font. Production typography remains deferred. The
+Android crash buffer was empty after the corrected suite. This completes the
+Port 3 physical-device acceptance check.

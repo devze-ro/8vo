@@ -42,7 +42,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_PAGE_MOVE_GATE_BLOCK_COUNT = 32;
     static final int STATE_PAGE_MOVE_PRESENTATION_PENDING = 33;
     static final int STATE_NAVIGATION_FAILURE_COUNT = 34;
-    static final int STATE_FIELD_COUNT = 35;
+    static final int STATE_SPINE_INDEX = 35;
+    static final int STATE_SECTION_COUNT = 36;
+    static final int STATE_PROGRESS_LOCATION_INDEX = 37;
+    static final int STATE_PROGRESS_LOCATION_COUNT = 38;
+    static final int STATE_FIELD_COUNT = 39;
 
     private long nativeHandle;
     private boolean hostResumed;
@@ -161,6 +165,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     String visibleTextForTesting() {
         return nativeHandle == 0 ? null : OctavoNative.visibleText(nativeHandle);
+    }
+
+    String progressLabelForTesting() {
+        return nativeHandle == 0 ? null : OctavoNative.progressLabel(nativeHandle);
     }
 
     void replaceNativeSurfaceForTesting() {
