@@ -2,11 +2,11 @@
 <resources>
     <style name="Theme.Octavo" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:windowBackground">#F7F3EA</item>
-        <item name="android:colorAccent">#E6B566</item>
-        <item name="android:navigationBarColor">#F7F3EA</item>
-        <item name="android:statusBarColor">#F7F3EA</item>
-        <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#171513</item>
+        <item name="android:colorAccent">#C68B5B</item>
+        <item name="android:navigationBarColor">#0F0E0D</item>
+        <item name="android:statusBarColor">#12110F</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

@@ -38,6 +38,7 @@ public final class OctavoBootstrapTest {
     public void clearPort6Library() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoAppearanceStore.clearForTesting(context);
     }
     private static long[] state(ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<long[]> result = new AtomicReference<>();
@@ -233,7 +234,7 @@ public final class OctavoBootstrapTest {
     @Test
     public void staticReaderFramePathsAndLifecycle()
         throws InterruptedException, IOException, NoSuchAlgorithmException {
-        assertEquals("0.6.0-dev", OctavoNative.version());
+        assertEquals("0.7.0-dev", OctavoNative.version());
         assertEquals("android", OctavoNative.platform());
         assertEquals("0.4.3-dev", OctavoNative.groundVersion());
         assertEquals("0.5.0-dev", OctavoNative.readerVersion());

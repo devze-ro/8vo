@@ -18,6 +18,9 @@ final class OctavoTypography {
     static final int STYLE_COUNT = 4;
     static final int COLUMN_COUNT = 16;
     static final int HEADER_COUNT = 18;
+    private static final int MAX_TEXT_PX = 512;
+    private static final int MAX_ATLAS_DIMENSION = 16384;
+    private static final int MAX_ATLAS_BYTES = 64 * 1024 * 1024;
 
     final int[] metrics;
     final byte[] alpha;
@@ -28,17 +31,35 @@ final class OctavoTypography {
     }
 
     static OctavoTypography create(Context context) {
+        return create(context, OctavoAppearance.defaults());
+    }
+
+    static OctavoTypography create(Context context,
+                                   OctavoAppearance appearance) {
+        if (context == null) {
+            throw new IllegalArgumentException("Missing context");
+        }
+        OctavoAppearance selected = appearance == null
+            ? OctavoAppearance.defaults() : appearance;
+        float resolvedTextPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            selected.fontSizeSp(),
+            context.getResources().getDisplayMetrics());
+        if (Float.isNaN(resolvedTextPx)
+            || Float.isInfinite(resolvedTextPx)) {
+            throw new IllegalArgumentException("Invalid display metrics");
+        }
         int textPx = Math.max(
-            Math.round(TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                18.0f,
-                context.getResources().getDisplayMetrics())),
-            18);
+            Math.round(resolvedTextPx), selected.fontSizeSp());
+        if (textPx <= 0 || textPx > MAX_TEXT_PX) {
+            throw new IllegalArgumentException("Text size exceeds its bound");
+        }
+        Typeface family = selected.systemTypeface();
         Paint[] paints = new Paint[] {
-            paint(textPx, Typeface.NORMAL),
-            paint(textPx, Typeface.BOLD),
-            paint(textPx, Typeface.ITALIC),
-            paint(textPx, Typeface.BOLD_ITALIC)
+            paint(textPx, family, Typeface.NORMAL),
+            paint(textPx, family, Typeface.BOLD),
+            paint(textPx, family, Typeface.ITALIC),
+            paint(textPx, family, Typeface.BOLD_ITALIC)
         };
 
         int ascent = 0;
@@ -58,6 +79,8 @@ final class OctavoTypography {
                 paints[style].getTextBounds(text, 0, 1, bounds);
                 minimumLeft = Math.min(minimumLeft, bounds.left);
                 maximumRight = Math.max(maximumRight, bounds.right);
+                ascent = Math.max(ascent, -bounds.top);
+                descent = Math.max(descent, bounds.bottom);
                 int advance = Math.max(
                     Math.round(paints[style].measureText(text)), 1);
                 advances[style][glyph] = advance;
@@ -74,8 +97,18 @@ final class OctavoTypography {
         int cellHeight = ascent + descent + padding * 2;
         int rowsPerStyle =
             (GLYPH_COUNT + COLUMN_COUNT - 1) / COLUMN_COUNT;
-        int atlasWidth = cellWidth * COLUMN_COUNT;
-        int atlasHeight = cellHeight * rowsPerStyle * STYLE_COUNT;
+        long atlasWidthLong = (long)cellWidth * COLUMN_COUNT;
+        long atlasHeightLong =
+            (long)cellHeight * rowsPerStyle * STYLE_COUNT;
+        if (atlasWidthLong <= 0 || atlasHeightLong <= 0
+            || atlasWidthLong > MAX_ATLAS_DIMENSION
+            || atlasHeightLong > MAX_ATLAS_DIMENSION
+            || atlasWidthLong * atlasHeightLong > MAX_ATLAS_BYTES) {
+            throw new IllegalArgumentException(
+                "Typography atlas dimensions exceed their bounds");
+        }
+        int atlasWidth = (int)atlasWidthLong;
+        int atlasHeight = (int)atlasHeightLong;
         Bitmap bitmap = Bitmap.createBitmap(
             atlasWidth, atlasHeight, Bitmap.Config.ALPHA_8);
         try {
@@ -96,8 +129,13 @@ final class OctavoTypography {
             }
 
             int stride = bitmap.getRowBytes();
-            ByteBuffer pixels =
-                ByteBuffer.allocate(bitmap.getAllocationByteCount());
+            long alphaBytesLong = (long)stride * atlasHeight;
+            if (stride < atlasWidth || alphaBytesLong <= 0
+                || alphaBytesLong > MAX_ATLAS_BYTES) {
+                throw new IllegalArgumentException(
+                    "Typography atlas storage exceeds its bound");
+            }
+            ByteBuffer pixels = ByteBuffer.allocate((int)alphaBytesLong);
             bitmap.copyPixelsToBuffer(pixels);
             int[] metrics = new int[
                 HEADER_COUNT + STYLE_COUNT * GLYPH_COUNT];
@@ -116,9 +154,12 @@ final class OctavoTypography {
             metrics[12] = textPx;
             metrics[13] = ascent;
             metrics[14] = descent;
-            metrics[15] = Math.max(
-                Math.round((ascent + descent) * 1.25f),
-                cellHeight - padding);
+            int naturalLineHeight = ascent + descent;
+            long requestedLineAdvance =
+                ((long)naturalLineHeight
+                 * selected.lineSpacingPermille() + 999L) / 1000L;
+            metrics[15] = (int)Math.max(
+                requestedLineAdvance, cellHeight - padding);
             metrics[16] = originX;
             metrics[17] = baselineY;
             int at = HEADER_COUNT;
@@ -133,13 +174,13 @@ final class OctavoTypography {
         }
     }
 
-    private static Paint paint(int textPx, int style) {
+    private static Paint paint(int textPx, Typeface family, int style) {
         Paint result = new Paint(
             Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG |
             Paint.SUBPIXEL_TEXT_FLAG);
         result.setColor(0xFFFFFFFF);
         result.setTextSize(textPx);
-        result.setTypeface(Typeface.create(Typeface.SERIF, style));
+        result.setTypeface(Typeface.create(family, style));
         result.setHinting(Paint.HINTING_ON);
         return result;
     }

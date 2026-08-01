@@ -87,20 +87,35 @@ contrast, cool white text, saturated accents, inconsistent system chrome, and
 bright transition frames can all create discomfort even when a palette meets
 a minimum contrast ratio.
 
-The 8vo theme system will therefore provide:
+Port 7 establishes the first bounded implementation of that theme system:
 
 - a warm-charcoal default dark theme with warm off-white body text;
 - an optional true-black OLED theme rather than making pure black mandatory;
-- paper, sepia, dusk, warm-dark, and OLED presets with semantic color roles;
-- separately tuned links, selection, search, and highlight colors for each
-  surface rather than mechanically inverting the light palette;
-- user-controlled page brightness or dimming where Android permits it;
+- paper, sepia, dusk, warm-dark, OLED, and high-contrast presets with
+  independently specified semantic color roles;
+- separately tuned selection, search, and highlight colors for each surface
+  rather than mechanically inverting the light palette;
 - coherent library, reader, dialog, sheet, status-bar, navigation-bar, and
-  launch colors with no bright intermediate frame;
+  launch colors with direct redraw paths intended to avoid a bright
+  intermediate frame;
+- a global-only durable preference contract, with per-book overrides deferred
+  until their ownership and migration behavior are separately specified; and
+- generic Android serif and sans-serif choices without introducing an
+  unlicensed bundled font.
+
+The broader product contract still requires:
+
+- an explicit, independently tuned link treatment for every theme;
+- user-controlled page brightness or dimming where Android permits it;
 - images preserved faithfully unless the user explicitly requests a safe
   image treatment;
-- both comfortable-reading and high-contrast accessibility choices; and
 - optional schedule/system-theme following without taking away manual choice.
+
+Port 7 implementation is not night-mode acceptance. Its API 36 semantic,
+composed-pixel, 130% system-text, dual-ABI, and desktop regression evidence is
+recorded in `android_port7.md`. Physical-device, hands-on TalkBack,
+prolonged-reading, and dark-room evidence must still be completed before the
+new appearance foundation is accepted.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots
@@ -162,6 +177,13 @@ The product ambition does not relax the current ownership model:
 Premium surfaces must not compensate for missing engine behavior by
 duplicating EPUB interpretation, pagination, search anchoring, selection
 anchoring, or navigation logic in Java or the 8vo host.
+
+Port 7 applies that rule concretely. Android owns one global appearance
+record, semantic product palettes, generic system-font acquisition, overlay
+chrome, and the custom-view accessibility adapter. A layout-affecting change
+uses Reader0's public canonical location navigation to rebuild the page that
+contains the last successfully presented semantic byte. The host does not
+substitute page-number arithmetic or Java pagination for that operation.
 
 ## Evidence standard
 

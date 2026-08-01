@@ -13,6 +13,10 @@ $accessibilityPath = Join-Path $RepoRoot "code\platform\win32\octavo_accessibili
 $parityPath = Join-Path $RepoRoot "scripts\win32_reader_view_stage2b0_parity.ps1"
 $repeatQueuePath = Join-Path $RepoRoot "scripts\win32_octavo_page_repeat_queue_smoke.ps1"
 $pageTurnPath = Join-Path $RepoRoot "scripts\win32_octavo_page_turn_regression_smoke.ps1"
+$dependencyCheckPath = Join-Path $RepoRoot "scripts\check_dependencies.ps1"
+$win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
+$androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
+$androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/octavo.c") }
 if (!(Test-Path -LiteralPath $libraryHeaderPath)) {
@@ -33,6 +37,15 @@ if (!(Test-Path -LiteralPath $repeatQueuePath)) {
 if (!(Test-Path -LiteralPath $pageTurnPath)) {
   $failures.Add("missing exact-book page-turn regression")
 }
+if (!(Test-Path -LiteralPath $dependencyCheckPath)) {
+  $failures.Add("missing dependency revision guard")
+}
+if (!(Test-Path -LiteralPath $win32BuildPath)) {
+  $failures.Add("missing strict Win32 build entry point")
+}
+if (!(Test-Path -LiteralPath $androidCMakePath)) {
+  $failures.Add("missing Android native build definition")
+}
 
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
@@ -43,6 +56,54 @@ if ($failures.Count -eq 0) {
   $parity = [System.IO.File]::ReadAllText($parityPath)
   $repeatQueue = [System.IO.File]::ReadAllText($repeatQueuePath)
   $pageTurn = [System.IO.File]::ReadAllText($pageTurnPath)
+  $dependencyCheck = [System.IO.File]::ReadAllText($dependencyCheckPath)
+  $win32Build = [System.IO.File]::ReadAllText($win32BuildPath)
+  $androidCMake = [System.IO.File]::ReadAllText($androidCMakePath)
+  $forbiddenGround0Variable = "LECTERN0_ZERO_" + "FOUNDATION_DIR"
+  if ($dependencyCheck.IndexOf($forbiddenGround0Variable) -ge 0 -or
+      $win32Build.IndexOf($forbiddenGround0Variable) -ge 0) {
+    $failures.Add("dependency resolution must not use the forbidden legacy Ground0 environment variable")
+  }
+  $androidSourceMatches = [regex]::Matches(
+    $androidCMake,
+    '(?im)^\s*"?([^"\s]+\.c)"?\s*$')
+  if ($androidSourceMatches.Count -ne 1) {
+    $failures.Add("Android CMake must compile exactly one application unity C source")
+  }
+  else {
+    $androidUnityRelativePath = $androidSourceMatches[0].Groups[1].Value
+    $androidUnityName = Split-Path -Leaf $androidUnityRelativePath
+    $androidUnityPath = Join-Path $androidCppRoot $androidUnityRelativePath
+    if ($androidUnityName -notmatch '^octavo_android_[A-Za-z0-9_]+_build\.c$') {
+      $failures.Add("Android CMake C source must be the Octavo application unity source")
+    }
+    elseif (!(Test-Path -LiteralPath $androidUnityPath -PathType Leaf)) {
+      $failures.Add("Android application unity source is missing")
+    }
+    else {
+      $androidUnity = [System.IO.File]::ReadAllText($androidUnityPath)
+      $androidPackageIncludes = @(
+        @{ Name = "reader0.c"; Pattern = '(?m)^\s*#\s*include\s+"reader0\.c"\s*$' },
+        @{ Name = "ui0.c"; Pattern = '(?m)^\s*#\s*include\s+"ui0\.c"\s*$' },
+        @{ Name = "readerview0.c"; Pattern = '(?m)^\s*#\s*include\s+"readerview0\.c"\s*$' }
+      )
+      $androidCFiles = @(Get-ChildItem -LiteralPath $androidCppRoot -Filter "*.c" -File)
+      foreach ($package in $androidPackageIncludes) {
+        $unityIncludeCount = [regex]::Matches($androidUnity, $package.Pattern).Count
+        $allSourceIncludeCount = 0
+        foreach ($androidCFile in $androidCFiles) {
+          $androidCSource = [System.IO.File]::ReadAllText($androidCFile.FullName)
+          $allSourceIncludeCount += [regex]::Matches(
+            $androidCSource,
+            $package.Pattern).Count
+        }
+        if ($unityIncludeCount -ne 1 -or $allSourceIncludeCount -ne 1) {
+          $failures.Add(
+            "Android unity source must compile $($package.Name) exactly once")
+        }
+      }
+    }
+  }
   if ([regex]::Matches($build, '#include\s+"reader0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile reader0.c exactly once")
   }

@@ -1,15 +1,15 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01. Port 7 is the next proposed
-bounded milestone; later numbering and boundaries may change as evidence is
-collected.
+Status: directional roadmap adopted 2026-08-01. Port 7 is implemented on its
+milestone branch and awaiting formal acceptance; later numbering and
+boundaries may change as evidence is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
 not a promise to reproduce Kindle screen by screen, and it does not defer
 quality until a final polish phase.
 
-## Accepted foundation
+## Accepted foundation and current candidate
 
 Ports 0-6 establish the infrastructure on which the product can safely grow:
 
@@ -24,6 +24,11 @@ Ports 0-6 establish the infrastructure on which the product can safely grow:
 
 Port 6 is a functional foundation, not a claim of Kindle-level feature or
 visual parity.
+
+Port 7 is the current implementation candidate. It adds the appearance,
+semantic-location reflow, overlay chrome, and accessibility-bridge foundation
+described below. Until its full acceptance matrix passes, Ports 0-6 remain the
+accepted Android baseline.
 
 ## Delivery method
 
@@ -47,33 +52,42 @@ pass unchanged-consumer gates in 8vo and re10.
 
 ## Port 7: premium reader appearance foundation
 
-Port 7 should make one mainstream reflowable EPUB comfortable and coherent to
-read for an extended session before adding another large feature surface.
+The Port 7 implementation candidate makes one mainstream reflowable EPUB
+substantially more configurable and coherent before adding another large
+feature surface. Extended-session comfort remains an acceptance question, not
+an implementation claim.
 
-### Proposed scope
+### Implemented scope
 
-- Define 8vo semantic design tokens for page, chrome, surfaces, text hierarchy,
+- 8vo semantic design tokens cover page, chrome, surfaces, text hierarchy,
   dividers, accents, selection, errors, spacing, shape, icon size, and motion.
-- Add a calm immersive reader shell whose controls appear/disappear without
-  losing page state, accepting accidental page taps, or flashing a light
-  frame.
-- Add a reader-preferences surface with font size, curated font family, line
-  spacing, margins/content width, alignment where the engine supports it, and
-  publisher-style policy made explicit.
-- Add paper, sepia, dusk, warm-dark, OLED, and high-contrast theme choices.
-- Tune every reader/chrome/system-bar color semantically for each theme; do not
-  invert one palette mechanically.
-- Persist preferences independently from per-book locations, with an explicit
-  decision about global defaults versus per-book overrides.
-- Rebuild Reader0 pagination after layout-affecting changes and reconstruct
+- A calm immersive reader shell shows and hides controls over stable page
+  geometry. Final emulator automation covers page-state neutrality, measured
+  chrome occlusion, hidden-band tap rejection, and composed dark-transition
+  pixels; physical touch and comfort remain acceptance gates.
+- The reader-preferences surface offers five font sizes, Android generic serif
+  and sans-serif families, four line-spacing choices, three margins/content
+  widths, supported publisher/ragged-right alignment, explicit publisher-color
+  policy, and reduced motion. No font asset is bundled.
+- Paper, sepia, dusk, warm-dark, OLED, and high-contrast themes are available.
+- Every reader, chrome, and system-bar role is tuned semantically per theme
+  instead of mechanically inverting one palette.
+- One versioned, checksummed global appearance persists independently from
+  per-book locations. Per-book overrides are explicitly deferred.
+- Layout-affecting changes rebuild Reader0 pagination and reconstruct
   the canonical page containing the last successfully presented semantic
   location.
-- Coalesce preview changes and retain the successful-presentation gate so
+- Java coalesces preview changes and retains the successful-presentation gate so
   rapid adjustments cannot save or expose an unpresented state.
-- Expose native Android controls and the custom reader's essential actions to
-  TalkBack; establish the accessibility bridge pattern used by later ports.
-- Add deterministic visual evidence for supported themes, preference extremes,
-  system insets, rotation, recreation, and compact/large viewports.
+- Native Android controls and the custom reader's essential actions are
+  exposed through the accessibility bridge pattern used by later ports.
+- Diagnostic state and stable palette hashes support deterministic evidence
+  for themes, preference extremes, insets, rotation, recreation, and
+  compact/large viewports.
+
+Implementation of the behavior and diagnostic hooks is present, and the final
+API 36 emulator/visual matrix has run. Physical-device and human comfort/
+accessibility acceptance remain separate obligations.
 
 ### Deliberately out of Port 7
 
@@ -103,7 +117,22 @@ In addition to permanent build/regression gates, require:
 - dark-room comparison of warm-dark and OLED modes, recording discomfort,
   halation, minimum brightness, accent intensity, and any white flash.
 
-## Candidate sequence after Port 7
+### Current validation status
+
+The final API 36 x86_64 emulator matrix passed 23/23 ordered tests at the
+default system font scale, sequentially exercising every supported preference
+value plus compact/large viewports, portrait/landscape, lifecycle, rotation,
+surface replacement, and recreation. Both halves of an externally
+force-stopped fresh-process probe and a separate 130% system-text
+accessibility/settings run passed. Both Android ABIs built, the emulator crash
+buffer was empty, the strict Windows 8vo suite passed 7/7 public smokes, and
+unchanged re10 passed its strict build and four-anchor document-engine smoke.
+Exact timings, finite-matrix limits, pins, and coverage are recorded in
+[android_port7.md](android_port7.md). Live TalkBack and alternate-input review,
+physical iQOO instrumentation, extended reading,
+and dark-room review remain pending.
+
+## Candidate sequence after Port 7 acceptance
 
 These are capability slices, not frozen port numbers. Before beginning each
 one, convert its relevant parity rows into a bounded milestone contract.

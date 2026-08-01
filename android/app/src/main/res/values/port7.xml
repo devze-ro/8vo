@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_appearance">Appearance</string>
+    <string name="previous_page">Previous</string>
+    <string name="next_page">Next</string>
+    <item name="octavo_reader_root" type="id" />
+    <item name="octavo_reader_top_chrome" type="id" />
+    <item name="octavo_reader_bottom_chrome" type="id" />
+    <item name="octavo_reader_appearance" type="id" />
+    <item name="octavo_reader_previous" type="id" />
+    <item name="octavo_reader_next" type="id" />
+    <item name="octavo_reader_progress" type="id" />
+    <item name="octavo_reader_failure" type="id" />
+    <item name="octavo_appearance_transition" type="id" />
+    <item name="octavo_appearance_overlay" type="id" />
+    <item name="octavo_appearance_panel" type="id" />
+    <item name="octavo_status_bar_scrim" type="id" />
+    <item name="octavo_navigation_bar_scrim" type="id" />
+</resources>

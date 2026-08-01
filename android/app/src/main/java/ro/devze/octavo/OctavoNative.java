@@ -9,6 +9,10 @@ final class OctavoNative {
 
     static final int TOUCH_HANDLED = 1;
     static final int TOUCH_PRESENT_REQUESTED = 2;
+    static final int TOUCH_CHROME_REQUESTED = 4;
+    static final int NAVIGATION_READY = 1;
+    static final int NAVIGATION_PREVIOUS = 2;
+    static final int NAVIGATION_NEXT = 4;
 
     private OctavoNative() {
     }
@@ -25,12 +29,20 @@ final class OctavoNative {
                               long resumeSpineIndex,
                               long resumeByteOffset,
                               boolean resumeRequested,
+                              boolean chromeVisible,
+                              int[] appearanceConfig,
+                              int[] appearanceColors,
                               int[] typographyMetrics,
                               byte[] typographyAlpha);
+    static native int applyAppearance(long handle,
+                                      int[] appearanceConfig,
+                                      int[] appearanceColors,
+                                      int[] typographyMetrics,
+                                      byte[] typographyAlpha);
     static native void destroy(long handle);
     static native void hostResumed(long handle);
     static native void hostPaused(long handle);
-    static native void surfaceCreated(long handle, Surface surface);
+    static native boolean surfaceCreated(long handle, Surface surface);
     static native void surfaceChanged(long handle,
                                       int format,
                                       int width,
@@ -41,8 +53,25 @@ final class OctavoNative {
                                     int top,
                                     int right,
                                     int bottom);
+    static native boolean readerChromeInsets(long handle,
+                                             int top,
+                                             int bottom);
+    static native boolean forcePresentFailuresForTesting(long handle,
+                                                         int count);
+    static native boolean forcePrePresentFailuresForTesting(long handle,
+                                                            int count);
+    static native boolean forceSurfaceAcquisitionFailuresForTesting(
+        long handle, int count);
     static native boolean present(long handle);
+    static native int navigationAvailability(long handle);
+    static native boolean setChromeVisible(long handle, boolean visible);
+    static native int accessibilityMovePage(long handle, int direction);
     static native long[] state(long handle);
+    static native long[] accessibilitySemanticSnapshot(long handle);
+    static native String accessibilitySemanticName(long handle,
+                                                   int recordIndex);
+    static native String accessibilitySemanticValue(long handle,
+                                                    int recordIndex);
     static native long[] readingPosition(long handle);
     static native String filesPath(long handle);
     static native String cachePath(long handle);

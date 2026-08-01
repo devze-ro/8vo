@@ -92,7 +92,6 @@ $ground0 = Resolve-EnvironmentDirectory "OCTAVO_GROUND0_DIR"
 if (!$ground0) {
   foreach ($legacyName in @(
     "OCTAVO_ZERO_FOUNDATION_DIR",
-    "LECTERN0_ZERO_FOUNDATION_DIR",
     "ZERO_FOUNDATION_DIR"
   )) {
     $ground0 = Resolve-EnvironmentDirectory $legacyName -IgnoreMissing

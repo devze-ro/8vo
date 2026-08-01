@@ -56,6 +56,7 @@ public final class OctavoLibraryCatalogTest {
     public void clearPort6Library() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoAppearanceStore.clearForTesting(context);
     }
 
     private interface StateCondition {

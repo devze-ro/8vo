@@ -17,23 +17,59 @@
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 59
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 89
 #define OCTAVO_ANDROID_TYPOGRAPHY_MAGIC 0x4F545950
 #define OCTAVO_ANDROID_TYPOGRAPHY_VERSION 1
 #define OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT 32
 #define OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT 95
 #define OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT 4
 #define OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT 18
+#define OCTAVO_ANDROID_APPEARANCE_MAGIC 0x4F375041
+#define OCTAVO_ANDROID_APPEARANCE_VERSION 1
+#define OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT 11
+/* Port 7 appearance state remains owned by the Android host. */
+#define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_VERSION 1
+#define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_HEADER_COUNT 3
+#define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE 11
 
 enum
 {
   OCTAVO_ANDROID_TEXT_SCALE = 3,
-  OCTAVO_ANDROID_APP_BACKGROUND = 0xFFF7F3EAu,
+  OCTAVO_ANDROID_DEFAULT_BACKGROUND = 0xFFF7F3EAu,
   OCTAVO_ANDROID_TAP_MAX_DURATION_MILLIS = 500,
   OCTAVO_ANDROID_TAP_SLOP_PIXELS = 24,
   OCTAVO_ANDROID_TOUCH_HANDLED = 1u << 0,
   OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED = 1u << 1,
+  OCTAVO_ANDROID_TOUCH_CHROME_REQUESTED = 1u << 2,
+  OCTAVO_ANDROID_TOUCH_ZONE_INVALID = 2,
+  OCTAVO_ANDROID_HOST_OWNS_READER_CHROME = 1,
 };
+
+enum
+{
+  OCTAVO_ANDROID_THEME_PAPER = 0,
+  OCTAVO_ANDROID_THEME_SEPIA = 1,
+  OCTAVO_ANDROID_THEME_DUSK = 2,
+  OCTAVO_ANDROID_THEME_WARM_DARK = 3,
+  OCTAVO_ANDROID_THEME_OLED = 4,
+  OCTAVO_ANDROID_THEME_HIGH_CONTRAST = 5,
+  OCTAVO_ANDROID_THEME_COUNT = 6,
+};
+
+typedef struct OctavoAndroidAppearance
+{
+  int32_t theme;
+  int32_t font_family;
+  int32_t font_size_sp;
+  int32_t line_spacing_permille;
+  int32_t margin;
+  int32_t content_width_permille;
+  int32_t alignment;
+  int32_t publisher_colors;
+  int32_t reduced_motion;
+  UI0Color colors[UI0ColorRole_Count];
+  uint64_t color_hash;
+} OctavoAndroidAppearance;
 
 typedef struct OctavoAndroidPixels
 {
@@ -79,6 +115,7 @@ typedef struct OctavoAndroidApp
   char document_title[OCTAVO_ANDROID_TITLE_CAPACITY];
   char progress_label[OCTAVO_ANDROID_PROGRESS_CAPACITY];
   OctavoAndroidTypography typography;
+  OctavoAndroidAppearance appearance;
 
   Arena *arena;
   EpubReader reader;
@@ -102,10 +139,33 @@ typedef struct OctavoAndroidApp
   ReaderViewFrameStorage reader_view_storage;
   ReaderViewFrame reader_view_frame;
   UI0ResolvedTheme reader_view_theme;
+  UI0ResolvedTheme presented_reader_view_theme;
+  B32 presented_reader_view_theme_valid;
   UI0U64 reader_view_frame_index;
   B32 reader_view_ready;
   S32 pagination_content_width;
   S32 pagination_content_height;
+  B32 pagination_dirty;
+
+  U32 presented_anchor_spine_index;
+  U64 presented_anchor_byte_offset;
+  B32 presented_anchor_valid;
+  U32 reflow_anchor_spine_index;
+  U64 reflow_anchor_byte_offset;
+  B32 reflow_waiting_for_present;
+  B32 appearance_waiting_for_present;
+  B32 host_frame_waiting_for_present;
+  UI0U64 appearance_generation;
+  UI0U64 appearance_presented_generation;
+  uint64_t appearance_apply_count;
+  uint64_t appearance_gate_block_count;
+  uint64_t appearance_failure_count;
+  uint64_t reflow_request_count;
+  uint64_t reflow_success_count;
+  uint64_t reflow_failure_count;
+  uint64_t accessibility_action_count;
+  uint64_t chrome_toggle_count;
+  int chrome_visible;
 
   int32_t format;
   int32_t width;
@@ -114,6 +174,8 @@ typedef struct OctavoAndroidApp
   int32_t inset_top;
   int32_t inset_right;
   int32_t inset_bottom;
+  int32_t reader_chrome_inset_top;
+  int32_t reader_chrome_inset_bottom;
   int resumed;
   uint64_t surface_generation;
   uint64_t surface_destroy_count;
@@ -121,6 +183,9 @@ typedef struct OctavoAndroidApp
   uint64_t pause_count;
   uint64_t frame_count;
   uint64_t render_failure_count;
+  int32_t forced_present_failures_for_testing;
+  int32_t forced_pre_present_failures_for_testing;
+  int32_t forced_surface_acquisition_failures_for_testing;
   uint64_t touch_count;
   uint64_t lifecycle_generation;
   uint64_t tap_intent_count;
@@ -220,7 +285,7 @@ octavo_android_import_typography(JNIEnv *environment,
       header[5] <= 0 || header[6] <= 0 ||
       header[7] <= 0 || header[8] <= 0 ||
       header[9] <= 0 || header[10] <= 0 ||
-      header[11] < header[9] || header[12] < 18 ||
+      header[11] < header[9] || header[12] < 12 ||
       header[13] <= 0 || header[14] < 0 || header[15] <= 0 ||
       header[16] < 0 || header[16] >= header[7] ||
       header[17] < 0 || header[17] >= header[8] ||
@@ -283,7 +348,6 @@ octavo_android_import_typography(JNIEnv *environment,
     free(alpha);
     return 0;
   }
-
   typography->first_codepoint = header[2];
   typography->glyph_count = header[3];
   typography->style_count = header[4];
@@ -305,6 +369,145 @@ octavo_android_import_typography(JNIEnv *environment,
   typography->ready = 1;
   return 1;
 }
+
+static int
+octavo_android_import_appearance(JNIEnv *environment,
+                                 jintArray config_array,
+                                 jintArray color_array,
+                                 OctavoAndroidAppearance *appearance)
+{
+  if (!environment || !config_array || !color_array || !appearance ||
+      (*environment)->GetArrayLength(environment, config_array) !=
+        OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT ||
+      (*environment)->GetArrayLength(environment, color_array) !=
+        UI0ColorRole_Count)
+  {
+    return 0;
+  }
+
+  jint config[OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT] = {0};
+  jint colors[UI0ColorRole_Count] = {0};
+  (*environment)->GetIntArrayRegion(
+    environment, config_array, 0,
+    OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT, config);
+  (*environment)->GetIntArrayRegion(
+    environment, color_array, 0, UI0ColorRole_Count, colors);
+  if ((*environment)->ExceptionCheck(environment) ||
+      config[0] != OCTAVO_ANDROID_APPEARANCE_MAGIC ||
+      config[1] != OCTAVO_ANDROID_APPEARANCE_VERSION ||
+      config[2] < 0 || config[2] >= OCTAVO_ANDROID_THEME_COUNT ||
+      config[3] < 0 || config[3] > 1 ||
+      (config[4] != 16 && config[4] != 18 &&
+       config[4] != 21 && config[4] != 24 && config[4] != 28) ||
+      (config[5] != 1150 && config[5] != 1250 &&
+       config[5] != 1300 && config[5] != 1500) ||
+      config[6] < 0 || config[6] > 2 ||
+      (config[7] != 720 && config[7] != 860 && config[7] != 960) ||
+      config[7] != (config[6] == 0 ? 720 :
+                    config[6] == 1 ? 860 : 960) ||
+      config[8] < 0 || config[8] > 1 ||
+      config[9] < 0 || config[9] > 1 ||
+      config[10] < 0 || config[10] > 1)
+  {
+    return 0;
+  }
+
+  memset(appearance, 0, sizeof(*appearance));
+  appearance->theme = config[2];
+  appearance->font_family = config[3];
+  appearance->font_size_sp = config[4];
+  appearance->line_spacing_permille = config[5];
+  appearance->margin = config[6];
+  appearance->content_width_permille = config[7];
+  appearance->alignment = config[8];
+  appearance->publisher_colors = config[9];
+  appearance->reduced_motion = config[10];
+  uint64_t hash = 14695981039346656037ULL;
+  for (int32_t index = 0; index < UI0ColorRole_Count; ++index)
+  {
+    appearance->colors[index] = (UI0Color)(uint32_t)colors[index];
+    hash = (hash ^ (uint64_t)(uint32_t)colors[index]) *
+      1099511628211ULL;
+  }
+  appearance->color_hash = hash;
+  return 1;
+}
+
+static void
+octavo_android_resolve_appearance_theme(OctavoAndroidApp *app)
+{
+  if (!app)
+  {
+    return;
+  }
+  int dark = app->appearance.theme == OCTAVO_ANDROID_THEME_DUSK ||
+    app->appearance.theme == OCTAVO_ANDROID_THEME_WARM_DARK ||
+    app->appearance.theme == OCTAVO_ANDROID_THEME_OLED;
+  UI0ThemeProfile profile = ui0_theme_profile_for_kind(
+    dark ? UI0ThemeProfile_Dark : UI0ThemeProfile_Light);
+  app->reader_view_theme = profile.resolved;
+  for (int32_t index = 0; index < UI0ColorRole_Count; ++index)
+  {
+    app->reader_view_theme.colors[index] =
+      app->appearance.colors[index];
+  }
+}
+
+static int
+octavo_android_appearance_layout_equal(
+  const OctavoAndroidAppearance *a,
+  const OctavoAndroidAppearance *b)
+{
+  return a && b &&
+    a->font_family == b->font_family &&
+    a->font_size_sp == b->font_size_sp &&
+    a->line_spacing_permille == b->line_spacing_permille &&
+    a->margin == b->margin &&
+    a->content_width_permille == b->content_width_permille;
+}
+
+static int
+octavo_android_presentation_pending(const OctavoAndroidApp *app)
+{
+  return app &&
+    (app->page_move_waiting_for_present ||
+     app->reflow_waiting_for_present ||
+     app->appearance_waiting_for_present ||
+     app->host_frame_waiting_for_present);
+}
+
+static int
+octavo_android_navigation_availability(const OctavoAndroidApp *app)
+{
+  if (!app || !app->reader_view_ready ||
+      octavo_android_presentation_pending(app))
+  {
+    return 0;
+  }
+
+  int result = 1;
+  for (S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       ++index)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (!(node->flags & ReaderViewSemantic_Enabled))
+    {
+      continue;
+    }
+    if (node->control == ReaderViewSemanticControl_PreviousPage)
+    {
+      result |= 2;
+    }
+    else if (node->control == ReaderViewSemanticControl_NextPage)
+    {
+      result |= 4;
+    }
+  }
+  return result;
+}
+
 static ReaderViewText
 octavo_android_reader_view_text(const char *text)
 {
@@ -319,6 +522,22 @@ octavo_android_reader_view_text(const char *text)
     }
   }
   return result;
+}
+
+static jstring
+octavo_android_new_reader_view_text(JNIEnv *environment,
+                                    ReaderViewText text)
+{
+  char buffer[1025];
+  if (!environment || !text.data || text.size <= 0)
+  {
+    return environment ?
+      (*environment)->NewStringUTF(environment, "") : 0;
+  }
+  size_t size = MIN((size_t)text.size, sizeof(buffer) - 1u);
+  memcpy(buffer, text.data, size);
+  buffer[size] = 0;
+  return (*environment)->NewStringUTF(environment, buffer);
 }
 
 static uint8_t
@@ -747,7 +966,7 @@ octavo_android_draw_icon(OctavoAndroidPixels pixels,
   }
   UI0U32 raster[UI0_ICON_RASTER_MAX_WIDTH * UI0_ICON_RASTER_MAX_HEIGHT] = {0};
   UI0Color background = command->stroke_color != 0 ?
-    command->stroke_color : OCTAVO_ANDROID_APP_BACKGROUND;
+    command->stroke_color : OCTAVO_ANDROID_DEFAULT_BACKGROUND;
   if (!ui0_icon_rasterize_rgb32(command->icon_kind,
                                 command->rect.w,
                                 command->rect.h,
@@ -1102,7 +1321,11 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
     S32 glyph_height = MAX(
       octavo_android_scaled_px(app->typography.cell_height, scale), 1);
     S32 glyph_top = row_top + (row_height - glyph_height) / 2;
-    UI0Color color = has_color ? 0xFF000000u | color_rgb : default_color;
+    B32 publisher_color_allowed =
+      app->appearance.publisher_colors &&
+      app->appearance.theme != OCTAVO_ANDROID_THEME_HIGH_CONTRAST;
+    UI0Color color = has_color && publisher_color_allowed ?
+      0xFF000000u | color_rgb : default_color;
     String8 segment = str8(
       app->reader_frame.visible_text.str + start + segment_start,
       segment_end - segment_start);
@@ -1131,8 +1354,11 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     return;
   }
   UI0Rect content = app->reader_view_layout.content_rect;
+  UI0Rect page = app->reader_view_layout.page_surface_rect;
+  UI0Rect text_clip = ui0_rect(
+    page.x, content.y, page.w, content.h);
   UI0Rect clip = octavo_android_intersect_rect(
-    content, octavo_android_pixel_bounds(pixels));
+    text_clip, octavo_android_pixel_bounds(pixels));
   S32 base_line_height = MAX(app->typography.line_advance_px, 1);
   S32 char_advance = MAX(
     app->typography.advances[0]['n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT],
@@ -1180,11 +1406,15 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     S32 available = MAX(content.w - left - right, 1);
     S32 row_width = octavo_android_measure_reader_row(app, row, start, end);
     S32 x = content.x + left;
-    if (row->text_align == DocTextAlign_Center && row_width < available)
+    if (app->appearance.alignment == 0 &&
+        row->text_align == DocTextAlign_Center &&
+        row_width < available)
     {
       x += (available - row_width) / 2;
     }
-    else if (row->text_align == DocTextAlign_Right && row_width < available)
+    else if (app->appearance.alignment == 0 &&
+             row->text_align == DocTextAlign_Right &&
+             row_width < available)
     {
       x += available - row_width;
     }
@@ -1270,9 +1500,7 @@ octavo_android_initialize_reader(OctavoAndroidApp *app)
 
   reader_view_state_init(&app->reader_view_state);
   reader_view_frame_storage_init(&app->reader_view_storage);
-  UI0ThemeProfile profile =
-    ui0_theme_profile_for_kind(UI0ThemeProfile_Light);
-  app->reader_view_theme = profile.resolved;
+  octavo_android_resolve_appearance_theme(app);
   return 1;
 }
 
@@ -1304,12 +1532,33 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
   }
 
   UI0Rect viewport = app->reader_view_layout.viewport_rect;
-  S32 horizontal_inset = MAX(viewport.w / 45, 12);
-  S32 content_inset_x = MAX(viewport.w / 18, 28);
+  S32 horizontal_inset = MAX(viewport.w / 64, 8);
+  S32 content_inset_x = MAX(viewport.w / 40, 20);
+  S32 page_width_ratio = 5;
+  S32 page_width_divisor = 3;
+  if (app->appearance.margin == 0)
+  {
+    page_width_ratio = 4;
+    page_width_divisor = 3;
+  }
+  else if (app->appearance.margin == 2)
+  {
+    page_width_ratio = 2;
+    page_width_divisor = 1;
+  }
   S32 content_inset_y = MAX(viewport.h / 60, 24);
+  S32 available_page_width = MAX(viewport.w - horizontal_inset * 2, 1);
+  S32 requested_content_width = MAX(
+    (viewport.w * app->appearance.content_width_permille) / 1000, 1);
+  S32 requested_page_width = MAX(
+    requested_content_width + content_inset_x * 2, 1);
+  S32 comfortable_page_width = MAX(
+    (viewport.h * page_width_ratio) / page_width_divisor, 1);
   ReaderViewContentGeometryStyle geometry_style = {
     .page_horizontal_inset = horizontal_inset,
-    .page_max_width = MAX(viewport.w - horizontal_inset * 2, 1),
+    .page_max_width = MIN(
+      available_page_width,
+      MIN(requested_page_width, comfortable_page_width)),
     .page_min_width = 1,
     .content_inset_x = content_inset_x,
     .content_inset_y = content_inset_y,
@@ -1322,6 +1571,24 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
   {
     return 0;
   }
+  S32 viewport_top_gap = MAX(viewport.y - input.bounds.y, 0);
+  S32 viewport_bottom_gap = MAX(
+    (input.bounds.y + input.bounds.h) -
+      (viewport.y + viewport.h),
+    0);
+  S32 chrome_top_overlap = MAX(
+    app->reader_chrome_inset_top - viewport_top_gap, 0);
+  S32 chrome_bottom_overlap = MAX(
+    app->reader_chrome_inset_bottom - viewport_bottom_gap, 0);
+  if (chrome_top_overlap > geometry.content_rect.h ||
+      chrome_bottom_overlap >
+        geometry.content_rect.h - chrome_top_overlap)
+  {
+    return 0;
+  }
+  geometry.content_rect.y += chrome_top_overlap;
+  geometry.content_rect.h -=
+    chrome_top_overlap + chrome_bottom_overlap;
   app->reader_view_layout.page_surface_rect = geometry.page_surface_rect;
   app->reader_view_layout.content_rect = geometry.content_rect;
   if (app->reader_view_layout.progress_visible)
@@ -1345,7 +1612,9 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
     return 0;
   }
 
-  if (!app->reader_frame.ready ||
+  B32 had_published_frame =
+    app->reader_frame.ready && app->reader_frame.document_open;
+  if (!app->reader_frame.ready || app->pagination_dirty ||
       app->pagination_content_width != content.w ||
       app->pagination_content_height != content.h)
   {
@@ -1366,8 +1635,8 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
         'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT],
       1);
     S32 line_height = MAX(app->typography.line_advance_px, 1);
-    U32 wrap_columns = (U32)MAX(content.w / char_advance, 8);
-    U32 page_rows = (U32)MAX(content.h / line_height, 4);
+    U32 wrap_columns = (U32)MAX(content.w / char_advance, 1);
+    U32 page_rows = (U32)MAX(content.h / line_height, 1);
     wrap_columns = MIN(wrap_columns, 512u);
     page_rows = MIN(page_rows, 512u);
     String8 canonical_uri = epub_reader_canonical_uri(&app->reader);
@@ -1383,6 +1652,9 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
       .line_height = line_height,
       .text_scale = app->typography.text_px,
       .margin_unit_permille = 1000,
+      .font_family_index = (U32)app->appearance.font_family,
+      .embedded_fonts_enabled = 0,
+      .text_mode = EpubReaderTextMode_LegacyCodepoint,
     };
     app->layout_config = (SourceReaderLayoutConfig){
       .wrap_column_count = wrap_columns,
@@ -1417,6 +1689,7 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
           app->reader.current_page.first_byte <= target_byte &&
           app->reader.current_page.one_past_last_byte > target_byte)
       {
+        app->resume_byte_offset = target_byte;
         app->restore_succeeded = 1;
         pagination_ready = 1;
       }
@@ -1426,11 +1699,53 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
         __android_log_print(
           ANDROID_LOG_WARN,
           "8vo",
-          "Android Port 6 saved-location restore failed result=%d target=%u:%llu",
+          "Android Port 7 saved-location restore failed result=%d target=%u:%llu",
           (int)restore_result,
           (unsigned)app->resume_spine_index,
           (unsigned long long)app->resume_byte_offset);
       }
+    }
+    if (!pagination_ready && had_published_frame &&
+        (app->page_move_waiting_for_present ||
+         app->presented_anchor_valid))
+    {
+      if (!app->reflow_waiting_for_present)
+      {
+        app->reflow_anchor_spine_index =
+          app->page_move_waiting_for_present ?
+            app->page_move_expected_spine_index :
+            app->presented_anchor_spine_index;
+        app->reflow_anchor_byte_offset =
+          app->page_move_waiting_for_present ?
+            app->page_move_expected_byte_offset :
+            app->presented_anchor_byte_offset;
+        app->reflow_waiting_for_present = 1;
+        app->reflow_request_count += 1u;
+      }
+      app->layout_config.focused_spine_index =
+        app->reflow_anchor_spine_index;
+      EpubReaderNavigationResult navigation = {0};
+      EpubReaderResult reflow_result = epub_reader_navigate_to_location(
+        &app->reader,
+        app->reflow_anchor_spine_index,
+        app->reflow_anchor_byte_offset,
+        EpubReaderNavigationReason_Location,
+        app->layout_key,
+        app->layout_config,
+        (EpubReaderNavigationOptions){.suppress_history = 1},
+        &navigation);
+      U64 target_byte = app->reflow_anchor_byte_offset;
+      if (reflow_result != EpubReaderResult_Ok ||
+          !app->reader.has_current_page ||
+          app->reader.current_page.spine_index !=
+            app->reflow_anchor_spine_index ||
+          app->reader.current_page.first_byte > target_byte ||
+          app->reader.current_page.one_past_last_byte <= target_byte)
+      {
+        app->reflow_failure_count += 1u;
+        return 0;
+      }
+      pagination_ready = 1;
     }
     if (!pagination_ready)
     {
@@ -1452,6 +1767,7 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
     }
     app->pagination_content_width = content.w;
     app->pagination_content_height = content.h;
+    app->pagination_dirty = 0;
   }
 
   return epub_reader_build_frame(
@@ -1573,7 +1889,7 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Readerview0 rejected Port 6 projection errors=0x%x",
+      "Readerview0 rejected Port 7 projection errors=0x%x",
       app->reader_view_frame.error_flags);
   }
   return app->reader_view_ready;
@@ -1594,18 +1910,22 @@ octavo_android_touch_zone(const OctavoAndroidApp *app, float x, float y)
 {
   if (!app || app->width <= 0 || app->height <= 0)
   {
-    return 0;
+    return OCTAVO_ANDROID_TOUCH_ZONE_INVALID;
   }
 
   S32 left = MAX(app->inset_left, 0);
-  S32 top = MAX(app->inset_top, 0);
+  S32 top = MAX(
+    MAX(app->inset_top, 0),
+    app->reader_chrome_inset_top);
   S32 right = app->width - MAX(app->inset_right, 0);
-  S32 bottom = app->height - MAX(app->inset_bottom, 0);
+  S32 bottom = app->height - MAX(
+    MAX(app->inset_bottom, 0),
+    app->reader_chrome_inset_bottom);
   if (left >= right || top >= bottom ||
       x < (float)left || x >= (float)right ||
       y < (float)top || y >= (float)bottom)
   {
-    return 0;
+    return OCTAVO_ANDROID_TOUCH_ZONE_INVALID;
   }
 
   float third = (float)(right - left) / 3.0f;
@@ -1627,9 +1947,16 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
   {
     return 0;
   }
-  if (app->page_move_waiting_for_present)
+  if (octavo_android_presentation_pending(app))
   {
-    app->page_move_gate_block_count += 1u;
+    if (app->page_move_waiting_for_present)
+    {
+      app->page_move_gate_block_count += 1u;
+    }
+    else
+    {
+      app->appearance_gate_block_count += 1u;
+    }
     return 0;
   }
 
@@ -1655,7 +1982,7 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Android Port 6 page move failed result=%d diagnostic=%d",
+      "Android Port 7 page move failed result=%d diagnostic=%d",
       (int)result,
       (int)change.diagnostic);
     return 0;
@@ -1669,10 +1996,108 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
 }
 
 static int
+octavo_android_pending_frame_matches(OctavoAndroidApp *app)
+{
+  if (!app)
+  {
+    return 0;
+  }
+  B32 page_move_mismatch = 0;
+  if (app->page_move_waiting_for_present)
+  {
+    U64 expected = app->page_move_expected_byte_offset;
+    page_move_mismatch =
+      !app->reader_frame.ready || !app->reader.has_current_page ||
+      app->reader_frame.spine_index !=
+        app->page_move_expected_spine_index;
+    if (!page_move_mismatch)
+    {
+      page_move_mismatch = app->reflow_waiting_for_present ?
+        app->reader.current_page.first_byte > expected ||
+          app->reader.current_page.one_past_last_byte <= expected :
+        app->reader_frame.view_byte_offset != expected;
+    }
+  }
+  if (page_move_mismatch)
+  {
+    app->render_failure_count += 1u;
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Android Port 7 refused page mismatch "
+      "expected=%u:%llu actual=%u:%llu",
+      (unsigned)app->page_move_expected_spine_index,
+      (unsigned long long)app->page_move_expected_byte_offset,
+      (unsigned)app->reader_frame.spine_index,
+      (unsigned long long)app->reader_frame.view_byte_offset);
+    return 0;
+  }
+  if (app->reflow_waiting_for_present)
+  {
+    U64 anchor = app->reflow_anchor_byte_offset;
+    if (!app->reader_frame.ready || !app->reader.has_current_page ||
+        app->reader_frame.spine_index !=
+          app->reflow_anchor_spine_index ||
+        app->reader.current_page.first_byte > anchor ||
+        app->reader.current_page.one_past_last_byte <= anchor)
+    {
+      app->render_failure_count += 1u;
+      app->reflow_failure_count += 1u;
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Android Port 7 refused reflow outside anchor %u:%llu",
+        (unsigned)app->reflow_anchor_spine_index,
+        (unsigned long long)anchor);
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void
+octavo_android_draw_failure_frame(OctavoAndroidApp *app,
+                                  OctavoAndroidPixels pixels)
+{
+  if (!app || !pixels.data || pixels.width <= 0 || pixels.height <= 0)
+  {
+    return;
+  }
+  UI0Rect bounds = octavo_android_pixel_bounds(pixels);
+  const UI0ResolvedTheme *theme =
+    app->presented_reader_view_theme_valid ?
+      &app->presented_reader_view_theme : &app->reader_view_theme;
+  UI0Color background = theme->colors[UI0ColorRole_AppBackground];
+  UI0Color surface = theme->colors[UI0ColorRole_SurfaceElevated];
+  UI0Color danger = theme->colors[UI0ColorRole_Danger];
+  octavo_android_fill_rect(pixels, bounds, bounds, background);
+  S32 panel_width = MIN(MAX((bounds.w * 3) / 5, 64), 480);
+  S32 panel_height = MIN(MAX(bounds.h / 20, 24), 96);
+  UI0Rect panel = ui0_rect(
+    bounds.x + (bounds.w - panel_width) / 2,
+    bounds.y + (bounds.h - panel_height) / 2,
+    panel_width,
+    panel_height);
+  octavo_android_fill_rect(pixels, panel, bounds, surface);
+  octavo_android_stroke_rect(pixels, panel, bounds, danger, 3);
+}
+
+static int
 octavo_android_present_frame(OctavoAndroidApp *app)
 {
   if (!app || !app->window || !app->resumed)
   {
+    return 0;
+  }
+
+  if (app->forced_pre_present_failures_for_testing > 0)
+  {
+    app->forced_pre_present_failures_for_testing -= 1;
+    app->render_failure_count += 1u;
+    __android_log_print(
+      ANDROID_LOG_WARN,
+      "8vo",
+      "Forcing a pre-publication failure for the Port 7 gate probe");
     return 0;
   }
 
@@ -1720,14 +2145,16 @@ octavo_android_present_frame(OctavoAndroidApp *app)
         app, (S32)buffer.width, (S32)buffer.height))
   {
     app->render_failure_count += 1u;
-    octavo_android_fill_rect(
-      pixels,
-      octavo_android_pixel_bounds(pixels),
-      octavo_android_pixel_bounds(pixels),
-      0xFF451F1Fu);
+    octavo_android_draw_failure_frame(app, pixels);
     (void)ANativeWindow_unlockAndPost(app->window);
     __android_log_print(
-      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 6 page");
+      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 7 page");
+    return 0;
+  }
+  if (!octavo_android_pending_frame_matches(app))
+  {
+    octavo_android_draw_failure_frame(app, pixels);
+    (void)ANativeWindow_unlockAndPost(app->window);
     return 0;
   }
 
@@ -1748,7 +2175,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     border_color,
     1);
   octavo_android_draw_reader_text(app, pixels);
-  octavo_android_draw_reader_view(app, pixels);
+  if (app->chrome_visible && !OCTAVO_ANDROID_HOST_OWNS_READER_CHROME)
+  {
+    octavo_android_draw_reader_view(app, pixels);
+  }
 
   if (ANativeWindow_unlockAndPost(app->window) != 0)
   {
@@ -1758,39 +2188,70 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     return 0;
   }
 
+  if (app->forced_present_failures_for_testing > 0)
+  {
+    app->forced_present_failures_for_testing -= 1;
+    app->render_failure_count += 1u;
+    __android_log_print(
+      ANDROID_LOG_WARN,
+      "8vo",
+      "Forcing a post-presentation failure for the Port 7 gate probe");
+    return 0;
+  }
+
   app->format = buffer.format;
   app->width = buffer.width;
   app->height = buffer.height;
   app->frame_count += 1u;
+  app->host_frame_waiting_for_present = 0;
   if (app->page_move_waiting_for_present)
   {
-    if (!app->reader_frame.ready || !app->reader.has_current_page ||
-        app->reader_frame.spine_index !=
-          app->page_move_expected_spine_index ||
-        app->reader_frame.view_byte_offset !=
-          app->page_move_expected_byte_offset)
-    {
-      app->render_failure_count += 1u;
-      __android_log_print(
-        ANDROID_LOG_ERROR,
-        "8vo",
-        "Android Port 6 presented page mismatch "
-        "expected=%u:%llu actual=%u:%llu",
-        (unsigned)app->page_move_expected_spine_index,
-        (unsigned long long)app->page_move_expected_byte_offset,
-        (unsigned)app->reader_frame.spine_index,
-        (unsigned long long)app->reader_frame.view_byte_offset);
-      return 0;
-    }
+    app->presented_anchor_spine_index =
+      app->page_move_expected_spine_index;
+    app->presented_anchor_byte_offset =
+      app->page_move_expected_byte_offset;
+    app->presented_anchor_valid = 1;
     app->page_move_waiting_for_present = 0;
     app->page_move_expected_spine_index = 0;
     app->page_move_expected_byte_offset = 0;
     app->page_move_presented_count += 1u;
   }
+  if (app->reflow_waiting_for_present)
+  {
+    U64 anchor = app->reflow_anchor_byte_offset;
+    if (!app->reader_frame.ready || !app->reader.has_current_page ||
+        app->reader_frame.spine_index !=
+          app->reflow_anchor_spine_index ||
+        app->reader.current_page.first_byte > anchor ||
+        app->reader.current_page.one_past_last_byte <= anchor)
+    {
+      app->render_failure_count += 1u;
+      app->reflow_failure_count += 1u;
+      return 0;
+    }
+    app->reflow_waiting_for_present = 0;
+    app->reflow_success_count += 1u;
+  }
+  if (!app->presented_anchor_valid)
+  {
+    app->presented_anchor_spine_index = app->restore_succeeded ?
+      app->resume_spine_index : app->reader_frame.spine_index;
+    app->presented_anchor_byte_offset = app->restore_succeeded ?
+      app->resume_byte_offset : app->reader_frame.view_byte_offset;
+    app->presented_anchor_valid = 1;
+  }
+  if (app->appearance_waiting_for_present)
+  {
+    app->appearance_presented_generation =
+      app->appearance_generation;
+    app->appearance_waiting_for_present = 0;
+  }
+  app->presented_reader_view_theme = app->reader_view_theme;
+  app->presented_reader_view_theme_valid = 1;
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 6 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
+    "Android Port 7 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
     "reader_bytes=%llu reader_hash=%016llx view_draws=%d",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
@@ -1859,6 +2320,9 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                          jlong resume_spine_index,
                                          jlong resume_byte_offset,
                                          jboolean resume_requested,
+                                         jboolean chrome_visible,
+                                         jintArray appearance_config,
+                                         jintArray appearance_colors,
                                          jintArray typography_metrics,
                                          jbyteArray typography_alpha)
 {
@@ -1880,6 +2344,10 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   app->restore_requested = resume_requested ? 1 : 0;
   app->resume_spine_index = (U32)resume_spine_index;
   app->resume_byte_offset = (U64)resume_byte_offset;
+  app->chrome_visible = chrome_visible ? 1 : 0;
+  app->appearance_generation = 1;
+  app->appearance_waiting_for_present = 1;
+  app->pagination_dirty = 1;
 
   if (!octavo_android_copy_path(environment,
                                 files_path,
@@ -1893,6 +2361,10 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                 document_path,
                                 app->document_path,
                                 sizeof(app->document_path)) ||
+      !octavo_android_import_appearance(environment,
+                                        appearance_config,
+                                        appearance_colors,
+                                        &app->appearance) ||
       !octavo_android_import_typography(environment,
                                         typography_metrics,
                                         typography_alpha,
@@ -1902,7 +2374,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Unable to create the Android Port 6 reader state");
+      "Unable to create the Android Port 7 reader state");
     epub_reader_release(&app->reader);
     if (app->arena)
     {
@@ -1916,13 +2388,93 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 6 state created document=%s title=%s restore=%d:%u:%llu",
+    "Android Port 7 state created document=%s title=%s restore=%d:%u:%llu",
     app->document_path,
     app->document_title,
     app->restore_requested,
     (unsigned)app->resume_spine_index,
     (unsigned long long)app->resume_byte_offset);
   return (jlong)(uintptr_t)app;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_applyAppearance(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jintArray appearance_config,
+  jintArray appearance_colors,
+  jintArray typography_metrics,
+  jbyteArray typography_alpha)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || octavo_android_presentation_pending(app))
+  {
+    if (app)
+    {
+      app->appearance_gate_block_count += 1u;
+    }
+    return 2;
+  }
+
+  OctavoAndroidAppearance next_appearance = {0};
+  OctavoAndroidTypography next_typography = {0};
+  if (!octavo_android_import_appearance(
+        environment, appearance_config, appearance_colors,
+        &next_appearance) ||
+      !octavo_android_import_typography(
+        environment, typography_metrics, typography_alpha,
+        &next_typography))
+  {
+    octavo_android_release_typography(&next_typography);
+    app->appearance_failure_count += 1u;
+    return 0;
+  }
+
+  int layout_changed = !octavo_android_appearance_layout_equal(
+      &app->appearance, &next_appearance) ||
+    app->typography.text_px != next_typography.text_px ||
+    app->typography.line_advance_px !=
+      next_typography.line_advance_px ||
+    app->typography.advances[0][
+      'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT] !=
+      next_typography.advances[0][
+        'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT];
+  OctavoAndroidAppearance old_appearance = app->appearance;
+  OctavoAndroidTypography old_typography = app->typography;
+  app->typography = next_typography;
+  app->appearance = next_appearance;
+  octavo_android_resolve_appearance_theme(app);
+  app->appearance_generation += 1u;
+  app->appearance_apply_count += 1u;
+  app->appearance_waiting_for_present = 1;
+  if (layout_changed)
+  {
+    app->pagination_dirty = 1;
+  }
+
+  if (octavo_android_present_frame(app))
+  {
+    octavo_android_release_typography(&old_typography);
+    return 1;
+  }
+  if (app->window && app->resumed)
+  {
+    OctavoAndroidTypography failed_typography = app->typography;
+    app->typography = old_typography;
+    app->appearance = old_appearance;
+    octavo_android_release_typography(&failed_typography);
+    octavo_android_resolve_appearance_theme(app);
+    app->appearance_generation += 1u;
+    app->appearance_waiting_for_present = 1;
+    app->pagination_dirty = 1;
+    (void)octavo_android_present_frame(app);
+    app->appearance_failure_count += 1u;
+    return 0;
+  }
+  octavo_android_release_typography(&old_typography);
+  return 2;
 }
 
 JNIEXPORT void JNICALL
@@ -1967,7 +2519,7 @@ Java_ro_devze_octavo_OctavoNative_hostResumed(JNIEnv *environment,
   app->resumed = 1;
   app->resume_count += 1u;
   app->lifecycle_generation += 1u;
-  (void)octavo_android_present_frame(app);
+  app->host_frame_waiting_for_present = 1;
 }
 
 JNIEXPORT void JNICALL
@@ -1989,7 +2541,7 @@ Java_ro_devze_octavo_OctavoNative_hostPaused(JNIEnv *environment,
   app->touch_direction = 0;
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
                                                  jclass type,
                                                  jlong handle,
@@ -1999,13 +2551,29 @@ Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
   OctavoAndroidApp *app = octavo_android_from_handle(handle);
   if (!app || !surface)
   {
-    return;
+    return JNI_FALSE;
+  }
+
+  if (app->forced_surface_acquisition_failures_for_testing > 0)
+  {
+    app->forced_surface_acquisition_failures_for_testing -= 1;
+    app->render_failure_count += 1u;
+    app->host_frame_waiting_for_present = 1;
+    __android_log_print(
+      ANDROID_LOG_WARN,
+      "8vo",
+      "Forcing an Android surface acquisition failure for the Port 7 probe");
+    return JNI_FALSE;
   }
 
   ANativeWindow *window = ANativeWindow_fromSurface(environment, surface);
   if (!window)
   {
-    return;
+    app->render_failure_count += 1u;
+    app->host_frame_waiting_for_present = 1;
+    __android_log_print(
+      ANDROID_LOG_ERROR, "8vo", "Unable to acquire the Android surface");
+    return JNI_FALSE;
   }
   if (app->window)
   {
@@ -2016,6 +2584,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
   app->height = ANativeWindow_getHeight(window);
   app->format = ANativeWindow_getFormat(window);
   app->surface_generation += 1u;
+  app->host_frame_waiting_for_present = 1;
 
   __android_log_print(
     ANDROID_LOG_INFO,
@@ -2024,7 +2593,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
     (unsigned long long)app->surface_generation,
     app->width,
     app->height);
-  (void)octavo_android_present_frame(app);
+  return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
@@ -2045,7 +2614,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceChanged(JNIEnv *environment,
   app->format = (int32_t)format;
   app->width = (int32_t)width;
   app->height = (int32_t)height;
-  (void)octavo_android_present_frame(app);
+  app->host_frame_waiting_for_present = 1;
 }
 
 JNIEXPORT void JNICALL
@@ -2068,6 +2637,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceDestroyed(JNIEnv *environment,
   app->format = 0;
   app->width = 0;
   app->height = 0;
+  app->host_frame_waiting_for_present = 1;
   app->surface_destroy_count += 1u;
   app->touch_active = 0;
   app->touch_direction = 0;
@@ -2093,7 +2663,89 @@ Java_ro_devze_octavo_OctavoNative_windowInsets(JNIEnv *environment,
   app->inset_top = (int32_t)top;
   app->inset_right = (int32_t)right;
   app->inset_bottom = (int32_t)bottom;
-  (void)octavo_android_present_frame(app);
+  app->host_frame_waiting_for_present = 1;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_readerChromeInsets(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint top,
+  jint bottom)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || top < 0 || bottom < 0)
+  {
+    return JNI_FALSE;
+  }
+  if (app->reader_chrome_inset_top == (int32_t)top &&
+      app->reader_chrome_inset_bottom == (int32_t)bottom)
+  {
+    return JNI_TRUE;
+  }
+
+  app->reader_chrome_inset_top = (int32_t)top;
+  app->reader_chrome_inset_bottom = (int32_t)bottom;
+  app->host_frame_waiting_for_present = 1;
+  app->pagination_dirty = 1;
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_forcePresentFailuresForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint count)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || count < 0 || count > 8)
+  {
+    return JNI_FALSE;
+  }
+  app->forced_present_failures_for_testing = (int32_t)count;
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_forcePrePresentFailuresForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint count)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || count < 0 || count > 8)
+  {
+    return JNI_FALSE;
+  }
+  app->forced_pre_present_failures_for_testing = (int32_t)count;
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_forceSurfaceAcquisitionFailuresForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint count)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || count < 0 || count > 4)
+  {
+    return JNI_FALSE;
+  }
+  app->forced_surface_acquisition_failures_for_testing = (int32_t)count;
+  return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -2109,6 +2761,75 @@ Java_ro_devze_octavo_OctavoNative_present(JNIEnv *environment,
     return JNI_FALSE;
   }
   return octavo_android_present_frame(app) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_navigationAvailability(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)environment;
+  (void)type;
+  return octavo_android_navigation_availability(
+    octavo_android_from_handle(handle));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_setChromeVisible(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jboolean visible)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app)
+  {
+    return JNI_FALSE;
+  }
+  int next = visible ? 1 : 0;
+  if (app->chrome_visible == next)
+  {
+    return JNI_TRUE;
+  }
+  int previous = app->chrome_visible;
+  app->chrome_visible = next;
+  app->host_frame_waiting_for_present = 1;
+  if (!app->window || !app->resumed)
+  {
+    app->chrome_toggle_count += 1u;
+    return JNI_TRUE;
+  }
+  if (octavo_android_present_frame(app))
+  {
+    app->chrome_toggle_count += 1u;
+    return JNI_TRUE;
+  }
+  app->chrome_visible = previous;
+  (void)octavo_android_present_frame(app);
+  return JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_accessibilityMovePage(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint direction)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || (direction != -1 && direction != 1) ||
+      !octavo_android_move_page(app, direction))
+  {
+    return 0;
+  }
+  app->accessibility_action_count += 1u;
+  return OCTAVO_ANDROID_TOUCH_HANDLED |
+    OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED;
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -2180,11 +2901,45 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[51] = app->restore_attempted ? 1 : 0;
   values[52] = app->restore_succeeded ? 1 : 0;
   values[53] = (jlong)app->restore_failure_count;
-  values[54] = (jlong)app->reader_frame.spine_index;
-  values[55] = (jlong)app->reader_frame.view_byte_offset;
+  values[54] = app->presented_anchor_valid ?
+    (jlong)app->presented_anchor_spine_index : 0;
+  values[55] = app->presented_anchor_valid ?
+    (jlong)app->presented_anchor_byte_offset : 0;
   values[56] = (jlong)app->document_open_success_count;
   values[57] = (jlong)app->document_open_failure_count;
   values[58] = (jlong)app->reader.document_generation;
+  values[59] = (jlong)app->appearance_generation;
+  values[60] = (jlong)app->appearance_presented_generation;
+  values[61] = (jlong)app->appearance_apply_count;
+  values[62] = (jlong)app->appearance_gate_block_count;
+  values[63] = (jlong)app->appearance_failure_count;
+  values[64] = (jlong)app->reflow_request_count;
+  values[65] = (jlong)app->reflow_success_count;
+  values[66] = (jlong)app->reflow_failure_count;
+  values[67] = (jlong)app->accessibility_action_count;
+  values[68] = app->appearance.theme;
+  values[69] = app->appearance.font_family;
+  values[70] = app->appearance.font_size_sp;
+  values[71] = app->appearance.line_spacing_permille;
+  values[72] = app->appearance.margin;
+  values[73] = app->appearance.alignment;
+  values[74] = app->appearance.publisher_colors;
+  values[75] = (jlong)app->appearance.color_hash;
+  values[76] = app->reader.has_current_page ?
+    (jlong)app->reader.current_page.first_byte : 0;
+  values[77] = app->reader.has_current_page ?
+    (jlong)app->reader.current_page.one_past_last_byte : 0;
+  values[78] = app->chrome_visible ? 1 : 0;
+  values[79] = (jlong)app->chrome_toggle_count;
+  values[80] = app->reflow_waiting_for_present ? 1 : 0;
+  values[81] = app->reader_view_layout.content_rect.x;
+  values[82] = app->reader_view_layout.content_rect.y;
+  values[83] = app->reader_view_layout.content_rect.w;
+  values[84] = app->reader_view_layout.content_rect.h;
+  values[85] = app->reader_chrome_inset_top;
+  values[86] = app->reader_chrome_inset_bottom;
+  values[87] = app->appearance.reduced_motion ? 1 : 0;
+  values[88] = app->host_frame_waiting_for_present ? 1 : 0;
   jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
   if (!result)
@@ -2197,6 +2952,97 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
                                      OCTAVO_ANDROID_STATE_FIELD_COUNT,
                                      values);
   return result;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_accessibilitySemanticSnapshot(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  S32 count = app && app->reader_view_ready &&
+    !octavo_android_presentation_pending(app) ?
+    app->reader_view_frame.semantic_node_count : 0;
+  if (count < 0 || count > READER_VIEW_SEMANTIC_NODE_CAP)
+  {
+    count = 0;
+  }
+  jsize total = OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_HEADER_COUNT +
+    count * OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE;
+  jlong values[
+    OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_HEADER_COUNT +
+    READER_VIEW_SEMANTIC_NODE_CAP *
+      OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE] = {0};
+  values[0] = OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_VERSION;
+  values[1] = count;
+  values[2] = OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE;
+  for (S32 index = 0; index < count; ++index)
+  {
+    const ReaderViewSemanticNode *node =
+      &app->reader_view_frame.semantic_nodes[index];
+    S32 at = OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_HEADER_COUNT +
+      index * OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE;
+    values[at + 0] = (jlong)node->id;
+    values[at + 1] = node->control;
+    values[at + 2] = node->role;
+    values[at + 3] = node->flags;
+    values[at + 4] = node->rect.x;
+    values[at + 5] = node->rect.y;
+    values[at + 6] = node->rect.w;
+    values[at + 7] = node->rect.h;
+    values[at + 8] = (jlong)node->range_value;
+    values[at + 9] = (jlong)node->range_min;
+    values[at + 10] = (jlong)node->range_max;
+  }
+  jlongArray result = (*environment)->NewLongArray(environment, total);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment, result, 0, total, values);
+  }
+  return result;
+}
+
+JNIEXPORT jstring JNICALL
+Java_ro_devze_octavo_OctavoNative_accessibilitySemanticName(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint record_index)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->reader_view_ready ||
+      octavo_android_presentation_pending(app) || record_index < 0 ||
+      record_index >= app->reader_view_frame.semantic_node_count)
+  {
+    return (*environment)->NewStringUTF(environment, "");
+  }
+  return octavo_android_new_reader_view_text(
+    environment,
+    app->reader_view_frame.semantic_nodes[record_index].name);
+}
+
+JNIEXPORT jstring JNICALL
+Java_ro_devze_octavo_OctavoNative_accessibilitySemanticValue(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint record_index)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->reader_view_ready ||
+      octavo_android_presentation_pending(app) || record_index < 0 ||
+      record_index >= app->reader_view_frame.semantic_node_count)
+  {
+    return (*environment)->NewStringUTF(environment, "");
+  }
+  return octavo_android_new_reader_view_text(
+    environment,
+    app->reader_view_frame.semantic_nodes[record_index].value);
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -2214,11 +3060,12 @@ Java_ro_devze_octavo_OctavoNative_readingPosition(JNIEnv *environment,
     app->reader_frame.ready &&
     app->reader_frame.document_open &&
     app->reader.has_current_page &&
-    !app->page_move_waiting_for_present;
+    app->presented_anchor_valid &&
+    !octavo_android_presentation_pending(app);
   jlong values[3] = {
     valid ? 1 : 0,
-    valid ? (jlong)app->reader_frame.spine_index : 0,
-    valid ? (jlong)app->reader_frame.view_byte_offset : 0,
+    valid ? (jlong)app->presented_anchor_spine_index : 0,
+    valid ? (jlong)app->presented_anchor_byte_offset : 0,
   };
   jlongArray result = (*environment)->NewLongArray(environment, 3);
   if (!result)
@@ -2308,7 +3155,7 @@ Java_ro_devze_octavo_OctavoNative_clearColorArgb(JNIEnv *environment,
 {
   (void)environment;
   (void)type;
-  return (jint)OCTAVO_ANDROID_APP_BACKGROUND;
+  return (jint)OCTAVO_ANDROID_DEFAULT_BACKGROUND;
 }
 
 JNIEXPORT jint JNICALL
@@ -2334,9 +3181,16 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
   {
     app->touch_active = 0;
     app->touch_direction = 0;
-    if (app->page_move_waiting_for_present)
+    if (octavo_android_presentation_pending(app))
     {
-      app->page_move_gate_block_count += 1u;
+      if (app->page_move_waiting_for_present)
+      {
+        app->page_move_gate_block_count += 1u;
+      }
+      else
+      {
+        app->appearance_gate_block_count += 1u;
+      }
       return touch_result;
     }
     if (!app->resumed || !app->window ||
@@ -2346,7 +3200,8 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
     }
 
     S32 direction = octavo_android_touch_zone(app, x, y);
-    if (direction != 0 && event_time_millis >= 0)
+    if (direction != OCTAVO_ANDROID_TOUCH_ZONE_INVALID &&
+        event_time_millis >= 0)
     {
       app->touch_active = 1;
       app->touch_direction = direction;
@@ -2384,7 +3239,11 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
         octavo_android_touch_zone(app, x, y) == direction)
     {
       app->tap_intent_count += 1u;
-      if (octavo_android_move_page(app, direction))
+      if (direction == 0)
+      {
+        touch_result |= OCTAVO_ANDROID_TOUCH_CHROME_REQUESTED;
+      }
+      else if (octavo_android_move_page(app, direction))
       {
         touch_result |= OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED;
       }

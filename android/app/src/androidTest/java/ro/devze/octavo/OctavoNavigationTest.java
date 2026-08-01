@@ -33,6 +33,7 @@ public final class OctavoNavigationTest {
     public void clearPort6Library() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoAppearanceStore.clearForTesting(context);
     }
 
     private static void openFixture(
@@ -89,7 +90,9 @@ public final class OctavoNavigationTest {
                 && snapshot[OctavoSurfaceView.STATE_READER_VIEW_READY] == 1
                 && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX] == 1
                 && snapshot[
-                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0,
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0
+                && snapshot[
+                    OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
             "8vo did not present the initial Port 6 page");
     }
 
@@ -215,6 +218,9 @@ public final class OctavoNavigationTest {
         assertEquals(0,
                      snapshot[
                          OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
+        assertEquals(0,
+                     snapshot[
+                         OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING]);
         assertEquals(snapshot[
                          OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT],
                      snapshot[
@@ -239,9 +245,11 @@ public final class OctavoNavigationTest {
             openFixture(scenario);
             long[] initial = awaitInitialPage(scenario);
             long pageCount = initial[OctavoSurfaceView.STATE_PAGE_COUNT];
-            assertTrue("Port 6 fixture needs at least four pages", pageCount >= 4);
-            assertTrue("Port 6 fixture unexpectedly exceeds the test bound",
-                       pageCount <= 64);
+            assertTrue("Port 7 fixture needs at least four pages", pageCount >= 4);
+            assertTrue(
+                "Port 7 default pagination exceeded its measured-chrome "
+                    + "regression bound",
+                pageCount <= 128);
             assertPageAndProgress(initial, 1, pageCount);
             assertNavigationHealthy(initial);
 

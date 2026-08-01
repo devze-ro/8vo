@@ -2,12 +2,14 @@
 
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
-Android host is at Port 6: it compiles the same exact shared sources, starts on
-an 8vo-owned bounded library, opens its deterministic sample or multiple
-digest-keyed imported EPUBs through Reader0, presents Readerview0 chrome and
-canonical styled pages, supports gated tap navigation with a readable
-proportional serif default, and durably resumes each book's last successfully
-presented canonical page.
+accepted Android host is at Port 6, with the Port 7 appearance foundation
+implemented and awaiting formal acceptance. It compiles the same exact shared
+sources, starts on an 8vo-owned bounded library, opens its deterministic sample
+or multiple digest-keyed imported EPUBs through Reader0, presents canonical
+styled pages with optional overlay Readerview0 chrome, supports
+presentation-gated navigation and appearance reflow, offers host-owned global
+themes and system serif/sans typography, and durably resumes each book's last
+successfully presented semantic location.
 The project does not introduce a generic document framework in anticipation of
 formats that do not yet exist.
 
@@ -53,10 +55,14 @@ mutations. Ground0 contains no reader-product policy.
 8vo has two top-level surfaces:
 
 - **Library** is owned entirely by 8vo. It stores a bounded, versioned catalog,
-  imports and removes local books, manages thumbnails, and opens the native
-  file picker.
+  imports and removes local books, and opens the native file picker. Cover and
+  thumbnail policy remains future library work.
 - **Reader** combines Reader0's canonical document frame with Readerview0's
-  shared reader chrome. Closing a book returns to the Library.
+  portable control/semantic projection. Port 7 suppresses Readerview0's raster
+  chrome on Android and draws equivalent native Android controls as a show/hide
+  overlay. Their measured top/bottom occlusion remains part of stable content
+  geometry, so toggling controls does not repaginate or change the semantic
+  location. Closing a book returns to the Library.
 
 Reader0 supplies EPUB metadata and resource access, but it does not own the
 catalog. Readerview0 supplies the open-book interface, but it does not own the
@@ -81,6 +87,11 @@ until the accepted Reader0 frame has been captured and shown. Key repeat,
 preparation scheduling, and cancellation remain platform-host policy rather than
 Reader0 behavior.
 
+Port 7 extends the same gate to appearance generations and canonical reflow.
+Java coalesces rapid preference requests, native state permits only one page,
+appearance, or reflow generation to await presentation, and the durable
+appearance is not advanced until the native window has posted it successfully.
+
 ## Ownership and lifetimes
 
 - Reader state, frame storage, UI state, layout inputs, arenas, and caches are
@@ -100,14 +111,29 @@ Reader0 behavior.
 Readerview0 projects this state and returns requests; it never treats a request
 as a completed mutation.
 
-Persistent records are versioned and written through Ground0's atomic-file
-mechanism. Each file is replaced independently; the application does not claim
-a cross-file transaction. Failed annotation mutations restore the in-memory
-state and leave editable drafts available for retry.
+Persistent records are versioned and atomically replaced through the concrete
+host: the Windows host uses Ground0's atomic-file mechanism, while Android
+uses app-private same-directory temporary files, descriptor synchronization,
+and atomic replacement where supported. Each file is replaced independently;
+the application does not claim a cross-file transaction. Failed annotation
+mutations restore the in-memory state and leave editable drafts available for
+retry.
 
-Application data lives under `%LOCALAPPDATA%\8vo`. Migration from the former
-`lectern0` directory is handled by the host and is designed to be safe and
-idempotent.
+Android Port 7 stores exactly one global appearance in
+`<files>/port7/appearance.v1`, separately from the Port 6 catalog and per-book
+locations. The fixed record has an explicit version, shape, size bound, and
+CRC32 checksum. Missing or corrupt appearance state falls back to Paper,
+Literary system serif, 18sp, Classic spacing, Balanced width, Publisher
+alignment, theme-safe publisher colors, and reduced motion off. Per-book
+appearance overrides are deliberately absent. Appearance publication requires
+a synchronized same-directory temporary file and `ATOMIC_MOVE` with
+`REPLACE_EXISTING`; unsupported or failed atomic publication preserves the
+prior record and reports failure rather than falling back to a non-atomic
+replace.
+
+Windows application data lives under `%LOCALAPPDATA%\8vo`. Migration from
+the former `lectern0` directory is handled by the Windows host and is designed
+to be safe and idempotent. Android uses its package-private files directory.
 
 ## Layout and rendering
 
@@ -128,6 +154,20 @@ The same resolved font measurements are used for pagination and rasterization.
 Images remain Reader0 document resources, Ground0 decoding mechanisms, and 8vo
 presentation policy.
 
+Port 7 acquires Android's generic serif or sans-serif family in the host and
+copies regular, bold, italic, and bold-italic atlas metrics into caller-owned
+native state. No font asset is bundled, embedded EPUB fonts remain disabled,
+and device font metrics may differ. The portability promise is therefore the
+semantic location, not identical page numbering across devices.
+
+Before a layout-affecting appearance mutation, 8vo retains the last
+successfully presented Reader0 spine/byte anchor. It supplies the new font
+metrics and content geometry to Reader0 and invokes Reader0's public canonical
+location-navigation path to publish the page containing that anchor. The host
+verifies containment only after the native window posts the frame. Theme-only
+updates and overlay-chrome visibility do not change page geometry or
+pagination.
+
 ## Platform and accessibility
 
 8vo owns each platform's window or surface, lifecycle, input translation,
@@ -139,30 +179,44 @@ records through the Win32 MSAA object and adds its host-owned controls, such as
 Close Book. Native object lifetime and execution of returned actions remain in
 the application.
 
-The Android Port 6 host remains deliberately bounded. Java owns the `Activity`,
-library surface, standard document picker, digest-keyed managed copies,
-versioned catalog, removal policy, and `SurfaceView`; one caller-owned native
-handle owns the corresponding `ANativeWindow`, Reader0/Readerview0 state, and
-copied platform-serif atlas. The catalog is capped at 64 entries and 128 KiB;
-each import is capped at 512 MiB. Duplicate bytes reopen the existing SHA-256
-entry, while removal deletes only the app-private copy after the catalog commit.
+The Android Port 7 implementation candidate remains deliberately bounded.
+Java owns the Activity, library and `OctavoAppearancePanel` settings surfaces,
+standard document picker, digest-keyed managed copies, versioned catalog,
+global appearance record, removal policy, system typography acquisition,
+accessibility adapter, and SurfaceView. One caller-owned native handle owns the
+corresponding
+ANativeWindow, Reader0/Readerview0 state, copied four-style glyph atlas,
+resolved semantic palette, overlay-chrome state, and presentation gates.
+
+The accepted Port 6 catalog remains capped at 64 entries and 128 KiB; each
+import remains capped at 512 MiB. Duplicate bytes reopen the existing SHA-256
+entry, while removal deletes only the app-private copy after the catalog
+commit. Appearance persistence does not alter those catalog records.
 
 8vo persists one Reader0 spine/page-start byte per book only after successful
 presentation. Writes are debounced during reading and synchronously flushed at
 lifecycle, surface, and reader teardown. Reader0's existing canonical location
-navigation reconstructs the same page under the same layout; Android does not
+navigation reconstructs the same page under the same layout and the page
+containing the presented semantic anchor after a reflow. Android does not
 reimplement pagination. A corrupt catalog falls back to the deterministic
 sample, and a valid Port 5 imported session is migrated once when no Port 6
 catalog exists.
 
-Android font acquisition stays in 8vo, and the exact copied advances are used
-for both Reader0 pagination and native raster placement. Touch navigation,
+The Port 7 custom-view accessibility adapter publishes a bounded virtual tree
+for page content, previous page, next page, and progress. It maps
+Readerview0's portable semantic records to Android nodes and actions, keeps a
+stable focus order, and emits page-change events only after successful
+presentation. It establishes the bridge pattern but does not yet claim full
+publication semantics or accepted TalkBack behavior.
+
+Android font acquisition, theme policy, touch navigation, overlay chrome,
 lifecycle, inset handling, handset content geometry, library/catalog,
-document selection, persistence, removal, and successful-presentation policy
-remain host responsibilities. Android accessibility adaptation, thumbnails,
-library search/details, user typography settings, and full Unicode shaping are
-not claimed yet. The current milestone contract is in
-[`android_port6.md`](android_port6.md).
+document selection, persistence, removal, accessibility adaptation, and
+successful-presentation policy remain host responsibilities. Thumbnails,
+library search/details, per-book appearances, embedded fonts, complete
+publication accessibility, and full Unicode shaping remain deferred. The
+current implementation and pending acceptance contract is in
+[`android_port7.md`](android_port7.md).
 
 ## Adding another format
 

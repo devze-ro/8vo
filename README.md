@@ -36,9 +36,9 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 6
+## Android Port 7 candidate
 
-The Android port now starts on an 8vo-owned library, keeps a deterministic
+Accepted Ports 0-6 start on an 8vo-owned library, keep a deterministic
 sample, imports multiple EPUBs through Android's document picker, deduplicates
 identical bytes by SHA-256, and stores an independent successfully presented
 Reader0 position for every book. Imported books can return to the library,
@@ -47,6 +47,14 @@ deleting the provider-owned original. Catalog, managed-file, picker, lifecycle,
 and presentation policy stay inside 8vo. Reader0 remains authoritative for
 opening, pagination, navigation, canonical frames, and location restore; Port
 4's readable proportional serif typography remains intact.
+
+The Port 7 implementation candidate adds six independently tuned reader
+themes, global typography/layout preferences, canonical semantic-anchor
+reflow, measured immersive chrome, a target-colored theme-transition cover,
+and a custom-reader accessibility bridge. Its API 36 emulator and dual-ABI
+build pass, as do its Windows/re10 automated gates; physical iQOO, TalkBack,
+extended-reading, and dark-room acceptance are still required. Ports 0-6
+therefore remain the formally accepted Android baseline.
 
 The long-term Android direction is a premium, local-first reader for
 user-owned books with Kindle-class capability and interaction quality, a
@@ -65,8 +73,10 @@ cd android
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The current scope and acceptance criteria are documented in
-[docs/android_port6.md](docs/android_port6.md); the document-open/resume
+The current candidate scope and acceptance record are documented in
+[docs/android_port7.md](docs/android_port7.md); the accepted library milestone
+is documented in [docs/android_port6.md](docs/android_port6.md), the
+document-open/resume
 milestone is documented in [docs/android_port5.md](docs/android_port5.md), the
 readable typography milestone in [docs/android_port4.md](docs/android_port4.md), the interactive navigation
 milestone is documented in [docs/android_port3.md](docs/android_port3.md), the

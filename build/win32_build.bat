@@ -21,7 +21,6 @@ if not defined OCTAVO_READER0_DIR if defined LECTERN0_READER0_DIR if exist "%LEC
 if not defined OCTAVO_UI0_DIR if defined LECTERN0_UI0_DIR if exist "%LECTERN0_UI0_DIR%\." set "OCTAVO_UI0_DIR=%LECTERN0_UI0_DIR%"
 if not defined OCTAVO_READERVIEW0_DIR if defined LECTERN0_READERVIEW0_DIR if exist "%LECTERN0_READERVIEW0_DIR%\." set "OCTAVO_READERVIEW0_DIR=%LECTERN0_READERVIEW0_DIR%"
 if not defined OCTAVO_GROUND0_DIR if defined OCTAVO_ZERO_FOUNDATION_DIR if exist "%OCTAVO_ZERO_FOUNDATION_DIR%\." set "OCTAVO_GROUND0_DIR=%OCTAVO_ZERO_FOUNDATION_DIR%"
-if not defined OCTAVO_GROUND0_DIR if defined LECTERN0_ZERO_FOUNDATION_DIR if exist "%LECTERN0_ZERO_FOUNDATION_DIR%\." set "OCTAVO_GROUND0_DIR=%LECTERN0_ZERO_FOUNDATION_DIR%"
 if not defined OCTAVO_READER0_DIR if exist "%ROOT%\local\dependencies\reader0\." set "OCTAVO_READER0_DIR=%ROOT%\local\dependencies\reader0"
 if not defined OCTAVO_UI0_DIR if exist "%ROOT%\local\dependencies\ui0\." set "OCTAVO_UI0_DIR=%ROOT%\local\dependencies\ui0"
 if not defined OCTAVO_READERVIEW0_DIR if exist "%ROOT%\local\dependencies\readerview0\." set "OCTAVO_READERVIEW0_DIR=%ROOT%\local\dependencies\readerview0"
