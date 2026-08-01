@@ -28,6 +28,21 @@ while adding a bounded library catalog and exact per-book Reader0 resume:
 There is no process-global mutable application state. The Java view holds the
 native handle and destroys it when the Activity is destroyed.
 
+## Product direction
+
+Port 6 is the functional library foundation, not the end-state Android
+experience. The product target is a premium, local-first reader for user-owned
+books that reaches Kindle-class reading, navigation, search, annotation,
+library, accessibility, and interaction quality while using a distinct 8vo
+design and user-controlled storage.
+
+The public product contract is recorded in
+[`../docs/android_product_vision.md`](../docs/android_product_vision.md), the
+living capability inventory in
+[`../docs/android_feature_parity.md`](../docs/android_feature_parity.md), and
+the bounded delivery sequence in
+[`../docs/android_roadmap.md`](../docs/android_roadmap.md).
+
 ## Prerequisites
 
 - JDK 17

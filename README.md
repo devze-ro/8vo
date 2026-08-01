@@ -48,6 +48,13 @@ and presentation policy stay inside 8vo. Reader0 remains authoritative for
 opening, pagination, navigation, canonical frames, and location restore; Port
 4's readable proportional serif typography remains intact.
 
+The long-term Android direction is a premium, local-first reader for
+user-owned books with Kindle-class capability and interaction quality, a
+distinct 8vo design, user-controlled storage, and a better night-reading
+experience. See the [Android product vision](docs/android_product_vision.md),
+[feature-parity contract](docs/android_feature_parity.md), and
+[roadmap](docs/android_roadmap.md).
+
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
 
