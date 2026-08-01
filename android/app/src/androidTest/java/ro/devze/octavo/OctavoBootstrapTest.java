@@ -35,9 +35,9 @@ import java.util.concurrent.atomic.AtomicReference;
 @RunWith(AndroidJUnit4.class)
 public final class OctavoBootstrapTest {
     @Before
-    public void clearPort5Session() {
+    public void clearPort6Library() {
         Context context = ApplicationProvider.getApplicationContext();
-        OctavoDocumentStore.clearSessionForTesting(context);
+        OctavoLibraryStore.clearForTesting(context);
     }
     private static long[] state(ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<long[]> result = new AtomicReference<>();
@@ -233,7 +233,7 @@ public final class OctavoBootstrapTest {
     @Test
     public void staticReaderFramePathsAndLifecycle()
         throws InterruptedException, IOException, NoSuchAlgorithmException {
-        assertEquals("0.5.0-dev", OctavoNative.version());
+        assertEquals("0.6.0-dev", OctavoNative.version());
         assertEquals("android", OctavoNative.platform());
         assertEquals("0.4.3-dev", OctavoNative.groundVersion());
         assertEquals("0.5.0-dev", OctavoNative.readerVersion());
@@ -242,6 +242,15 @@ public final class OctavoBootstrapTest {
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
+            AtomicReference<Boolean> opened = new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                assertEquals(1,
+                             activity.libraryStoreForTesting().bookCount());
+                opened.set(activity.openFixtureForTesting());
+            });
+            assertTrue(opened.get());
+
             AtomicReference<String> filesPath = new AtomicReference<>();
             AtomicReference<String> cachePath = new AtomicReference<>();
             AtomicReference<String> documentPath = new AtomicReference<>();
@@ -257,7 +266,7 @@ public final class OctavoBootstrapTest {
                 assertEquals(activity.getFilesDir().getAbsolutePath(), filesPath.get());
                 assertEquals(activity.getCacheDir().getAbsolutePath(), cachePath.get());
                 assertEquals(new File(activity.getFilesDir(),
-                                      "port5/fixture/octavo_port5.epub").getAbsolutePath(),
+                                      "port6/fixture/octavo_port6.epub").getAbsolutePath(),
                              documentPath.get());
             });
             assertNotNull(filesPath.get());
@@ -327,6 +336,15 @@ public final class OctavoBootstrapTest {
             assertEquals(0, recreated[OctavoSurfaceView.STATE_RESTORE_FAILURE_COUNT]);
             assertTrue(recreated[OctavoSurfaceView.STATE_SURFACE_GENERATION] >= 1);
             assertTrue(recreated[OctavoSurfaceView.STATE_FRAME_COUNT] >= 1);
+            assertEquals(initial[OctavoSurfaceView.STATE_PAGE_INDEX],
+                         recreated[OctavoSurfaceView.STATE_PAGE_INDEX]);
+            assertEquals(initial[OctavoSurfaceView.STATE_PAGE_COUNT],
+                         recreated[OctavoSurfaceView.STATE_PAGE_COUNT]);
+            assertEquals(initial[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH],
+                         recreated[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET],
+                recreated[OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET]);
             assertEquals(0, recreated[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
             Bitmap recreatedFrame = copyFrame(surface(scenario));
             assertNotNull(recreatedFrame);

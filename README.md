@@ -36,15 +36,17 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 5
+## Android Port 6
 
-The Android port can now open a user-selected EPUB through Android's document
-picker, copy it into app-private storage, and resume the last successfully
-presented Reader0 location after pause, surface replacement, or Activity/process
-recreation. Selection, managed-file ownership, and durable session policy stay
-inside 8vo. Reader0 remains authoritative for opening, pagination, navigation,
-canonical frames, and semantic location restore; Port 4's readable proportional
-serif typography remains intact.
+The Android port now starts on an 8vo-owned library, keeps a deterministic
+sample, imports multiple EPUBs through Android's document picker, deduplicates
+identical bytes by SHA-256, and stores an independent successfully presented
+Reader0 position for every book. Imported books can return to the library,
+resume the exact canonical page under the same layout, and be removed without
+deleting the provider-owned original. Catalog, managed-file, picker, lifecycle,
+and presentation policy stay inside 8vo. Reader0 remains authoritative for
+opening, pagination, navigation, canonical frames, and location restore; Port
+4's readable proportional serif typography remains intact.
 
 After bootstrapping the exact dependencies, open `android/` in Android Studio
 or build and test it from a JDK 17 command prompt:
@@ -57,8 +59,9 @@ cd android
 ```
 
 The current scope and acceptance criteria are documented in
-[docs/android_port5.md](docs/android_port5.md); the readable typography
-milestone is documented in [docs/android_port4.md](docs/android_port4.md), the interactive navigation
+[docs/android_port6.md](docs/android_port6.md); the document-open/resume
+milestone is documented in [docs/android_port5.md](docs/android_port5.md), the
+readable typography milestone in [docs/android_port4.md](docs/android_port4.md), the interactive navigation
 milestone is documented in [docs/android_port3.md](docs/android_port3.md), the
 static-page milestone in [docs/android_port2.md](docs/android_port2.md), the
 lifecycle milestone in [docs/android_port1.md](docs/android_port1.md), and the

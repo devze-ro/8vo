@@ -12,7 +12,7 @@ verification process, and runs the strict dependency guard.
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\bootstrap_dependencies.ps1
 ```
 
-## Android fixture
+## Android fixtures
 
 For historical Port 4 validation,
 `build_android_fixture.ps1` reproducibly writes the Port 4 EPUB fixture in
@@ -38,6 +38,19 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 Both outputs use fixed entry order, fixed timestamps, and no compression. The
 script prints the exact lengths and SHA-256 values documented in
 `docs/android_port5.md`.
+
+`build_android_port6_fixtures.ps1` reproducibly writes Port 6's built-in
+sample plus the visibly distinct Alpha and Beta imported-book fixtures used by
+catalog, deduplication, exact-resume, migration, and removal instrumentation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts\build_android_port6_fixtures.ps1
+```
+
+All three outputs use fixed entry order, fixed timestamps, and no compression.
+The script prints the exact lengths and SHA-256 values documented in
+`docs/android_port6.md`.
 
 ## Public smoke suite
 

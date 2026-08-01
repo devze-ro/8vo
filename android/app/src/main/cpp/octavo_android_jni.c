@@ -1400,7 +1400,6 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
     {
       app->restore_attempted = 1;
       app->layout_config.focused_spine_index = app->resume_spine_index;
-      epub_reader_request_window_pagination(&app->reader);
       EpubReaderNavigationResult navigation = {0};
       EpubReaderResult restore_result = epub_reader_navigate_to_location(
         &app->reader,
@@ -1427,7 +1426,7 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
         __android_log_print(
           ANDROID_LOG_WARN,
           "8vo",
-          "Android Port 5 saved-location restore failed result=%d target=%u:%llu",
+          "Android Port 6 saved-location restore failed result=%d target=%u:%llu",
           (int)restore_result,
           (unsigned)app->resume_spine_index,
           (unsigned long long)app->resume_byte_offset);
@@ -1574,7 +1573,7 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Readerview0 rejected Port 5 projection errors=0x%x",
+      "Readerview0 rejected Port 6 projection errors=0x%x",
       app->reader_view_frame.error_flags);
   }
   return app->reader_view_ready;
@@ -1656,7 +1655,7 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Android Port 5 page move failed result=%d diagnostic=%d",
+      "Android Port 6 page move failed result=%d diagnostic=%d",
       (int)result,
       (int)change.diagnostic);
     return 0;
@@ -1728,7 +1727,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       0xFF451F1Fu);
     (void)ANativeWindow_unlockAndPost(app->window);
     __android_log_print(
-      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 5 page");
+      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 6 page");
     return 0;
   }
 
@@ -1775,7 +1774,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       __android_log_print(
         ANDROID_LOG_ERROR,
         "8vo",
-        "Android Port 5 presented page mismatch "
+        "Android Port 6 presented page mismatch "
         "expected=%u:%llu actual=%u:%llu",
         (unsigned)app->page_move_expected_spine_index,
         (unsigned long long)app->page_move_expected_byte_offset,
@@ -1791,7 +1790,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 5 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
+    "Android Port 6 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
     "reader_bytes=%llu reader_hash=%016llx view_draws=%d",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
@@ -1903,7 +1902,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Unable to create the Android Port 5 reader state");
+      "Unable to create the Android Port 6 reader state");
     epub_reader_release(&app->reader);
     if (app->arena)
     {
@@ -1917,7 +1916,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 5 state created document=%s title=%s restore=%d:%u:%llu",
+    "Android Port 6 state created document=%s title=%s restore=%d:%u:%llu",
     app->document_path,
     app->document_title,
     app->restore_requested,

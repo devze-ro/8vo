@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(octavo_android_port5 LANGUAGES C)
+project(octavo_android_port6 LANGUAGES C)
 
 if(NOT ANDROID)
   message(FATAL_ERROR "The 8vo Android host requires the Android NDK toolchain")
@@ -21,7 +21,7 @@ endforeach()
 add_library(
   octavo
   SHARED
-  octavo_android_port5_build.c
+  octavo_android_port6_build.c
 )
 
 target_include_directories(

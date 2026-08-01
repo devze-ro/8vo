@@ -1,20 +1,22 @@
 # 8vo Android
 
-This directory is the Android application root. Port 5 keeps the host explicit
-while adding bounded user-document opening and durable Reader0 location resume:
+This directory is the Android application root. Port 6 keeps the host explicit
+while adding a bounded library catalog and exact per-book Reader0 resume:
 
-- `OctavoActivity` owns Android lifecycle and the `ACTION_OPEN_DOCUMENT` picker.
-- `OctavoDocumentStore` imports the selected bytes into digest-keyed app-private
-  storage and atomically replaces a bounded versioned session record.
-- `OctavoFixture` stages the packaged deterministic fallback EPUB under
-  app-private files.
+- `OctavoActivity` owns Android lifecycle, the library surface, and the
+  `ACTION_OPEN_DOCUMENT` picker.
+- `OctavoLibraryStore` owns the bounded versioned catalog, streams distinct
+  imports into SHA-256-keyed app-private storage, atomically saves per-book
+  successfully presented positions, and removes only managed copies.
+- `OctavoFixture` stages the packaged deterministic sample, Alpha, and Beta
+  EPUBs under app-private files for the application and instrumentation.
 - `OctavoTypography` acquires fixed 18sp Android serif faces and publishes a
   caller-owned regular/bold/italic/bold-italic alpha atlas and advance table.
 - `OctavoSurfaceView` owns the atlas creation call, forwards lifecycle,
   surface, system-inset, and raw touch values, and schedules requested native
   presentations. Only successfully presented Reader0 locations are persisted.
 - `OctavoNative` is the explicit Java/JNI boundary.
-- `octavo_android_port5_build.c` source-consumes the exact Ground0, Reader0,
+- `octavo_android_port6_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once.
 - `octavo_android_jni.c` owns one native application/reader/view/typography
   state per surface, opens and restores through Reader0's existing public APIs,
@@ -66,18 +68,19 @@ With an API 26 or newer emulator/device connected:
 The suite verifies native/shared version identity, exact staged EPUB bytes,
 canonical Reader0 text/page evidence, a clean Readerview0 frame, proportional
 `i`/`W` advances, all four rasterized styles, readable size/line metrics,
-document-picker intent policy, deterministic digest-keyed import, distinct
-selected-book text, semantic saved-location restore, corrupt-session fallback,
-wide handset geometry, actual ink pixels, adjacent and cross-section
-navigation, changed/restored text/pixels/progress, both boundary no-ops,
-rapid-tap presentation gating, private paths, pause/resume, surface
-replacement, and Activity recreation. It rejects every recorded native
-presentation, restore, or navigation failure.
+document-picker intent policy, two deterministic digest-keyed imports,
+Reader0-validated titles, duplicate deduplication, exact per-book page/text/
+progress/byte resume, managed-copy removal, Port 5 migration, corrupt-catalog
+fallback, wide handset geometry, actual ink pixels, adjacent and cross-section
+navigation, both boundary no-ops, rapid-tap presentation gating, private paths,
+pause/resume, surface replacement, and Activity recreation. It rejects every
+recorded native, catalog, presentation, restore, navigation, or removal
+failure.
 
-Port 5 intentionally remains a single-document reader. A library/catalog,
-multiple saved books, removal/locate flows, user-selectable text settings, a
-bundled cross-device-identical font, full Unicode shaping, embedded EPUB fonts,
-and proportional title/progress chrome remain deferred. See
-[`../docs/android_port5.md`](../docs/android_port5.md) for the current
-milestone boundary and [`../docs/android_port4.md`](../docs/android_port4.md)
-for the preceding typography slice.
+Port 6 intentionally remains a bounded library and reader foundation. Cover
+thumbnails, richer library organization, removal undo, user-selectable text
+settings, a bundled cross-device-identical font, full Unicode shaping,
+embedded EPUB fonts, and proportional title/progress chrome remain deferred.
+See [`../docs/android_port6.md`](../docs/android_port6.md) for the current
+milestone boundary and [`../docs/android_port5.md`](../docs/android_port5.md)
+for the preceding document-opening slice.

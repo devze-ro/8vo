@@ -75,8 +75,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean pendingPosition;
     private long pendingSpineIndex;
     private long pendingByteOffset;
-    private final OctavoDocumentStore documentStore;
-    private final OctavoDocumentStore.Document document;
+    private final OctavoLibraryStore libraryStore;
+    private final OctavoLibraryStore.Book book;
     private final Runnable presentPage = () -> {
         presentationPosted = false;
         if (nativeHandle != 0 && OctavoNative.present(nativeHandle)) {
@@ -89,16 +89,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     };
 
     OctavoSurfaceView(Context context,
-                      OctavoDocumentStore documentStore,
-                      OctavoDocumentStore.Session session) {
+                      OctavoLibraryStore libraryStore,
+                      OctavoLibraryStore.Session session) {
         super(context);
-        this.documentStore = documentStore;
-        document = session.document;
+        this.libraryStore = libraryStore;
+        book = session.book;
         OctavoTypography typography = OctavoTypography.create(context);
         nativeHandle = OctavoNative.create(
             context.getFilesDir().getAbsolutePath(),
             context.getCacheDir().getAbsolutePath(),
-            document.file.getAbsolutePath(),
+            book.file.getAbsolutePath(),
             session.spineIndex,
             session.byteOffset,
             session.hasPosition,
@@ -211,12 +211,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (!pendingPosition) {
             return;
         }
-        if (documentStore.savePresented(document,
+        if (libraryStore.savePresented(book,
                                         pendingSpineIndex,
                                         pendingByteOffset)) {
             pendingPosition = false;
         } else {
-            Log.e("8vo", "Unable to persist the presented Port 5 location");
+            Log.e("8vo", "Unable to persist the presented Port 6 location");
         }
     }
 
@@ -258,11 +258,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     String documentKeyForTesting() {
-        return document.key;
+        return book.key;
     }
 
     boolean importedDocumentForTesting() {
-        return document.imported;
+        return book.imported;
     }
 
     long[] readingPositionForTesting() {

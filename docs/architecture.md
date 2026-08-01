@@ -2,11 +2,12 @@
 
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
-Android host is at Port 5: it compiles the same exact shared sources, opens
-either its deterministic fallback or one user-selected EPUB through Reader0,
-presents Readerview0 chrome and canonical styled pages, supports gated tap
-navigation with a readable proportional serif default, and durably resumes the
-last successfully presented semantic location.
+Android host is at Port 6: it compiles the same exact shared sources, starts on
+an 8vo-owned bounded library, opens its deterministic sample or multiple
+digest-keyed imported EPUBs through Reader0, presents Readerview0 chrome and
+canonical styled pages, supports gated tap navigation with a readable
+proportional serif default, and durably resumes each book's last successfully
+presented canonical page.
 The project does not introduce a generic document framework in anticipation of
 formats that do not yet exist.
 
@@ -138,25 +139,30 @@ records through the Win32 MSAA object and adds its host-owned controls, such as
 Close Book. Native object lifetime and execution of returned actions remain in
 the application.
 
-The Android Port 5 host remains deliberately bounded. Java owns the `Activity`,
-standard document picker, managed file copy, versioned session file, and
-`SurfaceView`; one caller-owned native handle owns the corresponding
-`ANativeWindow`, Reader0/Readerview0 state, and copied platform-serif atlas.
-8vo records the selected EPUB by SHA-256 identity in app-private storage and
-persists only a Reader0 spine/byte location that has passed the successful
-presentation gate. Writes are debounced during reading and synchronously
-flushed at lifecycle/surface teardown. Reader0's public location navigation
-reconstructs the canonical frame on launch; a corrupt or unavailable record
-falls back safely to the deterministic fixture.
+The Android Port 6 host remains deliberately bounded. Java owns the `Activity`,
+library surface, standard document picker, digest-keyed managed copies,
+versioned catalog, removal policy, and `SurfaceView`; one caller-owned native
+handle owns the corresponding `ANativeWindow`, Reader0/Readerview0 state, and
+copied platform-serif atlas. The catalog is capped at 64 entries and 128 KiB;
+each import is capped at 512 MiB. Duplicate bytes reopen the existing SHA-256
+entry, while removal deletes only the app-private copy after the catalog commit.
+
+8vo persists one Reader0 spine/page-start byte per book only after successful
+presentation. Writes are debounced during reading and synchronously flushed at
+lifecycle, surface, and reader teardown. Reader0's existing canonical location
+navigation reconstructs the same page under the same layout; Android does not
+reimplement pagination. A corrupt catalog falls back to the deterministic
+sample, and a valid Port 5 imported session is migrated once when no Port 6
+catalog exists.
 
 Android font acquisition stays in 8vo, and the exact copied advances are used
 for both Reader0 pagination and native raster placement. Touch navigation,
-lifecycle, inset handling, handset content geometry, document selection,
-persistence, and successful-presentation policy remain host responsibilities.
-Android accessibility adaptation, a full library/catalog, multi-book
-management, user typography settings, and full Unicode shaping are not claimed
-yet. The current milestone contract is in
-[`android_port5.md`](android_port5.md).
+lifecycle, inset handling, handset content geometry, library/catalog,
+document selection, persistence, removal, and successful-presentation policy
+remain host responsibilities. Android accessibility adaptation, thumbnails,
+library search/details, user typography settings, and full Unicode shaping are
+not claimed yet. The current milestone contract is in
+[`android_port6.md`](android_port6.md).
 
 ## Adding another format
 

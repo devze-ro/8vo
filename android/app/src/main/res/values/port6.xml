@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="library">Library</string>
+    <string name="library_title">8vo Library</string>
+    <string name="add_epub">Add EPUB</string>
+    <string name="open">Open</string>
+    <string name="resume">Resume</string>
+    <string name="remove">Remove</string>
+    <item name="octavo_library" type="id" />
+    <item name="octavo_library_add" type="id" />
+    <item name="octavo_library_list" type="id" />
+    <item name="octavo_reader_library" type="id" />
+</resources>

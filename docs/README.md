@@ -18,6 +18,9 @@
 - [`android_port5.md`](android_port5.md) defines Android document selection,
   digest-keyed app-private import, successfully-presented location
   persistence, Reader0 semantic resume, and safe session fallback.
+- [`android_port6.md`](android_port6.md) defines the Android library catalog,
+  multi-book digest identity, exact per-book Reader0 resume, deduplication,
+  managed-copy removal, Port 5 migration, and safe catalog fallback.
 - [`archive/`](archive/) contains dated engineering records from the
   pre-public Lectern0 development period.
 
