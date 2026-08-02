@@ -1,4 +1,5 @@
 #include "octavo_version.h"
+#include "octavo_reader_justification.h"
 #include "foundation/version.h"
 #include "reader0.h"
 #include "readerview0.h"
@@ -13,11 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 89
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 95
 #define OCTAVO_ANDROID_TYPOGRAPHY_MAGIC 0x4F545950
 #define OCTAVO_ANDROID_TYPOGRAPHY_VERSION 1
 #define OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT 32
@@ -106,6 +108,14 @@ typedef struct OctavoAndroidTypography
   int ready;
 } OctavoAndroidTypography;
 
+typedef struct OctavoAndroidJustificationEvidence
+{
+  uint64_t plan_count;
+  uint64_t active_row_count;
+  uint64_t applied_extra_px;
+  uint64_t semantic_hash;
+} OctavoAndroidJustificationEvidence;
+
 typedef struct OctavoAndroidApp
 {
   ANativeWindow *window;
@@ -165,6 +175,7 @@ typedef struct OctavoAndroidApp
   uint64_t reflow_failure_count;
   uint64_t accessibility_action_count;
   uint64_t chrome_toggle_count;
+  OctavoAndroidJustificationEvidence justification_evidence;
   int chrome_visible;
 
   int32_t format;
@@ -185,6 +196,7 @@ typedef struct OctavoAndroidApp
   uint64_t render_failure_count;
   int32_t forced_present_failures_for_testing;
   int32_t forced_pre_present_failures_for_testing;
+  int32_t forced_location_warm_failures_for_testing;
   int32_t forced_surface_acquisition_failures_for_testing;
   uint64_t touch_count;
   uint64_t lifecycle_generation;
@@ -194,6 +206,13 @@ typedef struct OctavoAndroidApp
   uint64_t page_move_boundary_count;
   uint64_t page_move_gate_block_count;
   uint64_t navigation_failure_count;
+  uint64_t location_warm_step_count;
+  uint64_t location_warm_progress_count;
+  uint64_t location_warm_defer_count;
+  uint64_t location_warm_failure_count;
+  uint64_t location_warm_first_frame_count;
+  uint64_t reader_entry_started_millis;
+  uint64_t first_frame_elapsed_millis;
   uint64_t page_move_expected_byte_offset;
   uint32_t page_move_expected_spine_index;
   uint64_t touch_down_time_millis;
@@ -208,6 +227,18 @@ static OctavoAndroidApp *
 octavo_android_from_handle(jlong handle)
 {
   return (OctavoAndroidApp *)(uintptr_t)handle;
+}
+
+static uint64_t
+octavo_android_uptime_millis(void)
+{
+  struct timespec value = {0};
+  if (clock_gettime(CLOCK_MONOTONIC, &value) != 0)
+  {
+    return 0;
+  }
+  return (uint64_t)value.tv_sec * UINT64_C(1000) +
+    (uint64_t)value.tv_nsec / UINT64_C(1000000);
 }
 
 static int
@@ -1291,7 +1322,172 @@ octavo_android_measure_reader_row(const OctavoAndroidApp *app,
   return (S32)width;
 }
 
+static B32
+octavo_android_reader_row_has_safe_justification_styles(
+  const OctavoAndroidApp *app,
+  const EpubReaderFrameStyleRow *row)
+{
+  if (!app || !row)
+  {
+    return 0;
+  }
+  DocTextStyleFlags safe = DocTextStyleFlag_Italic |
+                           DocTextStyleFlag_Bold |
+                           DocTextStyleFlag_Underline |
+                           DocTextStyleFlag_SmallCaps |
+                           DocTextStyleFlag_NormalCaps |
+                           DocTextStyleFlag_NoUnderline;
+  if ((octavo_android_reader_block_style_flags(row) & ~safe) != 0)
+  {
+    return 0;
+  }
+  U32 first = row->first_style_fragment_index;
+  if (row->style_fragment_count > 0 &&
+      (first >= app->reader_frame.style_fragment_count ||
+       row->style_fragment_count >
+         app->reader_frame.style_fragment_count - first))
+  {
+    return 0;
+  }
+  U32 end = first + row->style_fragment_count;
+  for (U32 index = first; index < end; ++index)
+  {
+    const EpubReaderFrameStyleFragment *fragment =
+      app->reader_frame.style_fragments + index;
+    if (fragment->row == row->row && (fragment->flags & ~safe) != 0)
+    {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static B32
+octavo_android_reader_row_is_soft_wrapped(
+  const OctavoAndroidApp *app,
+  const EpubReaderFrameStyleRow *row)
+{
+  if (!app || !row)
+  {
+    return 0;
+  }
+  U32 end = MIN(row->byte_end, (U32)app->reader_frame.visible_text.size);
+  return ((end < app->reader_frame.visible_text.size &&
+           app->reader_frame.visible_text.str[end] == ' ') ||
+          (end > row->byte_start &&
+           app->reader_frame.visible_text.str[end - 1u] == ' '));
+}
+
+static OctavoReaderJustificationBlockRole
+octavo_android_reader_justification_block_role(DocTextBlockKind block_kind)
+{
+  if (block_kind == DocTextBlockKind_Paragraph)
+  {
+    return OctavoReaderJustificationBlockRole_Paragraph;
+  }
+  if (block_kind == DocTextBlockKind_Blockquote)
+  {
+    return OctavoReaderJustificationBlockRole_Blockquote;
+  }
+  return OctavoReaderJustificationBlockRole_Other;
+}
+
+static B32
+octavo_android_reader_justification_plan_for_row(
+  OctavoAndroidApp *app,
+  const EpubReaderFrameStyleRow *row,
+  U32 start,
+  U32 end,
+  S32 natural_width,
+  S32 available_width,
+  OctavoReaderJustificationPlan *out_plan)
+{
+  if (!app || !row || !out_plan || end <= start ||
+      end > app->reader_frame.visible_text.size)
+  {
+    return 0;
+  }
+  U32 row_size = end - start;
+  U32 space_count = 0;
+  for (U32 index = 1; index + 1u < row_size; ++index)
+  {
+    if (app->reader_frame.visible_text.str[start + index] == ' ')
+    {
+      space_count += 1u;
+    }
+  }
+  OctavoReaderJustificationInput input = {
+    .block_role =
+      octavo_android_reader_justification_block_role(row->block_kind),
+    .publisher_justified =
+      app->appearance.alignment == 0 &&
+      row->text_align == DocTextAlign_Justify,
+    .block_last_row = row->block_last_row,
+    .soft_wrapped = octavo_android_reader_row_is_soft_wrapped(app, row),
+    .safe_styles =
+      octavo_android_reader_row_has_safe_justification_styles(app, row),
+    .heading_level = row->heading_level,
+    .line_row = row->line_row,
+    .row_byte_count = row_size,
+    .margin_left_cols = row->margin_left_cols,
+    .text_indent_cols = row->text_indent_cols,
+    .internal_space_count = space_count,
+    .natural_width_px = natural_width,
+    .available_width_px = available_width,
+  };
+  if (space_count > 0 &&
+      octavo_reader_justification_input_is_eligible(&input) &&
+      available_width > natural_width)
+  {
+    U32 segment_end = row_size;
+    DocTextStyleFlags flags = 0;
+    U32 inline_scale = 1000u;
+    octavo_android_reader_segment_style(
+      app, row, row_size, 0, &segment_end, &flags, &inline_scale, 0, 0);
+    input.natural_space_width_px = octavo_android_typography_advance(
+      &app->typography,
+      ' ',
+      flags,
+      octavo_android_combined_scale(
+        row->font_scale_permille, inline_scale));
+  }
+  return octavo_reader_justification_plan_resolve(&input, out_plan);
+}
+
+static uint64_t
+octavo_android_justification_hash_mix(uint64_t hash, uint64_t value)
+{
+  hash ^= value + UINT64_C(0x9E3779B97F4A7C15) +
+          (hash << 6u) + (hash >> 2u);
+  return hash;
+}
+
 static void
+octavo_android_record_justification_evidence(
+  OctavoAndroidJustificationEvidence *evidence,
+  U32 row_index,
+  const OctavoReaderJustificationPlan *plan)
+{
+  if (!evidence || !plan)
+  {
+    return;
+  }
+  evidence->plan_count += 1u;
+  evidence->active_row_count += plan->active ? 1u : 0u;
+  evidence->applied_extra_px += (uint64_t)MAX(plan->applied_extra_px, 0);
+  evidence->semantic_hash =
+    octavo_android_justification_hash_mix(evidence->semantic_hash, row_index);
+  evidence->semantic_hash = octavo_android_justification_hash_mix(
+    evidence->semantic_hash, plan->space_count);
+  evidence->semantic_hash = octavo_android_justification_hash_mix(
+    evidence->semantic_hash, (uint64_t)(uint32_t)plan->natural_width_px);
+  evidence->semantic_hash = octavo_android_justification_hash_mix(
+    evidence->semantic_hash, (uint64_t)(uint32_t)plan->available_width_px);
+  evidence->semantic_hash = octavo_android_justification_hash_mix(
+    evidence->semantic_hash, (uint64_t)(uint32_t)plan->applied_extra_px);
+}
+
+static B32
 octavo_android_draw_reader_row(OctavoAndroidApp *app,
                                OctavoAndroidPixels pixels,
                                const EpubReaderFrameStyleRow *row,
@@ -1301,10 +1497,16 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
                                S32 row_top,
                                S32 row_height,
                                UI0Color default_color,
-                               UI0Rect clip)
+                               UI0Rect clip,
+                               const OctavoReaderJustificationPlan *justification)
 {
+  if (!app || !row || !justification || end <= start)
+  {
+    return 0;
+  }
   U32 row_size = end - start;
   U32 segment_start = 0;
+  U32 space_index = 0;
   S32 pen_x = x;
   while (segment_start < row_size)
   {
@@ -1332,26 +1534,42 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
     U64 at = 0;
     while (at < segment.size)
     {
+      U32 row_byte_index = segment_start + (U32)at;
       U32 codepoint = octavo_android_next_codepoint(
         segment.str, segment.size, &at);
       octavo_android_draw_typography_glyph(
         app, pixels, codepoint, pen_x, glyph_top, flags, scale, color, clip);
       pen_x += octavo_android_typography_advance(
         &app->typography, codepoint, flags, scale);
+      if (codepoint == ' ' && row_byte_index > 0 &&
+          row_byte_index + 1u < row_size &&
+          space_index < justification->space_count)
+      {
+        pen_x += octavo_reader_justification_space_extra_px(
+          justification, space_index);
+        space_index += 1u;
+      }
     }
     segment_start = segment_end;
   }
+  return space_index == justification->space_count;
 }
 
-static void
+static B32
 octavo_android_draw_reader_text(OctavoAndroidApp *app,
-                                OctavoAndroidPixels pixels)
+                                 OctavoAndroidPixels pixels,
+                                 OctavoAndroidJustificationEvidence *out_evidence)
 {
+  if (out_evidence)
+  {
+    memset(out_evidence, 0, sizeof(*out_evidence));
+    out_evidence->semantic_hash = UINT64_C(0xCBF29CE484222325);
+  }
   if (!app || !app->typography.ready || !app->reader_frame.ready ||
       !app->reader_frame.visible_text.str ||
       app->reader_frame.visible_text.size == 0)
   {
-    return;
+    return 1;
   }
   UI0Rect content = app->reader_view_layout.content_rect;
   UI0Rect page = app->reader_view_layout.page_surface_rect;
@@ -1405,6 +1623,13 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     }
     S32 available = MAX(content.w - left - right, 1);
     S32 row_width = octavo_android_measure_reader_row(app, row, start, end);
+    OctavoReaderJustificationPlan justification = {0};
+    if (end > start &&
+        !octavo_android_reader_justification_plan_for_row(
+          app, row, start, end, row_width, available, &justification))
+    {
+      return 0;
+    }
     S32 x = content.x + left;
     if (app->appearance.alignment == 0 &&
         row->text_align == DocTextAlign_Center &&
@@ -1420,8 +1645,14 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     }
     if (end > start)
     {
-      octavo_android_draw_reader_row(
-        app, pixels, row, start, end, x, y, row_height, ink, clip);
+      if (!octavo_android_draw_reader_row(
+            app, pixels, row, start, end, x, y, row_height, ink, clip,
+            &justification))
+      {
+        return 0;
+      }
+      octavo_android_record_justification_evidence(
+        out_evidence, row_index, &justification);
     }
     y += row_height;
     if (row->block_last_row && row->margin_bottom_rows > 0)
@@ -1429,6 +1660,7 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
       y += row->margin_bottom_rows * base_line_height;
     }
   }
+  return 1;
 }
 
 static int
@@ -1523,7 +1755,13 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
                        bounds_width,
                        bounds_height),
     .features = ReaderViewFeature_Paging | ReaderViewFeature_Progress,
-    .document_flags = ReaderViewDocument_Open,
+    /*
+     * Android owns transient chrome. Resolve the canonical ReaderView page in
+     * its platform-neutral distraction-free mode; host chrome is composed
+     * over a scaled visual without changing this pagination geometry.
+     */
+    .document_flags =
+      ReaderViewDocument_Open | ReaderViewDocument_DistractionFree,
   };
   if (!reader_view_resolve_layout(
         &app->reader_view_state, &input, &app->reader_view_layout))
@@ -1571,24 +1809,6 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
   {
     return 0;
   }
-  S32 viewport_top_gap = MAX(viewport.y - input.bounds.y, 0);
-  S32 viewport_bottom_gap = MAX(
-    (input.bounds.y + input.bounds.h) -
-      (viewport.y + viewport.h),
-    0);
-  S32 chrome_top_overlap = MAX(
-    app->reader_chrome_inset_top - viewport_top_gap, 0);
-  S32 chrome_bottom_overlap = MAX(
-    app->reader_chrome_inset_bottom - viewport_bottom_gap, 0);
-  if (chrome_top_overlap > geometry.content_rect.h ||
-      chrome_bottom_overlap >
-        geometry.content_rect.h - chrome_top_overlap)
-  {
-    return 0;
-  }
-  geometry.content_rect.y += chrome_top_overlap;
-  geometry.content_rect.h -=
-    chrome_top_overlap + chrome_bottom_overlap;
   app->reader_view_layout.page_surface_rect = geometry.page_surface_rect;
   app->reader_view_layout.content_rect = geometry.content_rect;
   if (app->reader_view_layout.progress_visible)
@@ -1759,12 +1979,6 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
       return 0;
     }
     app->layout_config.focused_spine_index = app->reader.active_spine_index;
-    for (U32 spine_index = 0;
-         spine_index < spine_count &&
-           !epub_reader_location_cache_ensure(&app->reader);
-         spine_index += 1)
-    {
-    }
     app->pagination_content_width = content.w;
     app->pagination_content_height = content.h;
     app->pagination_dirty = 0;
@@ -1787,7 +2001,8 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
   projection.document_key = (UI0U64)app->reader_frame.document_id;
   projection.features =
     ReaderViewFeature_Paging | ReaderViewFeature_Progress;
-  projection.document_flags = ReaderViewDocument_Open;
+  projection.document_flags =
+    ReaderViewDocument_Open | ReaderViewDocument_DistractionFree;
   if (app->reader_frame.spine_index > 0 ||
       app->reader_frame.page_index > 1)
   {
@@ -1914,13 +2129,9 @@ octavo_android_touch_zone(const OctavoAndroidApp *app, float x, float y)
   }
 
   S32 left = MAX(app->inset_left, 0);
-  S32 top = MAX(
-    MAX(app->inset_top, 0),
-    app->reader_chrome_inset_top);
+  S32 top = MAX(app->inset_top, 0);
   S32 right = app->width - MAX(app->inset_right, 0);
-  S32 bottom = app->height - MAX(
-    MAX(app->inset_bottom, 0),
-    app->reader_chrome_inset_bottom);
+  S32 bottom = app->height - MAX(app->inset_bottom, 0);
   if (left >= right || top >= bottom ||
       x < (float)left || x >= (float)right ||
       y < (float)top || y >= (float)bottom)
@@ -2159,22 +2370,29 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   }
 
   UI0Rect bounds = octavo_android_pixel_bounds(pixels);
-  UI0Color app_background =
-    app->reader_view_theme.colors[UI0ColorRole_AppBackground];
   UI0Color page_color =
     app->reader_view_theme.colors[UI0ColorRole_Surface];
-  UI0Color border_color =
-    app->reader_view_theme.colors[UI0ColorRole_BorderMuted];
-  octavo_android_fill_rect(pixels, bounds, bounds, app_background);
+  /*
+   * The reader is one continuous page, not a card placed on an app surface.
+   * Keeping the full native layer page-colored also makes the host's uniform
+   * chrome composition seamless at its exposed edges.
+   */
+  octavo_android_fill_rect(pixels, bounds, bounds, page_color);
   octavo_android_fill_rect(
     pixels, app->reader_view_layout.page_surface_rect, bounds, page_color);
-  octavo_android_stroke_rect(
-    pixels,
-    app->reader_view_layout.page_surface_rect,
-    bounds,
-    border_color,
-    1);
-  octavo_android_draw_reader_text(app, pixels);
+  OctavoAndroidJustificationEvidence justification_evidence = {0};
+  if (!octavo_android_draw_reader_text(
+        app, pixels, &justification_evidence))
+  {
+    app->render_failure_count += 1u;
+    octavo_android_draw_failure_frame(app, pixels);
+    (void)ANativeWindow_unlockAndPost(app->window);
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Unable to resolve the bounded Android reader justification plan");
+    return 0;
+  }
   if (app->chrome_visible && !OCTAVO_ANDROID_HOST_OWNS_READER_CHROME)
   {
     octavo_android_draw_reader_view(app, pixels);
@@ -2202,6 +2420,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   app->format = buffer.format;
   app->width = buffer.width;
   app->height = buffer.height;
+  app->justification_evidence = justification_evidence;
   app->frame_count += 1u;
   app->host_frame_waiting_for_present = 0;
   if (app->page_move_waiting_for_present)
@@ -2248,11 +2467,21 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   }
   app->presented_reader_view_theme = app->reader_view_theme;
   app->presented_reader_view_theme_valid = 1;
+  if (app->first_frame_elapsed_millis == 0 &&
+      app->reader_entry_started_millis > 0)
+  {
+    uint64_t now = octavo_android_uptime_millis();
+    if (now >= app->reader_entry_started_millis)
+    {
+      app->first_frame_elapsed_millis =
+        MAX(now - app->reader_entry_started_millis, UINT64_C(1));
+    }
+  }
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
     "Android Port 7 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
-    "reader_bytes=%llu reader_hash=%016llx view_draws=%d",
+    "reader_bytes=%llu reader_hash=%016llx view_draws=%d first_ms=%llu",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
     app->width,
@@ -2261,7 +2490,8 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     (unsigned long long)app->reader_frame.page_count,
     (unsigned long long)app->reader_frame.visible_text.size,
     (unsigned long long)u64_hash_str8(app->reader_frame.visible_text),
-    app->reader_view_frame.draw_command_count);
+    app->reader_view_frame.draw_command_count,
+    (unsigned long long)app->first_frame_elapsed_millis);
   return 1;
 }
 
@@ -2332,6 +2562,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   {
     return 0;
   }
+  app->reader_entry_started_millis = octavo_android_uptime_millis();
 
   if (resume_requested &&
       (resume_spine_index < 0 ||
@@ -2689,8 +2920,6 @@ Java_ro_devze_octavo_OctavoNative_readerChromeInsets(
 
   app->reader_chrome_inset_top = (int32_t)top;
   app->reader_chrome_inset_bottom = (int32_t)bottom;
-  app->host_frame_waiting_for_present = 1;
-  app->pagination_dirty = 1;
   return JNI_TRUE;
 }
 
@@ -2727,6 +2956,24 @@ Java_ro_devze_octavo_OctavoNative_forcePrePresentFailuresForTesting(
     return JNI_FALSE;
   }
   app->forced_pre_present_failures_for_testing = (int32_t)count;
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_forceLocationWarmFailuresForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint count)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || count < 0 || count > 4)
+  {
+    return JNI_FALSE;
+  }
+  app->forced_location_warm_failures_for_testing = (int32_t)count;
   return JNI_TRUE;
 }
 
@@ -2794,22 +3041,9 @@ Java_ro_devze_octavo_OctavoNative_setChromeVisible(
   {
     return JNI_TRUE;
   }
-  int previous = app->chrome_visible;
   app->chrome_visible = next;
-  app->host_frame_waiting_for_present = 1;
-  if (!app->window || !app->resumed)
-  {
-    app->chrome_toggle_count += 1u;
-    return JNI_TRUE;
-  }
-  if (octavo_android_present_frame(app))
-  {
-    app->chrome_toggle_count += 1u;
-    return JNI_TRUE;
-  }
-  app->chrome_visible = previous;
-  (void)octavo_android_present_frame(app);
-  return JNI_FALSE;
+  app->chrome_toggle_count += 1u;
+  return JNI_TRUE;
 }
 
 JNIEXPORT jint JNICALL
@@ -2830,6 +3064,107 @@ Java_ro_devze_octavo_OctavoNative_accessibilityMovePage(
   app->accessibility_action_count += 1u;
   return OCTAVO_ANDROID_TOUCH_HANDLED |
     OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED;
+}
+
+/*
+ * Extract at most one remaining spine per host-scheduled idle step. Reader0's
+ * public frame builder may establish one bounded summary step for the visible
+ * frame; the Java host does not call this whole-book continuation until that
+ * frame has been successfully posted.
+ *
+ * Return values: -1 terminal failure, 0 already complete, 1 progressed with
+ * more work remaining, 2 temporarily presentation-gated, 3 just completed
+ * and the host should request one same-page metadata refresh.
+ */
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_warmLocationCacheStep(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->reader_initialized ||
+      !epub_reader_is_open(&app->reader))
+  {
+    return -1;
+  }
+  if (app->reader.location_cache_complete &&
+      app->reader.location_cache_valid)
+  {
+    return 0;
+  }
+  if (app->frame_count == 0 || !app->resumed ||
+      octavo_android_presentation_pending(app))
+  {
+    app->location_warm_defer_count += 1u;
+    return 2;
+  }
+
+  if (app->location_warm_step_count == 0)
+  {
+    app->location_warm_first_frame_count = app->frame_count;
+  }
+  app->location_warm_step_count += 1u;
+  if (app->forced_location_warm_failures_for_testing > 0)
+  {
+    app->forced_location_warm_failures_for_testing -= 1;
+    app->location_warm_failure_count += 1u;
+    return -1;
+  }
+  U32 before = app->reader.location_next_spine_index;
+  (void)epub_reader_location_cache_ensure(&app->reader);
+  B32 complete = app->reader.location_cache_complete &&
+    app->reader.location_cache_valid;
+  B32 progressed = app->reader.location_next_spine_index > before;
+  if (progressed)
+  {
+    app->location_warm_progress_count += 1u;
+  }
+  if (complete)
+  {
+    return 3;
+  }
+  if (progressed)
+  {
+    return 1;
+  }
+  app->location_warm_failure_count += 1u;
+  return -1;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_locationCacheState(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app)
+  {
+    return 0;
+  }
+  jlong values[10] = {
+    app->reader.location_cache_complete ? 1 : 0,
+    app->reader.location_cache_valid ? 1 : 0,
+    (jlong)app->reader.location_next_spine_index,
+    (jlong)app->reader.location_spine_count,
+    (jlong)app->reader.location_total_text_bytes,
+    (jlong)app->location_warm_step_count,
+    (jlong)app->location_warm_progress_count,
+    (jlong)app->location_warm_defer_count,
+    (jlong)app->location_warm_failure_count,
+    (jlong)app->location_warm_first_frame_count,
+  };
+  jlongArray result = (*environment)->NewLongArray(environment, 10);
+  if (!result)
+  {
+    return 0;
+  }
+  (*environment)->SetLongArrayRegion(environment, result, 0, 10, values);
+  return result;
 }
 
 JNIEXPORT jlongArray JNICALL
@@ -2940,6 +3275,12 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[86] = app->reader_chrome_inset_bottom;
   values[87] = app->appearance.reduced_motion ? 1 : 0;
   values[88] = app->host_frame_waiting_for_present ? 1 : 0;
+  values[89] = (jlong)app->justification_evidence.plan_count;
+  values[90] = (jlong)app->justification_evidence.active_row_count;
+  values[91] = (jlong)app->justification_evidence.applied_extra_px;
+  values[92] = (jlong)app->justification_evidence.semantic_hash;
+  values[93] = (jlong)app->reader_entry_started_millis;
+  values[94] = (jlong)app->first_frame_elapsed_millis;
   jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
   if (!result)

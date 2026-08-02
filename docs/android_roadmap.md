@@ -1,8 +1,9 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01. Port 7 is implemented on its
-milestone branch and awaiting formal acceptance; later numbering and
-boundaries may change as evidence is collected.
+Status: directional roadmap adopted 2026-08-01. The current Port 7 refinement
+is implemented on its milestone branch and awaiting a new physical-iQOO run
+and formal acceptance; later numbering and boundaries may change as evidence
+is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -26,9 +27,10 @@ Port 6 is a functional foundation, not a claim of Kindle-level feature or
 visual parity.
 
 Port 7 is the current implementation candidate. It adds the appearance,
-semantic-location reflow, overlay chrome, and accessibility-bridge foundation
-described below. Until its full acceptance matrix passes, Ports 0-6 remain the
-accepted Android baseline.
+semantic-location reflow, borderless host-composited chrome,
+reader-entry-performance, and accessibility-bridge foundation described
+below. Until its full acceptance matrix passes, Ports 0-6 remain the accepted
+Android baseline.
 
 ## Delivery method
 
@@ -61,22 +63,41 @@ an implementation claim.
 
 - 8vo semantic design tokens cover page, chrome, surfaces, text hierarchy,
   dividers, accents, selection, errors, spacing, shape, icon size, and motion.
-- A calm immersive reader shell shows and hides controls over stable page
-  geometry. Final emulator automation covers page-state neutrality, measured
-  chrome occlusion, hidden-band tap rejection, and composed dark-transition
-  pixels; physical touch and comfort remain acceptance gates.
+- A calm immersive reader shell presents one borderless canonical
+  full-viewport native page. Hidden chrome is the identity composition;
+  visible chrome uniformly scales and translates that same Surface between
+  Android controls without repagination, redraw, or semantic-location change.
+  Gestures are canceled and gated across the transition.
 - The reader-preferences surface offers five font sizes, Android generic serif
   and sans-serif families, four line-spacing choices, three margins/content
   widths, supported publisher/ragged-right alignment, explicit publisher-color
-  policy, and reduced motion. No font asset is bundled.
+  policy, and reduced motion. The default is 16sp and no font asset is bundled.
 - Paper, sepia, dusk, warm-dark, OLED, and high-contrast themes are available.
 - Every reader, chrome, and system-bar role is tuned semantically per theme
   instead of mechanically inverting one palette.
-- One versioned, checksummed global appearance persists independently from
-  per-book locations. Per-book overrides are explicitly deferred.
+- A synchronous target-theme cover masks the initial native Surface layer
+  until the first successfully presented frame; it avoids a black or
+  wrong-theme reader-entry frame.
+- One checksummed version-2 global appearance persists independently from
+  per-book locations. Its migration changes only an exact version-1
+  all-default 18sp record to the 16sp default. Version 1 stored no separate
+  intent bit; every other version-1 tuple and any version-2 18sp choice remains
+  unchanged. Per-book overrides are explicitly deferred.
 - Layout-affecting changes rebuild Reader0 pagination and reconstruct
   the canonical page containing the last successfully presented semantic
   location.
+- Windows and Android use one allocation-free 8vo word-spacing plan over
+  validated Reader0 rows. Publisher mode applies controlled inter-word spacing
+  to eligible rows, while Ragged right retains natural spacing; Reader0 remains
+  the line-breaking authority.
+- The shared Windows theme catalog centralizes six stable desktop IDs, labels,
+  UI0 mappings, and reader/search/highlight roles. Android palettes are
+  intentionally independently tuned for Android surfaces and night reading.
+- Android native debug builds use `-O2` with symbols, and whole-book
+  location metadata no longer blocks first presentation. Bounded one-spine
+  warming starts only after a successful frame and refreshes same-page
+  metadata; terminal failure is visible and nonfatal, presentation exhaustion
+  stops polling, and privacy-safe first-frame timing is retained as evidence.
 - Java coalesces preview changes and retains the successful-presentation gate so
   rapid adjustments cannot save or expose an unpresented state.
 - Native Android controls and the custom reader's essential actions are
@@ -86,9 +107,11 @@ an implementation claim.
   for themes, preference extremes, insets, rotation, recreation, and
   compact/large viewports.
 
-Implementation of the behavior and diagnostic hooks is present, and the final
-API 36 emulator/visual and physical-iQOO automated matrices have run. Human
-comfort and hands-on accessibility acceptance remain separate obligations.
+Implementation of the behavior and diagnostic hooks is present, and the
+current API 36 emulator/visual matrix has run. Physical-iQOO evidence from the
+preceding candidate is historical and superseded; the current APK still needs
+its physical automated and hands-on passes. Human comfort and hands-on
+accessibility acceptance remain separate obligations.
 
 ### Deliberately out of Port 7
 
@@ -113,29 +136,38 @@ In addition to permanent build/regression gates, require:
 - automated pixel/semantic evidence that theme and typography changes occur;
 - TalkBack labels/actions, focus order, large system text, touch targets, and
   reduced-motion review for the new controls;
-- a hands-on extended-reading pass on the iQOO in light and warm-dark themes;
+- a hands-on extended-reading pass on the iQOO in Paper, Warm dark, and OLED;
   and
 - dark-room comparison of warm-dark and OLED modes, recording discomfort,
   halation, minimum brightness, accent intensity, and any white flash.
 
 ### Current validation status
 
-The final API 36 x86_64 emulator and Android 14/API 34 ARM64 iQOO matrices
-each passed 23/23 ordered tests at the default system font scale, sequentially
-exercising every supported preference value plus compact/large viewports,
-portrait/landscape, lifecycle, rotation, surface replacement, and recreation.
-Both devices passed externally force-stopped fresh-process probes and separate
-strengthened 130% system-text accessibility/settings and title-ellipsis runs;
-both font scales were restored to 1.0 and both crash buffers were empty. Both
-Android ABIs built, the strict Windows 8vo suite passed 7/7 public smokes, and
-unchanged re10 passed its strict build and four-anchor document-engine smoke.
-Exact timings, finite-matrix limits, pins, physical palette pixels, and bounded
-transition evidence are recorded in [android_port7.md](android_port7.md).
-Objective real-device UiAutomator traversal reached named reader controls in
-both directions without blank chrome-container or raw-Surface stops. Audible
-TalkBack and hands-on keyboard/switch and reduced-motion review, extended
-Paper, Warm dark, and OLED reading, and subjective dark-room comfort review
-remain pending.
+The current API 36 x86_64 emulator matrix passed 27/27 ordered tests at the
+default system font scale, covering the supported preference values,
+borderless full-viewport composition, compact/large viewports,
+portrait/landscape, lifecycle, rotation, surface replacement, recreation,
+accessibility semantics, and deterministic pixel evidence. Its externally
+force-stopped fresh-process seed and verification probes passed, the separate
+130% system-text run passed, the font scale was restored to 1.0, and the crash
+buffer was empty.
+
+For an already imported user-owned *Gardens of the Moon* EPUB,
+Library-to-Resume was externally observed at 411ms and native
+creation-to-success at 220ms. Samples across that transition contained no
+black or near-black app frame. Both Android ABIs built, the strict Windows 8vo
+suite passed 7/7 public smokes, and unchanged re10 passed its strict build and
+four-anchor document-engine smoke. Exact timings, finite-matrix limits, pins,
+and bounded transition evidence are recorded in
+[android_port7.md](android_port7.md).
+
+The preceding Port 7 candidate's 23/23 Android 14/API 34 iQOO run, physical
+palette captures, and UiAutomator traversal are retained only as historical
+evidence; they do not accept the current APK. A new iQOO instrumentation,
+process-restart, large-text, real-book timing, and hands-on run is pending,
+along with audible TalkBack, keyboard/switch and reduced-motion review,
+extended Paper, Warm dark, and OLED reading, and subjective dark-room comfort
+review.
 
 ## Candidate sequence after Port 7 acceptance
 
@@ -224,8 +256,8 @@ smallest responsible package. The long-term lane includes:
 
 - complete font fallback and script-aware shaping;
 - embedded fonts with license and malformed-input handling;
-- language-aware hyphenation, ligatures, justification, bidi, and RTL page
-  direction;
+- language-aware hyphenation, ligatures, script-aware advanced justification,
+  bidi, and RTL page direction;
 - images, captions/alt text, zoom, and memory-bounded decode;
 - tables, lists, poetry, block quotes, drop caps, links, footnotes, and MathML;
 - publisher styling balanced against explicit reader overrides; and

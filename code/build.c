@@ -22,6 +22,7 @@
 #include "reader0.c"
 #include "render/render.c"
 #include "ui0.c"
+#include "octavo_theme.c"
 #include "readerview0.c"
 #include "octavo.c"
 #include "octavo_library.c"

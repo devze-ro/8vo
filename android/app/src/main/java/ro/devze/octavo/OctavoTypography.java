@@ -21,6 +21,17 @@ final class OctavoTypography {
     private static final int MAX_TEXT_PX = 512;
     private static final int MAX_ATLAS_DIMENSION = 16384;
     private static final int MAX_ATLAS_BYTES = 64 * 1024 * 1024;
+    /*
+     * Reader entry used to rasterize the identical atlas on every resume.
+     * Keep exactly one immutable atlas: this bounds retained storage while
+     * making the common same-typography resume allocation-free.
+     */
+    private static OctavoTypography cachedTypography;
+    private static int cachedFontFamilyId = -1;
+    private static int cachedTextPx = -1;
+    private static int cachedLineSpacingPermille = -1;
+    private static long cacheHitCount;
+    private static long cacheBuildCount;
 
     final int[] metrics;
     final byte[] alpha;
@@ -34,8 +45,9 @@ final class OctavoTypography {
         return create(context, OctavoAppearance.defaults());
     }
 
-    static OctavoTypography create(Context context,
-                                   OctavoAppearance appearance) {
+    static synchronized OctavoTypography create(
+        Context context,
+        OctavoAppearance appearance) {
         if (context == null) {
             throw new IllegalArgumentException("Missing context");
         }
@@ -53,6 +65,14 @@ final class OctavoTypography {
             Math.round(resolvedTextPx), selected.fontSizeSp());
         if (textPx <= 0 || textPx > MAX_TEXT_PX) {
             throw new IllegalArgumentException("Text size exceeds its bound");
+        }
+        if (cachedTypography != null
+            && cachedFontFamilyId == selected.fontFamilyId()
+            && cachedTextPx == textPx
+            && cachedLineSpacingPermille
+                == selected.lineSpacingPermille()) {
+            cacheHitCount += 1;
+            return cachedTypography;
         }
         Typeface family = selected.systemTypeface();
         Paint[] paints = new Paint[] {
@@ -168,10 +188,35 @@ final class OctavoTypography {
                     metrics[at++] = advances[style][glyph];
                 }
             }
-            return new OctavoTypography(metrics, pixels.array());
+            OctavoTypography result =
+                new OctavoTypography(metrics, pixels.array());
+            cachedTypography = result;
+            cachedFontFamilyId = selected.fontFamilyId();
+            cachedTextPx = textPx;
+            cachedLineSpacingPermille =
+                selected.lineSpacingPermille();
+            cacheBuildCount += 1;
+            return result;
         } finally {
             bitmap.recycle();
         }
+    }
+
+    static synchronized void clearCacheForTesting() {
+        cachedTypography = null;
+        cachedFontFamilyId = -1;
+        cachedTextPx = -1;
+        cachedLineSpacingPermille = -1;
+        cacheHitCount = 0;
+        cacheBuildCount = 0;
+    }
+
+    static synchronized long cacheHitCountForTesting() {
+        return cacheHitCount;
+    }
+
+    static synchronized long cacheBuildCountForTesting() {
+        return cacheBuildCount;
     }
 
     private static Paint paint(int textPx, Typeface family, int style) {

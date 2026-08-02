@@ -38,6 +38,10 @@ target_compile_features(octavo PRIVATE c_std_11)
 target_compile_options(
   octavo
   PRIVATE
+  # Port instrumentation exercises production-sized EPUBs. Preserve debug
+  # symbols while compiling the shared engines at a representative
+  # optimization level so debug APK latency is not dominated by -O0.
+  $<$<CONFIG:Debug>:-O2>
   -Wall
   -Wextra
   -Werror

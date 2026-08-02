@@ -21,7 +21,15 @@ import java.util.zip.CRC32;
  */
 final class OctavoAppearanceStore {
     private static final int STORE_MAGIC = 0x4F375354; // "O7ST"
-    private static final int STORE_VERSION = 1;
+    /*
+     * Store version 1 used the exact all-default 18sp tuple. Version 2 keeps
+     * the same bounded 60-byte record and native payload version, but records
+     * 16sp as the default. Both remain readable. Only the exact version-1
+     * legacy all-default tuple migrates; every other version-1 tuple and any
+     * version-2 18sp choice remains exact.
+     */
+    private static final int LEGACY_STORE_VERSION_18SP_DEFAULT = 1;
+    private static final int STORE_VERSION = 2;
     private static final int MAX_FILE_BYTES = 256;
     private static final int HEADER_INT_COUNT = 3;
     private static final int CHECKSUM_INT_COUNT = 1;
@@ -65,9 +73,23 @@ final class OctavoAppearanceStore {
 
         try {
             byte[] bytes = readBounded(appearanceFile);
-            OctavoAppearance loaded = decode(bytes);
-            if (loaded == null) {
+            DecodedRecord decoded = decode(bytes);
+            if (decoded == null) {
                 throw new IOException("Invalid Port 7 appearance record");
+            }
+            OctavoAppearance loaded = decoded.appearance;
+            if (decoded.storeVersion
+                    == LEGACY_STORE_VERSION_18SP_DEFAULT
+                && loaded.isLegacyAllDefault18Sp()) {
+                loaded = OctavoAppearance.defaults();
+                /*
+                 * Rewrite only the exact legacy all-default tuple. Failed
+                 * atomic publication leaves the valid legacy record in place
+                 * for a later retry and is not classified as corruption.
+                 */
+                if (!save(loaded)) {
+                    current = loaded;
+                }
             }
             current = loaded;
             loadSuccessCount += 1;
@@ -155,6 +177,19 @@ final class OctavoAppearanceStore {
         return RECORD_BYTES;
     }
 
+    static int currentStoreVersionForTesting() {
+        return STORE_VERSION;
+    }
+
+    static int legacyStoreVersionForTesting() {
+        return LEGACY_STORE_VERSION_18SP_DEFAULT;
+    }
+
+    static byte[] legacyRecordForTesting(OctavoAppearance appearance)
+        throws IOException {
+        return encode(appearance, LEGACY_STORE_VERSION_18SP_DEFAULT);
+    }
+
     static void clearForTesting(Context context) {
         OctavoAppearanceStore store = new OctavoAppearanceStore(context);
         if (store.temporaryFile.exists()
@@ -186,10 +221,21 @@ final class OctavoAppearanceStore {
 
     private static byte[] encode(OctavoAppearance appearance)
         throws IOException {
+        return encode(appearance, STORE_VERSION);
+    }
+
+    private static byte[] encode(OctavoAppearance appearance,
+                                 int storeVersion)
+        throws IOException {
+        if (appearance == null
+            || (storeVersion != STORE_VERSION
+                && storeVersion != LEGACY_STORE_VERSION_18SP_DEFAULT)) {
+            throw new IOException();
+        }
         ByteBuffer buffer = ByteBuffer.allocate(RECORD_BYTES)
             .order(ByteOrder.BIG_ENDIAN);
         buffer.putInt(STORE_MAGIC);
-        buffer.putInt(STORE_VERSION);
+        buffer.putInt(storeVersion);
         buffer.putInt(OctavoAppearance.NATIVE_FIELD_COUNT);
         for (int value : appearance.nativeConfig()) {
             buffer.putInt(value);
@@ -207,7 +253,7 @@ final class OctavoAppearanceStore {
         return bytes;
     }
 
-    private static OctavoAppearance decode(byte[] bytes) {
+    private static DecodedRecord decode(byte[] bytes) {
         if (bytes == null || bytes.length != RECORD_BYTES) {
             return null;
         }
@@ -220,7 +266,9 @@ final class OctavoAppearanceStore {
         int magic = buffer.getInt();
         int version = buffer.getInt();
         int fieldCount = buffer.getInt();
-        if (magic != STORE_MAGIC || version != STORE_VERSION
+        if (magic != STORE_MAGIC
+            || (version != STORE_VERSION
+                && version != LEGACY_STORE_VERSION_18SP_DEFAULT)
             || fieldCount != OctavoAppearance.NATIVE_FIELD_COUNT) {
             return null;
         }
@@ -234,7 +282,10 @@ final class OctavoAppearanceStore {
             || storedChecksum != (int)checksum.getValue()) {
             return null;
         }
-        return OctavoAppearance.fromNativeConfig(config);
+        OctavoAppearance appearance =
+            OctavoAppearance.fromNativeConfig(config);
+        return appearance == null
+            ? null : new DecodedRecord(version, appearance);
     }
 
     private static byte[] readBounded(File file) throws IOException {
@@ -281,6 +332,16 @@ final class OctavoAppearanceStore {
     private void deleteTemporaryBestEffort() {
         if (temporaryFile.isFile()) {
             temporaryFile.delete();
+        }
+    }
+
+    private static final class DecodedRecord {
+        final int storeVersion;
+        final OctavoAppearance appearance;
+
+        DecodedRecord(int storeVersion, OctavoAppearance appearance) {
+            this.storeVersion = storeVersion;
+            this.appearance = appearance;
         }
     }
 }

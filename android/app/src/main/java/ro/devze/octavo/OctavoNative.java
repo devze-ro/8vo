@@ -60,12 +60,16 @@ final class OctavoNative {
                                                          int count);
     static native boolean forcePrePresentFailuresForTesting(long handle,
                                                             int count);
+    static native boolean forceLocationWarmFailuresForTesting(long handle,
+                                                              int count);
     static native boolean forceSurfaceAcquisitionFailuresForTesting(
         long handle, int count);
     static native boolean present(long handle);
     static native int navigationAvailability(long handle);
     static native boolean setChromeVisible(long handle, boolean visible);
     static native int accessibilityMovePage(long handle, int direction);
+    static native int warmLocationCacheStep(long handle);
+    static native long[] locationCacheState(long handle);
     static native long[] state(long handle);
     static native long[] accessibilitySemanticSnapshot(long handle);
     static native String accessibilitySemanticName(long handle,

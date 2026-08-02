@@ -11,6 +11,7 @@
     <item name="octavo_reader_next" type="id" />
     <item name="octavo_reader_progress" type="id" />
     <item name="octavo_reader_failure" type="id" />
+    <item name="octavo_reader_entry_cover" type="id" />
     <item name="octavo_appearance_transition" type="id" />
     <item name="octavo_appearance_overlay" type="id" />
     <item name="octavo_appearance_panel" type="id" />

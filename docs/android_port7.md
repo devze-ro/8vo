@@ -1,13 +1,13 @@
 # Android Port 7: premium reader appearance foundation
 
 Status: implementation candidate on
-`android/port7-premium-reader-appearance`. The final API 36 emulator,
-dual-ABI Android build, Windows 8vo, unchanged re10, and Android 14/API 34
-physical-iQOO automated gates passed on 2026-08-01/02. Objective real-device
-accessibility/keyboard traversal also passed without blank host stops. Audible
-TalkBack and touch-exploration judgment, hands-on keyboard/switch and reduced-
-motion review, prolonged-reading comfort, and dark-room acceptance remain
-pending.
+`android/port7-premium-reader-appearance`. The 2026-08-02 borderless-reader and
+entry-performance refinement passes the final API 36 emulator, dual-ABI
+Android, Windows 8vo, and unchanged re10 gates recorded below. Physical-iQOO
+evidence from the preceding candidate remains historical evidence only; the
+current APK still requires physical automation, physical-iQOO Gardens of the
+Moon Resume timing, hands-on accessibility and alternate-input review, prolonged
+reading, and dark-room acceptance.
 
 Port 7 turns the accepted Port 6 library and reader into the first bounded
 premium-reading appearance slice. It adds a host-owned semantic visual system,
@@ -36,21 +36,28 @@ Port 7 implements:
   reduced motion;
 - a bounded, versioned, checksummed, atomically replaced global appearance
   record;
-- fresh caller-owned Android glyph atlases for the selected system serif or
-  sans-serif family at the selected size and spacing;
+- a one-entry immutable caller-owned Android glyph-atlas cache keyed only by
+  the selected system family, resolved size, and spacing;
 - canonical Reader0 repagination after a layout-affecting change, anchored to
   the last successfully presented spine/byte location;
 - a presentation gate and coalescing policy for rapid appearance requests;
 - an `OctavoAppearancePanel` settings sheet and center-tap show/hide reader
-  chrome whose measured top/bottom occlusion defines stable page geometry;
+  chrome composited over one canonical full-viewport native page, with no page
+  border and no permanently reserved chrome bands;
 - a target-theme transition cover held through successful native presentation
   and two Java frames, with bounded composed-frame sampling of the covered
   transition phases;
 - a bounded Android virtual accessibility tree for the page, previous page,
   next page, and read-only progress, plus deterministic native/virtual keyboard
   focus routing; and
+- one allocation-free 8vo justification plan consumed by both Windows and
+  Android raster paths without moving EPUB interpretation out of Reader0;
+- first-frame scheduling that defers whole-book Reader0 location summaries
+  until after a successfully presented page, bounds every retry path, and
+  exposes terminal summary failure without interrupting reading; and
 - native diagnostic state for appearance generations, palette identity,
-  reflow, chrome, accessibility actions, and failures.
+  reflow, chrome, accessibility actions, justification, first-frame time, and
+  failures.
 
 The application ID remains `ro.devze.octavo`.
 
@@ -64,7 +71,7 @@ silently added to the Port 6 book records.
 | --- | --- | --- | --- |
 | Theme | Paper, Sepia, Dusk, Warm dark, OLED, High contrast | Paper | None |
 | Font family | Literary system serif, Clear system sans serif | Literary | Rebuild |
-| Font size | 16, 18, 21, 24, or 28sp | 18sp | Rebuild |
+| Font size | 16, 18, 21, 24, or 28sp | 16sp | Rebuild |
 | Line spacing | 1150, 1250, 1300, or 1500 permille | 1250, Classic | Rebuild |
 | Margins/content width | Wide 720, Balanced 860, Focused 960 permille | Balanced | Rebuild |
 | Alignment | Publisher or Ragged right | Publisher | Host rendering policy |
@@ -75,9 +82,12 @@ The content-width values are bounded targets. Readerview0 still resolves the
 authoritative page and content geometry, and 8vo additionally applies handset
 insets and a height-derived comfortable maximum width.
 
-Publisher alignment preserves supported Reader0 row alignment. Ragged-right
-mode suppresses centered/end alignment in the current Android raster path; it
-does not add host-side EPUB interpretation, justification, or hyphenation.
+Publisher alignment preserves supported Reader0 row alignment. For a supported
+soft-wrapped justified row, both 8vo hosts use the same allocation-free plan to
+distribute bounded extra advance over interior ASCII spaces across styled
+fragments. Ragged-right mode preserves natural word spacing and suppresses
+stretching. This is raster policy over Reader0 rows, not duplicated EPUB
+interpretation, line breaking, semantic anchoring, or hyphenation.
 Theme-safe publisher colors use the active semantic reader text. The explicit
 allow policy may use a Reader0 row color except in High contrast, where the
 accessibility palette remains authoritative.
@@ -98,10 +108,12 @@ device. Embedded EPUB fonts remain disabled in the accepted Android layout
 key.
 
 `OctavoTypography` rasterizes regular, bold, italic, and bold-italic faces into
-a fresh caller-owned alpha atlas. The selected sp value participates in
-Android font scaling. Line advance is derived from the selected spacing. Text
-size, atlas dimensions, stride, and alpha storage retain explicit bounds that
-match the JNI import contract.
+a caller-owned alpha atlas. A bounded one-entry immutable cache reuses that
+atlas for theme, margin, alignment, and publisher-color changes; family, size,
+or spacing changes replace it. The selected sp value participates in Android
+font scaling. Line advance is derived from the selected spacing. Text size,
+atlas dimensions, stride, and alpha storage retain explicit bounds that match
+the JNI import contract.
 
 Because system glyph metrics may differ across devices or after a preference
 change, Port 7 promises the same semantic reading location after reflow, not
@@ -132,8 +144,13 @@ Java/JNI boundary. UI0 remains product-neutral; it does not acquire Android or
 
 The single global record is `<files>/port7/appearance.v1`. It contains a fixed
 store header, version, field count, the stable appearance configuration, and a
-CRC32 checksum. The version-1 record is 60 bytes and is rejected if it differs
-from the exact shape; reads remain capped at 256 bytes.
+CRC32 checksum. The current version-2 record is 60 bytes and is rejected if it
+differs from the exact shape; reads remain capped at 256 bytes. The exact
+version-1 all-default 18sp tuple migrates atomically to the 16sp default.
+Version 1 stored values, not intent, so that exact tuple necessarily migrates
+regardless of how it was reached. Every other version-1 tuple and any
+version-2 18sp choice remains exact; a failed migration write preserves a valid
+version-1 record for retry.
 
 A missing or invalid record yields the documented default. Saves write one
 fixed same-directory temporary file, flush and synchronize its file
@@ -179,11 +196,14 @@ portrait/landscape rotation; surface replacement; Activity recreation; and the
 inherited pause/resume regression. These axes run sequentially at
 `font_scale=1.0`; a separate `font_scale=1.3` run covers the accessibility
 tree and settings surface. This is finite evidence, not a Cartesian-combination
-claim. The ordinary connected suite excludes the externally orchestrated
-restart probe. After that suite has installed the app and test APKs, run its
-seed/force-stop/verify driver from the repository root:
+ claim. The ordinary connected suite excludes the externally orchestrated
+ restart probe and may uninstall its APKs when Gradle finishes. Reinstall both
+ built APKs, then run the seed/force-stop/verify driver from the repository
+ root:
 
 ```powershell
+adb -s emulator-5554 install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\android_port7_process_restart.ps1 -Serial emulator-5554
 ```
 
@@ -195,19 +215,21 @@ accepted.
 
 ## Overlay reader chrome
 
-Reader content and page geometry remain resolved whether the chrome is visible
-or hidden. A valid short center tap toggles the chrome and requests a redraw;
-left and right zones retain previous/next page behavior. A gesture must finish
-inside its original zone and remain within the existing duration and slop
-bounds, so a center-tap intent cannot become a page turn merely because the
-finger moved.
+Reader0 and Readerview0 resolve one borderless page for the full native reader
+viewport. Hidden chrome leaves the SurfaceView at its identity transform. When
+controls are visible, Android uniformly scales and translates that same
+already-presented Surface into the measured area between the host controls.
+Showing or hiding chrome therefore does not rebuild pagination, redraw native
+chrome, mutate a Reader0 page, change the semantic anchor, or save a location.
+The transformed page remains the same canonical buffer and accessibility
+bounds use the same host transform.
 
-The Android host publishes its measured top and bottom control heights to
-native state. Those bands remain excluded from Reader0/Readerview0 content and
-from page-turn taps whether the controls are visible or hidden. Hiding controls
-therefore changes only their draw/accessibility layer; it does not rebuild
-pagination, change the canonical page, accept an accidental band tap, or save
-a new location.
+A valid short center tap toggles the host controls; left and right zones retain
+previous/next behavior. Starting a composition transition sends native CANCEL,
+advances a host transition generation, and gates further gesture delivery until
+the transform is settled. A gesture crossing that boundary cannot become an
+accidental page turn. The full native buffer is filled with the reader-page
+color, so there is no page-card border or contrasting side frame.
 
 For a cross-theme change, the host immediately installs a full-reader cover in
 the target `readerPage` color above the Surface and reader chrome but below the
@@ -216,15 +238,44 @@ successfully presented and two Java frames have elapsed. Bounded composed-frame
 sampling found no bright sample in the tested reader entry/re-entry/exit,
 settings open/close, surface-replacement, recreation, and warm-dark-to-OLED
 phases. Latest-only retargeting and a settled no-op callback prevent a rapid
-request sequence from stranding an obsolete cover. A final 19-frame physical
-iQOO composed-screen series spanned a Warm dark panel, OLED selection and
+ request sequence from stranding an obsolete cover. On the preceding
+ reserved-geometry candidate, a 19-frame physical iQOO composed-screen series
+ spanned a Warm dark panel, OLED selection and
 settings close, library return, reader re-entry, and center-tap chrome
 hide/show. Inside the app bounds at y=88..2283, every frame had an
 above-95%-luma pixel ratio of 0.0000; maximum mean luma was 0.1607 and maximum
 above-85%-luma ratio was 0.0233. The maximum full-screen above-95%-luma ratio
 was 0.0009, solely from system status icons outside those app bounds. This is
 bounded captured-screen evidence, not subjective dark-room or perceptual
-no-flash acceptance.
+ no-flash acceptance, and it must be repeated for the current borderless APK.
+
+The target-theme cover is also installed synchronously before the reader view
+hierarchy replaces the library. It therefore covers the SurfaceView's initial
+black compositor layer, not only later cross-theme changes. The cover is
+removed only after the first successful native presentation and two Java
+frames.
+
+## Reader-entry performance policy
+
+The Android debug native target retains symbols but compiles the native reader
+with `-O2`; an `/Od`-equivalent native path was not representative of the
+performance-sensitive product. Reader creation no longer synchronously warms
+all EPUB spines before the first page. After a page is successfully presented,
+the Java host schedules at most one remaining Reader0 location-cache step at a
+time. Until that bounded work completes, progress may use a provisional local
+page summary; completion requests a same-page metadata refresh and does not
+change or persist the page. A terminal summary failure stops further warming
+and shows a nonfatal, accessibility-visible progress warning. Warming also
+stops after presentation retries are exhausted, so an unpresented page cannot
+leave a 32ms deferred-work poll running indefinitely.
+
+Native state records monotonic reader-create and first-successful-frame times.
+The deterministic emulator test requires positive evidence below 1500ms and
+proves the first location-warm step follows the first frame. On the API 36
+emulator, the ignored local `gotm_new.epub` repro measured 220ms native
+create-to-successful-frame and 411ms from the ADB Resume tap to observation of
+that frame. These debug-emulator numbers are regression evidence, not a release
+SLA or a substitute for physical-iQOO timing.
 
 ## Android accessibility bridge
 
@@ -260,7 +311,8 @@ semantic packet, roles, names, values, ranges, dynamic ownership, focus order,
 explicit focus-clear recovery, hidden-fade and end-of-book boundaries,
 activation/no-op behavior, presentation gating, host-node consistency, 48dp
 control bounds, the settings sheet's complete option surface, and its initial
-focus/z-order. On the iQOO, an objective UiAutomator sequence reached named
+ focus/z-order. On the preceding candidate, an iQOO UiAutomator sequence
+ reached named
 Next page, Library, Reader appearance, book-page text, and Previous page stops
 without a blank container or raw-Surface stop. An independent closure audit
 found no remaining P1/P2 focus issue.
@@ -268,10 +320,11 @@ found no remaining P1/P2 focus issue.
 This bridge is the Port 7 accessibility foundation, not complete publication
 accessibility. Headings, lists, links, images/alt text, tables, selection,
 annotations, language changes, and complex document reading semantics remain
-future engine and product work. At 130% system text, strengthened emulator and
-physical automation passed; physical visual inspection confirmed that both
-top-chrome actions remained visible and the long reader title used end
-ellipsis instead of hard clipping. Objective keyboard traversal is automated,
+ future engine and product work. At 130% system text, strengthened current
+ emulator automation passed. The preceding physical candidate also passed and
+ showed both top-chrome actions with an end-ellipsized long title, but that
+ physical evidence must be repeated for the current APK. Objective keyboard
+ traversal is automated,
 but audible TalkBack speech and touch-exploration judgment, hands-on keyboard/
 switch use, and reduced-motion quality still require acceptance.
 
@@ -284,7 +337,15 @@ touch, window, and accessibility-adapter policy inside 8vo.
   navigation, frames, and page moves.
 - UI0 receives a resolved product palette but gains no Android theme policy.
 - Readerview0 continues to own portable chrome projection, semantic records,
-  and content geometry.
+  and content geometry; Android requests its distraction-free projection and
+  owns the raster/control composition.
+- `octavo_reader_justification.h` is an allocation-free 8vo policy shared by
+  the Windows and Android raster paths. It consumes validated Reader0 rows and
+  does not interpret EPUB or paginate.
+- Windows theme IDs, labels, UI0 mappings, derived reader roles, and 8vo search/
+  highlight extensions live in one stable `octavo_theme` catalog. Android's
+  six reading palettes remain independently tuned host policy instead of being
+  forced through a false color equivalence.
 - Ground0, Reader0, UI0, Readerview0, and re10 require no Port 7 product-policy
   change.
 - `reader0.c`, `ui0.c`, and `readerview0.c` remain source-consumed exactly
@@ -338,8 +399,61 @@ called complete:
 
 ## Validation record
 
-Final fixed-candidate emulator and desktop evidence was recorded on
-2026-08-01/02; physical iQOO evidence was recorded on 2026-08-02:
+### Current borderless/performance refinement
+
+Current fixed-candidate emulator and desktop evidence was recorded through
+2026-08-03:
+
+- Exact clean dependency guards passed at the Ground0, Reader0, UI0, and
+  Readerview0 revisions listed below.
+- `:app:assembleDebug :app:compileDebugAndroidTestJavaWithJavac` and the final
+  `:app:assembleDebug` passed for both `arm64-v8a` and `x86_64`.
+- The final API 36 x86_64 emulator passed 27/27 ordered tests in 406.087
+  seconds:
+  accessibility 1, appearance-store/migration/palette 6, reader appearance 11,
+  bootstrap 1, Port 6 library regression 5, and navigation regression 3.
+- The suite proves a continuous page-colored native buffer, canonical
+  full-viewport geometry, visible-chrome scale/translation and hidden identity,
+  chrome/page-state neutrality, transition gesture cancellation, target-theme
+  entry coverage, shared publisher justification versus ragged-right pixels,
+  16sp migration, deferred location-summary completion and visible terminal
+  failure, post-presentation-terminal poll shutdown, and the first-frame timing
+  gate.
+- The true process-death driver passed seed 1/1 in 10.093 seconds, confirmed no
+  surviving target process after force-stop, and passed verify 1/1 in 9.519
+  seconds.
+- At `font_scale=1.3`, the strengthened accessibility/settings case passed 1/1
+  in 19.495 seconds; the emulator was restored to `font_scale=1.0`.
+- The exact ignored Gardens of the Moon Resume repro measured 411ms from ADB
+  tap to observed frame and 220ms inside native reader creation/presentation.
+  Nominal 50ms and 150ms captures still show the library; the 250ms through
+  700ms captures show the saved page. Across all six app-bound captures,
+  black/near-black pixel ratios were 0.000000. Copyrighted frames and video
+  remain ignored and untracked under
+  `local/validation/android-port7/api36/gotm-resume-remediation/`.
+- One stale pre-final crash-buffer line was traced to an emulator
+  `system_server` pre-watchdog stack collection: `keystore2` PID 276 was
+  healthy, but `crash_dump64` hit its platform SELinux ptrace denial. No 8vo
+  PID or tombstone was involved, and the final ordered, restart, and large-text
+  runs added no crash entry. After clearing that system-only line, the exact
+  APK bootstrap/lifecycle smoke passed 1/1 in 16.660 seconds and the crash
+  buffer remained empty.
+- The strict Windows 8vo build and all seven public smokes passed, including
+  `theme_catalog=stable6` and Reader View hash `e29cfd3afeea51a1`.
+- Unchanged re10 at `6b6112a1c1111743a8c57631eca328ad424fe4ed`
+  passed its exact guards, optimized product/qualification build, image budget,
+  and four-anchor document-engine smoke with final spine 3 and hash
+  `f3c13a55f0349720`. Every participating dependency remained clean.
+
+The current candidate has not been pushed or merged. Its physical iQOO matrix,
+physical exact-book timing, hands-on reading, accessibility, alternate-input,
+reduced-motion, and dark-room gates remain pending.
+
+### Superseded pre-refinement evidence
+
+The following 2026-08-01/02 record describes the preceding reserved-geometry
+candidate. It remains useful historical evidence but is not acceptance evidence
+for the current borderless/performance APK:
 
 - The exact clean dependency guard passed for Ground0
   `770b970b4655facfa9700c3d1025d96102365631`, Reader0
@@ -423,10 +537,12 @@ Final fixed-candidate emulator and desktop evidence was recorded on
   and hash `f3c13a55f0349720`. re10 and its participating dependencies remained
   clean at their exact revisions.
 
-The recorded finite emulator and physical automated matrices and desktop gates
-passed for this candidate, but Port 7 is not yet accepted. Still required are
-audible TalkBack speech and touch-exploration judgment, hands-on keyboard/
-switch and reduced-motion review; extended Paper, Warm dark, and OLED reading;
-and subjective dark-room review of discomfort, halation, minimum brightness,
-accent intensity, and every transition. LCD-class dark-room evidence remains
-required when an appropriate display is available.
+The preceding candidate's finite emulator and physical matrices passed, but
+they do not close the current candidate. Port 7 still requires the current
+physical iQOO matrix and physical exact-book timing; audible TalkBack speech
+and touch-exploration judgment; hands-on keyboard/switch and reduced-motion
+review;
+extended Paper, Warm dark, and OLED reading; and subjective dark-room review of
+discomfort, halation, minimum brightness, accent intensity, and every
+transition. LCD-class dark-room evidence remains required when an appropriate
+display is available.

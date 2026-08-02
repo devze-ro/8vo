@@ -12,6 +12,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -48,6 +49,8 @@ public final class OctavoActivity extends Activity {
     private FrameLayout appearanceOverlay;
     private OctavoAppearancePanel appearancePanel;
     private TextView failureBanner;
+    private View readerEntryCover;
+    private int readerEntryCoverGeneration;
     private View appearanceTransitionScrim;
     private OctavoAppearance appearanceTransitionTarget;
     private int appearanceTransitionGeneration;
@@ -237,6 +240,7 @@ public final class OctavoActivity extends Activity {
         activeBook = target;
         libraryRoot = null;
         readerRoot = root;
+        installReaderEntryCover();
         setContentView(windowRoot, matchParentLayout());
         windowRoot.requestApplyInsets();
         if (activityResumed) {
@@ -394,16 +398,22 @@ public final class OctavoActivity extends Activity {
         root.addOnLayoutChangeListener(
             (view, left, upper, right, lower,
              oldLeft, oldUpper, oldRight, oldLower) ->
-                updateReaderChromeInsets(replacement, top, bottom));
+                updateReaderChromeComposition(
+                    replacement, top, bottom, false));
         return root;
     }
 
-    private static void updateReaderChromeInsets(
+    private void updateReaderChromeComposition(
         OctavoSurfaceView surface,
         View topChrome,
-        View bottomChrome) {
+        View bottomChrome,
+        boolean animate) {
+        if (surface == null || topChrome == null || bottomChrome == null) {
+            return;
+        }
+        int surfaceWidth = surface.getWidth();
         int surfaceHeight = surface.getHeight();
-        if (surfaceHeight <= 0) {
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) {
             return;
         }
         int top = Math.max(
@@ -419,6 +429,36 @@ public final class OctavoActivity extends Activity {
         if (top > 0 && bottom > 0) {
             surface.setReaderChromeInsets(top, bottom);
         }
+        float scale = 1.0f;
+        float translationX = 0.0f;
+        float translationY = 0.0f;
+        if (chromeVisible) {
+            int availableHeight = Math.max(
+                surfaceHeight - top - bottom, 1);
+            scale = Math.min(
+                1.0f, availableHeight / (float)surfaceHeight);
+            translationX = (surfaceWidth - surfaceWidth * scale) / 2.0f;
+            translationY = top
+                + (availableHeight - surfaceHeight * scale) / 2.0f;
+        }
+        surface.setPivotX(0.0f);
+        surface.setPivotY(0.0f);
+        surface.animate().cancel();
+        int duration = readerChromeMotionDuration(animate);
+        if (!animate || duration == 0) {
+            surface.setScaleX(scale);
+            surface.setScaleY(scale);
+            surface.setTranslationX(translationX);
+            surface.setTranslationY(translationY);
+            return;
+        }
+        surface.animate()
+            .scaleX(scale)
+            .scaleY(scale)
+            .translationX(translationX)
+            .translationY(translationY)
+            .setDuration(duration)
+            .start();
     }
 
     private OctavoSurfaceView.Listener createReaderListener() {
@@ -461,6 +501,12 @@ public final class OctavoActivity extends Activity {
             }
 
             @Override
+            public void onReaderLocationSummaryFailure() {
+                showOpenFailure(
+                    "Whole-book progress is unavailable; you can keep reading");
+            }
+
+            @Override
             public void onPresentationRetriesExhausted(
                 boolean appearanceStillAwaiting) {
                 if (!appearanceStillAwaiting) {
@@ -482,6 +528,7 @@ public final class OctavoActivity extends Activity {
 
             @Override
             public void onReaderPresentationChanged(String label) {
+                finishReaderEntryCover();
                 if (readerProgress != null && label != null) {
                     readerProgress.setText(label);
                     readerProgress.setContentDescription(label);
@@ -550,6 +597,47 @@ public final class OctavoActivity extends Activity {
         }
         prepareAppearanceTransition(requested);
         surfaceView.requestAppearance(requested);
+    }
+
+    private void installReaderEntryCover() {
+        cancelReaderEntryCover();
+        if (readerRoot == null) {
+            return;
+        }
+        OctavoDesignTokens tokens =
+            OctavoDesignTokens.forAppearance(appearance);
+        View cover = new View(this);
+        cover.setId(R.id.octavo_reader_entry_cover);
+        cover.setBackgroundColor(tokens.readerPage);
+        cover.setClickable(true);
+        cover.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        readerRoot.addView(cover, matchParentLayout());
+        readerEntryCover = cover;
+    }
+
+    private void finishReaderEntryCover() {
+        if (readerEntryCover == null || readerRoot == null) {
+            return;
+        }
+        int generation = readerEntryCoverGeneration;
+        FrameLayout root = readerRoot;
+        root.postOnAnimation(() -> root.postOnAnimation(() -> {
+            if (readerRoot == root
+                && generation == readerEntryCoverGeneration) {
+                cancelReaderEntryCover();
+            }
+        }));
+    }
+
+    private void cancelReaderEntryCover() {
+        readerEntryCoverGeneration += 1;
+        if (readerEntryCover != null
+            && readerEntryCover.getParent() instanceof ViewGroup) {
+            ((ViewGroup)readerEntryCover.getParent())
+                .removeView(readerEntryCover);
+        }
+        readerEntryCover = null;
     }
 
     private void prepareAppearanceTransition(OctavoAppearance requested) {
@@ -664,8 +752,14 @@ public final class OctavoActivity extends Activity {
                 surfaceView.requestFocus(View.FOCUS_FORWARD);
             }
         }
+        if (surfaceView != null) {
+            surfaceView.beginChromeCompositionTransition(
+                readerChromeMotionDuration(animate));
+        }
         setChromeViewVisible(readerTopChrome, visible, animate);
         setChromeViewVisible(readerBottomChrome, visible, animate);
+        updateReaderChromeComposition(
+            surfaceView, readerTopChrome, readerBottomChrome, animate);
     }
 
     private void setChromeViewVisible(View view,
@@ -679,8 +773,7 @@ public final class OctavoActivity extends Activity {
             visible && appearancePanel == null
                 ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        int duration = OctavoDesignTokens.forAppearance(appearance)
-            .fastMotionMs(appearance);
+        int duration = readerChromeMotionDuration(animate);
         if (!animate || duration == 0) {
             view.setAlpha(visible ? 1.0f : 0.0f);
             view.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
@@ -699,11 +792,28 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private int readerChromeMotionDuration(boolean animate) {
+        if (!animate) {
+            return 0;
+        }
+        AccessibilityManager manager = (AccessibilityManager)
+            getSystemService(ACCESSIBILITY_SERVICE);
+        if (manager != null && manager.isEnabled()
+            && manager.isTouchExplorationEnabled()) {
+            return 0;
+        }
+        return OctavoDesignTokens.forAppearance(appearance)
+            .fastMotionMs(appearance);
+    }
+
     private void applyReaderAppearanceTokens() {
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
         if (readerRoot != null) {
             readerRoot.setBackgroundColor(tokens.readerPage);
+        }
+        if (readerEntryCover != null) {
+            readerEntryCover.setBackgroundColor(tokens.readerPage);
         }
         if (systemBarRoot != null) {
             systemBarRoot.setBackgroundColor(tokens.readerPage);
@@ -1088,6 +1198,7 @@ public final class OctavoActivity extends Activity {
 
     private void releaseReader() {
         cancelAppearanceTransition();
+        cancelReaderEntryCover();
         if (surfaceView != null) {
             surfaceView.release();
             surfaceView = null;

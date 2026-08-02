@@ -1,7 +1,9 @@
 #include "octavo_version.h"
 #include "octavo_library.h"
+#include "octavo_reader_justification.h"
 #include "reader0.h"
 #include "ui0.h"
+#include "octavo_theme.h"
 #include "readerview0.h"
 
 #include "base/base_arena.h"
@@ -230,41 +232,12 @@ typedef struct OctavoSavedState
   char path[OctavoPathCap];
 } OctavoSavedState;
 
-typedef enum OctavoTheme
-{
-  OctavoTheme_Dark,
-  OctavoTheme_Light,
-  OctavoTheme_CoralDark,
-  OctavoTheme_CoralLight,
-  OctavoTheme_BlueDark,
-  OctavoTheme_BlueLight,
-  OctavoTheme_Count,
-} OctavoTheme;
-
-_Static_assert(OctavoTheme_Count == 6,
-               "octavo theme persistence catalog changed");
-_Static_assert(UI0ThemeProfile_Count == 6,
-               "octavo must cover every shared UI0 profile");
 _Static_assert((U32)OctavoReaderViewRightCandidateCap >=
                  (U32)READER_VIEW_RIGHT_ROW_CAP,
                "octavo annotation candidates must cover Reader View rows");
 _Static_assert(ReaderViewRightRow_Bookmark < ReaderViewRightRow_Highlight &&
                  ReaderViewRightRow_Highlight < ReaderViewRightRow_Note,
                "octavo annotation sort requires frozen row-kind order");
-
-typedef struct OctavoReaderContentTheme
-{
-  U32 page_background;
-  U32 ink;
-  U32 ink_secondary;
-  U32 ink_muted;
-  U32 link;
-  U32 selection;
-  U32 search_hit;
-  U32 search_match;
-  U32 user_highlight;
-  U32 note_marker;
-} OctavoReaderContentTheme;
 
 typedef struct OctavoReaderSpanStyle
 {
@@ -3346,67 +3319,6 @@ octavo_reader_view_status(ReaderViewLoadState state, const char *message)
   return result;
 }
 
-FUNCTION UI0ThemeProfile
-octavo_theme_profile(OctavoTheme theme)
-{
-  if (theme < 0 || theme >= OctavoTheme_Count)
-    theme = OctavoTheme_Dark;
-  return ui0_theme_profile_for_kind((UI0ThemeProfileKind)theme);
-}
-
-FUNCTION OctavoReaderContentTheme
-octavo_reader_content_theme(OctavoTheme theme)
-{
-  OctavoReaderContentTheme result = {0};
-  switch (theme)
-  {
-    case OctavoTheme_Light:
-      result = (OctavoReaderContentTheme){
-        0x00FFFDF9U, 0x001B1A18U, 0x0047423BU, 0x007A7368U,
-        0x00D95618U, 0x00FFE7D4U, 0x00D8D7D4U, 0x00F6B36FU,
-        0x00FFF2A6U, 0x00D95618U,
-      };
-      break;
-    case OctavoTheme_CoralDark:
-      result = (OctavoReaderContentTheme){
-        0x00464644U, 0x00F5EBDDU, 0x00DED4C8U, 0x00C2B6ACU,
-        0x00E85D56U, 0x0063423EU, 0x0062605EU, 0x009A3034U,
-        0x00524A25U, 0x00E85D56U,
-      };
-      break;
-    case OctavoTheme_CoralLight:
-      result = (OctavoReaderContentTheme){
-        0x00F3E8DBU, 0x00333230U, 0x0053514FU, 0x006F6D68U,
-        0x00E85D56U, 0x00F3C2B9U, 0x00D4D0CCU, 0x00EE9B94U,
-        0x00F4DFA3U, 0x00E85D56U,
-      };
-      break;
-    case OctavoTheme_BlueDark:
-      result = (OctavoReaderContentTheme){
-        0x000D1824U, 0x00EAF0F7U, 0x00B8C7D8U, 0x007E8FA3U,
-        0x007C93FFU, 0x00345F91U, 0x003D454EU, 0x004F64BFU,
-        0x004D4A16U, 0x007C93FFU,
-      };
-      break;
-    case OctavoTheme_BlueLight:
-      result = (OctavoReaderContentTheme){
-        0x00FFFDF9U, 0x00121A22U, 0x00334252U, 0x006E7680U,
-        0x00365CE7U, 0x00E6EEFFU, 0x00D6DADFU, 0x008BAEFFU,
-        0x00FFF2A6U, 0x00365CE7U,
-      };
-      break;
-    case OctavoTheme_Dark:
-    default:
-      result = (OctavoReaderContentTheme){
-        0x00181716U, 0x00F2F0EAU, 0x00C9C4BAU, 0x008D877BU,
-        0x00F26A1BU, 0x004D3424U, 0x004A4947U, 0x008F430FU,
-        0x004D4A16U, 0x00F26A1BU,
-      };
-      break;
-  }
-  return result;
-}
-
 FUNCTION void
 octavo_prepare_selected_text(OctavoApp *app)
 {
@@ -3481,11 +3393,12 @@ octavo_prepare_reader_view_settings(OctavoApp *app)
   }
   for (U32 index = 0; index < OctavoTheme_Count; index += 1)
   {
-    UI0ThemeProfile profile =
-      ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
+    const OctavoThemeCatalogEntry *entry =
+      octavo_theme_catalog_entry((OctavoTheme)index);
+    if (!entry) continue;
     app->reader_view_theme_choices[index] = (ReaderViewChoice){
       .key = 4000ull + index,
-      .label = octavo_reader_view_text(profile.label),
+      .label = octavo_reader_view_text(entry->label),
       .flags = ReaderViewChoice_Enabled |
         (index == (U32)app->theme ? ReaderViewChoice_Selected : 0),
     };
@@ -9191,119 +9104,56 @@ octavo_reader_row_is_soft_wrapped(const OctavoApp *app,
           (end > row->byte_start && app->frame.visible_text.str[end - 1] == ' '));
 }
 
+FUNCTION OctavoReaderJustificationBlockRole
+octavo_reader_justification_block_role(DocTextBlockKind block_kind)
+{
+  if (block_kind == DocTextBlockKind_Paragraph)
+    return OctavoReaderJustificationBlockRole_Paragraph;
+  if (block_kind == DocTextBlockKind_Blockquote)
+    return OctavoReaderJustificationBlockRole_Blockquote;
+  return OctavoReaderJustificationBlockRole_Other;
+}
+
+/* Desktop adapter from the authoritative Reader0 row to the value plan. */
+
 FUNCTION B32
-octavo_reader_row_allows_justification(const OctavoApp *app,
-                                         const EpubReaderFrameStyleRow *row,
-                                         U32 row_size)
-{
-  B32 kind_allows = row && row->text_align == DocTextAlign_Justify &&
-    (row->block_kind == DocTextBlockKind_Paragraph ||
-     (row->block_kind == DocTextBlockKind_Blockquote &&
-      octavo_reader_row_is_soft_wrapped(app, row)));
-  B32 margin_allows = row &&
-    (row->margin_left_cols == 0 ||
-     (row->block_kind == DocTextBlockKind_Blockquote &&
-      row->margin_left_cols <= 8));
-  return (kind_allows && !row->block_last_row && row->heading_level == 0 &&
-          row_size >= 8 && margin_allows &&
-          octavo_reader_row_has_safe_justification_styles(app, row));
-}
-
-FUNCTION S32
-octavo_reader_justification_extra_cap_per_space(U32 space_count,
-                                                  S32 natural_space_w)
-{
-  if (space_count == 0) { return 0; }
-  natural_space_w = MAX(natural_space_w, 1);
-  S32 ratio_cap = 4;
-  S32 absolute_cap = 4;
-  if (space_count >= 7)
-  {
-    ratio_cap = natural_space_w * 2;
-    absolute_cap = 12;
-  }
-  else if (space_count >= 5)
-  {
-    ratio_cap = natural_space_w * 3;
-    absolute_cap = 14;
-  }
-  else if (space_count >= 3)
-  {
-    ratio_cap = natural_space_w;
-    absolute_cap = 6;
-  }
-  return MAX(MIN(ratio_cap, absolute_cap), 0);
-}
-
-FUNCTION S32
-octavo_reader_row_justification_extra_cap_per_space(
+octavo_reader_justification_plan_for_row(
+  OctavoApp *app,
   const EpubReaderFrameStyleRow *row,
+  U32 row_size,
   U32 space_count,
-  S32 natural_space_w,
-  S32 natural_w,
-  S32 available_w)
+  S32 natural_width,
+  S32 available_width,
+  const OctavoReaderSpanStyle *base_style,
+  OctavoReaderJustificationPlan *out_plan)
 {
-  S32 result = octavo_reader_justification_extra_cap_per_space(
-    space_count, natural_space_w);
-  if (row && row->block_kind == DocTextBlockKind_Paragraph &&
-      row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
-      row->margin_left_cols == 0 && row->text_indent_cols <= 4 &&
-      (row->text_indent_cols <= 2 || row->line_row > 0 || space_count <= 4) &&
-      space_count >= 3 && natural_w > 0 && available_w > 0 &&
-      natural_w * 10 >= available_w * 7)
+  if (!app || !row || !base_style || !out_plan) return 0;
+  OctavoReaderJustificationInput input = {
+    .block_role = octavo_reader_justification_block_role(row->block_kind),
+    .publisher_justified = row->text_align == DocTextAlign_Justify,
+    .block_last_row = row->block_last_row,
+    .soft_wrapped = octavo_reader_row_is_soft_wrapped(app, row),
+    .safe_styles = octavo_reader_row_has_safe_justification_styles(app, row),
+    .heading_level = row->heading_level,
+    .line_row = row->line_row,
+    .row_byte_count = row_size,
+    .margin_left_cols = row->margin_left_cols,
+    .text_indent_cols = row->text_indent_cols,
+    .internal_space_count = space_count,
+    .natural_width_px = natural_width,
+    .available_width_px = available_width,
+  };
+  if (space_count > 0 &&
+      octavo_reader_justification_input_is_eligible(&input) &&
+      available_width > natural_width)
   {
-    S32 ratio_cap = natural_space_w *
-      ((row->text_indent_cols > 0 && space_count <= 4) ? 6 : 5);
-    S32 absolute_cap = row->text_indent_cols == 0 ? 24 :
-      (space_count <= 4 ? 34 : 28);
-    result = MAX(result, MIN(ratio_cap, absolute_cap));
+    U8 natural_space_byte = 0x20;
+    input.natural_space_width_px = epub_reader_typography_measure_text(
+      &app->reader.typography, str8(&natural_space_byte, 1),
+      base_style->flags, base_style->scale_permille,
+      base_style->font_family_hint, base_style->font_face_index);
   }
-  if (row && row->block_kind == DocTextBlockKind_Blockquote)
-  {
-    S32 ratio_cap = natural_space_w * (space_count <= 4 ? 6 : 5);
-    S32 absolute_cap = space_count <= 4 ? 28 : 24;
-    result = MAX(result, MIN(ratio_cap, absolute_cap));
-  }
-  if (row && row->line_row == 0 && row->text_indent_cols > 0 &&
-      space_count >= 4)
-  {
-    result = MAX(result, MIN(natural_space_w * 4, 20));
-  }
-  B32 low_indent_fill = row &&
-    row->block_kind == DocTextBlockKind_Paragraph &&
-    row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
-    row->margin_left_cols == 0 && row->text_indent_cols <= 4 &&
-    (row->text_indent_cols <= 2 || row->line_row == 0) &&
-    space_count >= 5 && natural_w > 0 && available_w > natural_w &&
-    natural_w * 20 >= available_w * 13;
-  B32 indented_fill = row &&
-    row->block_kind == DocTextBlockKind_Paragraph &&
-    row->heading_level == 0 && row->text_align == DocTextAlign_Justify &&
-    row->margin_left_cols == 0 && row->text_indent_cols > 4 &&
-    row->text_indent_cols <= 8 && row->line_row > 0 && space_count >= 5 &&
-    natural_w > 0 && available_w > natural_w &&
-    natural_w * 4 >= available_w * 3;
-  if (low_indent_fill || indented_fill)
-  {
-    S32 slack = available_w - natural_w;
-    S32 needed = (slack + (S32)space_count - 1) / (S32)space_count;
-    S32 fill_cap = MAX(natural_space_w * 8, 40);
-    if (indented_fill) { fill_cap = MIN(natural_space_w * 4, 24); }
-    if (needed <= fill_cap) { result = MAX(result, needed); }
-  }
-  return MAX(result, 0);
-}
-
-FUNCTION S32
-octavo_reader_justification_remainder_for_space(U32 space_index,
-                                                  U32 space_count,
-                                                  U32 remainder)
-{
-  if (space_count == 0 || remainder == 0 || space_index >= space_count)
-    return 0;
-  U32 before = (space_index * remainder) / space_count;
-  U32 after = ((space_index + 1) * remainder) / space_count;
-  return after > before ? 1 : 0;
+  return octavo_reader_justification_plan_resolve(&input, out_plan);
 }
 
 FUNCTION B32
@@ -9400,29 +9250,16 @@ octavo_reader_styled_row_build(
     if (app->frame.visible_text.str[local_start + index] == ' ')
       space_count += 1;
   }
-  S32 extra_px = 0;
-  U32 extra_remainder = 0;
-  if (space_count > 0 &&
-      octavo_reader_row_allows_justification(app, row, row_size) &&
-      presentation_row->content_rect.w > natural_width)
+  OctavoReaderJustificationPlan justification = {0};
+  if (!octavo_reader_justification_plan_for_row(
+        app, row, row_size, space_count, natural_width,
+        presentation_row->content_rect.w, app->reader_span_styles,
+        &justification))
   {
-    OctavoReaderSpanStyle base_style = app->reader_span_styles[0];
-    S32 natural_space_w = epub_reader_typography_measure_text(
-      &app->reader.typography, str8_from_cstr(" "), base_style.flags,
-      base_style.scale_permille, base_style.font_family_hint,
-      base_style.font_face_index);
-    S32 slack = presentation_row->content_rect.w - natural_width;
-    S32 max_slack = (S32)space_count *
-      octavo_reader_row_justification_extra_cap_per_space(
-        row, space_count, natural_space_w, natural_width,
-        presentation_row->content_rect.w);
-    S32 applied = MIN(slack, max_slack);
-    if (applied > 0)
-    {
-      extra_px = applied / (S32)space_count;
-      extra_remainder = (U32)(applied % (S32)space_count);
-    }
+    return 0;
   }
+  S32 extra_px = justification.extra_per_space_px;
+  U32 extra_remainder = justification.extra_remainder_px;
 
   U32 stop_count = 0;
   U32 space_index = 0;
@@ -9489,9 +9326,8 @@ octavo_reader_styled_row_build(
           at > local_start && at + 1 < local_end &&
           space_index < space_count)
       {
-        span_extra += extra_px +
-          octavo_reader_justification_remainder_for_space(
-            space_index, space_count, extra_remainder);
+        span_extra += octavo_reader_justification_space_extra_px(
+          &justification, space_index);
         space_index += 1;
       }
       if (use_shaped_stops && segmented_stops && at >= token_end)
@@ -10178,15 +10014,8 @@ octavo_reader_ink_color(const OctavoApp *app)
 FUNCTION U32
 octavo_reader_highlight_color(const OctavoApp *app, U32 color_index)
 {
-  B32 dark = app && octavo_theme_profile(app->theme).appearance ==
-                      UI0AppearanceMode_Dark;
-  switch (color_index)
-  {
-    case 1: return dark ? 0x0047355CU : 0x00FFD4ECU;
-    case 2: return dark ? 0x002A4662U : 0x00CDE7FFU;
-    case 3: return dark ? 0x00523F1CU : 0x00FFDCA8U;
-    default: return app ? app->reader_content_theme.user_highlight : 0x00FFF2A6U;
-  }
+  return app ? octavo_theme_highlight_color(app->theme, color_index) :
+               0x00FFF2A6U;
 }
 
 typedef struct OctavoReaderRowMeasure
@@ -11963,19 +11792,9 @@ octavo_configure_reader_view_parity(OctavoApp *app,
   if (!app || !theme || !left || !right || !popup || !query || !focus ||
       !annotation_case)
     return 0;
-  B32 theme_found = 0;
-  for (U32 index = 0; index < OctavoTheme_Count; index += 1)
-  {
-    UI0ThemeProfile profile =
-      ui0_theme_profile_for_kind((UI0ThemeProfileKind)index);
-    if (profile.code && strcmp(theme, profile.code) == 0)
-    {
-      app->theme = (OctavoTheme)index;
-      theme_found = 1;
-      break;
-    }
-  }
-  if (!theme_found) return 0;
+  OctavoTheme resolved_theme = OctavoTheme_Count;
+  if (!octavo_theme_from_code(theme, &resolved_theme)) return 0;
+  app->theme = resolved_theme;
 
   return (strcmp(left, "none") == 0 || strcmp(left, "contents") == 0 ||
           strcmp(left, "find") == 0) &&
@@ -15910,6 +15729,62 @@ cleanup:
 }
 
 FUNCTION B32
+octavo_reader_justification_plan_contract(void)
+{
+  OctavoReaderJustificationInput input = {
+    .block_role = OctavoReaderJustificationBlockRole_Paragraph,
+    .publisher_justified = 1,
+    .safe_styles = 1,
+    .row_byte_count = 32,
+    .internal_space_count = 3,
+    .natural_space_width_px = 4,
+    .natural_width_px = 70,
+    .available_width_px = 83,
+  };
+  OctavoReaderJustificationPlan plan = {0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      !plan.active || plan.space_count != 3 ||
+      plan.applied_extra_px != 13 || plan.extra_per_space_px != 4 ||
+      plan.extra_remainder_px != 1 || plan.drawn_width_px != 83 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 0) != 0 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 1) != 4 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 2) != 8 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 3) != 13)
+  {
+    return 0;
+  }
+  if (octavo_reader_justification_space_extra_px(&plan, 0) != 4 ||
+      octavo_reader_justification_space_extra_px(&plan, 1) != 4 ||
+      octavo_reader_justification_space_extra_px(&plan, 2) != 5)
+  {
+    return 0;
+  }
+  input.block_last_row = 1;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      plan.active || plan.applied_extra_px != 0 ||
+      plan.drawn_width_px != input.natural_width_px)
+  {
+    return 0;
+  }
+  input.block_last_row = 0;
+  input.internal_space_count = 2;
+  input.natural_space_width_px = 2;
+  input.natural_width_px = 50;
+  input.available_width_px = 80;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      !plan.active || plan.applied_extra_px != 8 ||
+      plan.extra_per_space_px != 4 || plan.extra_remainder_px != 0 ||
+      plan.drawn_width_px != 58 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 2) != 8)
+  {
+    return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
 octavo_draw_adapter_covers_all_ops(OctavoApp *app)
 {
   if (!app) return 0;
@@ -18463,6 +18338,18 @@ cleanup:
 FUNCTION int
 octavo_run_reader_view_smoke(const char *path, const char *export_path)
 {
+  if (!octavo_theme_catalog_contract())
+  {
+    fprintf(stderr,
+            "octavo_reader_view_smoke result=fail reason=theme_catalog\n");
+    return 1;
+  }
+  if (!octavo_reader_justification_plan_contract())
+  {
+    fprintf(stderr,
+            "octavo_reader_view_smoke result=fail reason=justification_plan\n");
+    return 1;
+  }
   enum { Width = 1100, Height = 760 };
   OctavoApp app = {0};
   U64 pixel_count = (U64)Width * Height;
@@ -19780,7 +19667,7 @@ octavo_run_reader_view_smoke(const char *path, const char *export_path)
   }
   U64 hash = octavo_reader_view_contract_hash(&app.reader_view_frame);
   fprintf(stdout,
-          "octavo_reader_view_smoke result=pass api=%d settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate horizontal_routing=text_progress_or_page find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
+          "octavo_reader_view_smoke result=pass api=%d theme_catalog=stable6 settings=4 toc=%d find=%u bookmarks=%u highlights=%u responsive=fixed_compact focus=reference13 panel_focus=toc_find_annotations_progress_boundary keyboard_routing=focused_edit_or_activate horizontal_routing=text_progress_or_page find_shortcut=focused_input navigation_panels=space_toc_find gutters=boundary_roundtrip gutter_input=keyboard_pointer carets=frozen18x32 toc_identity=noncontiguous find_execution=commit_only find_clear=immediate find_metrics=bounded_values find_match=measured note_metrics=bounded_values_18px note_raster=text_engine_editable_row_caret annotations=reference_metadata bookmark_star=projected_remove_once annotations_interaction=close_filter_edit_menu annotations_pointer=open_filter_escape_select_row_star_menu_note_lifecycle_close note_lifecycle=acknowledged annotation_note_selection=preserved_unrelated selection_note_selection=released_owned annotation_identity=v3_migrate_demote_restart note_persistence=atomic_rollback_open bookmark_persistence=rollback star_persistence=rollback hash=%016llx export=%s\n",
           READERVIEW0_API_VERSION,
           app.reader_view_projection.toc.row_count,
           app.reader.search_match_count,

@@ -80,6 +80,13 @@ patterns without becoming templates:
 The captures contain third-party book text and remain under ignored
 `local/reference/`; they are not part of the public repository.
 
+The current Port 7 refinement makes the reading page one borderless canonical
+full-viewport surface. Hidden chrome is the identity presentation of that
+page; when controls are visible, the Android host uniformly scales and
+translates the same native Surface between the controls. Showing chrome does
+not reserve permanent page bands, repaginate, redraw, or change the committed
+semantic location.
+
 ## Night-reading advantage
 
 A single black-background theme is not an acceptable night mode. High local
@@ -96,12 +103,19 @@ Port 7 establishes the first bounded implementation of that theme system:
 - separately tuned selection, search, and highlight colors for each surface
   rather than mechanically inverting the light palette;
 - coherent library, reader, dialog, sheet, status-bar, navigation-bar, and
-  launch colors with direct redraw paths intended to avoid a bright
-  intermediate frame;
+  launch colors plus a synchronous target-theme entry cover that masks the
+  native Surface's initial compositor layer;
 - a global-only durable preference contract, with per-book overrides deferred
   until their ownership and migration behavior are separately specified; and
 - generic Android serif and sans-serif choices without introducing an
   unlicensed bundled font.
+
+The global reader default is 16sp. The version-2 appearance migration changes
+only an exact version-1 all-default 18sp record to that new default. Version 1
+did not store whether that identical tuple was explicitly reselected; every
+other version-1 tuple and any version-2 18sp choice is preserved. The bounded
+typography atlas is rebuilt only when its family, resolved pixel size, or line
+spacing key changes.
 
 The broader product contract still requires:
 
@@ -111,14 +125,18 @@ The broader product contract still requires:
   image treatment;
 - optional schedule/system-theme following without taking away manual choice.
 
-Port 7 implementation is not night-mode acceptance. Its API 36 semantic,
-composed-pixel, 130% system-text, dual-ABI, desktop-regression, and Android
-14/API 34 physical-iQOO automated and bounded pixel evidence is recorded in
-`android_port7.md`. Objective real-device keyboard/accessibility traversal
-passes without blank host stops, but audible TalkBack and hands-on keyboard/
-switch and reduced-motion review, prolonged Paper, Warm dark, and OLED
-reading, and subjective dark-room comfort evidence must still be completed
-before the foundation is accepted.
+Port 7 implementation is not night-mode acceptance. The current borderless and
+performance refinement passed 27/27 API 36 tests, its 130% system-text probe,
+both Android ABI builds, the desktop regressions, and fresh-process evidence.
+With the user-owned *Gardens of the Moon* EPUB already imported, an externally
+observed Library-to-Resume took 411ms, native creation to the successfully
+presented frame took 220ms, and the sampled transition contained no black or
+near-black app frame. Full evidence and measurement limits are recorded in
+`android_port7.md`. Physical-iQOO evidence from the preceding candidate is
+historical and superseded; it must be repeated on the current APK. Audible
+TalkBack, hands-on keyboard/switch and reduced-motion review, prolonged Paper,
+Warm dark, and OLED reading, and subjective dark-room comfort evidence must
+still be completed before the foundation is accepted.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots
@@ -127,6 +145,10 @@ halation, accent intensity, minimum brightness, transitions, and prolonged
 comfort must be reviewed by a person.
 
 ## Capability boundary
+
+The capabilities below are the long-term parity target. Port 7 deliberately
+does not implement a cover library, table of contents, in-book search, text
+selection, highlights/notes, or an annotations workspace.
 
 The parity target includes local equivalents for:
 
@@ -182,11 +204,28 @@ duplicating EPUB interpretation, pagination, search anchoring, selection
 anchoring, or navigation logic in Java or the 8vo host.
 
 Port 7 applies that rule concretely. Android owns one global appearance
-record, semantic product palettes, generic system-font acquisition, overlay
-chrome, and the custom-view accessibility adapter. A layout-affecting change
-uses Reader0's public canonical location navigation to rebuild the page that
-contains the last successfully presented semantic byte. The host does not
-substitute page-number arithmetic or Java pagination for that operation.
+record, semantic product palettes, generic system-font acquisition,
+full-viewport Surface composition, chrome, and the custom-view accessibility
+adapter. A layout-affecting change uses Reader0's public canonical location
+navigation to rebuild the page that contains the last successfully presented
+semantic byte. Showing or hiding chrome only composes the already presented
+page; the host does not substitute page-number arithmetic or Java pagination
+for either operation.
+
+Windows and Android consume one allocation-free 8vo word-spacing plan over
+validated Reader0 rows; the plan does not own line breaking or document
+semantics. The shared Windows theme catalog centralizes its six stable IDs,
+labels, UI0 mappings, and reader/search/highlight roles. Android palettes are
+intentionally independently tuned for Android surfaces and night-reading
+conditions instead of forcing pixel equivalence across platforms.
+
+Reader entry uses native debug code built with `-O2` and symbols. Expensive
+whole-book location metadata is not warmed before the first page: bounded
+one-spine steps run only after a successful presentation and then refresh the
+same page's metadata. A synchronous target-theme cover hides the native
+Surface's initial compositor layer until that successful frame is ready, and
+privacy-safe first-frame timing remains diagnostic evidence rather than a
+second presentation authority.
 
 ## Evidence standard
 

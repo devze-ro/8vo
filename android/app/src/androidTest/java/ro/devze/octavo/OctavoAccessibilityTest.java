@@ -87,7 +87,8 @@ public final class OctavoAccessibilityTest {
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
             openFixture(scenario);
-            long[] initial = awaitPresentedFrame(scenario);
+            awaitPresentedFrame(scenario);
+            long[] initial = awaitLocationMetadataSettled(scenario);
             assertTrue(initial[OctavoSurfaceView.STATE_PAGE_COUNT] >= 4);
             assertEquals(1, initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
 
@@ -201,6 +202,30 @@ public final class OctavoAccessibilityTest {
             "8vo did not present the fixture for accessibility inspection");
     }
 
+    private static long[] awaitLocationMetadataSettled(
+        ActivityScenario<OctavoActivity> scenario) {
+        for (int attempt = 0; attempt < 200; ++attempt) {
+            OctavoSurfaceView view = surface(scenario);
+            long[] cache = view.locationCacheStateForTesting();
+            long[] snapshot = view.nativeStateForTesting();
+            if (cache != null && cache.length == 10
+                && cache[0] == 1 && cache[1] == 1
+                && snapshot != null
+                && snapshot.length == OctavoSurfaceView.STATE_FIELD_COUNT
+                && snapshot[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0
+                && snapshot[
+                    OctavoSurfaceView.STATE_REFLOW_PRESENTATION_PENDING] == 0
+                && snapshot[
+                    OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0) {
+                return snapshot;
+            }
+            SystemClock.sleep(25);
+        }
+        fail("8vo did not publish settled accessibility progress metadata");
+        return new long[0];
+    }
+
     private static SemanticEvidence semanticEvidence(
         ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<SemanticEvidence> result = new AtomicReference<>();
@@ -303,7 +328,11 @@ public final class OctavoAccessibilityTest {
         evidence.progressIndex = progress;
         assertTrue(previous >= 0);
         assertTrue(next >= 0);
-        assertTrue(progress >= 0);
+        assertEquals(
+            "Distraction-free ReaderView must leave progress chrome to "
+                + "the Android host",
+            -1,
+            progress);
         assertSemanticControl(evidence,
                               previous,
                               SEMANTIC_CONTROL_PREVIOUS_PAGE,
@@ -314,11 +343,6 @@ public final class OctavoAccessibilityTest {
                               SEMANTIC_CONTROL_NEXT_PAGE,
                               SEMANTIC_ROLE_BUTTON,
                               true);
-        assertSemanticControl(evidence,
-                              progress,
-                              SEMANTIC_CONTROL_PROGRESS,
-                              SEMANTIC_ROLE_SLIDER,
-                              false);
     }
 
     private static void assertSemanticControl(SemanticEvidence evidence,
@@ -532,6 +556,20 @@ public final class OctavoAccessibilityTest {
             AccessibilityNodeProvider provider =
                 view.getAccessibilityNodeProvider();
             assertNotNull(provider);
+            long[] state = view.nativeStateForTesting();
+            assertNotNull(state);
+            long locationIndex =
+                state[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX];
+            long locationCount =
+                state[OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT];
+            long progressValue = locationCount > 0
+                ? Math.max(locationIndex, 0)
+                : Math.max(
+                    state[OctavoSurfaceView.STATE_PAGE_INDEX] - 1, 0);
+            long progressCount = locationCount > 0
+                ? locationCount
+                : Math.max(
+                    state[OctavoSurfaceView.STATE_PAGE_COUNT], 0);
             result.set(new ReaderNodes(
                 provider.createAccessibilityNodeInfo(
                     AccessibilityNodeProvider.HOST_VIEW_ID),
@@ -548,7 +586,10 @@ public final class OctavoAccessibilityTest {
                 Math.round(OctavoDesignTokens.TOUCH_TARGET_DP
                            * view.getResources()
                                .getDisplayMetrics().density),
-                activity.getPackageName()));
+                activity.getPackageName(),
+                view.progressLabelForTesting(),
+                progressValue,
+                Math.max(progressCount - 1, 0)));
         });
         assertNotNull(result.get());
         return result.get();
@@ -606,7 +647,7 @@ public final class OctavoAccessibilityTest {
                      nodes.previous.getClassName());
         assertEquals("android.widget.Button",
                      nodes.next.getClassName());
-        assertEquals("android.widget.SeekBar",
+        assertEquals("android.widget.ProgressBar",
                      nodes.progress.getClassName());
         assertFalse(nodes.previous.isEnabled());
         assertTrue(nodes.next.isEnabled());
@@ -626,31 +667,26 @@ public final class OctavoAccessibilityTest {
             nodes.previous, semantics, semantics.previousIndex);
         assertNodeIncludesSemanticText(
             nodes.next, semantics, semantics.nextIndex);
-        assertNodeIncludesSemanticText(
-            nodes.progress, semantics, semantics.progressIndex);
+        assertNotNull(nodes.progressLabel);
+        assertFalse(nodes.progressLabel.trim().isEmpty());
+        assertEquals(nodes.progressLabel, text(nodes.progress.getText()));
+        String spokenProgress =
+            text(nodes.progress.getContentDescription())
+                .toLowerCase(Locale.ROOT);
+        assertTrue(spokenProgress.contains("reading progress"));
+        assertTrue(spokenProgress.contains(
+            nodes.progressLabel.toLowerCase(Locale.ROOT)));
 
         AccessibilityNodeInfo.RangeInfo range =
             nodes.progress.getRangeInfo();
         assertNotNull(range);
-        int progressBase = semantics.base(semantics.progressIndex);
-        assertEquals(
-            (float)semantics.packed[
-                progressBase + OctavoReaderAccessibilityProvider
-                    .SEMANTIC_RECORD_RANGE_MIN],
-            range.getMin(),
-            0.01f);
-        assertEquals(
-            (float)semantics.packed[
-                progressBase + OctavoReaderAccessibilityProvider
-                    .SEMANTIC_RECORD_RANGE_MAX],
-            range.getMax(),
-            0.01f);
-        assertEquals(
-            (float)semantics.packed[
-                progressBase + OctavoReaderAccessibilityProvider
-                    .SEMANTIC_RECORD_RANGE_VALUE],
-            range.getCurrent(),
-            0.01f);
+        assertEquals(0.0f, range.getMin(), 0.01f);
+        assertEquals((float)nodes.progressMaximum,
+                     range.getMax(),
+                     0.01f);
+        assertEquals((float)nodes.progressValue,
+                     range.getCurrent(),
+                     0.01f);
 
         assertBoundsInside(nodes.page,
                            nodes.width,
@@ -1038,7 +1074,7 @@ public final class OctavoAccessibilityTest {
             findAccessibilityNode(
                 root, "Next page", "android.widget.Button"),
             findAccessibilityNode(
-                root, "Octavo Android Port 6", "android.widget.SeekBar"),
+                root, "Reading progress", "android.widget.ProgressBar"),
         };
         try {
             for (int index = 0; index < order.length; ++index) {
@@ -1607,6 +1643,9 @@ public final class OctavoAccessibilityTest {
         final int height;
         final int minimumTouchPixels;
         final String packageName;
+        final String progressLabel;
+        final long progressValue;
+        final long progressMaximum;
 
         ReaderNodes(AccessibilityNodeInfo host,
                     AccessibilityNodeInfo page,
@@ -1616,7 +1655,10 @@ public final class OctavoAccessibilityTest {
                     int width,
                     int height,
                     int minimumTouchPixels,
-                    String packageName) {
+                    String packageName,
+                    String progressLabel,
+                    long progressValue,
+                    long progressMaximum) {
             this.host = host;
             this.page = page;
             this.previous = previous;
@@ -1626,6 +1668,9 @@ public final class OctavoAccessibilityTest {
             this.height = height;
             this.minimumTouchPixels = minimumTouchPixels;
             this.packageName = packageName;
+            this.progressLabel = progressLabel;
+            this.progressValue = progressValue;
+            this.progressMaximum = progressMaximum;
         }
 
         @Override

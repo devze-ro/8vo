@@ -5,6 +5,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -204,7 +205,9 @@ public final class OctavoAppearanceStoreTest {
         assertEquals(OctavoAppearance.FONT_FAMILY_LITERARY,
                      defaults.fontFamilyId());
         assertSame(Typeface.SERIF, defaults.systemTypeface());
-        assertEquals(18, defaults.fontSizeSp());
+        assertEquals(16, defaults.fontSizeSp());
+        assertFalse(defaults.isLegacyAllDefault18Sp());
+        assertTrue(defaults.withFontSizeSp(18).isLegacyAllDefault18Sp());
         assertEquals(1250, defaults.lineSpacingPermille());
         assertEquals(OctavoAppearance.MARGINS_BALANCED,
                      defaults.marginsId());
@@ -324,6 +327,150 @@ public final class OctavoAppearanceStoreTest {
         assertRejected(() -> createWith(0, 0, 18, 1250, 3, 0, 0));
         assertRejected(() -> createWith(0, 0, 18, 1250, 1, 2, 0));
         assertRejected(() -> createWith(0, 0, 18, 1250, 1, 0, 2));
+    }
+
+    @Test
+    public void typographyAtlasCacheIsBoundedAndKeyedByTypography() {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoTypography.clearCacheForTesting();
+        OctavoAppearance defaults = OctavoAppearance.defaults();
+
+        OctavoTypography first =
+            OctavoTypography.create(context, defaults);
+        assertEquals(1, OctavoTypography.cacheBuildCountForTesting());
+        assertEquals(0, OctavoTypography.cacheHitCountForTesting());
+
+        OctavoTypography themed = OctavoTypography.create(
+            context,
+            defaults.withTheme(OctavoAppearance.THEME_WARM_DARK)
+                .withMargins(OctavoAppearance.MARGINS_WIDE));
+        assertSame(first, themed);
+        assertEquals(1, OctavoTypography.cacheBuildCountForTesting());
+        assertEquals(1, OctavoTypography.cacheHitCountForTesting());
+
+        OctavoTypography spaced = OctavoTypography.create(
+            context, defaults.withLineSpacingPermille(1300));
+        assertNotSame(first, spaced);
+        assertEquals(2, OctavoTypography.cacheBuildCountForTesting());
+        assertEquals(1, OctavoTypography.cacheHitCountForTesting());
+
+        OctavoTypography spacedAgain = OctavoTypography.create(
+            context, defaults.withLineSpacingPermille(1300));
+        assertSame(spaced, spacedAgain);
+        assertEquals(2, OctavoTypography.cacheBuildCountForTesting());
+        assertEquals(2, OctavoTypography.cacheHitCountForTesting());
+    }
+
+    @Test
+    public void exactLegacyAllDefaultMigratesButPreferencesRemainExact()
+        throws IOException {
+        assertEquals(1,
+                     OctavoAppearanceStore.legacyStoreVersionForTesting());
+        assertEquals(2,
+                     OctavoAppearanceStore.currentStoreVersionForTesting());
+        assertEquals(1, OctavoAppearance.NATIVE_VERSION);
+
+        OctavoAppearance legacyDefault =
+            OctavoAppearance.defaults().withFontSizeSp(18);
+        OctavoAppearanceStore migrating =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertTrue(migrating.appearanceFileForTesting()
+                       .getParentFile().mkdirs());
+        writeFile(
+            migrating.appearanceFileForTesting(),
+            OctavoAppearanceStore.legacyRecordForTesting(legacyDefault));
+
+        assertEquals(OctavoAppearance.defaults(), migrating.load());
+        assertEquals(16, migrating.current().fontSizeSp());
+        assertEquals(1, migrating.loadSuccessCountForTesting());
+        assertEquals(0, migrating.loadFailureCountForTesting());
+        assertEquals(1, migrating.saveSuccessCountForTesting());
+        assertEquals(0, migrating.saveFailureCountForTesting());
+        assertEquals(0, migrating.corruptFallbackCountForTesting());
+
+        OctavoAppearanceStore migrated =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(OctavoAppearance.defaults(), migrated.load());
+        assertEquals(1, migrated.loadSuccessCountForTesting());
+        assertEquals(0, migrated.saveSuccessCountForTesting());
+        assertEquals(0, migrated.corruptFallbackCountForTesting());
+
+        OctavoAppearance[] preserved = {
+            legacyDefault.withFontSizeSp(16),
+            legacyDefault.withFontSizeSp(21),
+            legacyDefault.withTheme(OctavoAppearance.THEME_SEPIA),
+            legacyDefault.withFontFamily(OctavoAppearance.FONT_FAMILY_CLEAR),
+            legacyDefault.withLineSpacingPermille(1150),
+            legacyDefault.withMargins(OctavoAppearance.MARGINS_WIDE),
+            legacyDefault.withAlignment(
+                OctavoAppearance.ALIGNMENT_RAGGED_RIGHT),
+            legacyDefault.withPublisherColors(
+                OctavoAppearance.PUBLISHER_COLORS_ALLOW),
+            legacyDefault.withReducedMotion(true),
+        };
+        for (OctavoAppearance expected : preserved) {
+            writeFile(
+                migrating.appearanceFileForTesting(),
+                OctavoAppearanceStore.legacyRecordForTesting(expected));
+            OctavoAppearanceStore preservedStore =
+                new OctavoAppearanceStore(testFilesDirectory);
+
+            assertEquals(expected, preservedStore.load());
+            assertEquals(expected.fontSizeSp(),
+                         preservedStore.current().fontSizeSp());
+            assertEquals(1, preservedStore.loadSuccessCountForTesting());
+            assertEquals(0, preservedStore.loadFailureCountForTesting());
+            assertEquals(0, preservedStore.saveSuccessCountForTesting());
+            assertEquals(0, preservedStore.saveFailureCountForTesting());
+            assertEquals(0, preservedStore.corruptFallbackCountForTesting());
+        }
+
+        OctavoAppearanceStore explicit =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertTrue(explicit.save(legacyDefault));
+        OctavoAppearanceStore explicitReload =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(legacyDefault, explicitReload.load());
+        assertEquals(18, explicitReload.current().fontSizeSp());
+        assertEquals(0, explicitReload.saveSuccessCountForTesting());
+    }
+
+    @Test
+    public void failedLegacyDefaultRewritePreservesValidRecordForRetry()
+        throws IOException {
+        File filesDirectory = new File(
+            testFilesDirectory, Integer.toString(2));
+        assertTrue(filesDirectory.mkdirs());
+        OctavoAppearanceStore store =
+            new OctavoAppearanceStore(filesDirectory);
+        assertTrue(store.appearanceFileForTesting()
+                       .getParentFile().mkdirs());
+        OctavoAppearance legacyDefault =
+            OctavoAppearance.defaults().withFontSizeSp(18);
+        byte[] legacyRecord =
+            OctavoAppearanceStore.legacyRecordForTesting(legacyDefault);
+        writeFile(store.appearanceFileForTesting(), legacyRecord);
+        assertTrue(store.temporaryFileForTesting().mkdir());
+
+        assertEquals(OctavoAppearance.defaults(), store.load());
+        assertEquals(16, store.current().fontSizeSp());
+        assertEquals(1, store.loadSuccessCountForTesting());
+        assertEquals(0, store.loadFailureCountForTesting());
+        assertEquals(0, store.saveSuccessCountForTesting());
+        assertEquals(1, store.saveFailureCountForTesting());
+        assertEquals(0, store.corruptFallbackCountForTesting());
+        assertArrayEquals(legacyRecord,
+                          readFile(store.appearanceFileForTesting()));
+
+        assertTrue(store.temporaryFileForTesting().delete());
+        OctavoAppearanceStore retry =
+            new OctavoAppearanceStore(filesDirectory);
+        assertEquals(OctavoAppearance.defaults(), retry.load());
+        assertEquals(1, retry.loadSuccessCountForTesting());
+        assertEquals(1, retry.saveSuccessCountForTesting());
+        assertEquals(0, retry.saveFailureCountForTesting());
+        assertEquals(0, retry.corruptFallbackCountForTesting());
+        assertFalse(retry.temporaryFileForTesting().exists());
     }
 
     @Test

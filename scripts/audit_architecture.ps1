@@ -7,6 +7,8 @@ $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $failures = [System.Collections.Generic.List[string]]::new()
 $buildPath = Join-Path $RepoRoot "code\build.c"
 $appPath = Join-Path $RepoRoot "code\octavo.c"
+$themeHeaderPath = Join-Path $RepoRoot "code\octavo_theme.h"
+$themePath = Join-Path $RepoRoot "code\octavo_theme.c"
 $libraryHeaderPath = Join-Path $RepoRoot "code\octavo_library.h"
 $libraryPath = Join-Path $RepoRoot "code\octavo_library.c"
 $accessibilityPath = Join-Path $RepoRoot "code\platform\win32\octavo_accessibility_win32.c"
@@ -19,6 +21,12 @@ $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
 $androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/octavo.c") }
+if (!(Test-Path -LiteralPath $themeHeaderPath)) {
+  $failures.Add("missing platform-neutral 8vo theme catalog contract")
+}
+if (!(Test-Path -LiteralPath $themePath)) {
+  $failures.Add("missing platform-neutral 8vo theme catalog implementation")
+}
 if (!(Test-Path -LiteralPath $libraryHeaderPath)) {
   $failures.Add("missing bounded Octavo library records")
 }
@@ -50,6 +58,8 @@ if (!(Test-Path -LiteralPath $androidCMakePath)) {
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
   $app = [System.IO.File]::ReadAllText($appPath)
+  $themeHeader = [System.IO.File]::ReadAllText($themeHeaderPath)
+  $theme = [System.IO.File]::ReadAllText($themePath)
   $libraryHeader = [System.IO.File]::ReadAllText($libraryHeaderPath)
   $library = [System.IO.File]::ReadAllText($libraryPath)
   $accessibility = [System.IO.File]::ReadAllText($accessibilityPath)
@@ -112,6 +122,9 @@ if ($failures.Count -eq 0) {
   }
   if ([regex]::Matches($build, '#include\s+"readerview0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile readerview0.c exactly once")
+  }
+  if ([regex]::Matches($build, '#include\s+"octavo_theme\.c"').Count -ne 1) {
+    $failures.Add("code/build.c must compile the 8vo theme catalog exactly once")
   }
   if ([regex]::Matches($build, '#include\s+"octavo_library\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile the host library implementation exactly once")
@@ -302,12 +315,22 @@ if ($failures.Count -eq 0) {
       $parity.IndexOf('acceptance_eligible = !$AllowDirty -and !$SkipBuild') -lt 0) {
     $failures.Add("final two-host evidence must lock the canonical fixture, require a fresh output root and in-run builds, and reject dirty trees unless an explicit diagnostic-only override is supplied")
   }
-  if ($app.IndexOf('ui0_theme_profile_for_kind') -lt 0 -or
-      $app.IndexOf('OctavoTheme_Count == 6') -lt 0 -or
+  if ($themeHeader.IndexOf('OctavoTheme_Dark = 0') -lt 0 -or
+      $themeHeader.IndexOf('OctavoTheme_Light = 1') -lt 0 -or
+      $themeHeader.IndexOf('OctavoTheme_CoralDark = 2') -lt 0 -or
+      $themeHeader.IndexOf('OctavoTheme_CoralLight = 3') -lt 0 -or
+      $themeHeader.IndexOf('OctavoTheme_BlueDark = 4') -lt 0 -or
+      $themeHeader.IndexOf('OctavoTheme_BlueLight = 5') -lt 0 -or
+      $theme.IndexOf('ui0_theme_profile_for_kind(entry->ui0_profile_kind)') -lt 0 -or
+      $theme.IndexOf('octavo_theme_catalog_contract') -lt 0 -or
+      $app.IndexOf('#include "octavo_theme.h"') -lt 0 -or
       $app.IndexOf('file.version == 1') -lt 0 -or
       $app.IndexOf('.version = 3') -lt 0 -or
       $app.IndexOf('file.version < 3 ?') -lt 0) {
-    $failures.Add("octavo must expose all six shared themes with explicit legacy settings migration")
+    $failures.Add("octavo must expose six stable product themes through its explicit UI0 mapping and legacy settings migration")
+  }
+  if ($app -match 'ui0_theme_profile_for_kind\s*\(\s*\(UI0ThemeProfileKind\)') {
+    $failures.Add("octavo product theme persistence must not depend on UI0 profile ordinals")
   }
   if ($app.IndexOf('octavo_draw_adapter_covers_all_ops') -lt 0 -or
       $app.IndexOf('octavo_draw_adapter_covers_reference_edges') -lt 0 -or

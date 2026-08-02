@@ -706,11 +706,36 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
     }
 
     private Rect boundsInScreen(Rect parentBounds) {
-        int[] location = new int[2];
-        owner.getLocationOnScreen(location);
-        Rect result = new Rect(parentBounds);
-        result.offset(location[0], location[1]);
-        return result;
+        int[] parentLocation = new int[2];
+        ViewParent parent = owner.getParent();
+        if (!(parent instanceof View)) {
+            owner.getLocationOnScreen(parentLocation);
+            Rect fallback = new Rect(parentBounds);
+            fallback.offset(parentLocation[0], parentLocation[1]);
+            return fallback;
+        }
+        ((View)parent).getLocationOnScreen(parentLocation);
+        float originX = parentLocation[0] + owner.getLeft()
+            + owner.getTranslationX();
+        float originY = parentLocation[1] + owner.getTop()
+            + owner.getTranslationY();
+        float pivotX = owner.getPivotX();
+        float pivotY = owner.getPivotY();
+        float scaleX = owner.getScaleX();
+        float scaleY = owner.getScaleY();
+        float left = originX + pivotX
+            + (parentBounds.left - pivotX) * scaleX;
+        float top = originY + pivotY
+            + (parentBounds.top - pivotY) * scaleY;
+        float right = originX + pivotX
+            + (parentBounds.right - pivotX) * scaleX;
+        float bottom = originY + pivotY
+            + (parentBounds.bottom - pivotY) * scaleY;
+        return new Rect(
+            (int)Math.floor(Math.min(left, right)),
+            (int)Math.floor(Math.min(top, bottom)),
+            (int)Math.ceil(Math.max(left, right)),
+            (int)Math.ceil(Math.max(top, bottom)));
     }
 
     private boolean isVisibleToUser(Rect screenBounds) {
@@ -1228,6 +1253,11 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
 
     private void clearKeyboardFocusState() {
         keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
+        owner.invalidate();
+        sendSubtreeChanged();
+    }
+
+    void onChromeCompositionSettled() {
         owner.invalidate();
         sendSubtreeChanged();
     }

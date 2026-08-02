@@ -174,7 +174,10 @@ public final class OctavoBootstrapTest {
                      snapshot[OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
         assertEquals(1, snapshot[OctavoSurfaceView.STATE_READER_VIEW_READY]);
         assertEquals(0, snapshot[OctavoSurfaceView.STATE_READER_VIEW_ERRORS]);
-        assertTrue(snapshot[OctavoSurfaceView.STATE_READER_VIEW_DRAW_COUNT] > 1);
+        assertEquals(
+            "Distraction-free ReaderView must not duplicate Android chrome",
+            0,
+            snapshot[OctavoSurfaceView.STATE_READER_VIEW_DRAW_COUNT]);
         assertEquals(1, snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_READY]);
         assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_TEXT_PX] >= 18);
         assertTrue(snapshot[OctavoSurfaceView.STATE_TYPOGRAPHY_LINE_ADVANCE_PX]
@@ -211,8 +214,8 @@ public final class OctavoBootstrapTest {
         assertTrue(pageX + pageWidth <= bitmap.getWidth());
         assertTrue(pageY + pageHeight <= bitmap.getHeight());
 
-        assertColorClose(OctavoNative.clearColorArgb(),
-                         bitmap.getPixel(1, pageY + pageHeight / 2));
+        assertColorClose(Color.rgb(0xFF, 0xFD, 0xF9),
+                          bitmap.getPixel(1, pageY + pageHeight / 2));
         assertColorClose(Color.rgb(0xFF, 0xFD, 0xF9),
                          bitmap.getPixel(pageX + 4, pageY + 4));
 

@@ -17,6 +17,7 @@ import androidx.lifecycle.Lifecycle;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -106,6 +107,31 @@ public final class OctavoNavigationTest {
                 && snapshot[
                     OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0,
             "8vo did not present page " + pageIndex);
+    }
+
+    private static long[] awaitLocationCacheComplete(
+        ActivityScenario<OctavoActivity> scenario) {
+        long deadline = SystemClock.uptimeMillis() + 10_000;
+        AtomicReference<long[]> snapshot = new AtomicReference<>();
+        while (SystemClock.uptimeMillis() < deadline) {
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = (OctavoSurfaceView)
+                    activity.findViewById(R.id.octavo_surface);
+                snapshot.set(
+                    view == null
+                        ? null : view.locationCacheStateForTesting());
+            });
+            long[] current = snapshot.get();
+            if (current != null && current.length == 10
+                && current[0] == 1 && current[1] == 1) {
+                InstrumentationRegistry.getInstrumentation()
+                    .waitForIdleSync();
+                return state(scenario);
+            }
+            SystemClock.sleep(20);
+        }
+        fail("8vo did not complete bounded deferred location warming");
+        return new long[0];
     }
 
     private static String visibleText(
@@ -244,12 +270,13 @@ public final class OctavoNavigationTest {
                  ActivityScenario.launch(OctavoActivity.class)) {
             openFixture(scenario);
             long[] initial = awaitInitialPage(scenario);
+            initial = awaitLocationCacheComplete(scenario);
             long pageCount = initial[OctavoSurfaceView.STATE_PAGE_COUNT];
             assertTrue("Port 7 fixture needs at least four pages", pageCount >= 4);
             assertTrue(
-                "Port 7 default pagination exceeded its measured-chrome "
+                "Port 7 default pagination exceeded its borderless full-viewport "
                     + "regression bound",
-                pageCount <= 128);
+                pageCount <= 64);
             assertPageAndProgress(initial, 1, pageCount);
             assertNavigationHealthy(initial);
 
@@ -582,9 +609,14 @@ public final class OctavoNavigationTest {
                     && snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
                         == pageTwo[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
                     && snapshot[
+                        OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                        == pageTwo[
+                            OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                    && snapshot[
                         OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
                         == 0,
-                "8vo did not exactly restore the presented page");
+                "8vo did not exactly restore the presented page and its "
+                    + "deferred progress metadata");
             assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_REQUESTED]);
             assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_ATTEMPTED]);
             assertEquals(1, recreated[OctavoSurfaceView.STATE_RESTORE_SUCCEEDED]);

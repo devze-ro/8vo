@@ -35,6 +35,7 @@ function Invoke-OctavoReaderViewSmoke {
   $line = $output | Where-Object { $_ -match '^octavo_reader_view_smoke result=pass ' } |
     Select-Object -Last 1
   if (!$line -or
+      $line -notmatch 'theme_catalog=stable6' -or
       $line -notmatch 'focus=reference13' -or
       $line -notmatch 'panel_focus=toc_find_annotations_progress_boundary' -or
       $line -notmatch 'keyboard_routing=focused_edit_or_activate' -or

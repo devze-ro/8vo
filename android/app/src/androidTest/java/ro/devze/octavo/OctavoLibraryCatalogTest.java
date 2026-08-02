@@ -16,6 +16,7 @@ import android.view.MotionEvent;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -108,6 +109,48 @@ public final class OctavoLibraryCatalogTest {
                 && snapshot[
                     OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0,
             "8vo did not present the Port 6 library book");
+    }
+
+    private static long[] awaitLocationCacheComplete(
+        ActivityScenario<OctavoActivity> scenario,
+        String failureMessage) {
+        long deadline = SystemClock.uptimeMillis() + 10_000;
+        AtomicReference<long[]> snapshot = new AtomicReference<>();
+        while (SystemClock.uptimeMillis() < deadline) {
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = (OctavoSurfaceView)
+                    activity.findViewById(R.id.octavo_surface);
+                snapshot.set(
+                    view == null
+                        ? null : view.locationCacheStateForTesting());
+            });
+            long[] current = snapshot.get();
+            if (current != null && current.length == 10
+                && current[0] == 1 && current[1] == 1) {
+                InstrumentationRegistry.getInstrumentation()
+                    .waitForIdleSync();
+                return state(scenario);
+            }
+            SystemClock.sleep(20);
+        }
+        fail(failureMessage);
+        return new long[0];
+    }
+
+    private static long[] awaitLocationSummary(
+        ActivityScenario<OctavoActivity> scenario,
+        long expectedIndex,
+        long expectedCount,
+        String failureMessage) {
+        return awaitState(
+            scenario,
+            snapshot ->
+                snapshot[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
+                    == expectedIndex
+                && snapshot[
+                    OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT]
+                    == expectedCount,
+            failureMessage);
     }
 
     private static void assertNativeHealthy(long[] snapshot) {
@@ -328,12 +371,14 @@ public final class OctavoLibraryCatalogTest {
         long alphaPageCount;
         long alphaTextHash;
         long alphaLocationIndex;
+        long alphaLocationCount;
         long betaSpine;
         long betaByte;
         long betaPageIndex;
         long betaPageCount;
         long betaTextHash;
         long betaLocationIndex;
+        long betaLocationCount;
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
             assertLibrary(scenario, 1);
@@ -358,6 +403,9 @@ public final class OctavoLibraryCatalogTest {
             long[] alphaPageTwo = advanceOnePage(
                 scenario, alphaInitial,
                 "8vo did not present Alpha page 2");
+            alphaPageTwo = awaitLocationCacheComplete(
+                scenario,
+                "8vo did not complete Alpha location warming");
             OctavoLibraryStore.Book alphaBook =
                 flushAndBook(scenario, ALPHA_SHA256);
             alphaSpine = alphaBook.spineIndex;
@@ -366,6 +414,8 @@ public final class OctavoLibraryCatalogTest {
             alphaPageCount = alphaPageTwo[OctavoSurfaceView.STATE_PAGE_COUNT];
             alphaTextHash = alphaPageTwo[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];
             alphaLocationIndex = alphaPageTwo[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX];
+            alphaLocationCount = alphaPageTwo[
+                OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT];
             assertTrue(alphaByte > 0);
             assertEquals(
                 alphaPageTwo[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX],
@@ -382,6 +432,9 @@ public final class OctavoLibraryCatalogTest {
             long[] betaPageTwo = advanceOnePage(
                 scenario, betaInitial,
                 "8vo did not present Beta page 2");
+            betaPageTwo = awaitLocationCacheComplete(
+                scenario,
+                "8vo did not complete Beta location warming");
             OctavoLibraryStore.Book betaBook =
                 flushAndBook(scenario, BETA_SHA256);
             betaSpine = betaBook.spineIndex;
@@ -390,6 +443,8 @@ public final class OctavoLibraryCatalogTest {
             betaPageCount = betaPageTwo[OctavoSurfaceView.STATE_PAGE_COUNT];
             betaTextHash = betaPageTwo[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];
             betaLocationIndex = betaPageTwo[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX];
+            betaLocationCount = betaPageTwo[
+                OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT];
             assertTrue(betaByte > 0);
             assertEquals(
                 betaPageTwo[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX],
@@ -397,6 +452,11 @@ public final class OctavoLibraryCatalogTest {
             closeBook(scenario, 3);
 
             long[] alphaDuplicate = importBook(scenario, alpha);
+            alphaDuplicate = awaitLocationSummary(
+                scenario,
+                alphaLocationIndex,
+                alphaLocationCount,
+                "8vo did not refresh Alpha duplicate location metadata");
             assertEquals(ALPHA_TITLE, title(scenario));
             assertEquals(1,
                          alphaDuplicate[
@@ -446,6 +506,11 @@ public final class OctavoLibraryCatalogTest {
             });
 
             long[] alphaRestored = openBook(relaunched, ALPHA_SHA256);
+            alphaRestored = awaitLocationSummary(
+                relaunched,
+                alphaLocationIndex,
+                alphaLocationCount,
+                "8vo did not refresh relaunched Alpha location metadata");
             assertEquals(ALPHA_TITLE, title(relaunched));
             assertEquals(1,
                          alphaRestored[
@@ -470,6 +535,11 @@ public final class OctavoLibraryCatalogTest {
             closeBook(relaunched, 3);
 
             long[] betaRestored = openBook(relaunched, BETA_SHA256);
+            betaRestored = awaitLocationSummary(
+                relaunched,
+                betaLocationIndex,
+                betaLocationCount,
+                "8vo did not refresh relaunched Beta location metadata");
             assertEquals(BETA_TITLE, title(relaunched));
             assertEquals(1,
                          betaRestored[
