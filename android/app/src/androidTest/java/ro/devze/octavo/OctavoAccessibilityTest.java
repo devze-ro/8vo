@@ -12,12 +12,15 @@ import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -409,6 +412,37 @@ public final class OctavoAccessibilityTest {
                     R.id.octavo_reader_bottom_chrome);
             assertNotNull(topChrome);
             assertNotNull(bottomChrome);
+            ViewGroup topChromeGroup = (ViewGroup)topChrome;
+            assertTrue(topChromeGroup.getChildCount() >= 3);
+            assertTrue(
+                topChromeGroup.getChildAt(1) instanceof TextView);
+
+            TextView readerTitle =
+                (TextView)topChromeGroup.getChildAt(1);
+            assertEquals(OctavoFixture.TITLE,
+                         readerTitle.getText().toString());
+            assertEquals(1, readerTitle.getMaxLines());
+            assertEquals(TextUtils.TruncateAt.END,
+                         readerTitle.getEllipsize());
+
+            if (chromeVisible) {
+                int contentWidth =
+                    readerTitle.getWidth()
+                    - readerTitle.getPaddingLeft()
+                    - readerTitle.getPaddingRight();
+                float naturalWidth =
+                    readerTitle.getPaint().measureText(
+                        readerTitle.getText().toString());
+                if (naturalWidth > contentWidth) {
+                    assertNotNull(readerTitle.getLayout());
+                    assertEquals(
+                        1, readerTitle.getLayout().getLineCount());
+                    assertTrue(
+                        "Overflowing reader title was not end-ellipsized",
+                        readerTitle.getLayout()
+                            .getEllipsisCount(0) > 0);
+                }
+            }
             assertEquals(
                 chromeVisible ? View.VISIBLE : View.INVISIBLE,
                 topChrome.getVisibility());

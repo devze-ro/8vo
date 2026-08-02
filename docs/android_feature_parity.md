@@ -1,6 +1,6 @@
 # Android feature-parity contract
 
-Last reviewed: 2026-08-01. Baseline implementation: accepted Android Port 6
+Last reviewed: 2026-08-02. Baseline implementation: accepted Android Port 6
 plus the Android Port 7 appearance implementation candidate. Port 7 formal
 acceptance is pending.
 
@@ -27,9 +27,9 @@ conditions and an observed app version are recorded.
 
 "Current Android baseline" distinguishes accepted Port 6 behavior from Port 7
 behavior that is implemented on its milestone branch but not yet accepted.
-Port 7's recorded emulator/desktop evidence supports only the claims named in
-this matrix; it is not physical-device or hands-on accessibility/comfort
-acceptance.
+Port 7's recorded emulator/desktop and physical-iQOO automated/pixel evidence
+supports only the claims named in this matrix; it is not hands-on accessibility,
+extended-reading, or subjective comfort acceptance.
 
 ## Library and ownership
 
@@ -37,7 +37,7 @@ acceptance.
 | --- | --- | --- | --- |
 | Local EPUB import | Improve | Android document picker, bounded managed copy, Reader0 validation | Multi-select and visible import progress; clear duplicate, invalid, full-storage, and cancellation outcomes. |
 | Multiple-book catalog | Match | Built-in sample plus 63 imported books | Scale without losing bounded/recoverable storage guarantees; migrate catalog versions safely. |
-| Exact per-book resume | Improve | Port 6 accepts exact same-layout resume. At default system scale, Port 7's final API 36 matrix exercises every supported preference value sequentially, baseline/extrema round trips, 320 x 480dp and 600 x 840dp viewports, native portrait/landscape, rotation, replacement, recreation, and a fresh-process reopen while verifying Reader0 restoration to the page containing the last successfully presented spine/byte anchor. This is not a Cartesian-combination claim. | Preserve a semantic location across every preference, viewport, application-version, physical device, and synchronized-device change. |
+| Exact per-book resume | Improve | Port 6 accepts exact same-layout resume. At default system scale, Port 7's final API 36 emulator and API 34 physical-iQOO matrices exercise every supported preference value sequentially, baseline/extrema round trips, 320 x 480dp and 600 x 840dp viewports, native portrait/landscape, rotation, replacement, recreation, and a fresh-process reopen while verifying Reader0 restoration to the page containing the last successfully presented spine/byte anchor. This is not a Cartesian-combination claim. | Preserve a semantic location across every preference, viewport, application-version, physical device, and synchronized-device change. |
 | Cover grid and list | Match | Text rows only | Crisp cover extraction/caching, placeholders, reading progress, responsive grid/list, and accessible labels. |
 | Book metadata | Match | Reader0-validated title | Author, series, cover, language, identifiers, file facts, and user-correctable display metadata. |
 | Sort and filter | Match | Recent-import ordering only | Recent, title, author, series, progress, unread/finished, downloaded, and format where applicable. |
@@ -51,20 +51,20 @@ acceptance.
 
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
-| Reflowable paged reading | Match | Port 6 accepts canonical Reader0 pages. Port 7 implements and emulator-verifies preference-driven canonical rebuilds around a successfully presented semantic anchor; physical acceptance is pending. | Publication structure and styling remain legible across supported viewports and preferences. |
+| Reflowable paged reading | Match | Port 6 accepts canonical Reader0 pages. Port 7's emulator and physical-iQOO matrices verify preference-driven canonical rebuilds around a successfully presented semantic anchor; hands-on representative-publication acceptance remains pending. | Publication structure and styling remain legible across supported viewports and preferences. |
 | Continuous scrolling | Match/Audit | Missing | Offer where semantically safe; preserve exact location when switching modes. Verify current Kindle book constraints. |
-| Font size | Match | Port 7 implements and emulator-verifies global 16, 18, 21, 24, and 28sp choices, bounded atlas rebuild, durable storage, nonempty/unclipped atlas-cell and reader-ink checks at tested extrema, and semantic reflow. | Immediate preview, broader accessible range where justified, physical clipping evidence, and exact semantic resume. |
-| Font family | Improve | Port 7 implements Literary system serif and Clear system sans serif with four styles and no bundled font; acceptance is pending. | Curated high-quality reading faces plus publisher-font choice, style coverage, licensing, and deterministic fallback. |
+| Font size | Match | Port 7's emulator and physical matrices verify global 16, 18, 21, 24, and 28sp choices, bounded atlas rebuild, durable storage, nonempty/unclipped atlas-cell and reader-ink checks at tested extrema, and semantic reflow. A physical 130% screenshot confirms end ellipsis with both top actions visible. | Immediate preview, broader accessible range where justified, broader physical scale/device evidence, and exact semantic resume. |
+| Font family | Improve | Port 7's emulator and physical matrices verify Literary system serif and Clear system sans serif with four styles and no bundled font; formal acceptance is pending. | Curated high-quality reading faces plus publisher-font choice, style coverage, licensing, and deterministic fallback. |
 | Weight/boldness | Match/Audit | Publisher bold style only | Reader-selectable weight where the face supports it without damaging publisher emphasis. |
-| Line spacing | Match | Port 7 implements and emulator-verifies global 1150, 1250, 1300, and 1500-permille presets with a fresh atlas and canonical reflow. | Stable baseline, physical clipping evidence, and representative-book review. |
-| Margins/content width | Match | Port 7 implements and emulator-verifies Wide, Balanced, and Focused global width targets within Readerview0 geometry. | Tablet maximum line width, multi-window/foldable behavior, safe insets, and physical preference-extreme evidence. |
+| Line spacing | Match | Port 7's emulator and physical matrices verify global 1150, 1250, 1300, and 1500-permille presets with a fresh atlas and canonical reflow. | Stable baseline, broader physical clipping evidence, and representative-book review. |
+| Margins/content width | Match | Port 7's emulator and physical matrices verify Wide, Balanced, and Focused global width targets within Readerview0 geometry. | Tablet maximum line width, multi-window/foldable behavior, safe insets, and broader physical preference-extreme evidence. |
 | Alignment and hyphenation | Match | Port 7 implements Publisher and host-rendered Ragged right where supported; hyphenation remains absent. | Justified choice where semantically safe, language-aware hyphenation, and controlled word spacing. |
 | Publisher formatting control | Match | Port 7 makes publisher colors explicitly Theme safe or Allow, with High contrast always authoritative; broader publisher styling remains partial. | Clear publisher/default style policy without making meaningful content unreadable. |
 | Page and progress display | Match | Page index/count and percentage projection | Page/location/time/chapter alternatives, accessible labels, and consistent values after reflow. |
-| Orientation and multi-window | Match | Port 6 accepts lifecycle/surface recreation. Port 7's API 36 compact/large rotation cases verify semantic-anchor reflow; multi-window and foldable acceptance remain pending. | Position-stable rotation, foldable/tablet layouts, split screen, and configuration changes. |
-| Immersive reader chrome | Improve | Port 7 emulator evidence verifies presentation-safe center taps, stable visible/hidden page geometry, measured-inset semantic-anchor preservation, hidden-band tap rejection, dynamic accessibility ownership, and bounded dark-transition samples; hands-on acceptance remains pending. | Edge/system-bar coherence, no accidental navigation or bright frames, and verified physical reduced-motion behavior. |
+| Orientation and multi-window | Match | Port 6 accepts lifecycle/surface recreation. Port 7's API 36 emulator and API 34 physical-iQOO compact/large rotation cases verify semantic-anchor reflow; multi-window and foldable acceptance remain pending. | Position-stable rotation, foldable/tablet layouts, split screen, and configuration changes. |
+| Immersive reader chrome | Improve | Port 7 evidence from the emulator and physical iQOO verifies presentation-safe center taps, stable visible/hidden page geometry, measured-inset semantic-anchor preservation, hidden-band tap rejection, dynamic accessibility ownership, and bounded dark-transition samples. The final 19-frame physical sequence had no above-95%-luma pixels inside app bounds; hands-on acceptance remains pending. | Edge/system-bar coherence, no accidental navigation or bright frames, and verified physical reduced-motion behavior. |
 | Page-turn behavior | Improve | Deterministic tap zones now share one gate with appearance/reflow generations; no page-turn animation is added. | Configurable tap/gesture map, RTL awareness, optional restrained transition, and zero skipped/unpresented pages. |
-| Themes | Improve | Port 7 emulator evidence verifies independently tuned Paper, Sepia, Dusk, Warm dark, OLED, and High contrast palette identities, role contrast thresholds, exact native page pixels, persisted night cold-open, and composed warm-dark-to-OLED transitions; physical and dark-room acceptance remain pending. | Verified contrast and comfort across reader, settings, library return, dialogs, system bars, launch, selection, search, highlights, and failures. |
+| Themes | Improve | Port 7 emulator evidence verifies all six independently tuned palette identities, role contrast thresholds, exact native pixels, persisted night cold-open, and composed transitions. Physical captures record Paper, Warm dark, and OLED page/chrome pixels plus bounded transition evidence; subjective dark-room comfort remains pending. | Verified contrast and comfort across reader, settings, library return, dialogs, system bars, launch, selection, search, highlights, and failures. |
 | Brightness/dimming | Improve | System brightness only | Reader-controlled page comfort where Android permits, with explicit reset and no illegible system UI. |
 
 ## Navigation and retrieval
@@ -120,11 +120,11 @@ acceptance.
 
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
-| TalkBack | Improve | Port 7 automation verifies a bounded page/previous/next/progress virtual tree, Java/virtual ownership changes, labels, values, ranges, focus order, presentation-gated actions, and events. Spoken TalkBack acceptance and full publication semantics are pending. | Expose document structure, text, progress, controls, actions, selection, and navigation through a coherent accessibility tree. |
-| Large text/display scale | Improve | Port 7 adds five reader sizes; at 130% system text the final accessibility/settings test and visual sheet/chrome review passed. Other physical scales and devices remain pending. | No clipped/hidden actions at supported scales; reader preference and system UI remain usable independently. |
-| Touch targets and alternate actions | Match | Port 7 automation verifies the 48dp token, virtual click/scroll/show-on-screen actions, labels, and focus order; hands-on touch, keyboard, and switch review remain pending. | Minimum accessible targets, switch/keyboard paths, labels, focus order, and no gesture-only essential action. |
-| Contrast choices | Improve | Port 7 verifies deterministic WCAG-style role thresholds for five comfort palettes plus an independently tuned High contrast choice; physical comfort verification remains pending. | Comfortable themes plus verified high-contrast alternatives; never force one contrast profile on every reader. |
-| Reduced motion | Improve | Port 7 verifies a durable explicit global choice that reduces appearance token durations to zero; system-following and hands-on review remain pending. | Honor system preference and provide a non-animated equivalent for every transition. |
+| TalkBack | Improve | Port 7 automation on the emulator and physical iQOO verifies a bounded page/previous/next/progress virtual tree, Java/virtual ownership changes, labels, values, ranges, focus order, presentation-gated actions, and events. Spoken TalkBack acceptance and full publication semantics are pending. | Expose document structure, text, progress, controls, actions, selection, and navigation through a coherent accessibility tree. |
+| Large text/display scale | Improve | Port 7 adds five reader sizes. Strengthened API 36 emulator and API 34 physical-iQOO 130% tests passed; the fixed physical screenshot confirms a single-line end-ellipsized title with both actions visible. Other scales and devices remain pending. | No clipped/hidden actions at supported scales; reader preference and system UI remain usable independently. |
+| Touch targets and alternate actions | Match | Port 7 automation on the emulator and physical iQOO verifies the 48dp token, virtual click/scroll/show-on-screen actions, labels, and focus order; hands-on touch, keyboard, and switch review remain pending. | Minimum accessible targets, switch/keyboard paths, labels, focus order, and no gesture-only essential action. |
+| Contrast choices | Improve | Port 7 verifies deterministic WCAG-style role thresholds for five comfort palettes plus an independently tuned High contrast choice, and physical captures confirm selected palette pixels; subjective physical comfort verification remains pending. | Comfortable themes plus verified high-contrast alternatives; never force one contrast profile on every reader. |
+| Reduced motion | Improve | Port 7 verifies a durable explicit global choice that reduces appearance token durations to zero; system-following and hands-on physical review remain pending. | Honor system preference and provide a non-animated equivalent for every transition. |
 | Screen-reader publication content | Match | Port 7 exposes bounded current-page text and essential controls, not headings, lists, links, images, tables, notes, or language structure. | Reading order, headings, lists, links, alt text, tables, notes, and language exposed accurately. |
 | Reading aids | Improve/Audit | Missing | Explore focus/ruler, dyslexia-friendly choices, spacing, and per-user presets without claiming medical benefit. |
 

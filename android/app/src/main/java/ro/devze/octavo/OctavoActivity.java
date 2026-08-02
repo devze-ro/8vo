@@ -7,6 +7,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -274,6 +275,7 @@ public final class OctavoActivity extends Activity {
         title.setTextSize(16);
         title.setTextColor(tokens.chromeText);
         title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
         title.setGravity(Gravity.CENTER);
         title.setPadding(dp(12), 0, dp(12), 0);
         title.setImportantForAccessibility(

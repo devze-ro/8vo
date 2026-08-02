@@ -54,9 +54,10 @@ native handle and destroys it when the Activity is destroyed.
 
 Port 6 remains the accepted functional library foundation. Port 7 implements
 the first premium appearance slice. Its final emulator, dual-ABI build, visual
-automation, and desktop-regression gates pass, but it is not accepted until
-the physical-device, hands-on accessibility, prolonged-reading, and dark-room
-gates pass. Neither milestone is the end-state Android
+automation, physical-iQOO automation, and desktop-regression gates pass, but it
+is not accepted until the hands-on accessibility, alternate-input,
+reduced-motion, prolonged-reading, and subjective dark-room gates pass.
+Neither milestone is the end-state Android
 experience. The product target is a premium, local-first reader for user-owned
 books that reaches Kindle-class reading, navigation, search, annotation,
 library, accessibility, and interaction quality while using a distinct 8vo
@@ -143,29 +144,41 @@ and large viewports, rotation, recreation, lifecycle, surface replacement,
 transactional center-tap chrome rollback/gating, bounded retry
 exhaustion/recovery, and visible surface-acquisition failure.
 Bounded pixel evidence samples each theme and typography change and the tested
-dark-transition phases; physical acceptance must still inspect every
-transition for a bright frame.
+dark-transition phases. A final 19-frame physical iQOO sequence also met its
+recorded app-bounds luma limits, but subjective dark-room inspection of every
+transition remains pending.
 
-The final API 36 x86_64 emulator run passed 23/23 ordered tests in 308.648
+The final API 36 x86_64 emulator run passed 23/23 ordered tests in 471.753
 seconds: Bootstrap 1, Port 6 library regression 5, navigation regression 3,
 appearance store/palette 3, reader appearance 10, and accessibility 1. The
 matrix retained the Port 6 behavioral surface and added store, palette,
 preference, reflow, viewport, rotation, surface-replacement, chrome,
 transition-pixel, failure-path, and accessibility-structure cases. The
 separate `android_port7_process_restart.ps1` driver passed seed 1/1 in
-9.242 seconds and verification 1/1 in 5.309 seconds around a confirmed
+13.440 seconds and verification 1/1 in 8.747 seconds around a confirmed
 force-stop, restoring an extreme appearance plus the exact semantic location
-after fresh-process book reopen. At 130% system text, the final
-accessibility/settings test passed 1/1 in 10.841 seconds; visual inspection
-confirmed wrapped controls and an unobscured, scrollable settings sheet. The
-emulator font scale was restored to 1.0, and its crash buffer was empty after
-the final automated runs.
+after fresh-process book reopen. At 130% system text, the strengthened
+accessibility/settings and reader-title-ellipsis test passed 1/1 in 26.582
+seconds. The emulator font scale was restored to 1.0, and its crash buffer was
+empty after the final automated runs.
 
 The final Android app/test build compiled `arm64-v8a` and `x86_64`. The strict
 Windows 8vo build and 7/7 public smokes passed, as did unchanged re10's strict
-product/qualification build and four-anchor document-engine smoke. Physical
-iQOO instrumentation, live TalkBack/alternate-input review, extended reading,
-and dark-room review remain pending.
+product/qualification build and four-anchor document-engine smoke.
+
+On the Android 14/API 34 ARM64 iQOO 9 SE/vivo I2019, the final ordered matrix
+passed 23/23 tests in 163.834 seconds. Its confirmed-force-stop process probe
+passed seed 1/1 in 3.223 seconds and verify 1/1 in 1.701 seconds. At
+`font_scale=1.3`, the strengthened accessibility/settings and title-ellipsis
+test passed 1/1 in 4.020 seconds; a screenshot confirmed end ellipsis with
+both top-chrome actions visible. The physical font scale was restored to 1.0,
+and its crash buffer was empty after the final automated runs. Captured Paper,
+Warm dark, and OLED page pixels plus the bounded physical transition sequence
+are recorded in `../docs/android_port7.md`.
+
+Live TalkBack, alternate-input and reduced-motion review, extended Paper,
+Warm dark, and OLED reading, and subjective dark-room comfort review remain
+pending.
 
 Port 7 intentionally remains a bounded appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full

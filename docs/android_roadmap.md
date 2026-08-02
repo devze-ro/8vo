@@ -119,18 +119,19 @@ In addition to permanent build/regression gates, require:
 
 ### Current validation status
 
-The final API 36 x86_64 emulator matrix passed 23/23 ordered tests at the
-default system font scale, sequentially exercising every supported preference
-value plus compact/large viewports, portrait/landscape, lifecycle, rotation,
-surface replacement, and recreation. Both halves of an externally
-force-stopped fresh-process probe and a separate 130% system-text
-accessibility/settings run passed. Both Android ABIs built, the emulator crash
-buffer was empty, the strict Windows 8vo suite passed 7/7 public smokes, and
+The final API 36 x86_64 emulator and Android 14/API 34 ARM64 iQOO matrices
+each passed 23/23 ordered tests at the default system font scale, sequentially
+exercising every supported preference value plus compact/large viewports,
+portrait/landscape, lifecycle, rotation, surface replacement, and recreation.
+Both devices passed externally force-stopped fresh-process probes and separate
+strengthened 130% system-text accessibility/settings and title-ellipsis runs;
+both font scales were restored to 1.0 and both crash buffers were empty. Both
+Android ABIs built, the strict Windows 8vo suite passed 7/7 public smokes, and
 unchanged re10 passed its strict build and four-anchor document-engine smoke.
-Exact timings, finite-matrix limits, pins, and coverage are recorded in
-[android_port7.md](android_port7.md). Live TalkBack and alternate-input review,
-physical iQOO instrumentation, extended reading,
-and dark-room review remain pending.
+Exact timings, finite-matrix limits, pins, physical palette pixels, and bounded
+transition evidence are recorded in [android_port7.md](android_port7.md). Live
+TalkBack, alternate-input and reduced-motion review, extended Paper, Warm dark,
+and OLED reading, and subjective dark-room comfort review remain pending.
 
 ## Candidate sequence after Port 7 acceptance
 

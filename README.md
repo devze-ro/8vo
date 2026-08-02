@@ -52,9 +52,11 @@ The Port 7 implementation candidate adds six independently tuned reader
 themes, global typography/layout preferences, canonical semantic-anchor
 reflow, measured immersive chrome, a target-colored theme-transition cover,
 and a custom-reader accessibility bridge. Its API 36 emulator and dual-ABI
-build pass, as do its Windows/re10 automated gates; physical iQOO, TalkBack,
-extended-reading, and dark-room acceptance are still required. Ports 0-6
-therefore remain the formally accepted Android baseline.
+build pass, as do its Android 14/API 34 physical-iQOO, Windows, and re10
+automated gates. Hands-on TalkBack and alternate-input review, reduced-motion
+review, extended reading, and subjective dark-room comfort acceptance are
+still required. Ports 0-6 therefore remain the formally accepted Android
+baseline.
 
 The long-term Android direction is a premium, local-first reader for
 user-owned books with Kindle-class capability and interaction quality, a

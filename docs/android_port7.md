@@ -2,9 +2,10 @@
 
 Status: implementation candidate on
 `android/port7-premium-reader-appearance`. The final API 36 emulator,
-dual-ABI Android build, Windows 8vo, and unchanged re10 automated gates passed
-on 2026-08-01. Formal physical-device, hands-on accessibility, visual-comfort,
-and prolonged-reading acceptance is pending.
+dual-ABI Android build, Windows 8vo, unchanged re10, and Android 14/API 34
+physical-iQOO automated gates passed on 2026-08-01/02. Formal hands-on
+TalkBack and alternate-input review, prolonged-reading comfort, and dark-room
+acceptance remain pending.
 
 Port 7 turns the accepted Port 6 library and reader into the first bounded
 premium-reading appearance slice. It adds a host-owned semantic visual system,
@@ -212,8 +213,15 @@ successfully presented and two Java frames have elapsed. Bounded composed-frame
 sampling found no bright sample in the tested reader entry/re-entry/exit,
 settings open/close, surface-replacement, recreation, and warm-dark-to-OLED
 phases. Latest-only retargeting and a settled no-op callback prevent a rapid
-request sequence from stranding an obsolete cover. Physical and dark-room
-no-flash acceptance remains required.
+request sequence from stranding an obsolete cover. A final 19-frame physical
+iQOO composed-screen series spanned a Warm dark panel, OLED selection and
+settings close, library return, reader re-entry, and center-tap chrome
+hide/show. Inside the app bounds at y=88..2283, every frame had an
+above-95%-luma pixel ratio of 0.0000; maximum mean luma was 0.1607 and maximum
+above-85%-luma ratio was 0.0233. The maximum full-screen above-95%-luma ratio
+was 0.0009, solely from system status icons outside those app bounds. This is
+bounded captured-screen evidence, not subjective dark-room or perceptual
+no-flash acceptance.
 
 ## Android accessibility bridge
 
@@ -243,8 +251,12 @@ surface, and its initial focus/z-order.
 This bridge is the Port 7 accessibility foundation, not complete publication
 accessibility. Headings, lists, links, images/alt text, tables, selection,
 annotations, language changes, and complex document reading semantics remain
-future engine and product work. TalkBack focus order, spoken labels, touch
-targets, large text, and reduced motion still require hands-on acceptance.
+future engine and product work. At 130% system text, strengthened emulator and
+physical automation passed; physical visual inspection confirmed that both
+top-chrome actions remained visible and the long reader title used end
+ellipsis instead of hard clipping. TalkBack speech, touch exploration,
+alternate-input behavior, and reduced-motion quality still require hands-on
+acceptance.
 
 ## Shared-package boundary
 
@@ -309,7 +321,8 @@ called complete:
 
 ## Validation record
 
-Final automated evidence recorded on 2026-08-01:
+Final fixed-candidate emulator and desktop evidence was recorded on
+2026-08-01/02; physical iQOO evidence was recorded on 2026-08-02:
 
 - The exact clean dependency guard passed for Ground0
   `770b970b4655facfa9700c3d1025d96102365631`, Reader0
@@ -319,7 +332,7 @@ Final automated evidence recorded on 2026-08-01:
 - `:app:assembleDebug :app:assembleDebugAndroidTest` passed against Android
   API 36 and built both `arm64-v8a` and `x86_64` native variants.
 - On the `octavo_port0_api36` API 36 x86_64 emulator, the final ordered suite
-  passed 23/23 tests in 308.648 seconds: Bootstrap 1, Port 6 library regression
+  passed 23/23 tests in 471.753 seconds: Bootstrap 1, Port 6 library regression
   5, navigation regression 3, appearance store/palette 3, reader appearance 10,
   and accessibility 1.
 - At `font_scale=1.0`, the appearance cases exercise every supported layout
@@ -349,18 +362,36 @@ Final automated evidence recorded on 2026-08-01:
 - Bounded composed-frame evidence covers cold library launch, reader entry,
   re-entry and exit, settings open/close, surface replacement, recreation, and
   eight warm-dark-to-OLED samples. No sampled frame exceeded its bright-pixel
-  bounds; this finite automation is not physical no-flash acceptance.
+  bounds; this finite automation is not exhaustive or subjective no-flash acceptance.
 - The separate `android_port7_process_restart.ps1` driver passed seed 1/1 in
-  9.242 seconds, an externally confirmed force-stop with no surviving target
-  process, and verify 1/1 in 5.309 seconds. It restored the extreme global
+  13.440 seconds, an externally confirmed force-stop with no surviving target
+  process, and verify 1/1 in 8.747 seconds. It restored the extreme global
   appearance and the page containing the last successfully presented semantic
   byte after book reopen.
-- With emulator `font_scale=1.3`, the final accessibility/settings test passed
-  1/1 in 10.841 seconds. Visual inspection confirmed wrapped 130% chrome and a
-  scrollable settings sheet opening at its unobscured heading; the emulator
-  was restored to `font_scale=1.0`. Ignored evidence is retained under
-  `local/validation/android-port7/api36/`.
+- With emulator `font_scale=1.3`, the strengthened accessibility/settings and
+  reader-title-ellipsis test passed 1/1 in 26.582 seconds. Visual inspection
+  confirmed usable 130% chrome and a scrollable settings sheet opening at its
+  unobscured heading; the emulator was restored to `font_scale=1.0`. Ignored
+  evidence is retained under `local/validation/android-port7/api36/`.
 - The emulator crash buffer was empty after the final ordered, process-restart,
+  and 130% font-scale runs.
+- On the iQOO 9 SE/vivo I2019, Android 14/API 34 ARM64 at 1080 x 2400 and
+  440 dpi, the final ordered suite passed 23/23 tests in 163.834 seconds with
+  the same class breakdown as the emulator matrix.
+- The physical fresh-process probe passed seed 1/1 in 3.223 seconds, confirmed
+  that force-stop left no target process alive, and passed verify 1/1 in
+  1.701 seconds.
+- At physical `font_scale=1.3`, the strengthened accessibility/settings and
+  reader-title-ellipsis test passed 1/1 in 4.020 seconds. A fixed-candidate
+  screenshot confirmed end ellipsis with both top-chrome actions visible. The
+  device was restored to `font_scale=1.0`.
+- Physical composed pixels recorded Paper `#FFFDF9`, Warm dark `#1B1917`, and
+  OLED `#000000` reader pages with their corresponding semantic chrome/system
+  surfaces. The final 19-frame transition sequence had no above-95%-luma
+  pixels inside app bounds; its small full-screen contribution came solely
+  from system status icons. These captures are not subjective comfort or
+  dark-room acceptance.
+- The physical crash buffer was empty after the final ordered, process-restart,
   and 130% font-scale runs.
 - The strict Windows 8vo build passed its dependency/architecture audits and
   all 7 public smokes: `octavo_public_smoke result=pass build=True tests=7`.
@@ -370,11 +401,10 @@ Final automated evidence recorded on 2026-08-01:
   and hash `f3c13a55f0349720`. re10 and its participating dependencies remained
   clean at their exact revisions.
 
-The recorded finite emulator matrix and desktop gates passed for this
-candidate, but Port 7 is not yet accepted. Still required are physical iQOO
-instrumentation and its crash-buffer check; hands-on TalkBack speech, focus,
-touch exploration, keyboard/switch, target, large-text, and reduced-motion
-review; extended Paper,
-Warm dark, and OLED reading; and dark-room review of discomfort, halation,
-minimum brightness, accent intensity, and every transition. LCD-class
-dark-room evidence remains required when an appropriate display is available.
+The recorded finite emulator and physical automated matrices and desktop gates
+passed for this candidate, but Port 7 is not yet accepted. Still required are
+hands-on TalkBack speech, focus and touch exploration, keyboard/switch and
+reduced-motion review; extended Paper, Warm dark, and OLED reading; and
+subjective dark-room review of discomfort, halation, minimum brightness,
+accent intensity, and every transition. LCD-class dark-room evidence remains
+required when an appropriate display is available.

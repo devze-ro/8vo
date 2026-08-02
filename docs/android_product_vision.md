@@ -112,10 +112,11 @@ The broader product contract still requires:
 - optional schedule/system-theme following without taking away manual choice.
 
 Port 7 implementation is not night-mode acceptance. Its API 36 semantic,
-composed-pixel, 130% system-text, dual-ABI, and desktop regression evidence is
-recorded in `android_port7.md`. Physical-device, hands-on TalkBack,
-prolonged-reading, and dark-room evidence must still be completed before the
-new appearance foundation is accepted.
+composed-pixel, 130% system-text, dual-ABI, desktop-regression, and Android
+14/API 34 physical-iQOO automated and bounded pixel evidence is recorded in
+`android_port7.md`. Hands-on TalkBack, alternate-input and reduced-motion
+review, prolonged Paper, Warm dark, and OLED reading, and subjective dark-room
+comfort evidence must still be completed before the foundation is accepted.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots
