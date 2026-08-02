@@ -80,14 +80,15 @@ an implementation claim.
 - Java coalesces preview changes and retains the successful-presentation gate so
   rapid adjustments cannot save or expose an unpresented state.
 - Native Android controls and the custom reader's essential actions are
-  exposed through the accessibility bridge pattern used by later ports.
+  exposed through the accessibility bridge pattern used by later ports, with
+  deterministic named Tab/Shift+Tab routing that excludes blank host stops.
 - Diagnostic state and stable palette hashes support deterministic evidence
   for themes, preference extremes, insets, rotation, recreation, and
   compact/large viewports.
 
 Implementation of the behavior and diagnostic hooks is present, and the final
-API 36 emulator/visual matrix has run. Physical-device and human comfort/
-accessibility acceptance remain separate obligations.
+API 36 emulator/visual and physical-iQOO automated matrices have run. Human
+comfort and hands-on accessibility acceptance remain separate obligations.
 
 ### Deliberately out of Port 7
 
@@ -129,9 +130,12 @@ both font scales were restored to 1.0 and both crash buffers were empty. Both
 Android ABIs built, the strict Windows 8vo suite passed 7/7 public smokes, and
 unchanged re10 passed its strict build and four-anchor document-engine smoke.
 Exact timings, finite-matrix limits, pins, physical palette pixels, and bounded
-transition evidence are recorded in [android_port7.md](android_port7.md). Live
-TalkBack, alternate-input and reduced-motion review, extended Paper, Warm dark,
-and OLED reading, and subjective dark-room comfort review remain pending.
+transition evidence are recorded in [android_port7.md](android_port7.md).
+Objective real-device UiAutomator traversal reached named reader controls in
+both directions without blank chrome-container or raw-Surface stops. Audible
+TalkBack and hands-on keyboard/switch and reduced-motion review, extended
+Paper, Warm dark, and OLED reading, and subjective dark-room comfort review
+remain pending.
 
 ## Candidate sequence after Port 7 acceptance
 

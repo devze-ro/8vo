@@ -3,9 +3,11 @@
 Status: implementation candidate on
 `android/port7-premium-reader-appearance`. The final API 36 emulator,
 dual-ABI Android build, Windows 8vo, unchanged re10, and Android 14/API 34
-physical-iQOO automated gates passed on 2026-08-01/02. Formal hands-on
-TalkBack and alternate-input review, prolonged-reading comfort, and dark-room
-acceptance remain pending.
+physical-iQOO automated gates passed on 2026-08-01/02. Objective real-device
+accessibility/keyboard traversal also passed without blank host stops. Audible
+TalkBack and touch-exploration judgment, hands-on keyboard/switch and reduced-
+motion review, prolonged-reading comfort, and dark-room acceptance remain
+pending.
 
 Port 7 turns the accepted Port 6 library and reader into the first bounded
 premium-reading appearance slice. It adds a host-owned semantic visual system,
@@ -45,7 +47,8 @@ Port 7 implements:
   and two Java frames, with bounded composed-frame sampling of the covered
   transition phases;
 - a bounded Android virtual accessibility tree for the page, previous page,
-  next page, and progress; and
+  next page, and read-only progress, plus deterministic native/virtual keyboard
+  focus routing; and
 - native diagnostic state for appearance generations, palette identity,
   reflow, chrome, accessibility actions, and failures.
 
@@ -243,10 +246,24 @@ native page is successfully presented.
 When Java chrome is visible, its Library, Appearance, Previous, Next, and
 Progress views own those accessibility nodes. When chrome is hidden, the
 provider exposes the equivalent virtual Previous, Next, and Progress nodes and
-clears any stale virtual focus. Instrumentation verifies the bounded semantic
-packet, roles, names, values, ranges, dynamic ownership, focus order, actions,
-presentation gating, 48dp control bounds, the settings sheet's complete option
-surface, and its initial focus/z-order.
+clears any stale virtual focus. Real Tab/Shift+Tab input follows one
+deterministic named native/virtual chain; the top/bottom chrome containers and
+raw Surface host are explicitly excluded as blank stops. Progress remains an
+informational, read-only stop. Directional recovery after an explicit focus
+clear, routing during the hide-fade boundary, and disabled end-of-book routing
+all remain inside the named chain. Enter, Space, and D-pad center activate page
+and navigation actions through the existing successful-presentation gate;
+activating Progress is a no-op that retains focus.
+
+Instrumentation injects real forward/reverse keys and verifies the bounded
+semantic packet, roles, names, values, ranges, dynamic ownership, focus order,
+explicit focus-clear recovery, hidden-fade and end-of-book boundaries,
+activation/no-op behavior, presentation gating, host-node consistency, 48dp
+control bounds, the settings sheet's complete option surface, and its initial
+focus/z-order. On the iQOO, an objective UiAutomator sequence reached named
+Next page, Library, Reader appearance, book-page text, and Previous page stops
+without a blank container or raw-Surface stop. An independent closure audit
+found no remaining P1/P2 focus issue.
 
 This bridge is the Port 7 accessibility foundation, not complete publication
 accessibility. Headings, lists, links, images/alt text, tables, selection,
@@ -254,9 +271,9 @@ annotations, language changes, and complex document reading semantics remain
 future engine and product work. At 130% system text, strengthened emulator and
 physical automation passed; physical visual inspection confirmed that both
 top-chrome actions remained visible and the long reader title used end
-ellipsis instead of hard clipping. TalkBack speech, touch exploration,
-alternate-input behavior, and reduced-motion quality still require hands-on
-acceptance.
+ellipsis instead of hard clipping. Objective keyboard traversal is automated,
+but audible TalkBack speech and touch-exploration judgment, hands-on keyboard/
+switch use, and reduced-motion quality still require acceptance.
 
 ## Shared-package boundary
 
@@ -332,7 +349,7 @@ Final fixed-candidate emulator and desktop evidence was recorded on
 - `:app:assembleDebug :app:assembleDebugAndroidTest` passed against Android
   API 36 and built both `arm64-v8a` and `x86_64` native variants.
 - On the `octavo_port0_api36` API 36 x86_64 emulator, the final ordered suite
-  passed 23/23 tests in 471.753 seconds: Bootstrap 1, Port 6 library regression
+  passed 23/23 tests in 399.625 seconds: Bootstrap 1, Port 6 library regression
   5, navigation regression 3, appearance store/palette 3, reader appearance 10,
   and accessibility 1.
 - At `font_scale=1.0`, the appearance cases exercise every supported layout
@@ -356,16 +373,19 @@ Final fixed-candidate emulator and desktop evidence was recorded on
   user retry; visible surface-acquisition failure and
   exact recovery; same-appearance and reduced-motion rollback without durable
   publication; and deferred production-store failure across lifecycle.
-- Accessibility automation uses `UiAutomation` traversal plus provider
-  diagnostics to verify Java/virtual ownership, labels, values, focus order,
-  48dp targets, presentation-gated actions, and the complete settings surface.
+- Accessibility automation injects real Tab/Shift+Tab input and uses
+  `UiAutomation` plus provider diagnostics to verify named Java/virtual
+  ownership, forward/reverse focus order, explicit-clear recovery, hidden-fade
+  and end-of-book routing, read-only Progress, host-node consistency, 48dp
+  targets, presentation-gated activation, and the complete settings surface.
+  An independent closure audit found no remaining P1/P2 issue.
 - Bounded composed-frame evidence covers cold library launch, reader entry,
   re-entry and exit, settings open/close, surface replacement, recreation, and
   eight warm-dark-to-OLED samples. No sampled frame exceeded its bright-pixel
   bounds; this finite automation is not exhaustive or subjective no-flash acceptance.
 - The separate `android_port7_process_restart.ps1` driver passed seed 1/1 in
-  13.440 seconds, an externally confirmed force-stop with no surviving target
-  process, and verify 1/1 in 8.747 seconds. It restored the extreme global
+  13.761 seconds, an externally confirmed force-stop with no surviving target
+  process, and verify 1/1 in 9.678 seconds. It restored the extreme global
   appearance and the page containing the last successfully presented semantic
   byte after book reopen.
 - With emulator `font_scale=1.3`, the strengthened accessibility/settings and
@@ -376,15 +396,17 @@ Final fixed-candidate emulator and desktop evidence was recorded on
 - The emulator crash buffer was empty after the final ordered, process-restart,
   and 130% font-scale runs.
 - On the iQOO 9 SE/vivo I2019, Android 14/API 34 ARM64 at 1080 x 2400 and
-  440 dpi, the final ordered suite passed 23/23 tests in 163.834 seconds with
+  440 dpi, the final ordered suite passed 23/23 tests in 173.775 seconds with
   the same class breakdown as the emulator matrix.
-- The physical fresh-process probe passed seed 1/1 in 3.223 seconds, confirmed
+- The physical fresh-process probe passed seed 1/1 in 3.253 seconds, confirmed
   that force-stop left no target process alive, and passed verify 1/1 in
-  1.701 seconds.
-- At physical `font_scale=1.3`, the strengthened accessibility/settings and
-  reader-title-ellipsis test passed 1/1 in 4.020 seconds. A fixed-candidate
-  screenshot confirmed end ellipsis with both top-chrome actions visible. The
-  device was restored to `font_scale=1.0`.
+  1.689 seconds.
+- The expanded physical accessibility regression passed 1/1 at
+  `font_scale=1.0` in 4.390 seconds and again at `font_scale=1.3` in
+  4.780 seconds. The 130% title remained end-ellipsized with both top-chrome
+  actions visible. The device was restored to `font_scale=1.0`, accessibility
+  disabled with no enabled service, a 30-second screen timeout, and automatic
+  brightness mode.
 - Physical composed pixels recorded Paper `#FFFDF9`, Warm dark `#1B1917`, and
   OLED `#000000` reader pages with their corresponding semantic chrome/system
   surfaces. The final 19-frame transition sequence had no above-95%-luma
@@ -403,8 +425,8 @@ Final fixed-candidate emulator and desktop evidence was recorded on
 
 The recorded finite emulator and physical automated matrices and desktop gates
 passed for this candidate, but Port 7 is not yet accepted. Still required are
-hands-on TalkBack speech, focus and touch exploration, keyboard/switch and
-reduced-motion review; extended Paper, Warm dark, and OLED reading; and
-subjective dark-room review of discomfort, halation, minimum brightness,
+audible TalkBack speech and touch-exploration judgment, hands-on keyboard/
+switch and reduced-motion review; extended Paper, Warm dark, and OLED reading;
+and subjective dark-room review of discomfort, halation, minimum brightness,
 accent intensity, and every transition. LCD-class dark-room evidence remains
 required when an appropriate display is available.

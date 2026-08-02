@@ -13,6 +13,9 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.view.InputDevice;
+import android.view.KeyCharacterMap;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -92,6 +95,7 @@ public final class OctavoAccessibilityTest {
             assertSemanticPacket(semantics);
 
             assertChromeAccessibilityTree(scenario, true);
+            assertVisibleKeyboardFocusOrder(scenario);
 
             long[] chromeHidden = clickContent(scenario);
             assertEquals(0,
@@ -121,7 +125,7 @@ public final class OctavoAccessibilityTest {
                 scenario, chromeHidden);
             assertSemanticPageStateEquals(initial, returned);
 
-            long[] chromeRestored = clickContent(scenario);
+            long[] chromeRestored = activatePageWithKeyboard(scenario);
             assertEquals(1,
                          chromeRestored[
                              OctavoSurfaceView.STATE_CHROME_VISIBLE]);
@@ -392,6 +396,13 @@ public final class OctavoAccessibilityTest {
                     OctavoReaderAccessibilityProvider
                         .VIRTUAL_PROGRESS_STATUS);
             assertNotNull(host);
+            assertFalse(host.isFocusable());
+            assertFalse(host.isFocused());
+            assertFalse(hasAction(
+                host, AccessibilityNodeInfo.ACTION_FOCUS));
+            assertFalse(hasAction(
+                host, AccessibilityNodeInfo.ACTION_CLEAR_FOCUS));
+            assertTrue(owner.isFocusable());
             assertNotNull(page);
             assertEquals(chromeVisible ? 1 : 4, host.getChildCount());
             if (chromeVisible) {
@@ -412,6 +423,12 @@ public final class OctavoAccessibilityTest {
                     R.id.octavo_reader_bottom_chrome);
             assertNotNull(topChrome);
             assertNotNull(bottomChrome);
+            assertTrue(topChrome.isClickable());
+            assertFalse(topChrome.isFocusable());
+            assertFalse(topChrome.isFocusableInTouchMode());
+            assertTrue(bottomChrome.isClickable());
+            assertFalse(bottomChrome.isFocusable());
+            assertFalse(bottomChrome.isFocusableInTouchMode());
             ViewGroup topChromeGroup = (ViewGroup)topChrome;
             assertTrue(topChromeGroup.getChildCount() >= 3);
             assertTrue(
@@ -695,13 +712,145 @@ public final class OctavoAccessibilityTest {
                    bounds.height() >= nodes.minimumTouchPixels);
     }
 
+    private static void assertVisibleKeyboardFocusOrder(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<Boolean> canPrevious = new AtomicReference<>(false);
+        scenario.onActivity(activity -> {
+            View library =
+                activity.findViewById(R.id.octavo_reader_library);
+            View previous =
+                activity.findViewById(R.id.octavo_reader_previous);
+            assertNotNull(library);
+            assertNotNull(previous);
+            canPrevious.set(previous.isEnabled());
+            assertTrue(library.requestFocusFromTouch());
+        });
+        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
+
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_appearance);
+        sendTab(false);
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+        sendTab(false);
+        if (canPrevious.get()) {
+            assertNativeKeyboardFocus(
+                scenario, R.id.octavo_reader_previous);
+            sendTab(false);
+        }
+        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_next);
+
+        sendTab(true);
+        if (canPrevious.get()) {
+            assertNativeKeyboardFocus(
+                scenario, R.id.octavo_reader_previous);
+            sendTab(true);
+        }
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+        sendTab(true);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_appearance);
+        sendTab(true);
+        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
+
+        AtomicReference<Boolean> previousEnabled =
+            new AtomicReference<>(false);
+        AtomicReference<Boolean> nextEnabled =
+            new AtomicReference<>(false);
+        scenario.onActivity(activity -> {
+            View previous =
+                activity.findViewById(R.id.octavo_reader_previous);
+            View next =
+                activity.findViewById(R.id.octavo_reader_next);
+            previousEnabled.set(previous.isEnabled());
+            nextEnabled.set(next.isEnabled());
+            previous.setEnabled(true);
+            next.setEnabled(false);
+            assertTrue(previous.requestFocusFromTouch());
+        });
+        sendTab(false);
+        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
+        scenario.onActivity(activity -> {
+            activity.findViewById(R.id.octavo_reader_previous)
+                .setEnabled(previousEnabled.get());
+            activity.findViewById(R.id.octavo_reader_next)
+                .setEnabled(nextEnabled.get());
+        });
+    }
+
     private static void assertKeyboardFocusOrder(
         ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<Boolean> canPrevious = new AtomicReference<>(false);
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            assertNotNull(view);
+            View current = activity.getCurrentFocus();
+            if (current != null) {
+                current.clearFocus();
+            }
+            assertTrue(view.requestFocus(View.FOCUS_FORWARD));
+            canPrevious.set(view.canMovePrevious());
+        });
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+
+        sendTab(false);
+        if (canPrevious.get()) {
+            assertSurfaceKeyboardFocus(
+                scenario,
+                OctavoReaderAccessibilityProvider.VIRTUAL_PREVIOUS_PAGE);
+            sendTab(false);
+        }
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_NEXT_PAGE);
+        sendTab(false);
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PROGRESS_STATUS);
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            assertFalse(view.onKeyDown(
+                KeyEvent.KEYCODE_ENTER,
+                activationKeyEvent(KeyEvent.KEYCODE_ENTER)));
+            assertEquals(
+                OctavoReaderAccessibilityProvider.VIRTUAL_PROGRESS_STATUS,
+                ((OctavoReaderAccessibilityProvider)
+                    view.getAccessibilityNodeProvider())
+                        .keyboardFocusedVirtualIdForTesting());
+        });
+
+        sendTab(true);
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_NEXT_PAGE);
+        sendTab(true);
+        if (canPrevious.get()) {
+            assertSurfaceKeyboardFocus(
+                scenario,
+                OctavoReaderAccessibilityProvider.VIRTUAL_PREVIOUS_PAGE);
+            sendTab(true);
+        }
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+
         scenario.onActivity(activity -> {
             OctavoSurfaceView view =
                 (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
             AccessibilityNodeProvider provider =
                 view.getAccessibilityNodeProvider();
+            assertTrue(provider.performAction(
+                OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
+                AccessibilityNodeInfo.ACTION_CLEAR_FOCUS,
+                (Bundle)null));
             int[] order = {
                 OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
                 OctavoReaderAccessibilityProvider.VIRTUAL_PREVIOUS_PAGE,
@@ -724,6 +873,10 @@ public final class OctavoAccessibilityTest {
                 assertEquals(expected.getClassName(), focused.getClassName());
                 assertEquals(text(expected.getText()),
                              text(focused.getText()));
+                assertEquals(
+                    order[index],
+                    ((OctavoReaderAccessibilityProvider)provider)
+                        .keyboardFocusedVirtualIdForTesting());
                 expected.recycle();
                 focused.recycle();
             }
@@ -734,7 +887,128 @@ public final class OctavoAccessibilityTest {
             assertNull(provider.findFocus(
                 AccessibilityNodeInfo.FOCUS_INPUT));
         });
+
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            assertFalse(view.onKeyDown(
+                KeyEvent.KEYCODE_ENTER,
+                activationKeyEvent(KeyEvent.KEYCODE_ENTER)));
+            assertNull(view.getAccessibilityNodeProvider().findFocus(
+                AccessibilityNodeInfo.FOCUS_INPUT));
+        });
+        sendTab(false);
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            assertTrue(view.getAccessibilityNodeProvider().performAction(
+                OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
+                AccessibilityNodeInfo.ACTION_CLEAR_FOCUS,
+                (Bundle)null));
+        });
+        sendTab(true);
+        assertSurfaceKeyboardFocus(
+            scenario,
+            OctavoReaderAccessibilityProvider.VIRTUAL_PROGRESS_STATUS);
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            assertTrue(view.getAccessibilityNodeProvider().performAction(
+                OctavoReaderAccessibilityProvider.VIRTUAL_PROGRESS_STATUS,
+                AccessibilityNodeInfo.ACTION_CLEAR_FOCUS,
+                (Bundle)null));
+        });
         assertDeclaredTraversalOrderFromAutomation(scenario);
+    }
+
+    private static void assertNativeKeyboardFocus(
+        ActivityScenario<OctavoActivity> scenario,
+        int expectedViewId) {
+        scenario.onActivity(activity -> {
+            View focused = activity.getCurrentFocus();
+            OctavoSurfaceView surface =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            OctavoReaderAccessibilityProvider provider =
+                (OctavoReaderAccessibilityProvider)
+                    surface.getAccessibilityNodeProvider();
+            assertNotNull(focused);
+            assertEquals(
+                "Unexpected real focus; virtual reader focus is "
+                    + provider.keyboardFocusedVirtualIdForTesting(),
+                expectedViewId, focused.getId());
+            assertNull(surface.getAccessibilityNodeProvider().findFocus(
+                AccessibilityNodeInfo.FOCUS_INPUT));
+        });
+    }
+
+    private static void assertSurfaceKeyboardFocus(
+        ActivityScenario<OctavoActivity> scenario,
+        int expectedVirtualId) {
+        scenario.onActivity(activity -> {
+            View focused = activity.getCurrentFocus();
+            assertNotNull(focused);
+            assertEquals(R.id.octavo_surface, focused.getId());
+            OctavoSurfaceView surface = (OctavoSurfaceView)focused;
+            OctavoReaderAccessibilityProvider provider =
+                (OctavoReaderAccessibilityProvider)
+                    surface.getAccessibilityNodeProvider();
+            assertEquals(expectedVirtualId,
+                         provider.keyboardFocusedVirtualIdForTesting());
+            AccessibilityNodeInfo focusedNode = provider.findFocus(
+                AccessibilityNodeInfo.FOCUS_INPUT);
+            assertNotNull(focusedNode);
+            focusedNode.recycle();
+        });
+    }
+
+    private static void sendTab(boolean backward) {
+        android.app.Instrumentation instrumentation =
+            InstrumentationRegistry.getInstrumentation();
+        KeyEvent down = tabKeyEvent(backward);
+        KeyEvent up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP);
+        instrumentation.sendKeySync(down);
+        instrumentation.sendKeySync(up);
+        instrumentation.waitForIdleSync();
+    }
+
+    private static KeyEvent tabKeyEvent(boolean backward) {
+        long now = SystemClock.uptimeMillis();
+        return new KeyEvent(
+            now,
+            now,
+            KeyEvent.ACTION_DOWN,
+            KeyEvent.KEYCODE_TAB,
+            0,
+            backward ? KeyEvent.META_SHIFT_ON : 0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            KeyEvent.FLAG_FROM_SYSTEM,
+            InputDevice.SOURCE_KEYBOARD);
+    }
+
+    private static KeyEvent activationKeyEvent(int keyCode) {
+        long now = SystemClock.uptimeMillis();
+        return new KeyEvent(
+            now,
+            now,
+            KeyEvent.ACTION_DOWN,
+            keyCode,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            KeyEvent.FLAG_FROM_SYSTEM,
+            InputDevice.SOURCE_KEYBOARD);
+    }
+
+    private static void sendActivationKey(int keyCode) {
+        android.app.Instrumentation instrumentation =
+            InstrumentationRegistry.getInstrumentation();
+        instrumentation.sendKeyDownUpSync(keyCode);
+        instrumentation.waitForIdleSync();
     }
 
     private static void assertDeclaredTraversalOrderFromAutomation(
@@ -851,10 +1125,49 @@ public final class OctavoAccessibilityTest {
                 OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
                 AccessibilityNodeInfo.ACTION_CLICK,
                 (Bundle)null));
+            long[] hidden = view.nativeStateForTesting();
+            if (hidden[OctavoSurfaceView.STATE_CHROME_VISIBLE] == 0) {
+                assertTrue(view.onKeyDown(
+                    KeyEvent.KEYCODE_TAB, tabKeyEvent(true)));
+                assertEquals(
+                    R.id.octavo_surface,
+                    activity.getCurrentFocus().getId());
+                assertEquals(
+                    OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
+                    ((OctavoReaderAccessibilityProvider)
+                        view.getAccessibilityNodeProvider())
+                            .keyboardFocusedVirtualIdForTesting());
+            }
             result.set(view.nativeStateForTesting());
         });
         assertNotNull(result.get());
         return result.get();
+    }
+
+    private static long[] activatePageWithKeyboard(
+        ActivityScenario<OctavoActivity> scenario) {
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            OctavoReaderAccessibilityProvider provider =
+                (OctavoReaderAccessibilityProvider)
+                    view.getAccessibilityNodeProvider();
+            int current = provider.keyboardFocusedVirtualIdForTesting();
+            if (current != OctavoReaderAccessibilityProvider
+                               .VIRTUAL_PAGE_CONTENT) {
+                assertTrue(provider.performAction(
+                    OctavoReaderAccessibilityProvider
+                        .VIRTUAL_PAGE_CONTENT,
+                    AccessibilityNodeInfo.ACTION_FOCUS,
+                    (Bundle)null));
+            }
+        });
+        sendActivationKey(KeyEvent.KEYCODE_ENTER);
+        return awaitState(
+            scenario,
+            snapshot ->
+                snapshot[OctavoSurfaceView.STATE_CHROME_VISIBLE] == 1,
+            "Keyboard activation did not restore the reader chrome");
     }
 
     private static void assertPageChromeState(
@@ -888,12 +1201,16 @@ public final class OctavoAccessibilityTest {
         scenario.onActivity(activity -> {
             OctavoSurfaceView view =
                 (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
-            AccessibilityNodeProvider provider =
-                view.getAccessibilityNodeProvider();
-            firstAccepted.set(provider.performAction(
+            OctavoReaderAccessibilityProvider provider =
+                (OctavoReaderAccessibilityProvider)
+                    view.getAccessibilityNodeProvider();
+            assertTrue(provider.performAction(
                 OctavoReaderAccessibilityProvider.VIRTUAL_NEXT_PAGE,
-                AccessibilityNodeInfo.ACTION_CLICK,
+                AccessibilityNodeInfo.ACTION_FOCUS,
                 (Bundle)null));
+            firstAccepted.set(view.onKeyDown(
+                KeyEvent.KEYCODE_ENTER,
+                activationKeyEvent(KeyEvent.KEYCODE_ENTER)));
             gatedAccepted.set(provider.performAction(
                 OctavoReaderAccessibilityProvider.VIRTUAL_NEXT_PAGE,
                 AccessibilityNodeInfo.ACTION_CLICK,
@@ -952,12 +1269,17 @@ public final class OctavoAccessibilityTest {
         scenario.onActivity(activity -> {
             OctavoSurfaceView view =
                 (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
-            previousAccepted.set(
-                view.getAccessibilityNodeProvider().performAction(
-                    OctavoReaderAccessibilityProvider
-                        .VIRTUAL_PREVIOUS_PAGE,
-                    AccessibilityNodeInfo.ACTION_CLICK,
-                    (Bundle)null));
+            OctavoReaderAccessibilityProvider provider =
+                (OctavoReaderAccessibilityProvider)
+                    view.getAccessibilityNodeProvider();
+            assertTrue(provider.performAction(
+                OctavoReaderAccessibilityProvider
+                    .VIRTUAL_PREVIOUS_PAGE,
+                AccessibilityNodeInfo.ACTION_FOCUS,
+                (Bundle)null));
+            previousAccepted.set(view.onKeyDown(
+                KeyEvent.KEYCODE_SPACE,
+                activationKeyEvent(KeyEvent.KEYCODE_SPACE)));
             previousPending.set(view.nativeStateForTesting());
         });
         assertTrue(previousAccepted.get());

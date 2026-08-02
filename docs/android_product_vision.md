@@ -114,9 +114,11 @@ The broader product contract still requires:
 Port 7 implementation is not night-mode acceptance. Its API 36 semantic,
 composed-pixel, 130% system-text, dual-ABI, desktop-regression, and Android
 14/API 34 physical-iQOO automated and bounded pixel evidence is recorded in
-`android_port7.md`. Hands-on TalkBack, alternate-input and reduced-motion
-review, prolonged Paper, Warm dark, and OLED reading, and subjective dark-room
-comfort evidence must still be completed before the foundation is accepted.
+`android_port7.md`. Objective real-device keyboard/accessibility traversal
+passes without blank host stops, but audible TalkBack and hands-on keyboard/
+switch and reduced-motion review, prolonged Paper, Warm dark, and OLED
+reading, and subjective dark-room comfort evidence must still be completed
+before the foundation is accepted.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots

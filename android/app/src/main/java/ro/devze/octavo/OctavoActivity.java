@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -257,6 +258,8 @@ public final class OctavoActivity extends Activity {
         top.setId(R.id.octavo_reader_top_chrome);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setClickable(true);
+        top.setFocusable(false);
+        top.setFocusableInTouchMode(false);
         top.setPadding(dp(8), dp(6), dp(8), dp(6));
         top.setBackgroundColor(tokens.chromeSurface);
         top.setElevation(dp(2));
@@ -301,6 +304,8 @@ public final class OctavoActivity extends Activity {
         bottom.setId(R.id.octavo_reader_bottom_chrome);
         bottom.setGravity(Gravity.CENTER_VERTICAL);
         bottom.setClickable(true);
+        bottom.setFocusable(false);
+        bottom.setFocusableInTouchMode(false);
         bottom.setPadding(dp(8), dp(6), dp(8), dp(6));
         bottom.setBackgroundColor(tokens.chromeSurface);
         bottom.setElevation(dp(2));
@@ -349,6 +354,25 @@ public final class OctavoActivity extends Activity {
         replacement.setAccessibilityTraversalBefore(previous.getId());
         previous.setAccessibilityTraversalBefore(next.getId());
         next.setAccessibilityTraversalBefore(progress.getId());
+        library.setNextFocusForwardId(settings.getId());
+        settings.setNextFocusForwardId(replacement.getId());
+        replacement.setNextFocusForwardId(previous.getId());
+        previous.setNextFocusForwardId(next.getId());
+        library.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, null, settings));
+        settings.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, library, replacement));
+        previous.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, replacement,
+                next.isEnabled() ? next : library));
+        next.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event,
+                previous.isEnabled() ? previous : replacement,
+                library));
         readerTopChrome = top;
         readerBottomChrome = bottom;
         readerPrevious = previous;
@@ -471,8 +495,39 @@ public final class OctavoActivity extends Activity {
         if (readerPrevious == null || readerNext == null || view == null) {
             return;
         }
-        readerPrevious.setEnabled(view.canMovePrevious());
-        readerNext.setEnabled(view.canMoveNext());
+        boolean canPrevious = view.canMovePrevious();
+        boolean canNext = view.canMoveNext();
+        readerPrevious.setEnabled(canPrevious);
+        readerNext.setEnabled(canNext);
+        int forwardId = canPrevious
+            ? readerPrevious.getId()
+            : canNext ? readerNext.getId() : View.NO_ID;
+        view.setNextFocusForwardId(forwardId);
+        view.setKeyboardBoundaryFocusIds(
+            readerSettings == null ? View.NO_ID : readerSettings.getId(),
+            forwardId);
+    }
+
+    private static boolean moveReaderKeyboardFocus(
+        int keyCode,
+        KeyEvent event,
+        View backward,
+        View forward) {
+        if (keyCode != KeyEvent.KEYCODE_TAB
+            || event.getAction() != KeyEvent.ACTION_DOWN
+            || event.getRepeatCount() != 0
+            || !(event.hasNoModifiers()
+                 || event.hasModifiers(KeyEvent.META_SHIFT_ON))) {
+            return false;
+        }
+        boolean reverse = event.isShiftPressed();
+        View target = reverse ? backward : forward;
+        return target != null
+            && target.isShown()
+            && target.isEnabled()
+            && target.isFocusable()
+            && target.requestFocus(
+                reverse ? View.FOCUS_BACKWARD : View.FOCUS_FORWARD);
     }
 
     private void applyWindowAppearance() {
@@ -601,6 +656,14 @@ public final class OctavoActivity extends Activity {
 
     private void setChromeViewsVisible(boolean visible, boolean animate) {
         chromeVisible = visible;
+        if (!visible && surfaceView != null) {
+            View focused = getCurrentFocus();
+            if (focused != null
+                && (focused.getParent() == readerTopChrome
+                    || focused.getParent() == readerBottomChrome)) {
+                surfaceView.requestFocus(View.FOCUS_FORWARD);
+            }
+        }
         setChromeViewVisible(readerTopChrome, visible, animate);
         setChromeViewVisible(readerBottomChrome, visible, animate);
     }

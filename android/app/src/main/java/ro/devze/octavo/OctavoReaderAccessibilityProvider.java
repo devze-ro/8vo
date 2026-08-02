@@ -68,6 +68,7 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
     private final AccessibilityManager accessibilityManager;
     private int accessibilityFocusedVirtualId = INVALID_VIRTUAL_ID;
     private int keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
+    private int requestedKeyboardFocusVirtualId = INVALID_VIRTUAL_ID;
     private int hoveredVirtualId = INVALID_VIRTUAL_ID;
     private boolean pageMoveAwaitingPresentation;
 
@@ -227,6 +228,7 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             sendVirtualEvent(VIRTUAL_PAGE_CONTENT,
                              AccessibilityEvent.TYPE_VIEW_SCROLLED);
         }
+        reconcileKeyboardFocus(false, INVALID_VIRTUAL_ID);
         sendSubtreeChanged();
     }
 
@@ -242,9 +244,6 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
                             .TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
                 }
             }
-            if (keyboardFocusedVirtualId != VIRTUAL_PAGE_CONTENT) {
-                keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
-            }
             if (hoveredVirtualId != VIRTUAL_PAGE_CONTENT) {
                 int previous = hoveredVirtualId;
                 hoveredVirtualId = INVALID_VIRTUAL_ID;
@@ -255,21 +254,68 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
                 }
             }
         }
+        reconcileKeyboardFocus(false, INVALID_VIRTUAL_ID);
         owner.invalidate();
         sendSubtreeChanged();
     }
 
-    void onOwnerFocusChanged(boolean hasFocus) {
-        if (!hasFocus && keyboardFocusedVirtualId != INVALID_VIRTUAL_ID) {
-            keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
-            owner.invalidate();
-            sendSubtreeChanged();
+    void onOwnerFocusChanged(boolean hasFocus, int direction) {
+        if (hasFocus) {
+            reconcileKeyboardFocus(
+                direction == View.FOCUS_BACKWARD,
+                requestedKeyboardFocusVirtualId);
+        } else if (keyboardFocusedVirtualId != INVALID_VIRTUAL_ID) {
+            clearKeyboardFocusState();
         }
+    }
+
+    boolean moveKeyboardFocus(boolean backward) {
+        if (!owner.isFocused()) {
+            return false;
+        }
+        ReaderSnapshot snapshot = readSnapshot();
+        int index = focusOrderIndex(keyboardFocusedVirtualId);
+        int step = backward ? -1 : 1;
+        if (index < 0) {
+            int target = boundaryKeyboardFocus(backward, snapshot);
+            return isVirtualChild(target)
+                && setKeyboardFocus(target);
+        }
+        for (int next = index + step;
+             index >= 0 && next >= 0 && next < FOCUS_ORDER.length;
+             next += step) {
+            int candidate = FOCUS_ORDER[next];
+            if (isKeyboardFocusCandidate(candidate, snapshot)) {
+                return setKeyboardFocus(candidate);
+            }
+        }
+        return false;
+    }
+
+    boolean activateKeyboardFocus() {
+        if (!owner.isFocused()) {
+            return false;
+        }
+        ReaderSnapshot snapshot = readSnapshot();
+        int target = keyboardFocusedVirtualId;
+        NodeSpec spec = nodeSpec(target, snapshot);
+        if (!isKeyboardFocusCandidate(target, snapshot)
+            || spec == null
+            || !spec.clickable) {
+            return false;
+        }
+        return performAction(
+            target, AccessibilityNodeInfo.ACTION_CLICK, (Bundle)null);
+    }
+
+    int keyboardFocusedVirtualIdForTesting() {
+        return keyboardFocusedVirtualId;
     }
 
     void clearAccessibilityState() {
         accessibilityFocusedVirtualId = INVALID_VIRTUAL_ID;
         keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
+        requestedKeyboardFocusVirtualId = INVALID_VIRTUAL_ID;
         hoveredVirtualId = INVALID_VIRTUAL_ID;
         pageMoveAwaitingPresentation = false;
     }
@@ -282,6 +328,9 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
         info.setClassName(owner.getAccessibilityClassName());
         info.setContentDescription(null);
         info.setFocusable(false);
+        info.setFocused(false);
+        info.removeAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        info.removeAction(AccessibilityNodeInfo.ACTION_CLEAR_FOCUS);
         info.setClickable(false);
         info.setScrollable(snapshot.canPrevious || snapshot.canNext);
         if (Build.VERSION.SDK_INT >= 28) {
@@ -478,7 +527,22 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             || keyboardFocusedVirtualId == virtualViewId) {
             return false;
         }
-        if (!owner.isFocused() && !owner.requestFocus()) {
+        if (!owner.isFocused()) {
+            requestedKeyboardFocusVirtualId = virtualViewId;
+            boolean focused = owner.requestFocus();
+            requestedKeyboardFocusVirtualId = INVALID_VIRTUAL_ID;
+            if (!focused) {
+                return false;
+            }
+            if (keyboardFocusedVirtualId == virtualViewId) {
+                return true;
+            }
+        }
+        return setKeyboardFocus(virtualViewId);
+    }
+
+    private boolean setKeyboardFocus(int virtualViewId) {
+        if (keyboardFocusedVirtualId == virtualViewId) {
             return false;
         }
         keyboardFocusedVirtualId = virtualViewId;
@@ -1119,6 +1183,65 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             }
         }
         return -1;
+    }
+
+    private boolean isKeyboardFocusCandidate(int virtualViewId,
+                                             ReaderSnapshot snapshot) {
+        if (!isVirtualChild(virtualViewId)) {
+            return false;
+        }
+        NodeSpec spec = nodeSpec(virtualViewId, snapshot);
+        return spec != null
+            && spec.visible
+            && spec.focusable
+            && (virtualViewId == VIRTUAL_PROGRESS_STATUS
+                || (spec.enabled && spec.clickable));
+    }
+
+    private void reconcileKeyboardFocus(boolean backward,
+                                        int requestedVirtualId) {
+        if (!owner.isFocused()) {
+            if (keyboardFocusedVirtualId != INVALID_VIRTUAL_ID) {
+                clearKeyboardFocusState();
+            }
+            return;
+        }
+        ReaderSnapshot snapshot = readSnapshot();
+        int target;
+        if (isKeyboardFocusCandidate(requestedVirtualId, snapshot)) {
+            target = requestedVirtualId;
+        } else if (isKeyboardFocusCandidate(
+                       keyboardFocusedVirtualId, snapshot)) {
+            target = keyboardFocusedVirtualId;
+        } else {
+            target = boundaryKeyboardFocus(backward, snapshot);
+        }
+        if (target == keyboardFocusedVirtualId) {
+            return;
+        }
+        if (isVirtualChild(target)) {
+            setKeyboardFocus(target);
+        } else if (keyboardFocusedVirtualId != INVALID_VIRTUAL_ID) {
+            clearKeyboardFocusState();
+        }
+    }
+
+    private void clearKeyboardFocusState() {
+        keyboardFocusedVirtualId = INVALID_VIRTUAL_ID;
+        owner.invalidate();
+        sendSubtreeChanged();
+    }
+
+    private int boundaryKeyboardFocus(boolean backward,
+                                      ReaderSnapshot snapshot) {
+        int index = backward ? FOCUS_ORDER.length - 1 : 0;
+        int step = backward ? -1 : 1;
+        for (; index >= 0 && index < FOCUS_ORDER.length; index += step) {
+            if (isKeyboardFocusCandidate(FOCUS_ORDER[index], snapshot)) {
+                return FOCUS_ORDER[index];
+            }
+        }
+        return INVALID_VIRTUAL_ID;
     }
 
     private static final class NodeSpec {

@@ -3,9 +3,11 @@ package ro.devze.octavo;
 import android.content.Context;
 import android.graphics.Rect;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.accessibility.AccessibilityNodeProvider;
 
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
@@ -140,6 +142,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private int systemInsetBottom;
     private int readerChromeInsetTop;
     private int readerChromeInsetBottom;
+    private int keyboardBackwardFocusId = View.NO_ID;
+    private int keyboardForwardFocusId = View.NO_ID;
     private final Runnable presentPage = this::runNativePresentation;
     private final Runnable persistPosition = () -> {
         persistencePosted = false;
@@ -292,11 +296,53 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                                   int direction,
                                   Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
-        accessibilityProvider.onOwnerFocusChanged(gainFocus);
+        accessibilityProvider.onOwnerFocusChanged(gainFocus, direction);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_TAB
+            && event.getRepeatCount() == 0
+            && (event.hasNoModifiers()
+                || event.hasModifiers(KeyEvent.META_SHIFT_ON))) {
+            boolean backward = event.isShiftPressed();
+            if (accessibilityProvider.moveKeyboardFocus(backward)
+                || !chromeVisible
+                || moveKeyboardFocusOutsideReader(backward)) {
+                return true;
+            }
+        }
+        if ((keyCode == KeyEvent.KEYCODE_ENTER
+             || keyCode == KeyEvent.KEYCODE_SPACE
+             || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)
+            && event.getRepeatCount() == 0
+            && event.hasNoModifiers()
+            && accessibilityProvider.activateKeyboardFocus()) {
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     boolean setChromeVisible(boolean visible) {
         return updateChromeVisibility(visible, true);
+    }
+
+    void setKeyboardBoundaryFocusIds(int backwardId, int forwardId) {
+        keyboardBackwardFocusId = backwardId;
+        keyboardForwardFocusId = forwardId;
+    }
+
+    private boolean moveKeyboardFocusOutsideReader(boolean backward) {
+        int targetId =
+            backward ? keyboardBackwardFocusId : keyboardForwardFocusId;
+        View target = targetId == View.NO_ID
+            ? null : getRootView().findViewById(targetId);
+        return target != null
+            && target.isShown()
+            && target.isEnabled()
+            && target.isFocusable()
+            && target.requestFocus(
+                backward ? View.FOCUS_BACKWARD : View.FOCUS_FORWARD);
     }
 
     private boolean updateChromeVisibility(boolean visible,
