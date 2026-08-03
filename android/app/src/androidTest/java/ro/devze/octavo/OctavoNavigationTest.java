@@ -31,10 +31,11 @@ import java.util.concurrent.atomic.AtomicReference;
 @RunWith(AndroidJUnit4.class)
 public final class OctavoNavigationTest {
     @Before
-    public void clearPort6Library() {
+    public void clearDurableTestState() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoProgressStore.clearForTesting(context);
     }
 
     private static void openFixture(
@@ -152,6 +153,20 @@ public final class OctavoNavigationTest {
                 .progressLabelForTesting()));
         assertNotNull(result.get());
         return result.get();
+    }
+
+    private static String expectedPercentageProgressLabel(long[] snapshot) {
+        long locationIndex =
+            snapshot[OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX];
+        long locationCount =
+            snapshot[OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT];
+        assertTrue(locationIndex >= 0);
+        assertTrue(locationCount > locationIndex);
+        long oneBasedLocationIndex = locationIndex + 1L;
+        long percentage = Math.min(
+            (oneBasedLocationIndex * 100L) / locationCount,
+            100L);
+        return percentage + "%";
     }
 
     private static void dispatchTap(OctavoSurfaceView surface,
@@ -907,13 +922,15 @@ public final class OctavoNavigationTest {
                  ActivityScenario.launch(OctavoActivity.class)) {
             openFixture(scenario);
             long[] initial = awaitInitialPage(scenario);
+            initial = awaitLocationCacheComplete(scenario);
             long firstSectionPageCount =
                 initial[OctavoSurfaceView.STATE_PAGE_COUNT];
             long sectionCount = initial[OctavoSurfaceView.STATE_SECTION_COUNT];
             assertEquals(0, initial[OctavoSurfaceView.STATE_SPINE_INDEX]);
             assertEquals(4, sectionCount);
-            assertTrue(progressLabel(scenario).startsWith(
-                "Section 1 of 4 | Page 1 of "));
+            assertEquals(
+                expectedPercentageProgressLabel(initial),
+                progressLabel(scenario));
             assertNavigationHealthy(initial);
 
             for (long targetPage = 2;
@@ -942,9 +959,9 @@ public final class OctavoNavigationTest {
                 assertEquals(firstSectionPageCount,
                              firstSectionEnd[
                                  OctavoSurfaceView.STATE_PAGE_INDEX]);
-                assertTrue(firstSectionEndLabel.startsWith(
-                    "Section 1 of 4 | Page " + firstSectionPageCount
-                    + " of " + firstSectionPageCount + " | "));
+                assertEquals(
+                    expectedPercentageProgressLabel(firstSectionEnd),
+                    firstSectionEndLabel);
 
                 tap(scenario, true);
                 long[] secondSectionStart = awaitState(
@@ -968,8 +985,9 @@ public final class OctavoNavigationTest {
                              secondSectionStart[
                                  OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT]);
                 String secondSectionLabel = progressLabel(scenario);
-                assertTrue(secondSectionLabel.startsWith(
-                    "Section 2 of 4 | Page 1 | "));
+                assertEquals(
+                    expectedPercentageProgressLabel(secondSectionStart),
+                    secondSectionLabel);
                 assertTrue(!visibleText(scenario).equals(firstSectionEndText));
                 Bitmap secondSectionPixels = copyFrame(surface(scenario));
                 assertNotNull(secondSectionPixels);
@@ -1002,9 +1020,10 @@ public final class OctavoNavigationTest {
                            || restored[OctavoSurfaceView.STATE_PAGE_INDEX]
                                == firstSectionPageCount);
                 String restoredLabel = progressLabel(scenario);
-                assertTrue(restoredLabel.startsWith("Section 1 of 4 | "));
-                assertTrue(!restoredLabel.contains("Page 0"));
-                assertTrue(!restoredLabel.equals(secondSectionLabel));
+                assertEquals(
+                    expectedPercentageProgressLabel(restored),
+                    restoredLabel);
+                assertEquals(firstSectionEndLabel, restoredLabel);
                 assertEquals(firstSectionEndText, visibleText(scenario));
                 assertNavigationHealthy(restored);
             } finally {

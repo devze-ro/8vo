@@ -20,6 +20,8 @@ $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
 $androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
 $androidJniPath = Join-Path $androidCppRoot "octavo_android_jni.c"
+$androidNavigationPath =
+  Join-Path $androidCppRoot "octavo_android_port8_navigation.inc"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/octavo.c") }
 if (!(Test-Path -LiteralPath $themeHeaderPath)) {
@@ -58,6 +60,9 @@ if (!(Test-Path -LiteralPath $androidCMakePath)) {
 if (!(Test-Path -LiteralPath $androidJniPath)) {
   $failures.Add("missing Android native host adapter")
 }
+if (!(Test-Path -LiteralPath $androidNavigationPath)) {
+  $failures.Add("missing Android structural-navigation adapter")
+}
 
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
@@ -75,6 +80,8 @@ if ($failures.Count -eq 0) {
   $androidCMake = [System.IO.File]::ReadAllText($androidCMakePath)
   $forbiddenGround0Variable = "LECTERN0_ZERO_" + "FOUNDATION_DIR"
   $androidJni = [System.IO.File]::ReadAllText($androidJniPath)
+  $androidNavigation =
+    [System.IO.File]::ReadAllText($androidNavigationPath)
   if ($dependencyCheck.IndexOf($forbiddenGround0Variable) -ge 0 -or
       $win32Build.IndexOf($forbiddenGround0Variable) -ge 0) {
     $failures.Add("dependency resolution must not use the forbidden legacy Ground0 environment variable")
@@ -149,15 +156,36 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("octavo must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 6') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 7') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 6 including author metadata")
+    $failures.Add("octavo must consume Reader0 API 7 including author metadata")
   }
   if ($app.IndexOf('.soft_wrapped = row->soft_wrapped') -lt 0 -or
       $app.IndexOf('octavo_reader_row_is_soft_wrapped') -ge 0 -or
       $androidJni.IndexOf('.soft_wrapped = row->soft_wrapped') -lt 0 -or
       $androidJni.IndexOf('octavo_android_reader_row_is_soft_wrapped') -ge 0) {
-    $failures.Add("Windows and Android must consume Reader0 API 6 authoritative soft-wrap provenance")
+    $failures.Add("Windows and Android must retain Reader0 authoritative soft-wrap provenance")
+  }
+  $reader0StructuralNavigationApis = @(
+    'epub_reader_location_summary_for_position',
+    'epub_reader_nav_point_destination_summary',
+    'epub_reader_current_nav_point_summary_for_position',
+    'epub_reader_navigate_to_percentage',
+    'epub_reader_navigate_to_current_spine_page',
+    'epub_reader_record_presented_navigation'
+  )
+  foreach ($api in $reader0StructuralNavigationApis) {
+    if ($androidNavigation.IndexOf($api) -lt 0) {
+      $failures.Add("Android structural navigation must consume Reader0 API 7 $api")
+    }
+  }
+  if ($androidNavigation.IndexOf('.suppress_history = 1') -lt 0 -or
+      $androidNavigation.IndexOf('epub_reader_history_begin') -lt 0 -or
+      $androidNavigation.IndexOf('epub_reader_history_finish') -lt 0 -or
+      $androidJni.IndexOf('semantic_navigation_waiting_for_present') -lt 0 -or
+      $androidJni.IndexOf('progress_display_waiting_for_present') -lt 0) {
+    $failures.Add(
+      "Android structural navigation must defer shared history and durable progress until presentation")
   }
 
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
@@ -390,7 +418,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('OctavoAdjacentWarmPageCap = 4') -lt 0 -or
       $app.IndexOf('adjacent_warm_direction') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 6 navigation preparation with bounded four-page host warming")
+    $failures.Add("octavo must consume Reader0 API 7 navigation preparation with bounded four-page host warming")
   }
   $timerResolutionBegins =
     [regex]::Matches($app, 'timeBeginPeriod\s*\(\s*1\s*\)').Count

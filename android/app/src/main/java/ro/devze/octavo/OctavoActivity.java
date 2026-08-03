@@ -36,6 +36,8 @@ public final class OctavoActivity extends Activity {
     private OctavoLibraryStore libraryStore;
     private OctavoAppearanceStore appearanceStore;
     private OctavoAppearance appearance;
+    private OctavoProgressStore progressStore;
+    private OctavoProgressDisplay progressDisplay;
     private LinearLayout libraryRoot;
     private FrameLayout systemBarRoot;
     private View statusBarScrim;
@@ -45,9 +47,12 @@ public final class OctavoActivity extends Activity {
     private LinearLayout readerBottomChrome;
     private Button readerLibrary;
     private Button readerSettings;
-    private TextView readerProgress;
+    private Button readerReturn;
+    private Button readerProgress;
     private FrameLayout appearanceOverlay;
     private OctavoAppearancePanel appearancePanel;
+    private FrameLayout navigationOverlay;
+    private OctavoNavigationPanel navigationPanel;
     private TextView failureBanner;
     private View readerEntryCover;
     private int readerEntryCoverGeneration;
@@ -60,11 +65,26 @@ public final class OctavoActivity extends Activity {
     private boolean chromeVisible;
     private String lastOpenError;
     private String deferredAppearanceFailure;
+    private String deferredProgressFailure;
     private OctavoAppearance pendingAppearancePersistence;
     private boolean appearancePersistencePosted;
+    private OctavoProgressDisplay pendingProgressPersistence;
+    private boolean progressPersistencePosted;
+    private boolean navigationSnapshotRefreshPosted;
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
+    };
+    private final Runnable persistProgress = () -> {
+        progressPersistencePosted = false;
+        flushProgressPersistence();
+    };
+    private final Runnable refreshNavigationSnapshot = () -> {
+        navigationSnapshotRefreshPosted = false;
+        if (navigationPanel == null || surfaceView == null) {
+            return;
+        }
+        navigationPanel.updateSnapshot(surfaceView.navigationSnapshot());
     };
 
     @Override
@@ -74,6 +94,10 @@ public final class OctavoActivity extends Activity {
         appearance = appearanceStore.load();
         boolean appearanceResetAfterCorruption =
             appearanceStore.recoveredFromCorruption();
+        progressStore = new OctavoProgressStore(this);
+        progressDisplay = progressStore.load();
+        boolean progressResetAfterCorruption =
+            progressStore.recoveredFromCorruption();
         chromeVisible = savedInstanceState != null
             && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
@@ -93,6 +117,10 @@ public final class OctavoActivity extends Activity {
             showOpenFailure(
                 "Reader appearance was reset because its saved settings were invalid");
         }
+        if (progressResetAfterCorruption) {
+            showOpenFailure(
+                "Reader progress display was reset because its saved setting was invalid");
+        }
     }
 
     @Override
@@ -109,6 +137,10 @@ public final class OctavoActivity extends Activity {
         super.onConfigurationChanged(configuration);
         applyWindowAppearance();
         updateAppearancePanelWidth();
+        updateNavigationPanelWidth();
+        if (navigationPanel != null) {
+            navigationPanel.applyAppearance(appearance);
+        }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
         }
@@ -118,6 +150,16 @@ public final class OctavoActivity extends Activity {
     public void onBackPressed() {
         if (appearancePanel != null) {
             closeAppearancePanel();
+        } else if (navigationPanel != null) {
+            closeNavigationPanel();
+        } else if (surfaceView != null
+                   && surfaceView.hasNavigationPending()) {
+            // A destination remains provisional until its frame is posted.
+            // Back consumes this event instead of exposing provisional state.
+            return;
+        } else if (surfaceView != null
+                   && surfaceView.canReturnInHistory()) {
+            surfaceView.requestHistoryNavigation(false);
         } else if (surfaceView != null) {
             showLibrary();
         } else {
@@ -137,6 +179,11 @@ public final class OctavoActivity extends Activity {
             deferredAppearanceFailure = null;
             showOpenFailure(message);
         }
+        if (deferredProgressFailure != null) {
+            String message = deferredProgressFailure;
+            deferredProgressFailure = null;
+            showOpenFailure(message);
+        }
     }
 
     @Override
@@ -146,12 +193,14 @@ public final class OctavoActivity extends Activity {
             surfaceView.hostPaused();
         }
         flushAppearancePersistence();
+        flushProgressPersistence();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
         flushAppearancePersistence();
+        flushProgressPersistence();
         releaseReader();
         super.onDestroy();
     }
@@ -218,6 +267,7 @@ public final class OctavoActivity extends Activity {
                     libraryStore,
                     session,
                     appearance,
+                    progressDisplay,
                     chromeVisible,
                     readerEntryStartedMillis,
                     createReaderListener());
@@ -318,19 +368,35 @@ public final class OctavoActivity extends Activity {
         bottom.setBackgroundColor(tokens.chromeSurface);
         bottom.setElevation(dp(2));
 
+        Button returnControl = createThemedButton(
+            getString(R.string.navigation_return),
+            tokens.buttonSurface,
+            tokens.chromeText);
+        returnControl.setId(R.id.octavo_reader_return);
+        returnControl.setContentDescription(
+            "Return to the previous reading position");
+        returnControl.setOnClickListener(view -> {
+            if (surfaceView != null) {
+                surfaceView.requestHistoryNavigation(false);
+            }
+        });
+        bottom.addView(returnControl, chromeButtonLayout());
 
-        TextView progress = new TextView(this);
+        Button progress = createThemedButton(
+            readerProgressLabel(replacement),
+            tokens.buttonSurface,
+            tokens.chromeText);
         progress.setId(R.id.octavo_reader_progress);
-        progress.setText(replacement.progressLabelForTesting());
-        progress.setContentDescription(progress.getText());
+        updateProgressControlLabel(progress, progress.getText());
         progress.setTextSize(14);
-        progress.setTextColor(tokens.chromeText);
+        progress.setSingleLine(true);
+        progress.setEllipsize(TextUtils.TruncateAt.END);
         progress.setGravity(Gravity.CENTER);
         progress.setPadding(dp(8), 0, dp(8), 0);
         progress.setImportantForAccessibility(
             View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        progress.setOnClickListener(view -> openNavigationPanel());
         bottom.addView(progress, weightedLayout());
-
 
         FrameLayout.LayoutParams bottomLayout =
             new FrameLayout.LayoutParams(
@@ -345,20 +411,33 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         library.setAccessibilityTraversalBefore(settings.getId());
         settings.setAccessibilityTraversalBefore(replacement.getId());
-        replacement.setAccessibilityTraversalBefore(progress.getId());
+        replacement.setAccessibilityTraversalBefore(returnControl.getId());
+        returnControl.setAccessibilityTraversalBefore(progress.getId());
+        progress.setAccessibilityTraversalBefore(library.getId());
         library.setNextFocusForwardId(settings.getId());
         settings.setNextFocusForwardId(replacement.getId());
-        replacement.setNextFocusForwardId(library.getId());
+        replacement.setNextFocusForwardId(returnControl.getId());
+        returnControl.setNextFocusForwardId(progress.getId());
+        progress.setNextFocusForwardId(library.getId());
         library.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, null, settings));
         settings.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, library, replacement));
+        returnControl.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, replacement, progress));
+        progress.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event,
+                returnControl.isShown() ? returnControl : replacement,
+                library));
         readerTopChrome = top;
         readerBottomChrome = bottom;
         readerLibrary = library;
         readerSettings = settings;
+        readerReturn = returnControl;
         readerProgress = progress;
         updateReaderNavigationAvailability(replacement);
         setChromeViewsVisible(chromeVisible, false);
@@ -510,10 +589,49 @@ public final class OctavoActivity extends Activity {
                 }
                 finishReaderEntryCover();
                 if (readerProgress != null && label != null) {
-                    readerProgress.setText(label);
-                    readerProgress.setContentDescription(label);
+                    updateProgressControlLabel(readerProgress, label);
                 }
                 updateReaderNavigationAvailability(surfaceView);
+                scheduleNavigationSnapshotRefresh();
+            }
+
+            @Override
+            public void onNavigationStateChanged() {
+                updateReaderNavigationAvailability(surfaceView);
+                scheduleNavigationSnapshotRefresh();
+            }
+
+            @Override
+            public void onStructuralNavigationPresented(long generation) {
+                updateReaderNavigationAvailability(surfaceView);
+                if (navigationPanel != null) {
+                    closeNavigationPanel();
+                }
+            }
+
+            @Override
+            public void onProgressDisplayPresented(
+                OctavoProgressDisplay presented,
+                long generation) {
+                if (presented == null) {
+                    return;
+                }
+                progressDisplay = presented;
+                if (readerProgress != null && surfaceView != null) {
+                    updateProgressControlLabel(
+                        readerProgress, readerProgressLabel(surfaceView));
+                }
+                if (navigationPanel != null) {
+                    navigationPanel.updateProgressDisplay(presented);
+                }
+                persistPresentedProgress(presented);
+                updateReaderNavigationAvailability(surfaceView);
+                scheduleNavigationSnapshotRefresh();
+            }
+
+            @Override
+            public void onNavigationRequestFailure(String message) {
+                reportNavigationRequestFailure(message);
             }
         };
     }
@@ -522,12 +640,104 @@ public final class OctavoActivity extends Activity {
         if (view == null) {
             return;
         }
+        boolean pending = view.hasNavigationPending();
+        boolean canReturn = !pending && view.canReturnInHistory();
+        if (readerReturn != null) {
+            boolean returnHadFocus = readerReturn.hasFocus()
+                || readerReturn.isAccessibilityFocused();
+            if (!canReturn && returnHadFocus && view.isShown()) {
+                view.requestFocus(View.FOCUS_FORWARD);
+                view.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+            }
+            readerReturn.setEnabled(canReturn);
+            readerReturn.setVisibility(
+                canReturn ? View.VISIBLE : View.INVISIBLE);
+            readerReturn.setImportantForAccessibility(
+                canReturn
+                    ? View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                    : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        if (readerProgress != null) {
+            readerProgress.setEnabled(!pending);
+        }
         int libraryId = readerLibrary == null
             ? View.NO_ID : readerLibrary.getId();
-        view.setNextFocusForwardId(libraryId);
+        int progressId = readerProgress == null
+            ? libraryId : readerProgress.getId();
+        int afterReaderId = canReturn && readerReturn != null
+            ? readerReturn.getId() : progressId;
+        view.setAccessibilityTraversalBefore(afterReaderId);
+        view.setNextFocusForwardId(afterReaderId);
         view.setKeyboardBoundaryFocusIds(
             readerSettings == null ? View.NO_ID : readerSettings.getId(),
-            libraryId);
+            afterReaderId);
+        if (readerReturn != null) {
+            readerReturn.setAccessibilityTraversalBefore(progressId);
+            readerReturn.setNextFocusForwardId(progressId);
+        }
+        if (readerProgress != null) {
+            readerProgress.setAccessibilityTraversalBefore(libraryId);
+            readerProgress.setNextFocusForwardId(libraryId);
+        }
+    }
+
+    private String readerProgressLabel(OctavoSurfaceView view) {
+        String label = view == null ? null : view.progressLabelForTesting();
+        if (label == null || label.trim().isEmpty()) {
+            OctavoProgressDisplay fallback = progressDisplay == null
+                ? OctavoProgressDisplay.defaults() : progressDisplay;
+            return fallback.label();
+        }
+        return label;
+    }
+
+    private void updateProgressControlLabel(Button control,
+                                            CharSequence label) {
+        if (control == null) {
+            return;
+        }
+        String visible = label == null ? "" : label.toString().trim();
+        if (visible.isEmpty()) {
+            OctavoProgressDisplay fallback = progressDisplay == null
+                ? OctavoProgressDisplay.defaults() : progressDisplay;
+            visible = fallback.label();
+        }
+        control.setText(visible);
+        control.setContentDescription(
+            "Open reader navigation. " + visible);
+    }
+
+    private void scheduleNavigationSnapshotRefresh() {
+        if (navigationSnapshotRefreshPosted || navigationPanel == null
+            || surfaceView == null || readerRoot == null) {
+            return;
+        }
+        navigationSnapshotRefreshPosted = true;
+        readerRoot.postOnAnimation(refreshNavigationSnapshot);
+    }
+
+    private void cancelNavigationSnapshotRefresh() {
+        if (readerRoot != null) {
+            readerRoot.removeCallbacks(refreshNavigationSnapshot);
+        }
+        navigationSnapshotRefreshPosted = false;
+    }
+
+    private void reportNavigationRequestFailure(String message) {
+        String visible = message == null || message.trim().isEmpty()
+            ? "Unable to complete reader navigation" : message.trim();
+        OctavoNavigationPanel target = navigationPanel;
+        if (target != null) {
+            target.post(() -> {
+                if (navigationPanel == target) {
+                    target.showError(visible);
+                }
+            });
+        } else {
+            showOpenFailure(visible);
+        }
     }
 
     private static boolean moveReaderKeyboardFocus(
@@ -695,6 +905,46 @@ public final class OctavoActivity extends Activity {
         decor.postOnAnimation(persistAppearance);
     }
 
+    private void persistPresentedProgress(OctavoProgressDisplay presented) {
+        pendingProgressPersistence = presented;
+        if (progressPersistencePosted) {
+            return;
+        }
+        View decor = getWindow().getDecorView();
+        progressPersistencePosted = true;
+        decor.postOnAnimation(persistProgress);
+    }
+
+    private void flushProgressPersistence() {
+        if (progressPersistencePosted) {
+            getWindow().getDecorView().removeCallbacks(persistProgress);
+            progressPersistencePosted = false;
+        }
+        OctavoProgressDisplay candidate = pendingProgressPersistence;
+        pendingProgressPersistence = null;
+        if (candidate != null && !progressStore.save(candidate)) {
+            // Retain the latest presented choice for an explicit lifecycle or
+            // later presentation retry; never publish a fallback record.
+            pendingProgressPersistence = candidate;
+            reportProgressPersistenceFailure();
+        }
+    }
+
+    private void reportProgressPersistenceFailure() {
+        String message = "Progress display changed, but could not be saved";
+        lastOpenError = message;
+        if (activityResumed) {
+            OctavoNavigationPanel target = navigationPanel;
+            if (target != null) {
+                target.showError(message);
+            } else {
+                showOpenFailure(message);
+            }
+        } else {
+            deferredProgressFailure = message;
+        }
+    }
+
     private void flushAppearancePersistence() {
         if (appearancePersistencePosted) {
             getWindow().getDecorView().removeCallbacks(persistAppearance);
@@ -746,6 +996,7 @@ public final class OctavoActivity extends Activity {
         view.animate().cancel();
         view.setImportantForAccessibility(
             visible && appearancePanel == null
+                && navigationPanel == null
                 ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         int duration = readerChromeMotionDuration(animate);
@@ -804,6 +1055,12 @@ public final class OctavoActivity extends Activity {
         if (appearanceOverlay != null) {
             appearanceOverlay.setBackgroundColor(tokens.overlay);
         }
+        if (navigationOverlay != null) {
+            navigationOverlay.setBackgroundColor(tokens.overlay);
+        }
+        if (navigationPanel != null) {
+            navigationPanel.applyAppearance(appearance);
+        }
         if (failureBanner != null) {
             failureBanner.setTextColor(tokens.error);
             failureBanner.setBackgroundColor(tokens.dialogSurface);
@@ -832,10 +1089,168 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private void openNavigationPanel() {
+        if (readerRoot == null || surfaceView == null
+            || navigationPanel != null) {
+            return;
+        }
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        OctavoDesignTokens tokens =
+            OctavoDesignTokens.forAppearance(appearance);
+
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setId(R.id.octavo_navigation_overlay);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(4));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overlay.setBackgroundColor(tokens.overlay);
+        overlay.setOnClickListener(view -> closeNavigationPanel());
+
+        OctavoProgressDisplay presented =
+            surfaceView.presentedProgressDisplay();
+        if (presented == null) {
+            presented = progressDisplay;
+        }
+        OctavoNavigationPanel panel = new OctavoNavigationPanel(
+            this,
+            appearance,
+            presented,
+            new OctavoNavigationPanel.Listener() {
+                @Override
+                public void onDismiss() {
+                    closeNavigationPanel();
+                }
+
+                @Override
+                public void onContentsJump(int navIndex) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestContentsNavigation(navIndex),
+                        "Opening the selected section.");
+                }
+
+                @Override
+                public void onChapter(int oneBased) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestChapterNavigation(oneBased),
+                        "Opening chapter " + oneBased + ".");
+                }
+
+                @Override
+                public void onLocation(long location) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestLocationNavigation(location),
+                        "Opening location " + location + ".");
+                }
+
+                @Override
+                public void onPage(long oneBased) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestPageNavigation(oneBased),
+                        "Opening page " + oneBased + ".");
+                }
+
+                @Override
+                public void onPercentage(int percentage) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestPercentageNavigation(
+                                percentage),
+                        "Opening " + percentage + " percent.");
+                }
+
+                @Override
+                public void onHistory(boolean forward) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestHistoryNavigation(forward),
+                        forward
+                            ? "Moving forward."
+                            : "Returning to the previous reading position.");
+                }
+
+                @Override
+                public void onProgressDisplayRequested(
+                    OctavoProgressDisplay requested) {
+                    requestNavigation(
+                        surfaceView == null
+                            ? OctavoNative.NAVIGATION_UNAVAILABLE
+                            : surfaceView.requestProgressDisplay(requested),
+                        "Updating the reader progress display.");
+                }
+            });
+        panel.setClickable(true);
+        panel.setOnClickListener(view -> {
+        });
+
+        FrameLayout.LayoutParams panelLayout =
+            new FrameLayout.LayoutParams(
+                appearancePanelWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.END);
+        overlay.addView(panel, panelLayout);
+        readerRoot.addView(overlay, matchParentLayout());
+
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerTopChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerBottomChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        navigationOverlay = overlay;
+        navigationPanel = panel;
+        scheduleNavigationSnapshotRefresh();
+
+        int duration = tokens.standardMotionMs(appearance);
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            panel.setTranslationX(dp(24));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            panel.animate().translationX(0.0f)
+                .setDuration(duration).start();
+        }
+        panel.post(() -> {
+            if (navigationPanel != panel) {
+                return;
+            }
+            panel.requestFocus();
+            panel.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            panel.announceForAccessibility("Reader navigation opened");
+        });
+    }
+
+    private void requestNavigation(int result, String acceptedStatus) {
+        if (result > 0 && navigationPanel != null
+            && surfaceView != null) {
+            navigationPanel.showStatus(acceptedStatus);
+            navigationPanel.updateSnapshot(
+                surfaceView.navigationSnapshot());
+        }
+        updateReaderNavigationAvailability(surfaceView);
+    }
+
     private void openAppearancePanel() {
         if (readerRoot == null || surfaceView == null
             || appearancePanel != null) {
             return;
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -909,6 +1324,10 @@ public final class OctavoActivity extends Activity {
     }
 
     private void closeAppearancePanel() {
+        closeAppearancePanel(true);
+    }
+
+    private void closeAppearancePanel(boolean restoreFocus) {
         if (appearanceOverlay == null) {
             return;
         }
@@ -932,8 +1351,10 @@ public final class OctavoActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-            surfaceView.announceForAccessibility(
-                "Reading appearance closed");
+            if (restoreFocus) {
+                surfaceView.announceForAccessibility(
+                    "Reading appearance closed");
+            }
         }
         if (readerTopChrome != null) {
             readerTopChrome.setImportantForAccessibility(
@@ -943,7 +1364,8 @@ public final class OctavoActivity extends Activity {
             readerBottomChrome.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (focusReturn != null && focusReturn.isShown()) {
+        if (restoreFocus && focusReturn != null
+            && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
                 if (appearancePanel != null || !focusReturn.isShown()) {
@@ -954,6 +1376,59 @@ public final class OctavoActivity extends Activity {
                     null);
                 focusReturn.announceForAccessibility(
                     "Reader appearance closed");
+            });
+        }
+    }
+
+    private void closeNavigationPanel() {
+        closeNavigationPanel(true);
+    }
+
+    private void closeNavigationPanel(boolean restoreFocus) {
+        if (navigationOverlay == null) {
+            return;
+        }
+        View focusReturn = readerProgress != null
+            && readerProgress.isShown() && readerProgress.isEnabled()
+                ? readerProgress : surfaceView;
+        cancelNavigationSnapshotRefresh();
+        navigationOverlay.animate().cancel();
+        if (navigationPanel != null) {
+            navigationPanel.animate().cancel();
+        }
+        if (navigationOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)navigationOverlay.getParent())
+                .removeView(navigationOverlay);
+        }
+        navigationOverlay = null;
+        navigationPanel = null;
+        if (surfaceView != null) {
+            surfaceView.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            if (restoreFocus) {
+                surfaceView.announceForAccessibility(
+                    "Reader navigation closed");
+            }
+        }
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+            focusReturn.requestFocus();
+            focusReturn.post(() -> {
+                if (navigationPanel != null || !focusReturn.isShown()) {
+                    return;
+                }
+                focusReturn.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+                focusReturn.announceForAccessibility(
+                    "Reader navigation closed");
             });
         }
     }
@@ -1117,6 +1592,18 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private void updateNavigationPanelWidth() {
+        if (navigationPanel == null) {
+            return;
+        }
+        ViewGroup.LayoutParams current = navigationPanel.getLayoutParams();
+        int width = appearancePanelWidth();
+        if (current != null && current.width != width) {
+            current.width = width;
+            navigationPanel.setLayoutParams(current);
+        }
+    }
+
     private FrameLayout createSystemBarFrame(View content,
                                              int horizontalPadding,
                                              int contentBackground) {
@@ -1172,6 +1659,15 @@ public final class OctavoActivity extends Activity {
     }
 
     private void releaseReader() {
+        flushProgressPersistence();
+        cancelNavigationSnapshotRefresh();
+        if (navigationOverlay != null
+            && navigationOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)navigationOverlay.getParent())
+                .removeView(navigationOverlay);
+        }
+        navigationOverlay = null;
+        navigationPanel = null;
         cancelAppearanceTransition();
         cancelReaderEntryCover();
         if (surfaceView != null) {
@@ -1190,6 +1686,7 @@ public final class OctavoActivity extends Activity {
         readerBottomChrome = null;
         readerLibrary = null;
         readerSettings = null;
+        readerReturn = null;
         readerProgress = null;
         systemBarRoot = null;
         statusBarScrim = null;
@@ -1372,6 +1869,42 @@ public final class OctavoActivity extends Activity {
 
     void closeAppearancePanelForTesting() {
         closeAppearancePanel();
+    }
+
+    OctavoNavigationPanel navigationPanelForTesting() {
+        return navigationPanel;
+    }
+
+    void openNavigationPanelForTesting() {
+        openNavigationPanel();
+    }
+
+    void closeNavigationPanelForTesting() {
+        closeNavigationPanel();
+    }
+
+    Button readerProgressForTesting() {
+        return readerProgress;
+    }
+
+    Button readerReturnForTesting() {
+        return readerReturn;
+    }
+
+    OctavoProgressDisplay progressDisplayForTesting() {
+        return progressDisplay;
+    }
+
+    OctavoProgressStore progressStoreForTesting() {
+        return progressStore;
+    }
+
+    void flushProgressPersistenceForTesting() {
+        flushProgressPersistence();
+    }
+
+    void queuePresentedProgressPersistenceForTesting() {
+        persistPresentedProgress(progressDisplay);
     }
 
     void requestAppearanceForTesting(OctavoAppearance requested) {

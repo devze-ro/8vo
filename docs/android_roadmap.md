@@ -1,11 +1,14 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01. The current Port 7 refinement is
-implemented on its milestone branch against Reader0 API 6. Reader0, companion
-re10, exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
-accessibility, crash, and byte-exact backup/restore gates passed. Human-review
-gates remain pending. Later numbering and boundaries may change as evidence is
-collected.
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-03. Android
+Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
+exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
+accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
+closure. Port 8 structural navigation is now a locally qualified emulator
+candidate against Reader0 `0.7.0-dev` / API 7. Reader0, dual-ABI Android,
+API 36 emulator, strict Windows 8vo, and isolated re10 gates pass; physical
+iQOO and hands-on real-book acceptance remain pending. Later numbering and
+boundaries may change as evidence is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -14,7 +17,7 @@ quality until a final polish phase.
 
 ## Accepted foundation and current candidate
 
-Ports 0-6 establish the infrastructure on which the product can safely grow:
+Ports 0-7 establish the infrastructure on which the product can safely grow:
 
 - exact shared-source Android build and native application ownership;
 - lifecycle-, inset-, surface-, recreation-, and presentation-safe rendering;
@@ -135,11 +138,12 @@ an implementation claim.
   for themes, preference extremes, insets, rotation, recreation, and
   compact/large viewports.
 
-Implementation and objective closure are present. Reader0, companion re10,
+Port 7 implementation and objective closure are accepted. Reader0, companion re10,
 exact 8vo guard/build, 36/36 API 36 and iQOO matrices, ProcessRestart, 130%
 accessibility, crash, and byte-exact backup/restore gates passed. Every completed
-33-test API 6 run and all earlier records are historical. Comfort and hands-on
-accessibility review remain pending.
+33-test API 6 run and all earlier records are historical. Broader comfort and
+hands-on accessibility review remain product follow-up rather than Port 7
+acceptance evidence.
 
 ### Deliberately out of Port 7
 
@@ -202,7 +206,7 @@ dependency guards and dual-ABI debug build. On the API 36 x86_64 emulator, its
 authoritative ordered suite passed 33/33 with zero failures, errors, or skips in
 138.917 seconds of XML test time: accessibility 1, appearance store 9,
 appearance 12, bootstrap 1, library 5, and navigation 5. These results are
-historical evidence, not acceptance of the current API 6 candidate.
+historical evidence and did not accept the later final Port 7 API 6 source.
 
 The API 5 emulator suite exercised its then-current deterministic migration
 cases. A later audit superseded the claim that the ignored phone backup itself
@@ -228,20 +232,32 @@ Paper/Dusk transition evidence are historical. Its iQOO matrix passed 33/33 in
 104.855 seconds, and its restart, 130% system-text, crash, visual, swipe, reopen,
 and timing evidence also passed. Its first open was 140ms, median controlled
 warm reopen was 121ms, and focused reopen was 102ms. These results do not accept
-the current API 6 candidate. The older borderless/performance 27/27 and
+the later final Port 7 API 6 source. The older borderless/performance 27/27 and
 411ms/220ms results remain a separate superseded record.
 
-The current API 6 candidate's objective gates pass. It still requires audible
-TalkBack, hands-on alternate-input and reduced-motion review, extended Paper,
-Dusk, Warm dark, and OLED reading, and subjective dark-room comfort review.
-Port 7 is not yet accepted.
+Port 7 was accepted, pushed, and merged after the final API 6 gates and manual
+reader-quality review. Audible TalkBack, broader alternate-input/reduced-motion
+coverage, extended theme reading, and subjective dark-room comfort remain
+product follow-up, not evidence transferred to the unvalidated Port 8 candidate.
 
-## Candidate sequence after Port 7 acceptance
+## Android Port 8 current milestone
 
 These are capability slices, not frozen port numbers. Before beginning each
 one, convert its relevant parity rows into a bounded milestone contract.
 
 ### Structural navigation
+
+The implementation candidate on `android/port8-structural-navigation` follows
+the bounded [Port 8 contract](android_port8.md). Reader0 API 7 owns EPUB
+structural interpretation and canonical destinations. 8vo owns the calm Android
+surfaces and a presentation transaction that prevents an unpresented jump,
+Return/Forward move, durable reading position, or progress-display choice from
+being committed. History is bounded and session-scoped; only the current
+successfully presented book position and global progress choice are durable.
+The 56/56 API 36 matrix, process restart, 130% text/reduced-animation pass,
+crash review, strict Windows/public smokes, Reader0 validation, and isolated
+re10 qualification are green. Physical iQOO and hands-on real-book navigation
+remain pending, so no final Port 8 acceptance is claimed.
 
 - hierarchical table of contents with current-section state;
 - go-to page/location/percentage and chapter navigation;

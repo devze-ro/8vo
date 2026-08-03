@@ -11,6 +11,8 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeProvider;
 
+import java.util.Arrays;
+
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
     interface Listener {
         void onChromeVisibilityChanged(boolean visible);
@@ -22,6 +24,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             boolean appearanceStillAwaiting);
         void onAppearanceRequestsSettled(OctavoAppearance appearance);
         void onReaderPresentationChanged(String progressLabel);
+        void onNavigationStateChanged();
+        void onStructuralNavigationPresented(long generation);
+        void onProgressDisplayPresented(OctavoProgressDisplay display,
+                                        long generation);
+        void onNavigationRequestFailure(String message);
     }
 
     private static final long APPEARANCE_COALESCE_MILLIS = 90;
@@ -129,6 +136,17 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_FIRST_FRAME_ELAPSED_MILLIS = 94;
     static final int STATE_TYPOGRAPHY_MISSING_GLYPH_COUNT = 95;
     static final int STATE_FIELD_COUNT = 96;
+    static final int NAVIGATION_STATE_VERSION = 0;
+    static final int NAVIGATION_STATE_PENDING = 1;
+    static final int NAVIGATION_STATE_SEMANTIC_GENERATION = 2;
+    static final int NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION = 3;
+    static final int NAVIGATION_STATE_HISTORY_BACK_COUNT = 4;
+    static final int NAVIGATION_STATE_HISTORY_FORWARD_COUNT = 5;
+    static final int NAVIGATION_STATE_PROGRESS_GENERATION = 6;
+    static final int NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION = 7;
+    static final int NAVIGATION_STATE_PROGRESS_REQUESTED_MODE = 8;
+    static final int NAVIGATION_STATE_PROGRESS_PRESENTED_MODE = 9;
+    static final int NAVIGATION_STATE_FIELD_COUNT = 10;
 
     private long nativeHandle;
     private boolean hostResumed;
@@ -161,6 +179,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean gestureCancelled;
     private boolean chromeVisible;
     private long lastNotifiedFrameCount;
+    private long[] cachedNavigationState;
+    private long lastNotifiedSemanticNavigationGeneration;
+    private long lastNotifiedProgressDisplayGeneration;
+    private OctavoProgressDisplay presentedProgressDisplay;
     private int systemInsetLeft;
     private int systemInsetTop;
     private int systemInsetRight;
@@ -219,10 +241,46 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
     }
 
+    private void initializeProgressDisplay() {
+        int result = OctavoNative.setProgressDisplayMode(
+            nativeHandle, presentedProgressDisplay.nativeId());
+        long[] state = OctavoNative.navigationState(nativeHandle);
+        OctavoProgressDisplay nativePresented =
+            validNavigationState(state)
+                ? OctavoProgressDisplay.fromNativeId(
+                    (int)state[
+                        NAVIGATION_STATE_PROGRESS_PRESENTED_MODE])
+                : null;
+        boolean initialized =
+            result > 0
+            && nativePresented == presentedProgressDisplay
+            && state[NAVIGATION_STATE_PROGRESS_REQUESTED_MODE]
+                == presentedProgressDisplay.nativeId()
+            && state[NAVIGATION_STATE_PROGRESS_GENERATION]
+                == state[
+                    NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION];
+        if (!initialized) {
+            OctavoNative.destroy(nativeHandle);
+            nativeHandle = 0;
+            throw new IllegalStateException(
+                "Unable to initialize the Port 8 progress display");
+        }
+        cachedNavigationState = Arrays.copyOf(
+            state, NAVIGATION_STATE_FIELD_COUNT);
+        lastNotifiedSemanticNavigationGeneration =
+            state[
+                NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION];
+        lastNotifiedProgressDisplayGeneration =
+            state[
+                NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION];
+        presentedProgressDisplay = nativePresented;
+    }
+
     OctavoSurfaceView(Context context,
                       OctavoLibraryStore libraryStore,
                       OctavoLibraryStore.Session session,
                       OctavoAppearance appearance,
+                      OctavoProgressDisplay progressDisplay,
                       boolean chromeVisible,
                       long readerEntryStartedMillis,
                       Listener listener) {
@@ -236,6 +294,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         book = session.book;
         presentedAppearance = appearance == null
             ? OctavoAppearance.defaults() : appearance;
+        presentedProgressDisplay = progressDisplay == null
+            ? OctavoProgressDisplay.defaults() : progressDisplay;
         this.chromeVisible = chromeVisible;
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(presentedAppearance);
@@ -258,6 +318,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             throw new IllegalStateException(
                 "Unable to create the 8vo native application state");
         }
+        initializeProgressDisplay();
 
         setId(R.id.octavo_surface);
         // Surface pixels live in a separate compositor layer. An opaque View
@@ -328,6 +389,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             capturePresentedPosition();
             flushPresentedPosition();
             OctavoNative.surfaceDestroyed(nativeHandle);
+            refreshNavigationState(true);
             removeCallbacks(presentPage);
             removeCallbacks(warmLocationCache);
             removeCallbacks(finishChromeCompositionTask);
@@ -427,6 +489,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         int result = OctavoNative.touch(
             nativeHandle, action, x, y, eventTimeMillis);
         if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
+            refreshNavigationState(true);
             requestNativePresentation();
         }
         if ((result & OctavoNative.TOUCH_CHROME_REQUESTED) != 0) {
@@ -461,6 +524,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
         int result = OctavoNative.movePage(nativeHandle, direction);
         if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
+            refreshNavigationState(true);
             requestNativePresentation();
         }
         return (result & OctavoNative.TOUCH_HANDLED) != 0;
@@ -621,6 +685,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     private void requestPendingNativePresentation() {
+        refreshNavigationState(true);
         long[] state = OctavoNative.state(nativeHandle);
         if (validState(state)
             && state[STATE_RESUMED] != 0
@@ -637,6 +702,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         int result =
             OctavoNative.accessibilityMovePage(nativeHandle, direction);
         if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
+            refreshNavigationState(true);
             requestNativePresentation();
         }
         return (result & OctavoNative.TOUCH_HANDLED) != 0;
@@ -655,6 +721,157 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     int navigationAvailability() {
         return nativeHandle == 0
             ? 0 : OctavoNative.navigationAvailability(nativeHandle);
+    }
+
+    OctavoNavigation navigationSnapshot() {
+        if (nativeHandle == 0) {
+            notifyNavigationRequestFailure(
+                "Reader navigation is not available.");
+            return null;
+        }
+        long[] packet = OctavoNative.contentsSnapshot(nativeHandle);
+        if (packet == null || packet.length < OctavoNavigation.HEADER_COUNT
+            || packet[0] != OctavoNavigation.VERSION
+            || packet[1] != OctavoNavigation.HEADER_COUNT
+            || packet[2] != OctavoNavigation.ROW_STRIDE
+            || packet[4] < 0
+            || packet[4] > OctavoNavigation.MAX_ROWS
+            || packet.length != OctavoNavigation.HEADER_COUNT
+                + packet[4] * OctavoNavigation.ROW_STRIDE) {
+            notifyNavigationRequestFailure(
+                "Reader navigation information is unavailable.");
+            return null;
+        }
+
+        int rowCount = (int)packet[4];
+        String[] labels = new String[rowCount];
+        for (int row = 0; row < rowCount; ++row) {
+            labels[row] = OctavoNative.contentsLabel(nativeHandle, row);
+        }
+        OctavoNavigation snapshot =
+            OctavoNavigation.fromNativePacket(packet, labels);
+        if (snapshot == null) {
+            notifyNavigationRequestFailure(
+                "Reader navigation information is invalid.");
+        }
+        return snapshot;
+    }
+
+    int requestContentsNavigation(int navIndex) {
+        if (nativeHandle == 0 || navIndex < 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.navigateToContents(nativeHandle, navIndex));
+    }
+
+    int requestChapterNavigation(long oneBasedChapter) {
+        if (nativeHandle == 0 || oneBasedChapter <= 0
+            || oneBasedChapter > Integer.MAX_VALUE) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return requestContentsNavigation((int)oneBasedChapter - 1);
+    }
+
+    int requestLocationNavigation(long oneBasedLocation) {
+        if (nativeHandle == 0 || oneBasedLocation <= 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.navigateToLocation(
+                nativeHandle, oneBasedLocation));
+    }
+
+    int requestPageNavigation(long oneBasedPage) {
+        if (nativeHandle == 0 || oneBasedPage <= 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.navigateToPage(nativeHandle, oneBasedPage));
+    }
+
+    int requestPercentageNavigation(int percent) {
+        if (nativeHandle == 0 || percent < 0 || percent > 100) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.navigateToPercent(nativeHandle, percent));
+    }
+
+    int requestHistoryNavigation(boolean forward) {
+        if (nativeHandle == 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.moveHistory(nativeHandle, forward));
+    }
+
+    int requestProgressDisplay(OctavoProgressDisplay display) {
+        if (nativeHandle == 0 || display == null) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.setProgressDisplayMode(
+                nativeHandle, display.nativeId()));
+    }
+
+    boolean hasNavigationPending() {
+        return validNavigationState(cachedNavigationState)
+            && cachedNavigationState[NAVIGATION_STATE_PENDING] != 0;
+    }
+
+    boolean canReturnInHistory() {
+        return validNavigationState(cachedNavigationState)
+            && cachedNavigationState[
+                NAVIGATION_STATE_HISTORY_BACK_COUNT] > 0;
+    }
+
+    boolean canMoveForwardInHistory() {
+        return validNavigationState(cachedNavigationState)
+            && cachedNavigationState[
+                NAVIGATION_STATE_HISTORY_FORWARD_COUNT] > 0;
+    }
+
+    OctavoProgressDisplay presentedProgressDisplay() {
+        return presentedProgressDisplay;
+    }
+
+    private int finishNavigationRequest(int result) {
+        refreshNavigationState(true);
+        if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+            resetPresentationRetries();
+            requestNativePresentation();
+        } else if (result < 0) {
+            notifyNavigationRequestFailure(
+                navigationFailureMessage(result));
+        }
+        return result;
+    }
+
+    private void notifyNavigationRequestFailure(String message) {
+        if (listener != null) {
+            listener.onNavigationRequestFailure(message);
+        }
+    }
+
+    private static String navigationFailureMessage(int result) {
+        if (result == OctavoNative.NAVIGATION_INVALID) {
+            return "That navigation destination is invalid.";
+        }
+        if (result == OctavoNative.NAVIGATION_UNAVAILABLE) {
+            return "That navigation destination is unavailable in this book.";
+        }
+        if (result == OctavoNative.NAVIGATION_BUSY) {
+            return "Reader navigation is waiting for the current page.";
+        }
+        return "Reader navigation could not complete that request.";
     }
 
     boolean hasPendingAppearanceRequest() {
@@ -736,16 +953,60 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private void notifyPresentationRetriesExhausted() {
         boolean appearanceStillAwaiting =
             nativeAppearanceAwaitingPresentation != null;
+        long[] navigation = refreshNavigationState(true);
+        boolean navigationStillAwaiting =
+            validNavigationState(navigation)
+            && navigation[NAVIGATION_STATE_PENDING] != 0
+            && (navigation[
+                    NAVIGATION_STATE_SEMANTIC_GENERATION]
+                    != navigation[
+                        NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]
+                || navigation[
+                    NAVIGATION_STATE_PROGRESS_GENERATION]
+                    != navigation[
+                        NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
+        int navigationCancellation = 0;
+        if (navigationStillAwaiting) {
+            navigationCancellation = nativeHandle == 0
+                ? -1
+                : OctavoNative.cancelPendingNavigation(nativeHandle);
+            refreshNavigationState(true);
+            if (navigationCancellation > 0) {
+                /*
+                 * Keep the exhausted retry gate raised. This schedules one
+                 * page-coloured recovery presentation; a second failure can
+                 * neither restart the retry loop nor publish a second
+                 * terminal callback.
+                 */
+                requestNativePresentation();
+            }
+        }
         if (!appearanceStillAwaiting) {
             removeCallbacks(applyRequestedAppearance);
             appearanceApplyPosted = false;
             requestedAppearance = null;
             forceAppearanceRequest = false;
         }
-        if (listener != null) {
+        boolean navigationOwnsFailure =
+            navigationStillAwaiting && !appearanceStillAwaiting;
+        if (listener != null && !navigationOwnsFailure) {
             listener.onPresentationRetriesExhausted(
                 appearanceStillAwaiting);
         }
+        if (navigationOwnsFailure) {
+            notifyNavigationRequestFailure(
+                navigationPresentationFailureMessage(
+                    navigationCancellation));
+        }
+    }
+
+    static String navigationPresentationFailureMessage(
+        int cancellationResult) {
+        return cancellationResult < 0
+            ? "Navigation failed and the last presented page could not "
+                + "be restored. Reopen the book."
+            : "Navigation was not committed because the page could not "
+                + "be presented.";
     }
 
     void requestAppearance(OctavoAppearance appearance) {
@@ -886,6 +1147,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (!validState(state)) {
             return;
         }
+        refreshNavigationState(true);
         reconcilePresentedAppearance(state);
         long frameCount = state[STATE_FRAME_COUNT];
         if (frameCount <= 0 || frameCount == lastNotifiedFrameCount) {
@@ -942,13 +1204,103 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return state != null && state.length == STATE_FIELD_COUNT;
     }
 
-    private static boolean presentationPending(long[] state) {
-        return validState(state)
-            && (state[STATE_PAGE_MOVE_PRESENTATION_PENDING] != 0
-                || state[STATE_REFLOW_PRESENTATION_PENDING] != 0
-                || state[STATE_HOST_PRESENTATION_PENDING] != 0
-                || state[STATE_APPEARANCE_GENERATION]
-                   != state[STATE_APPEARANCE_PRESENTED_GENERATION]);
+    private long[] refreshNavigationState(boolean notifyChange) {
+        if (nativeHandle == 0) {
+            return cachedNavigationState;
+        }
+        long[] updated = OctavoNative.navigationState(nativeHandle);
+        if (!validNavigationState(updated)) {
+            Log.e("8vo", "Reader returned an invalid Port 8 navigation state");
+            return cachedNavigationState;
+        }
+        boolean changed = !Arrays.equals(cachedNavigationState, updated);
+        cachedNavigationState = Arrays.copyOf(
+            updated, NAVIGATION_STATE_FIELD_COUNT);
+        if (changed && notifyChange && listener != null) {
+            listener.onNavigationStateChanged();
+        }
+        reconcilePresentedNavigation(cachedNavigationState);
+        return cachedNavigationState;
+    }
+
+    private void reconcilePresentedNavigation(long[] state) {
+        long semanticGeneration =
+            state[NAVIGATION_STATE_SEMANTIC_GENERATION];
+        long semanticPresented =
+            state[
+                NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION];
+        if (semanticGeneration == semanticPresented
+            && semanticPresented
+                > lastNotifiedSemanticNavigationGeneration) {
+            lastNotifiedSemanticNavigationGeneration =
+                semanticPresented;
+            if (listener != null) {
+                listener.onStructuralNavigationPresented(
+                    semanticPresented);
+            }
+        }
+
+        long progressGeneration =
+            state[NAVIGATION_STATE_PROGRESS_GENERATION];
+        long progressPresented =
+            state[
+                NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION];
+        if (progressGeneration == progressPresented
+            && progressPresented
+                > lastNotifiedProgressDisplayGeneration) {
+            OctavoProgressDisplay display =
+                OctavoProgressDisplay.fromNativeId(
+                    (int)state[
+                        NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]);
+            lastNotifiedProgressDisplayGeneration =
+                progressPresented;
+            presentedProgressDisplay = display;
+            if (listener != null) {
+                listener.onProgressDisplayPresented(
+                    display, progressPresented);
+            }
+        }
+    }
+
+    private static boolean validNavigationState(long[] state) {
+        if (state == null
+            || state.length != NAVIGATION_STATE_FIELD_COUNT
+            || state[NAVIGATION_STATE_VERSION] != 1
+            || state[NAVIGATION_STATE_PENDING] < 0
+            || state[NAVIGATION_STATE_PENDING] > 1
+            || state[NAVIGATION_STATE_SEMANTIC_GENERATION] < 0
+            || state[
+                NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION] < 0
+            || state[
+                NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]
+                > state[NAVIGATION_STATE_SEMANTIC_GENERATION]
+            || state[NAVIGATION_STATE_HISTORY_BACK_COUNT] < 0
+            || state[NAVIGATION_STATE_HISTORY_FORWARD_COUNT] < 0
+            || state[NAVIGATION_STATE_PROGRESS_GENERATION] < 0
+            || state[
+                NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION] < 0
+            || state[
+                NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]
+                > state[NAVIGATION_STATE_PROGRESS_GENERATION]) {
+            return false;
+        }
+        long requestedMode =
+            state[NAVIGATION_STATE_PROGRESS_REQUESTED_MODE];
+        long presentedMode =
+            state[NAVIGATION_STATE_PROGRESS_PRESENTED_MODE];
+        return requestedMode >= 0 && requestedMode <= 3
+            && presentedMode >= 0 && presentedMode <= 3;
+    }
+
+    private boolean presentationPending(long[] state) {
+        return (validState(state)
+                && (state[STATE_PAGE_MOVE_PRESENTATION_PENDING] != 0
+                    || state[STATE_REFLOW_PRESENTATION_PENDING] != 0
+                    || state[STATE_HOST_PRESENTATION_PENDING] != 0
+                    || state[STATE_APPEARANCE_GENERATION]
+                       != state[
+                           STATE_APPEARANCE_PRESENTED_GENERATION]))
+            || hasNavigationPending();
     }
 
     private void notifyAppearanceFailure() {
@@ -1039,12 +1391,25 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             locationWarmPosted = false;
             chromeCompositionTransitioning = false;
             OctavoNative.hostPaused(nativeHandle);
+            refreshNavigationState(true);
             hostResumed = false;
         }
     }
 
     long[] nativeStateForTesting() {
         return nativeHandle == 0 ? null : OctavoNative.state(nativeHandle);
+    }
+
+    long[] navigationStateForTesting() {
+        return cachedNavigationState == null
+            ? null
+            : Arrays.copyOf(
+                cachedNavigationState,
+                NAVIGATION_STATE_FIELD_COUNT);
+    }
+
+    OctavoNavigation navigationSnapshotForTesting() {
+        return navigationSnapshot();
     }
 
     long[] locationCacheStateForTesting() {
@@ -1172,6 +1537,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             setOnApplyWindowInsetsListener(null);
             OctavoNative.destroy(nativeHandle);
             nativeHandle = 0;
+            cachedNavigationState = null;
         }
     }
 }

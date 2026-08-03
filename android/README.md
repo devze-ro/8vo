@@ -1,10 +1,13 @@
 # 8vo Android
 
-This directory is the Android application root. Ports 0-6 are the accepted
-functional foundation. The Port 7 implementation candidate keeps the host
-explicit while adding global premium-reader appearance, semantic reflow,
-borderless host-composited chrome, first-frame coverage, and the custom-reader
-accessibility bridge:
+This directory is the Android application root. Ports 0-7 are accepted. Port 8
+is the locally qualified structural-navigation emulator candidate against
+Reader0 `0.7.0-dev` / public API 7. Reader0, dual-ABI Android, API 36
+emulator, strict Windows 8vo, and isolated re10 qualification pass; the
+physical-device and hands-on real-book stage remains pending. The candidate
+retains Port 7's premium appearance, semantic reflow, borderless host-composited
+chrome, first-frame coverage, and custom-reader accessibility bridge while
+adding a bounded Contents/Go-to/Return model:
 
 - `OctavoActivity` owns Android lifecycle, the library surface, and the
   `ACTION_OPEN_DOCUMENT` picker. Port 7 also keeps settings surfaces, system
@@ -63,11 +66,20 @@ accessibility bridge:
   Tab/Shift+Tab input through the named native/virtual chain, keeps progress
   read-only, and recovers directionally after an explicit focus clear without
   exposing the raw Surface or chrome containers as blank stops.
+- `OctavoNavigation` bounded-copies and validates the native structural snapshot.
+  `OctavoNavigationPanel` presents Contents and Go-to as an Android hierarchy
+  with current-section state, destination progress, input failures, history,
+  focus, and 48dp actions; it does not interpret EPUB data.
+- `OctavoProgressStore` owns a separate versioned, checksummed global progress-
+  display record. Same-directory synchronization and atomic replacement preserve
+  prior bytes on failure. The selected Chapter, Page, Location, or Percentage
+  mode becomes durable only after its matching frame is presented.
 - `OctavoNative` is the explicit Java/JNI boundary.
 - `octavo_android_port7_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once. The current Reader0 boundary is
-  `0.6.0-dev` / public API 6 at
-  `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`.
+  `0.7.0-dev` / public API 7; its exact local commit is recorded under
+  `vendor/reader0_dependency`. The historical Port 7 unity filename is retained
+  because it still compiles each public package exactly once.
 - `code/octavo_reader_justification.h` provides one allocation-free publisher
   row-spacing plan to the Windows and Android raster paths. Reader0 stores the
   authoritative `soft_wrapped` provenance in each canonical styled row: measured
@@ -88,23 +100,30 @@ accessibility bridge:
   host's swipe/keyboard/accessibility paths, gates every page/reflow/appearance
   generation on presentation, performs bounded sparse-codepoint lookup with
   missing-glyph diagnostics, and owns its `ANativeWindow`.
+  Port 8's included structural adapter consumes Reader0 API 7 destination,
+  location, percentage, meaningful-page, and bounded-history operations. A jump
+  or history move remains provisional until the expected target is contained in
+  a successfully posted frame; only then may history or the durable reading
+  position advance. History is bounded to the current session and is not
+  serialized.
 
 There is no process-global mutable application state. The Java view holds the
 native handle and destroys it when the Activity is destroyed.
 
 ## Product direction
 
-Port 6 remains the accepted functional library foundation. Port 7 implements
-the first premium appearance slice. Its current Reader0 API 6, companion re10,
+Port 7 is the accepted premium appearance foundation. Its Reader0 API 6,
+companion re10,
 exact 8vo guard/audit, clean dual-ABI Android build, strict Windows/public-smoke,
 API 36 emulator, physical iQOO, ProcessRestart, 130% accessibility, crash, and
 byte-exact backup/restore gates passed. The final current-source ordered matrix
 passed 36/36 on both targets: appearance store 9, appearance 15, navigation 5,
 library 5, accessibility 1, and bootstrap 1. The emulator took 510.019 seconds
 of instrumentation time and the iQOO took 108.467 seconds. Every 33-test API 6
-run remains historical evidence for an earlier binary. Audible TalkBack,
-hands-on alternate-input and reduced-motion review, extended Paper/Dusk/OLED
-reading, and subjective dark-room comfort remain pending.
+run remains historical evidence for an earlier binary. Port 8 adds structural
+navigation without treating the accepted Port 7 measurements as new validation;
+its dependency, build, emulator, accessibility, lifecycle, performance, and
+physical-device gates remain pending.
 Neither milestone is the end-state Android experience. The product target is
 a premium, local-first reader for user-owned
 books that reaches Kindle-class reading, navigation, search, annotation,
@@ -116,10 +135,11 @@ The public product contract is recorded in
 living capability inventory in
 [`../docs/android_feature_parity.md`](../docs/android_feature_parity.md), and
 the bounded delivery sequence in
-[`../docs/android_roadmap.md`](../docs/android_roadmap.md).
+[`../docs/android_roadmap.md`](../docs/android_roadmap.md). The current milestone
+contract is [`../docs/android_port8.md`](../docs/android_port8.md).
 
-The implemented Port 7 boundary, current objective closure, historical evidence,
-and pending human-review gates are recorded in
+The accepted Port 7 boundary, objective closure, historical evidence, and
+remaining broader product-review items are recorded in
 [`../docs/android_port7.md`](../docs/android_port7.md).
 
 ## Prerequisites
@@ -217,7 +237,25 @@ also verifies activation through the existing successful-presentation gate and
 the read-only progress stop. Bounded pixel evidence samples each theme and
 typography change and the tested dark-transition phases.
 
-The current source consumes Reader0 `0.6.0-dev` / public API 6 at
+### Port 8 validation status
+
+The current source consumes Reader0 `0.7.0-dev` / public API 7 at the exact
+commit recorded in `vendor/reader0_dependency`. Its exact guards and dual-ABI
+debug/test build pass. The API 36 x86_64 ordinary suite passed 56/56 in 146.291
+seconds; the separate confirmed-force-stop restart probe and a 15/15
+130%-system-text/disabled-animation pass also succeeded. Crash buffers were
+empty. A representative synthetic fresh restore was accepted in 169ms
+end-to-end with 129ms in native stages and zero missing glyphs.
+
+Reader0 strict validation passed. Strict Windows 8vo and all seven public
+smokes passed in 17.6 seconds. Isolated re10 strict product/qualification and
+`--document_engine_smoke` passed with four anchors, final spine 3, and hash
+`f3c13a55f0349720`. These are current-candidate results, not evidence
+inferred from Port 7. The physical iQOO matrix, audible TalkBack review, and
+hands-on private real-book navigation remain pending, so Port 8 is not yet
+accepted.
+
+The accepted Port 7 source consumed Reader0 `0.6.0-dev` / public API 6 at
 `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`. Reader0 and companion re10 at
 `5830f401750f7631131c4bc9c16d7235b88758a0` passed their final shared-consumer
 gates. Exact 8vo guards/audit, strict Windows, all seven public smokes, and a
@@ -289,7 +327,7 @@ seconds of XML time. Its separate restart and 130% system-text probes, crash-
 buffer review, private-book punctuation/verse/chrome/swipe/reopen pixels, warm
 reader-entry samples of 825, 566, 582, 563, and 595ms (median 582ms), and final
 529ms screen-record sample passed under their recorded limits. Those results
-are historical, not acceptance for the current API 6 candidate.
+are historical and did not accept the later final Port 7 API 6 source.
 
 That same earlier APK passed the selected iQOO six-class matrix
 33/33 in 104.855 seconds. Its restart, 130% system-text, crash-buffer,
@@ -300,15 +338,15 @@ measured 102ms. These physical results are also historical.
 
 The older borderless/performance binary's 27/27, 411ms ADB-tap, and native-only
 220ms results and the reserved-geometry iQOO 23/23 record remain separate
-superseded regression evidence. The current API 6 candidate still requires
-audible TalkBack, hands-on alternate-input and reduced-motion review, extended
-reading, and dark-room acceptance.
-Port 7 intentionally remains a bounded appearance foundation. Per-book
+superseded regression evidence. Port 7 intentionally remains a bounded
+appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-table of contents, search, selection, annotations, and synchronization remain
-deferred. See
-[`../docs/android_port7.md`](../docs/android_port7.md) for the current
-implementation and pending acceptance boundary, and
+search, selection, annotations, and synchronization remain deferred. Port 8
+adds structural navigation only; spatial previews and advanced scrubbing remain
+deferred. See [`../docs/android_port8.md`](../docs/android_port8.md) for the
+current implementation and pending acceptance boundary,
+[`../docs/android_port7.md`](../docs/android_port7.md) for the accepted appearance
+milestone, and
 [`../docs/android_port6.md`](../docs/android_port6.md) for the accepted
 library milestone.

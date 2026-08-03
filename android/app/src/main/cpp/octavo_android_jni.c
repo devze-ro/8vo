@@ -222,6 +222,31 @@ typedef struct OctavoAndroidApp
   int first_frame_timing_finished;
   uint64_t page_move_expected_byte_offset;
   uint32_t page_move_expected_spine_index;
+  uint64_t semantic_navigation_expected_byte_offset;
+  uint64_t semantic_navigation_lifecycle_generation;
+  uint64_t semantic_navigation_surface_generation;
+  uint64_t semantic_navigation_generation;
+  uint64_t semantic_navigation_presented_generation;
+  uint64_t semantic_navigation_request_count;
+  uint64_t semantic_navigation_presented_count;
+  uint64_t semantic_navigation_failure_count;
+  uint64_t semantic_navigation_gate_block_count;
+  uint32_t semantic_navigation_expected_spine_index;
+  uint32_t presented_history_back_count;
+  uint32_t presented_history_forward_count;
+  EpubReaderNavigationReason semantic_navigation_reason;
+  EpubReaderNavigationEntry semantic_navigation_origin;
+  EpubReaderNavigationEntry semantic_navigation_history_current;
+  EpubReaderNavigationEntry semantic_navigation_history_target;
+  int32_t semantic_navigation_kind;
+  int semantic_navigation_waiting_for_present;
+  int semantic_navigation_history_traversal;
+  int semantic_navigation_history_forward;
+  uint64_t progress_display_generation;
+  uint64_t progress_display_presented_generation;
+  int progress_display_mode;
+  int progress_display_presented_mode;
+  int progress_display_waiting_for_present;
   uint64_t touch_down_time_millis;
   float touch_down_x;
   float touch_down_y;
@@ -229,6 +254,14 @@ typedef struct OctavoAndroidApp
   int page_move_waiting_for_present;
   int touch_active;
 } OctavoAndroidApp;
+
+static B32 octavo_android_abort_structural_navigation(
+  OctavoAndroidApp *app);
+static S32 octavo_android_cancel_pending_navigation(
+  OctavoAndroidApp *app);
+static B32 octavo_android_commit_structural_navigation(
+  OctavoAndroidApp *app);
+static void octavo_android_format_progress_label(OctavoAndroidApp *app);
 
 static OctavoAndroidApp *
 octavo_android_from_handle(jlong handle)
@@ -547,6 +580,8 @@ octavo_android_presentation_pending(const OctavoAndroidApp *app)
 {
   return app &&
     (app->page_move_waiting_for_present ||
+     app->semantic_navigation_waiting_for_present ||
+     app->progress_display_waiting_for_present ||
      app->reflow_waiting_for_present ||
      app->appearance_waiting_for_present ||
      app->host_frame_waiting_for_present);
@@ -598,6 +633,57 @@ octavo_android_reader_view_text(const char *text)
     }
   }
   return result;
+}
+
+static jstring
+octavo_android_new_utf8_string(JNIEnv *environment, String8 text)
+{
+  if (!environment)
+  {
+    return 0;
+  }
+  if ((text.size > 0 && !text.str) || text.size > 1024u)
+  {
+    return (*environment)->NewStringUTF(environment, "");
+  }
+
+  jchar utf16[1025] = {0};
+  jsize written = 0;
+  for (U64 at = 0; at < text.size; )
+  {
+    BaseUnicodeDecode decode = base_unicode_utf8_decode(text, at);
+    if (!decode.valid || decode.advance == 0 ||
+        decode.advance > text.size - at)
+    {
+      return (*environment)->NewStringUTF(environment, "");
+    }
+    U32 scalar = decode.scalar;
+    if (scalar <= 0xffffu)
+    {
+      if ((scalar >= 0xd800u && scalar <= 0xdfffu) ||
+          written >= (jsize)ARRAY_COUNT(utf16))
+      {
+        return (*environment)->NewStringUTF(environment, "");
+      }
+      utf16[written++] = (jchar)scalar;
+    }
+    else if (scalar <= 0x10ffffu)
+    {
+      if (written + 2 > (jsize)ARRAY_COUNT(utf16))
+      {
+        return (*environment)->NewStringUTF(environment, "");
+      }
+      scalar -= 0x10000u;
+      utf16[written++] = (jchar)(0xd800u + (scalar >> 10));
+      utf16[written++] = (jchar)(0xdc00u + (scalar & 0x3ffu));
+    }
+    else
+    {
+      return (*environment)->NewStringUTF(environment, "");
+    }
+    at += decode.advance;
+  }
+  return (*environment)->NewString(environment, utf16, written);
 }
 
 static jstring
@@ -2030,13 +2116,17 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
       if (!app->reflow_waiting_for_present)
       {
         app->reflow_anchor_spine_index =
-          app->page_move_waiting_for_present ?
+          app->semantic_navigation_waiting_for_present ?
+            app->semantic_navigation_expected_spine_index :
+          (app->page_move_waiting_for_present ?
             app->page_move_expected_spine_index :
-            app->presented_anchor_spine_index;
+            app->presented_anchor_spine_index);
         app->reflow_anchor_byte_offset =
-          app->page_move_waiting_for_present ?
+          app->semantic_navigation_waiting_for_present ?
+            app->semantic_navigation_expected_byte_offset :
+          (app->page_move_waiting_for_present ?
             app->page_move_expected_byte_offset :
-            app->presented_anchor_byte_offset;
+            app->presented_anchor_byte_offset);
         app->reflow_waiting_for_present = 1;
         app->reflow_request_count += 1u;
       }
@@ -2144,44 +2234,7 @@ octavo_android_build_reader_view(OctavoAndroidApp *app)
     projection.progress.location_count = projection.progress.page_count;
   }
 
-  U32 section_index = app->reader_frame.spine_index + 1u;
-  U32 section_count = app->reader_frame.section_count;
-  U64 progress_percent = app->reader_frame.location.available ?
-    app->reader_frame.location.percent : 0u;
-  if (app->reader_frame.page_count > 0 &&
-      app->reader_frame.page_index > 0)
-  {
-    (void)snprintf(
-      app->progress_label,
-      sizeof(app->progress_label),
-      "Section %u of %u | Page %llu of %llu | %llu%%",
-      (unsigned)section_index,
-      (unsigned)section_count,
-      (unsigned long long)app->reader_frame.page_index,
-      (unsigned long long)app->reader_frame.page_count,
-      (unsigned long long)progress_percent);
-  }
-  else if (app->reader_frame.page_index > 0)
-  {
-    (void)snprintf(
-      app->progress_label,
-      sizeof(app->progress_label),
-      "Section %u of %u | Page %llu | %llu%%",
-      (unsigned)section_index,
-      (unsigned)section_count,
-      (unsigned long long)app->reader_frame.page_index,
-      (unsigned long long)progress_percent);
-  }
-  else
-  {
-    (void)snprintf(
-      app->progress_label,
-      sizeof(app->progress_label),
-      "Section %u of %u | %llu%%",
-      (unsigned)section_index,
-      (unsigned)section_count,
-      (unsigned long long)progress_percent);
-  }
+  octavo_android_format_progress_label(app);
   projection.progress.label =
     octavo_android_reader_view_text(app->progress_label);
   app->reader_view_projection = projection;
@@ -2346,6 +2399,26 @@ octavo_android_pending_frame_matches(OctavoAndroidApp *app)
       (unsigned long long)app->reader_frame.view_byte_offset);
     return 0;
   }
+  if (app->semantic_navigation_waiting_for_present)
+  {
+    U64 expected = app->semantic_navigation_expected_byte_offset;
+    if (!app->reader_frame.ready || !app->reader.has_current_page ||
+        app->reader_frame.spine_index !=
+          app->semantic_navigation_expected_spine_index ||
+        app->reader.current_page.first_byte > expected ||
+        app->reader.current_page.one_past_last_byte <= expected)
+    {
+      app->render_failure_count += 1u;
+      app->semantic_navigation_failure_count += 1u;
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Android Port 8 refused structural target %u:%llu",
+        (unsigned)app->semantic_navigation_expected_spine_index,
+        (unsigned long long)expected);
+      return 0;
+    }
+  }
   if (app->reflow_waiting_for_present)
   {
     U64 anchor = app->reflow_anchor_byte_offset;
@@ -2401,6 +2474,23 @@ octavo_android_present_frame(OctavoAndroidApp *app)
 {
   if (!app || !app->window || !app->resumed)
   {
+    return 0;
+  }
+  if (app->semantic_navigation_waiting_for_present &&
+      (app->semantic_navigation_lifecycle_generation !=
+         app->lifecycle_generation ||
+       app->semantic_navigation_surface_generation !=
+         app->surface_generation))
+  {
+    app->semantic_navigation_failure_count += 1u;
+    if (!octavo_android_abort_structural_navigation(app))
+    {
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Unable to restore the presented reader after a stale structural "
+        "navigation transaction");
+    }
     return 0;
   }
   int first_frame_timing = !app->first_frame_timing_finished;
@@ -2568,6 +2658,13 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     app->page_move_expected_byte_offset = 0;
     app->page_move_presented_count += 1u;
   }
+  if (app->semantic_navigation_waiting_for_present)
+  {
+    if (!octavo_android_commit_structural_navigation(app))
+    {
+      return 0;
+    }
+  }
   if (app->reflow_waiting_for_present)
   {
     U64 anchor = app->reflow_anchor_byte_offset;
@@ -2592,11 +2689,20 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       app->resume_byte_offset : app->reader_frame.view_byte_offset;
     app->presented_anchor_valid = 1;
   }
+  app->presented_history_back_count = app->reader.back_stack_count;
+  app->presented_history_forward_count = app->reader.forward_stack_count;
   if (app->appearance_waiting_for_present)
   {
     app->appearance_presented_generation =
       app->appearance_generation;
     app->appearance_waiting_for_present = 0;
+  }
+  if (app->progress_display_waiting_for_present)
+  {
+    app->progress_display_presented_mode = app->progress_display_mode;
+    app->progress_display_presented_generation =
+      app->progress_display_generation;
+    app->progress_display_waiting_for_present = 0;
   }
   app->presented_reader_view_theme = app->reader_view_theme;
   app->presented_reader_view_theme_valid = 1;
@@ -2754,6 +2860,10 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   app->resume_spine_index = (U32)resume_spine_index;
   app->resume_byte_offset = (U64)resume_byte_offset;
   app->chrome_visible = chrome_visible ? 1 : 0;
+  app->progress_display_mode = 3;
+  app->progress_display_presented_mode = 3;
+  app->progress_display_generation = 1u;
+  app->progress_display_presented_generation = 1u;
   app->appearance_generation = 1;
   app->appearance_waiting_for_present = 1;
   app->pagination_dirty = 1;
@@ -2898,6 +3008,7 @@ Java_ro_devze_octavo_OctavoNative_destroy(JNIEnv *environment,
   {
     return;
   }
+  (void)octavo_android_cancel_pending_navigation(app);
   if (app->window)
   {
     ANativeWindow_release(app->window);
@@ -2943,6 +3054,14 @@ Java_ro_devze_octavo_OctavoNative_hostPaused(JNIEnv *environment,
   {
     return;
   }
+  S32 cancellation = octavo_android_cancel_pending_navigation(app);
+  if (cancellation < 0)
+  {
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Unable to restore the presented reader before host pause");
+  }
   app->resumed = 0;
   app->pause_count += 1u;
   app->lifecycle_generation += 1u;
@@ -2986,6 +3105,17 @@ Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
   }
   if (app->window)
   {
+    S32 cancellation = octavo_android_cancel_pending_navigation(app);
+    if (cancellation < 0)
+    {
+      ANativeWindow_release(window);
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Unable to restore the presented reader before surface "
+        "replacement");
+      return JNI_FALSE;
+    }
     ANativeWindow_release(app->window);
   }
   app->window = window;
@@ -3039,6 +3169,14 @@ Java_ro_devze_octavo_OctavoNative_surfaceDestroyed(JNIEnv *environment,
   if (!app)
   {
     return;
+  }
+  S32 cancellation = octavo_android_cancel_pending_navigation(app);
+  if (cancellation < 0)
+  {
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Unable to restore the presented reader before surface destruction");
   }
   if (app->window)
   {
@@ -3173,6 +3311,24 @@ Java_ro_devze_octavo_OctavoNative_forceSurfaceAcquisitionFailuresForTesting(
   }
   app->forced_surface_acquisition_failures_for_testing = (int32_t)count;
   return JNI_TRUE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_ro_devze_octavo_OctavoNative_utf8RoundTripForTesting(
+  JNIEnv *environment,
+  jclass type)
+{
+  (void)type;
+  static U8 text_bytes[] =
+  {
+    0x52, 0xc3, 0xa9, 0x73, 0x75, 0x6d, 0xc3, 0xa9,
+    0x20, 0xe2, 0x80, 0x99, 0x20, 0xf0, 0x9f, 0x8c,
+    0x99,
+  };
+  String8 text = {0};
+  text.str = text_bytes;
+  text.size = ARRAY_COUNT(text_bytes);
+  return octavo_android_new_utf8_string(environment, text);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -3690,7 +3846,9 @@ Java_ro_devze_octavo_OctavoNative_progressLabel(JNIEnv *environment,
   (void)type;
   OctavoAndroidApp *app = octavo_android_from_handle(handle);
   return app ?
-    (*environment)->NewStringUTF(environment, app->progress_label) : 0;
+    octavo_android_new_utf8_string(
+      environment,
+      str8_from_cstr(app->progress_label)) : 0;
 }
 
 JNIEXPORT jint JNICALL
@@ -3795,3 +3953,6 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
   }
   return touch_result;
 }
+
+#include "octavo_android_port8_navigation.inc"
+#include "octavo_android_port8_navigation_state.inc"

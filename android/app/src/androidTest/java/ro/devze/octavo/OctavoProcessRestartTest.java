@@ -1,8 +1,10 @@
 package ro.devze.octavo;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -28,30 +30,32 @@ import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Two independently invokable halves of the Port 7 process-restart probe.
+ * Two independently invokable halves of the Port 8 process-restart probe.
  *
  * The ordinary connected suite excludes this class.
- * scripts/android_port7_process_restart.ps1 runs
+ * scripts/android_port7_process_restart.ps1 remains the compatible driver and runs
  * {@link #seedDurableReaderState()}, force-stops the target application
  * outside instrumentation, confirms that its process is gone, and then runs
  * {@link #verifyDurableReaderStateAfterRestart()}. Keeping the process
  * boundary outside this class prevents a killed instrumentation process from
- * reporting an ambiguous result.
+ * reporting an ambiguous result. The historical Port 7 wrapper remains a
+ * compatible entry point for the same two-method contract.
  */
 @RunWith(AndroidJUnit4.class)
 @ExternalProcessRestartProbe
 public final class OctavoProcessRestartTest {
-    private static final int EVIDENCE_MAGIC = 0x4F375052; // "O7PR"
-    private static final int EVIDENCE_VERSION = 1;
+    private static final int EVIDENCE_MAGIC = 0x4F385052; // "O8PR"
+    private static final int EVIDENCE_VERSION = 2;
     private static final int EVIDENCE_FILE_CAP = 512;
-    private static final String EVIDENCE_DIRECTORY = "port7";
+    private static final String EVIDENCE_DIRECTORY = "port8";
     private static final String EVIDENCE_FILE =
-        "process_restart_expected.v1";
+        "process_restart_expected.v2";
     private static final String EVIDENCE_TEMPORARY_FILE =
-        "process_restart_expected.v1.tmp";
+        "process_restart_expected.v2.tmp";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -59,18 +63,27 @@ public final class OctavoProcessRestartTest {
 
     private static final class ExpectedState {
         final String bookKey;
+        final long originSpineIndex;
+        final long originByteOffset;
         final long spineIndex;
         final long byteOffset;
         final OctavoAppearance appearance;
+        final OctavoProgressDisplay progressDisplay;
 
         ExpectedState(String bookKey,
+                      long originSpineIndex,
+                      long originByteOffset,
                       long spineIndex,
                       long byteOffset,
-                      OctavoAppearance appearance) {
+                      OctavoAppearance appearance,
+                      OctavoProgressDisplay progressDisplay) {
             this.bookKey = bookKey;
+            this.originSpineIndex = originSpineIndex;
+            this.originByteOffset = originByteOffset;
             this.spineIndex = spineIndex;
             this.byteOffset = byteOffset;
             this.appearance = appearance;
+            this.progressDisplay = progressDisplay;
         }
     }
 
@@ -79,9 +92,11 @@ public final class OctavoProcessRestartTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoProgressStore.clearForTesting(context);
         clearEvidence(context);
 
         OctavoAppearance expectedAppearance = extremeAppearance();
+        OctavoProgressDisplay expectedProgress = OctavoProgressDisplay.LOCATION;
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
             scenario.onActivity(activity -> {
@@ -112,32 +127,118 @@ public final class OctavoProcessRestartTest {
             assertHealthyAndSettled(extreme);
             assertHostAppearance(scenario, expectedAppearance);
 
-            long moveSuccessBefore =
-                extreme[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT];
-            scenario.onActivity(activity -> {
-                OctavoSurfaceView view = surface(activity);
-                assertTrue(view.movePageForAccessibility(1));
-            });
-            long[] pageTwo = awaitState(
+            awaitLocationReady(scenario);
+            long[] origin = readingPosition(scenario);
+            assertValidPosition(origin);
+            assertAnchorInsidePage(extreme, origin[1], origin[2]);
+
+            long[] navigationBefore = navigationState(scenario);
+            assertNotNull(navigationBefore);
+            assertEquals(
+                0,
+                navigationBefore[
+                    OctavoSurfaceView.NAVIGATION_STATE_PENDING]);
+            assertEquals(
+                navigationBefore[
+                    OctavoSurfaceView.NAVIGATION_STATE_SEMANTIC_GENERATION],
+                navigationBefore[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]);
+            assertEquals(
+                0,
+                navigationBefore[
+                    OctavoSurfaceView.NAVIGATION_STATE_HISTORY_BACK_COUNT]);
+            assertEquals(
+                0,
+                navigationBefore[
+                    OctavoSurfaceView.NAVIGATION_STATE_HISTORY_FORWARD_COUNT]);
+
+            AtomicInteger jumpResult = new AtomicInteger();
+            scenario.onActivity(activity -> jumpResult.set(
+                surface(activity).requestPercentageNavigation(100)));
+            assertEquals(OctavoNative.NAVIGATION_ACCEPTED,
+                         jumpResult.get());
+            long[] jumpedNavigation = awaitNavigationState(
                 scenario,
-                state -> isPresented(state, expectedAppearance)
-                    && state[OctavoSurfaceView.STATE_PAGE_INDEX] == 2
+                state -> state[
+                             OctavoSurfaceView.NAVIGATION_STATE_PENDING] == 0
                     && state[
-                        OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]
-                        == moveSuccessBefore + 1
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_GENERATION]
+                       > navigationBefore[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_GENERATION]
                     && state[
-                        OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT]
-                        == state[
-                            OctavoSurfaceView
-                                .STATE_PAGE_MOVE_SUCCESS_COUNT],
-                "8vo did not present page 2 for restart seeding");
-            assertHealthyAndSettled(pageTwo);
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_GENERATION]
+                       == state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_HISTORY_BACK_COUNT] == 1
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_HISTORY_FORWARD_COUNT] == 0,
+                "8vo did not present and record the restart jump");
+            long[] jumped = state(scenario);
+            assertHealthyAndSettled(jumped);
+            long[] target = readingPosition(scenario);
+            assertValidPosition(target);
+            assertFalse(origin[1] == target[1] && origin[2] == target[2]);
+            assertAnchorInsidePage(jumped, target[1], target[2]);
+
+            long progressGenerationBefore =
+                jumpedNavigation[
+                    OctavoSurfaceView.NAVIGATION_STATE_PROGRESS_GENERATION];
+            AtomicInteger progressResult = new AtomicInteger();
+            scenario.onActivity(activity -> progressResult.set(
+                surface(activity).requestProgressDisplay(expectedProgress)));
+            assertEquals(OctavoNative.NAVIGATION_ACCEPTED,
+                         progressResult.get());
+            long[] presentedNavigation = awaitNavigationState(
+                scenario,
+                state -> state[
+                             OctavoSurfaceView.NAVIGATION_STATE_PENDING] == 0
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_GENERATION]
+                       > progressGenerationBefore
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_GENERATION]
+                       == state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]
+                       == expectedProgress.nativeId(),
+                "8vo did not present the restart progress choice");
+            long[] progressFrame = state(scenario);
+            assertHealthyAndSettled(progressFrame);
+            long[] afterProgress = readingPosition(scenario);
+            assertValidPosition(afterProgress);
+            assertEquals(target[1], afterProgress[1]);
+            assertEquals(target[2], afterProgress[2]);
+            assertAnchorInsidePage(
+                progressFrame, afterProgress[1], afterProgress[2]);
+            assertEquals(
+                1,
+                presentedNavigation[
+                    OctavoSurfaceView.NAVIGATION_STATE_HISTORY_BACK_COUNT]);
+            assertEquals(
+                0,
+                presentedNavigation[
+                    OctavoSurfaceView.NAVIGATION_STATE_HISTORY_FORWARD_COUNT]);
+
 
             AtomicReference<String> bookKey = new AtomicReference<>();
             AtomicReference<long[]> position = new AtomicReference<>();
             scenario.onActivity(activity -> {
                 OctavoSurfaceView view = surface(activity);
                 view.flushPersistenceForTesting();
+                activity.flushProgressPersistenceForTesting();
                 bookKey.set(view.documentKeyForTesting());
                 position.set(view.readingPositionForTesting());
 
@@ -145,13 +246,9 @@ public final class OctavoProcessRestartTest {
                     activity.libraryStoreForTesting().findBook(bookKey.get());
                 assertNotNull(persisted);
                 assertTrue(persisted.hasPosition);
-                assertEquals(pageTwo[
-                                 OctavoSurfaceView
-                                     .STATE_PRESENTED_SPINE_INDEX],
+                assertEquals(afterProgress[1],
                              persisted.spineIndex);
-                assertEquals(pageTwo[
-                                 OctavoSurfaceView
-                                     .STATE_PRESENTED_BYTE_OFFSET],
+                assertEquals(afterProgress[2],
                              persisted.byteOffset);
                 assertEquals(
                     0,
@@ -161,6 +258,16 @@ public final class OctavoProcessRestartTest {
                     0,
                     activity.appearanceStoreForTesting()
                         .saveFailureCountForTesting());
+                assertSame(expectedProgress,
+                           activity.progressDisplayForTesting());
+                assertSame(expectedProgress,
+                           view.presentedProgressDisplay());
+                assertSame(expectedProgress,
+                           activity.progressStoreForTesting().current());
+                assertTrue(activity.progressStoreForTesting()
+                               .saveSuccessCountForTesting() >= 1);
+                assertEquals(0, activity.progressStoreForTesting()
+                    .saveFailureCountForTesting());
             });
 
             assertNotNull(bookKey.get());
@@ -168,20 +275,23 @@ public final class OctavoProcessRestartTest {
             assertEquals(3, position.get().length);
             assertEquals(1, position.get()[0]);
             assertEquals(
-                pageTwo[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX],
+                afterProgress[1],
                 position.get()[1]);
             assertEquals(
-                pageTwo[OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET],
+                afterProgress[2],
                 position.get()[2]);
             assertAnchorInsidePage(
-                pageTwo, position.get()[1], position.get()[2]);
+                progressFrame, position.get()[1], position.get()[2]);
 
             writeEvidence(
                 context,
                 new ExpectedState(bookKey.get(),
+                                  origin[1],
+                                  origin[2],
                                   position.get()[1],
                                   position.get()[2],
-                                  expectedAppearance));
+                                  expectedAppearance,
+                                  expectedProgress));
         }
     }
 
@@ -236,6 +346,42 @@ public final class OctavoProcessRestartTest {
             assertHealthyAndSettled(restored);
             assertHostAppearance(scenario, expected.appearance);
 
+            assertFalse(
+                expected.originSpineIndex == expected.spineIndex
+                    && expected.originByteOffset == expected.byteOffset);
+            long[] restoredNavigation = awaitNavigationState(
+                scenario,
+                state -> state[
+                             OctavoSurfaceView.NAVIGATION_STATE_PENDING] == 0
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_GENERATION]
+                       == state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_GENERATION]
+                       == state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]
+                       == expected.progressDisplay.nativeId()
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_HISTORY_BACK_COUNT] == 0
+                    && state[
+                           OctavoSurfaceView
+                               .NAVIGATION_STATE_HISTORY_FORWARD_COUNT] == 0,
+                "8vo did not restore progress with empty session history");
+            assertEquals(
+                expected.progressDisplay.nativeId(),
+                restoredNavigation[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]);
+
             scenario.onActivity(activity -> {
                 assertEquals(expected.bookKey,
                              activity.activeBookKeyForTesting());
@@ -248,6 +394,12 @@ public final class OctavoProcessRestartTest {
                 assertEquals(1, position[0]);
                 assertEquals(expected.spineIndex, position[1]);
                 assertEquals(expected.byteOffset, position[2]);
+                assertSame(expected.progressDisplay,
+                           activity.progressDisplayForTesting());
+                assertSame(expected.progressDisplay,
+                           view.presentedProgressDisplay());
+                assertSame(expected.progressDisplay,
+                           activity.progressStoreForTesting().current());
             });
         }
     }
@@ -309,6 +461,64 @@ public final class OctavoProcessRestartTest {
                     || state[OctavoSurfaceView.STATE_RESTORE_SUCCEEDED]
                         == 1),
             failureMessage);
+    }
+
+    private static void awaitLocationReady(
+        ActivityScenario<OctavoActivity> scenario) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<long[]> result = new AtomicReference<>();
+            scenario.onActivity(activity -> result.set(
+                surface(activity).locationCacheStateForTesting()));
+            long[] current = result.get();
+            if (current != null && current.length == 10
+                && current[0] == 1 && current[1] == 1) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("8vo did not complete deterministic location warming");
+    }
+
+    private static long[] navigationState(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<long[]> result = new AtomicReference<>();
+        scenario.onActivity(activity -> result.set(
+            surface(activity).navigationStateForTesting()));
+        assertNotNull(result.get());
+        assertEquals(OctavoSurfaceView.NAVIGATION_STATE_FIELD_COUNT,
+                     result.get().length);
+        return result.get();
+    }
+
+    private static long[] awaitNavigationState(
+        ActivityScenario<OctavoActivity> scenario,
+        StateCondition condition,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            long[] current = navigationState(scenario);
+            if (condition.matches(current)) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return new long[0];
+    }
+
+    private static long[] readingPosition(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<long[]> result = new AtomicReference<>();
+        scenario.onActivity(activity -> result.set(
+            surface(activity).readingPositionForTesting()));
+        return result.get();
+    }
+
+    private static void assertValidPosition(long[] position) {
+        assertNotNull(position);
+        assertEquals(3, position.length);
+        assertEquals(1, position[0]);
+        assertTrue(position[1] >= 0);
+        assertTrue(position[2] >= 0);
     }
 
     private static boolean isPresented(long[] state,
@@ -437,10 +647,14 @@ public final class OctavoProcessRestartTest {
                                       ExpectedState expected)
         throws IOException {
         requireValidKey(expected.bookKey);
-        if (expected.spineIndex < 0
+        if (expected.originSpineIndex < 0
+            || expected.originSpineIndex > 0xFFFFFFFFL
+            || expected.originByteOffset < 0
+            || expected.spineIndex < 0
             || expected.spineIndex > 0xFFFFFFFFL
             || expected.byteOffset < 0
-            || expected.appearance == null) {
+            || expected.appearance == null
+            || expected.progressDisplay == null) {
             throw new IOException("Invalid process-restart evidence");
         }
 
@@ -457,8 +671,11 @@ public final class OctavoProcessRestartTest {
             output.writeInt(EVIDENCE_MAGIC);
             output.writeInt(EVIDENCE_VERSION);
             output.writeUTF(expected.bookKey);
+            output.writeLong(expected.originSpineIndex);
+            output.writeLong(expected.originByteOffset);
             output.writeLong(expected.spineIndex);
             output.writeLong(expected.byteOffset);
+            output.writeInt(expected.progressDisplay.nativeId());
             int[] appearance = expected.appearance.nativeConfig();
             output.writeInt(appearance.length);
             for (int value : appearance) {
@@ -493,8 +710,11 @@ public final class OctavoProcessRestartTest {
             int magic = input.readInt();
             int version = input.readInt();
             String key = input.readUTF();
+            long originSpineIndex = input.readLong();
+            long originByteOffset = input.readLong();
             long spineIndex = input.readLong();
             long byteOffset = input.readLong();
+            int progressDisplayId = input.readInt();
             int fieldCount = input.readInt();
             if (magic != EVIDENCE_MAGIC
                 || version != EVIDENCE_VERSION
@@ -502,7 +722,10 @@ public final class OctavoProcessRestartTest {
                 throw new IOException("Invalid restart evidence header");
             }
             requireValidKey(key);
-            if (spineIndex < 0
+            if (originSpineIndex < 0
+                || originSpineIndex > 0xFFFFFFFFL
+                || originByteOffset < 0
+                || spineIndex < 0
                 || spineIndex > 0xFFFFFFFFL
                 || byteOffset < 0) {
                 throw new IOException("Invalid restart evidence anchor");
@@ -516,10 +739,18 @@ public final class OctavoProcessRestartTest {
             }
             OctavoAppearance decoded =
                 OctavoAppearance.fromNativeConfig(appearance);
-            if (decoded == null) {
+            OctavoProgressDisplay progressDisplay =
+                OctavoProgressDisplay.fromNativeId(progressDisplayId);
+            if (decoded == null || progressDisplay == null) {
                 throw new IOException("Invalid restart evidence appearance");
             }
-            return new ExpectedState(key, spineIndex, byteOffset, decoded);
+            return new ExpectedState(key,
+                                     originSpineIndex,
+                                     originByteOffset,
+                                     spineIndex,
+                                     byteOffset,
+                                     decoded,
+                                     progressDisplay);
         } catch (EOFException exception) {
             throw new IOException("Truncated restart evidence", exception);
         }

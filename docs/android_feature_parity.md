@@ -1,8 +1,9 @@
 # Android feature-parity contract
 
-Last reviewed: 2026-08-03. Baseline implementation: accepted Android Port 6
-plus the Android Port 7 appearance implementation candidate. Port 7 formal
-acceptance is pending.
+Last reviewed: 2026-08-03. Baseline implementation: accepted Android Ports 0-7
+plus the locally qualified Android Port 8 structural-navigation emulator
+candidate against Reader0 `0.7.0-dev` / API 7. Physical iQOO and hands-on
+real-book acceptance remain pending.
 
 This is the living capability contract for the premium 8vo Android product
 described in `android_product_vision.md`. Kindle for Android is the principal
@@ -25,16 +26,16 @@ conditions and an observed app version are recorded.
 | **Excluded service** | Outside the user-owned, bring-your-own-storage product boundary. |
 | **Audit** | Benchmark behavior or availability still requires versioned hands-on verification. |
 
-"Current Android baseline" distinguishes accepted Port 6 behavior from Port 7
-behavior implemented on its milestone branch but not yet human-accepted. Reader0,
-companion re10, exact 8vo guard/build, final emulator and iQOO 36/36 matrices,
+"Current Android baseline" distinguishes accepted Port 7 behavior from Port 8
+behavior implemented locally but not yet accepted. Port 7's Reader0, companion
+re10, exact 8vo guard/build, final emulator and iQOO 36/36 matrices,
 ProcessRestart, 130% accessibility, crash, and byte-exact backup/restore gates
 passed. Emulator instrumentation took 510.019 seconds and iQOO instrumentation
 took 108.467 seconds. The matrix contains appearance store 9, appearance 15,
 navigation 5, library 5, accessibility 1, and bootstrap 1. Every 33-test API 6
-and earlier record is historical. Audible TalkBack, hands-on alternate-input and
+and earlier record is historical. Audible TalkBack, broader alternate-input and
 reduced-motion, extended physical theme reading, and subjective dark-room
-comfort acceptance remain pending.
+comfort remain product follow-up; they are not Port 8 acceptance evidence.
 
 ## Library and ownership
 
@@ -63,9 +64,9 @@ comfort acceptance remain pending.
 | Weight/boldness | Match/Audit | Publisher bold style only | Reader-selectable weight where the face supports it without damaging publisher emphasis. |
 | Line spacing | Match | Port 7 offers global 1150, 1250, 1300, and 1500-permille presets with a keyed atlas rebuild and canonical reflow. Final current-source emulator/iQOO matrices passed; broader representative-book clipping review remains pending. | Stable baseline, broader physical clipping evidence, and representative-book review. |
 | Margins/content width | Match | Port 7 offers Wide, Balanced, and Focused global width targets within Readerview0 geometry. Final current-source emulator/iQOO matrices passed; tablet, multi-window/foldable, and broader-device evidence remain pending. | Tablet maximum line width, multi-window/foldable behavior, safe insets, and broader physical preference-extreme evidence. |
-| Alignment and hyphenation | Match | Reader0 0.6.0-dev/API 6 stores authoritative `soft_wrapped` provenance on canonical styled rows. One allocation-free 8vo plan shared by desktop and Android uses overflow-safe exact-fill arithmetic for eligible Publisher prose while preserving hard/preformatted whitespace and natural final/hard-line spacing. Reader0 remains the line-breaking authority and language-aware hyphenation is absent. Final current-source emulator/iQOO matrices passed. | Validate advanced justification across representative scripts and structures; add language-aware hyphenation where semantically safe. |
+| Alignment and hyphenation | Match | Reader0 0.7.0-dev/API 7 retains the accepted API 6 authoritative `soft_wrapped` provenance on canonical styled rows. One allocation-free 8vo plan shared by desktop and Android uses overflow-safe exact-fill arithmetic for eligible Publisher prose while preserving hard/preformatted whitespace and natural final/hard-line spacing. Reader0 remains the line-breaking authority and language-aware hyphenation is absent. Port 8 Reader0, Android emulator, 8vo Windows, and re10 regression gates pass; physical representative-book review remains. | Validate advanced justification across representative scripts and structures; add language-aware hyphenation where semantically safe. |
 | Publisher formatting control | Match | Port 7 makes publisher colors explicitly Theme safe or Allow, with High contrast always authoritative; broader publisher styling remains partial. | Clear publisher/default style policy without making meaningful content unreadable. |
-| Page and progress display | Match | Page index/count and percentage projection | Page/location/time/chapter alternatives, accessible labels, and consistent values after reflow. |
+| Page and progress display | Match | Port 8 offers Chapter, meaningful Page, canonical Location, and Percentage choices from the last successfully presented Reader0 state. The global choice and current position publish only after accepted presentation. Emulator reflow, lifecycle, surface replacement, process restart, and reopen gates pass. | Complete physical accessibility and representative real-book review. |
 | Orientation and multi-window | Match | Port 6 accepts lifecycle/surface recreation. Final current-source emulator/iQOO rotation and semantic-anchor evidence passed; multi-window and foldable acceptance remain pending. | Position-stable rotation, foldable/tablet layouts, split screen, and configuration changes. |
 | Immersive reader chrome | Improve | Port 7 presents one borderless canonical full-viewport native page. Ordinary entry/reopen starts hidden; visible chrome uniformly scales the same Surface with no Previous/Next buttons, repagination, redraw, or location change. Final current-source emulator/iQOO automation, actual-Resume entry regression, and controlled iQOO Resume with no visible reader controls passed. Hands-on reduced-motion review remains pending. | Edge/system-bar coherence, no accidental navigation or bright frames, and verified physical reduced-motion behavior. |
 | Page-turn behavior | Improve | Deterministic tap zones, horizontal swipes, hidden virtual actions, and Page Up/Page Down or D-pad share one native presentation gate. Swipe classification cancels the native tap, and lifecycle/surface boundaries clear gesture state. Final current-source emulator/iQOO navigation automation passed; no page-turn animation is added. | Configurable tap/gesture map, RTL awareness, optional restrained transition, and zero skipped/unpresented pages. |
@@ -77,10 +78,10 @@ comfort acceptance remain pending.
 
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
-| Hierarchical table of contents | Match | Missing | Nested headings, current-section indication, destination progress/page, fast jump, and TalkBack hierarchy. |
-| Go to page/location/percentage | Match | Missing | Validate each input, use Reader0 navigation, and preserve a return point. |
-| Chapter navigation | Match | Cross-spine page movement only | Previous/next structural destination without host-side EPUB logic. |
-| Navigation history | Improve | Missing | Reversible stack across TOC, link, search, footnote, annotation, and preview jumps. |
+| Hierarchical table of contents | Match | Port 8 renders bounded Reader0 EPUB 2/3 or spine-fallback rows with nesting, current-section state, destination progress, and Android hierarchy semantics. Deterministic nested, flat, absent, malformed, partially invalid, UTF-8, truncation, focus, touch-target, and hierarchy gates pass. | Complete audible TalkBack and representative physical real-book review. |
+| Go to page/location/percentage | Match | Port 8 validates chapter, canonical one-based location, meaningful layout-relative page, and percentage before invoking Reader0. Jumps are provisional until presentation; deterministic, lifecycle, failure, and reflow emulator gates pass. | Complete physical real-book destination review. |
+| Chapter navigation | Match | Port 8 selects Reader0 structural destinations without interpreting EPUB in Java. Deterministic EPUB 2/3 and fallback current-section/destination gates pass. | Complete representative physical EPUB review. |
+| Navigation history | Improve | Port 8 uses Reader0's bounded session back/forward model for Contents and Go-to only; entries are exposed only after destination presentation. Exact Return/Forward, rapid-input, render/lifecycle/surface failure, recreation, and process-restart gates pass; history correctly does not survive process death. | Complete physical interaction review; extend the shared model only when future consumers are implemented. |
 | Page preview/scrubber | Improve | Missing | Page Flip-class spatial preview with thumbnails/chapter landmarks and an explicit return to committed position. |
 | In-book full-text search | Match | Missing on Android | Local index, Unicode-aware query, useful snippets, hit emphasis, structural grouping, jump/back, and bounded failure. |
 | Link navigation | Match | Partial engine surface, no Android UX | Internal/external distinction, safe external handoff, visited/return state, and accessible actions. |
@@ -126,11 +127,11 @@ comfort acceptance remain pending.
 
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
-| TalkBack | Improve | Port 7 keeps a bounded page/previous/next/read-only-progress virtual tree with presentation-gated actions. Final current-source emulator/iQOO automation passed; audible TalkBack/touch-exploration acceptance remains pending. | Expose document structure, text, progress, controls, actions, selection, and navigation through a coherent accessibility tree. |
-| Large text/display scale | Improve | Port 7 offers six reader sizes from 14sp through 28sp. Final current-source extrema and focused 130% emulator/iQOO tests passed; broader-device evidence remains pending. | No clipped/hidden actions at supported scales; reader preference and system UI remain usable independently. |
-| Touch targets and alternate actions | Match | Port 7 retains the 48dp token, virtual actions, and Page Up/Page Down or D-pad alternatives without visible Previous/Next buttons. Final current-source emulator/iQOO automation passed; hands-on keyboard/switch review remains pending. | Minimum accessible targets, switch/keyboard paths, labels, focus order, and no gesture-only essential action. |
+| TalkBack | Improve | Port 8 retains the bounded reader virtual tree and adds a native Android Contents hierarchy, navigation controls, validation states, and presentation-gated announcements. Emulator semantics, hierarchy, focus order, actions, and 48dp targets pass; audible touch-exploration review remains pending. | Extend publication semantics with accurate headings, lists, links, alt text, tables, notes, and language. |
+| Large text/display scale | Improve | Port 7 offers six reader sizes from 14sp through 28sp. Port 8's focused Contents/Go-to/accessibility matrix passes at 130% system text on API 36, including compact/large layout coverage; broader physical evidence remains pending. | No clipped/hidden actions at supported scales; reader preference and system UI remain usable independently. |
+| Touch targets and alternate actions | Match | Port 8 retains the 48dp token, virtual actions, Page Up/Page Down, D-pad, keyboard focus, and accessible Contents/Go-to/Return actions without visible Previous/Next buttons. Emulator automation passes; hands-on keyboard/switch review remains pending. | Minimum accessible targets, switch/keyboard paths, labels, focus order, and no gesture-only essential action. |
 | Contrast choices | Improve | Final current-source emulator/iQOO automation verified deterministic role thresholds for five comfort palettes plus independently tuned High contrast. Subjective comfort verification remains pending. | Comfortable themes plus verified high-contrast alternatives; never force one contrast profile on every reader. |
-| Reduced motion | Improve | Port 7 retains a durable explicit global choice that reduces appearance token durations to zero. Final current-source emulator/iQOO automation passed; system-following and hands-on quality review remain pending. | Honor system preference and provide a non-animated equivalent for every transition. |
+| Reduced motion | Improve | Port 8 retains the durable explicit zero-duration choice and its navigation surface passed with Android system animations disabled. Hands-on physical quality and automatic system-preference following remain pending. | Honor system preference and provide a non-animated equivalent for every transition. |
 | Screen-reader publication content | Match | Port 7 exposes bounded current-page text and essential controls, not headings, lists, links, images, tables, notes, or language structure. | Reading order, headings, lists, links, alt text, tables, notes, and language exposed accurately. |
 | Reading aids | Improve/Audit | Missing | Explore focus/ruler, dyslexia-friendly choices, spacing, and per-user presets without claiming medical benefit. |
 

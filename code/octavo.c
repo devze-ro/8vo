@@ -28,8 +28,8 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "octavo requires Presentation Engine API 1"
 #endif
-#if READER0_API_VERSION != 6
-#  error "octavo requires Reader0 API 6"
+#if READER0_API_VERSION != 7
+#  error "octavo requires Reader0 API 7"
 #endif
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"

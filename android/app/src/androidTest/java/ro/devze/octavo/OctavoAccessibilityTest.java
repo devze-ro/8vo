@@ -762,11 +762,14 @@ public final class OctavoAccessibilityTest {
                 activity.findViewById(R.id.octavo_reader_library);
             View appearance =
                 activity.findViewById(R.id.octavo_reader_appearance);
+            View progress =
+                activity.findViewById(R.id.octavo_reader_progress);
             View previous =
                 activity.findViewById(R.id.octavo_reader_previous);
             View next = activity.findViewById(R.id.octavo_reader_next);
             assertNotNull(library);
             assertNotNull(appearance);
+            assertNotNull(progress);
             assertNull(previous);
             assertNull(next);
             assertTrue(library.requestFocusFromTouch());
@@ -780,6 +783,9 @@ public final class OctavoAccessibilityTest {
         assertSurfaceKeyboardFocus(
             scenario,
             OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_progress);
         sendTab(false);
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
 

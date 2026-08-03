@@ -13,6 +13,12 @@ final class OctavoNative {
     static final int NAVIGATION_READY = 1;
     static final int NAVIGATION_PREVIOUS = 2;
     static final int NAVIGATION_NEXT = 4;
+    static final int NAVIGATION_ACCEPTED = 1;
+    static final int NAVIGATION_ALREADY_PRESENTED = 2;
+    static final int NAVIGATION_INVALID = -1;
+    static final int NAVIGATION_UNAVAILABLE = -2;
+    static final int NAVIGATION_BUSY = -3;
+    static final int NAVIGATION_FAILED = -4;
 
     private OctavoNative() {
     }
@@ -65,6 +71,7 @@ final class OctavoNative {
                                                               int count);
     static native boolean forceSurfaceAcquisitionFailuresForTesting(
         long handle, int count);
+    static native String utf8RoundTripForTesting();
     static native boolean present(long handle);
     static native int navigationAvailability(long handle);
     static native boolean setChromeVisible(long handle, boolean visible);
@@ -72,6 +79,16 @@ final class OctavoNative {
     static native int accessibilityMovePage(long handle, int direction);
     static native int warmLocationCacheStep(long handle);
     static native long[] locationCacheState(long handle);
+    static native long[] navigationState(long handle);
+    static native long[] contentsSnapshot(long handle);
+    static native String contentsLabel(long handle, int rowIndex);
+    static native int navigateToContents(long handle, int navIndex);
+    static native int navigateToLocation(long handle, long oneBasedLocation);
+    static native int navigateToPage(long handle, long oneBasedPage);
+    static native int navigateToPercent(long handle, int percent);
+    static native int moveHistory(long handle, boolean forward);
+    static native int setProgressDisplayMode(long handle, int mode);
+    static native int cancelPendingNavigation(long handle);
     static native long[] state(long handle);
     static native long[] accessibilitySemanticSnapshot(long handle);
     static native String accessibilitySemanticName(long handle,

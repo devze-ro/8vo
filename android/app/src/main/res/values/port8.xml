@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_navigation">Navigation</string>
+    <string name="navigation_contents">Contents</string>
+    <string name="navigation_go_to">Go to</string>
+    <string name="navigation_return">Return</string>
+    <string name="navigation_forward">Forward</string>
+    <string name="navigation_done">Done</string>
+    <string name="navigation_progress_display">Progress display</string>
+    <string name="navigation_chapter">Chapter</string>
+    <string name="navigation_location">Location</string>
+    <string name="navigation_page">Page</string>
+    <string name="navigation_percentage">Percentage</string>
+    <string name="navigation_open_destination">Go</string>
+
+    <item name="octavo_navigation_transition" type="id" />
+    <item name="octavo_reader_return" type="id" />
+    <item name="octavo_navigation_overlay" type="id" />
+    <item name="octavo_navigation_panel" type="id" />
+    <item name="octavo_navigation_title" type="id" />
+    <item name="octavo_navigation_done" type="id" />
+    <item name="octavo_navigation_tabs" type="id" />
+    <item name="octavo_navigation_contents_tab" type="id" />
+    <item name="octavo_navigation_go_to_tab" type="id" />
+    <item name="octavo_navigation_history" type="id" />
+    <item name="octavo_navigation_return" type="id" />
+    <item name="octavo_navigation_forward" type="id" />
+    <item name="octavo_navigation_status" type="id" />
+    <item name="octavo_navigation_contents_scroll" type="id" />
+    <item name="octavo_navigation_contents_list" type="id" />
+    <item name="octavo_navigation_go_to_scroll" type="id" />
+    <item name="octavo_navigation_go_to_content" type="id" />
+    <item name="octavo_navigation_chapter_input" type="id" />
+    <item name="octavo_navigation_chapter_go" type="id" />
+    <item name="octavo_navigation_location_input" type="id" />
+    <item name="octavo_navigation_location_go" type="id" />
+    <item name="octavo_navigation_page_input" type="id" />
+    <item name="octavo_navigation_page_go" type="id" />
+    <item name="octavo_navigation_percentage_input" type="id" />
+    <item name="octavo_navigation_percentage_go" type="id" />
+    <item name="octavo_navigation_progress_options" type="id" />
+</resources>
