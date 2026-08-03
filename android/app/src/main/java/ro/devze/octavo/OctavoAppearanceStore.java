@@ -22,14 +22,20 @@ import java.util.zip.CRC32;
 final class OctavoAppearanceStore {
     private static final int STORE_MAGIC = 0x4F375354; // "O7ST"
     /*
-     * Store version 1 used the exact all-default 18sp tuple. Version 2 keeps
-     * the same bounded 60-byte record and native payload version, but records
-     * 16sp as the default. Both remain readable. Only the exact version-1
-     * legacy all-default tuple migrates; every other version-1 tuple and any
-     * version-2 18sp choice remains exact.
+     * Versions 1 and 2 predate preference-origin metadata. Version 1 used an
+     * 18sp schema default; version 2 used 16sp. During the version-2 rollout,
+     * however, an inherited version-1 18sp value could be republished as
+     * version 2 without recording its origin. That makes version-2 18sp
+     * inherently ambiguous: it can be either the inherited default or an
+     * explicit choice. The bounded one-time policy therefore migrates
+     * version-1 18sp and version-2 16sp or 18sp to the current 14sp default,
+     * retaining every other appearance field. Other pre-v3 sizes and every
+     * version-3 size remain exact. All versions retain the bounded 60-byte
+     * record and native payload version.
      */
     private static final int LEGACY_STORE_VERSION_18SP_DEFAULT = 1;
-    private static final int STORE_VERSION = 2;
+    private static final int PREVIOUS_STORE_VERSION_16SP_DEFAULT = 2;
+    private static final int STORE_VERSION = 3;
     private static final int MAX_FILE_BYTES = 256;
     private static final int HEADER_INT_COUNT = 3;
     private static final int CHECKSUM_INT_COUNT = 1;
@@ -50,6 +56,7 @@ final class OctavoAppearanceStore {
     private long saveFailureCount;
     private long missingFallbackCount;
     private long corruptFallbackCount;
+    private boolean pendingMigration;
 
     OctavoAppearanceStore(Context context) {
         this(requireFilesDirectory(context));
@@ -65,6 +72,7 @@ final class OctavoAppearanceStore {
     }
 
     synchronized OctavoAppearance load() {
+        pendingMigration = false;
         if (!appearanceFile.exists()) {
             current = OctavoAppearance.defaults();
             missingFallbackCount += 1;
@@ -78,23 +86,16 @@ final class OctavoAppearanceStore {
                 throw new IOException("Invalid Port 7 appearance record");
             }
             OctavoAppearance loaded = decoded.appearance;
-            if (decoded.storeVersion
-                    == LEGACY_STORE_VERSION_18SP_DEFAULT
-                && loaded.isLegacyAllDefault18Sp()) {
-                loaded = OctavoAppearance.defaults();
-                /*
-                 * Rewrite only the exact legacy all-default tuple. Failed
-                 * atomic publication leaves the valid legacy record in place
-                 * for a later retry and is not classified as corruption.
-                 */
-                if (!save(loaded)) {
-                    current = loaded;
-                }
+            if (requiresFontSizeMigration(decoded.storeVersion, loaded)) {
+                loaded = loaded.withFontSizeSp(
+                    OctavoAppearance.defaults().fontSizeSp());
+                pendingMigration = true;
             }
             current = loaded;
             loadSuccessCount += 1;
         } catch (IOException | RuntimeException exception) {
             current = OctavoAppearance.defaults();
+            pendingMigration = false;
             loadFailureCount += 1;
             corruptFallbackCount += 1;
         }
@@ -125,12 +126,17 @@ final class OctavoAppearanceStore {
         }
 
         current = candidate;
+        pendingMigration = false;
         saveSuccessCount += 1;
         return true;
     }
 
     synchronized OctavoAppearance current() {
         return current;
+    }
+
+    synchronized boolean hasPendingMigration() {
+        return pendingMigration;
     }
 
     synchronized boolean recoveredFromCorruption() {
@@ -185,9 +191,18 @@ final class OctavoAppearanceStore {
         return LEGACY_STORE_VERSION_18SP_DEFAULT;
     }
 
+    static int previousStoreVersionForTesting() {
+        return PREVIOUS_STORE_VERSION_16SP_DEFAULT;
+    }
+
     static byte[] legacyRecordForTesting(OctavoAppearance appearance)
         throws IOException {
         return encode(appearance, LEGACY_STORE_VERSION_18SP_DEFAULT);
+    }
+
+    static byte[] previousRecordForTesting(OctavoAppearance appearance)
+        throws IOException {
+        return encode(appearance, PREVIOUS_STORE_VERSION_16SP_DEFAULT);
     }
 
     static void clearForTesting(Context context) {
@@ -229,7 +244,10 @@ final class OctavoAppearanceStore {
         throws IOException {
         if (appearance == null
             || (storeVersion != STORE_VERSION
-                && storeVersion != LEGACY_STORE_VERSION_18SP_DEFAULT)) {
+                && storeVersion != PREVIOUS_STORE_VERSION_16SP_DEFAULT
+                && storeVersion != LEGACY_STORE_VERSION_18SP_DEFAULT)
+            || !appearanceIsValidForStoreVersion(
+                appearance, storeVersion)) {
             throw new IOException();
         }
         ByteBuffer buffer = ByteBuffer.allocate(RECORD_BYTES)
@@ -253,6 +271,27 @@ final class OctavoAppearanceStore {
         return bytes;
     }
 
+    private static boolean appearanceIsValidForStoreVersion(
+        OctavoAppearance appearance,
+        int storeVersion) {
+        return appearance != null
+            && (storeVersion == STORE_VERSION
+                || appearance.fontSizeSp() != 14);
+    }
+
+    private static boolean requiresFontSizeMigration(
+        int storeVersion,
+        OctavoAppearance appearance) {
+        if (appearance == null) {
+            return false;
+        }
+        return (storeVersion == LEGACY_STORE_VERSION_18SP_DEFAULT
+                && appearance.fontSizeSp() == 18)
+            || (storeVersion == PREVIOUS_STORE_VERSION_16SP_DEFAULT
+                && (appearance.fontSizeSp() == 16
+                    || appearance.fontSizeSp() == 18));
+    }
+
     private static DecodedRecord decode(byte[] bytes) {
         if (bytes == null || bytes.length != RECORD_BYTES) {
             return null;
@@ -268,6 +307,7 @@ final class OctavoAppearanceStore {
         int fieldCount = buffer.getInt();
         if (magic != STORE_MAGIC
             || (version != STORE_VERSION
+                && version != PREVIOUS_STORE_VERSION_16SP_DEFAULT
                 && version != LEGACY_STORE_VERSION_18SP_DEFAULT)
             || fieldCount != OctavoAppearance.NATIVE_FIELD_COUNT) {
             return null;
@@ -284,7 +324,7 @@ final class OctavoAppearanceStore {
         }
         OctavoAppearance appearance =
             OctavoAppearance.fromNativeConfig(config);
-        return appearance == null
+        return !appearanceIsValidForStoreVersion(appearance, version)
             ? null : new DecodedRecord(version, appearance);
     }
 

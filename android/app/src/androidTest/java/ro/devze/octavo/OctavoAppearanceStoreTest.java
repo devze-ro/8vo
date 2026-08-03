@@ -27,7 +27,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.HashSet;
+import java.util.zip.CRC32;
 
 @RunWith(AndroidJUnit4.class)
 public final class OctavoAppearanceStoreTest {
@@ -186,7 +189,7 @@ public final class OctavoAppearanceStoreTest {
 
     @Test
     public void appearanceConfigRoundTripsAndRejectsUnsupportedExtrema() {
-        int[] expectedSizes = {16, 18, 21, 24, 28};
+        int[] expectedSizes = {14, 16, 18, 21, 24, 28};
         int[] expectedSpacings = {1150, 1250, 1300, 1500};
         assertArrayEquals(expectedSizes, OctavoAppearance.fontSizesSp());
         assertArrayEquals(expectedSpacings,
@@ -205,9 +208,9 @@ public final class OctavoAppearanceStoreTest {
         assertEquals(OctavoAppearance.FONT_FAMILY_LITERARY,
                      defaults.fontFamilyId());
         assertSame(Typeface.SERIF, defaults.systemTypeface());
-        assertEquals(16, defaults.fontSizeSp());
-        assertFalse(defaults.isLegacyAllDefault18Sp());
-        assertTrue(defaults.withFontSizeSp(18).isLegacyAllDefault18Sp());
+        assertEquals(14, defaults.fontSizeSp());
+        assertEquals(defaults.withFontSizeSp(16),
+                     OctavoAppearance.previousDefault16Sp());
         assertEquals(1250, defaults.lineSpacingPermille());
         assertEquals(OctavoAppearance.MARGINS_BALANCED,
                      defaults.marginsId());
@@ -285,7 +288,7 @@ public final class OctavoAppearanceStoreTest {
                 }
             }
         }
-        assertEquals(5760, roundTripCount);
+        assertEquals(6912, roundTripCount);
 
         OctavoAppearance maximum = OctavoAppearance.create(
             OctavoAppearance.THEME_OLED,
@@ -320,6 +323,7 @@ public final class OctavoAppearanceStoreTest {
         assertRejected(() -> createWith(6, 0, 18, 1250, 1, 0, 0));
         assertRejected(() -> createWith(0, -1, 18, 1250, 1, 0, 0));
         assertRejected(() -> createWith(0, 2, 18, 1250, 1, 0, 0));
+        assertRejected(() -> createWith(0, 0, 13, 1250, 1, 0, 0));
         assertRejected(() -> createWith(0, 0, 15, 1250, 1, 0, 0));
         assertRejected(() -> createWith(0, 0, 29, 1250, 1, 0, 0));
         assertRejected(() -> createWith(0, 0, 18, 1200, 1, 0, 0));
@@ -362,11 +366,110 @@ public final class OctavoAppearanceStoreTest {
     }
 
     @Test
-    public void exactLegacyAllDefaultMigratesButPreferencesRemainExact()
+    public void typographyAtlasPublishesBoundedSparsePublicationGlyphs() {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoTypography.clearCacheForTesting();
+        OctavoTypography typography = OctavoTypography.create(
+            context, OctavoAppearance.defaults());
+        int[] metrics = typography.metrics;
+
+        assertEquals(OctavoTypography.MAGIC, metrics[0]);
+        assertEquals(OctavoTypography.VERSION, metrics[1]);
+        assertEquals(OctavoTypography.FIRST_CODEPOINT, metrics[2]);
+        assertEquals(OctavoTypography.GLYPH_COUNT, metrics[3]);
+        assertEquals(OctavoTypography.STYLE_COUNT, metrics[4]);
+        assertEquals(OctavoTypography.COLUMN_COUNT, metrics[5]);
+        assertEquals(OctavoTypography.HEADER_COUNT,
+                     OctavoTypography.CODEPOINT_OFFSET);
+        assertEquals(
+            OctavoTypography.CODEPOINT_OFFSET
+                + OctavoTypography.GLYPH_COUNT,
+            OctavoTypography.ADVANCE_OFFSET);
+        assertEquals(
+            OctavoTypography.ADVANCE_OFFSET
+                + OctavoTypography.STYLE_COUNT
+                    * OctavoTypography.GLYPH_COUNT,
+            metrics.length);
+
+        assertTrue("Sparse glyph table exceeded its bounded count",
+                   OctavoTypography.GLYPH_COUNT <= 256);
+        int previousCodepoint = -1;
+        for (int glyph = 0;
+             glyph < OctavoTypography.GLYPH_COUNT;
+             ++glyph) {
+            int codepoint =
+                OctavoTypography.codepointForGlyphForTesting(glyph);
+            assertEquals(
+                codepoint,
+                metrics[OctavoTypography.CODEPOINT_OFFSET + glyph]);
+            assertTrue("Glyph codepoints must be strictly increasing",
+                       codepoint > previousCodepoint);
+            previousCodepoint = codepoint;
+        }
+        assertTrue(
+            "Publication glyph table unexpectedly became contiguous",
+            previousCodepoint - OctavoTypography.FIRST_CODEPOINT + 1
+                > OctavoTypography.GLYPH_COUNT);
+
+        int atlasWidth = metrics[9];
+        int atlasHeight = metrics[10];
+        int stride = metrics[11];
+        assertTrue(atlasWidth > 0 && atlasWidth <= 16384);
+        assertTrue(atlasHeight > 0 && atlasHeight <= 16384);
+        assertTrue(stride >= atlasWidth);
+        assertEquals((long)stride * atlasHeight,
+                     (long)typography.alpha.length);
+        assertTrue("Typography atlas storage exceeded its 64 MiB bound",
+                   typography.alpha.length <= 64 * 1024 * 1024);
+
+        int[] publicationPunctuation = {
+            0x2013, // en dash
+            0x2014, // em dash
+            0x2018, // left single quotation mark
+            0x2019, // right single quotation mark / apostrophe
+            0x201C, // left double quotation mark
+            0x201D, // right double quotation mark
+            0x2022, // bullet
+            0x2026, // ellipsis
+        };
+        for (int codepoint : publicationPunctuation) {
+            int glyph = findGlyphForCodepoint(metrics, codepoint);
+            assertTrue(
+                "Missing publication punctuation U+"
+                    + Integer.toHexString(codepoint),
+                glyph >= 0);
+            assertEquals(codepoint,
+                         OctavoTypography
+                             .codepointForGlyphForTesting(glyph));
+            for (int style = 0;
+                 style < OctavoTypography.STYLE_COUNT;
+                 ++style) {
+                int advance = metrics[
+                    OctavoTypography.ADVANCE_OFFSET
+                        + style * OctavoTypography.GLYPH_COUNT
+                        + glyph];
+                assertTrue(
+                    "Publication punctuation has no positive advance",
+                    advance > 0);
+                assertGlyphHasInk(typography, glyph, style);
+            }
+        }
+
+        assertRejected(() ->
+            OctavoTypography.codepointForGlyphForTesting(-1));
+        assertRejected(() ->
+            OctavoTypography.codepointForGlyphForTesting(
+                OctavoTypography.GLYPH_COUNT));
+    }
+
+    @Test
+    public void legacySchemaDefaultFontMigratesWithOtherPreferences()
         throws IOException {
         assertEquals(1,
                      OctavoAppearanceStore.legacyStoreVersionForTesting());
         assertEquals(2,
+                     OctavoAppearanceStore.previousStoreVersionForTesting());
+        assertEquals(3,
                      OctavoAppearanceStore.currentStoreVersionForTesting());
         assertEquals(1, OctavoAppearance.NATIVE_VERSION);
 
@@ -376,30 +479,43 @@ public final class OctavoAppearanceStoreTest {
             new OctavoAppearanceStore(testFilesDirectory);
         assertTrue(migrating.appearanceFileForTesting()
                        .getParentFile().mkdirs());
-        writeFile(
-            migrating.appearanceFileForTesting(),
-            OctavoAppearanceStore.legacyRecordForTesting(legacyDefault));
+        byte[] legacyDefaultRecord =
+            OctavoAppearanceStore.legacyRecordForTesting(legacyDefault);
+        writeFile(migrating.appearanceFileForTesting(), legacyDefaultRecord);
 
         assertEquals(OctavoAppearance.defaults(), migrating.load());
-        assertEquals(16, migrating.current().fontSizeSp());
+        assertEquals(14, migrating.current().fontSizeSp());
+        assertTrue(migrating.hasPendingMigration());
         assertEquals(1, migrating.loadSuccessCountForTesting());
         assertEquals(0, migrating.loadFailureCountForTesting());
-        assertEquals(1, migrating.saveSuccessCountForTesting());
+        assertEquals(0, migrating.saveSuccessCountForTesting());
         assertEquals(0, migrating.saveFailureCountForTesting());
         assertEquals(0, migrating.corruptFallbackCountForTesting());
+        assertArrayEquals(
+            legacyDefaultRecord,
+            readFile(migrating.appearanceFileForTesting()));
+
+        assertTrue(migrating.save(migrating.current()));
+        assertFalse(migrating.hasPendingMigration());
+        assertEquals(1, migrating.saveSuccessCountForTesting());
+        byte[] migratedRecord =
+            readFile(migrating.appearanceFileForTesting());
+        assertEquals(3, recordVersion(migratedRecord));
+        assertFalse(java.util.Arrays.equals(
+            legacyDefaultRecord, migratedRecord));
 
         OctavoAppearanceStore migrated =
             new OctavoAppearanceStore(testFilesDirectory);
         assertEquals(OctavoAppearance.defaults(), migrated.load());
         assertEquals(1, migrated.loadSuccessCountForTesting());
+        assertFalse(migrated.hasPendingMigration());
         assertEquals(0, migrated.saveSuccessCountForTesting());
         assertEquals(0, migrated.corruptFallbackCountForTesting());
 
-        OctavoAppearance[] preserved = {
-            legacyDefault.withFontSizeSp(16),
-            legacyDefault.withFontSizeSp(21),
+        OctavoAppearance[] schemaDefaultWithOtherPreferences = {
             legacyDefault.withTheme(OctavoAppearance.THEME_SEPIA),
-            legacyDefault.withFontFamily(OctavoAppearance.FONT_FAMILY_CLEAR),
+            legacyDefault.withFontFamily(
+                OctavoAppearance.FONT_FAMILY_CLEAR),
             legacyDefault.withLineSpacingPermille(1150),
             legacyDefault.withMargins(OctavoAppearance.MARGINS_WIDE),
             legacyDefault.withAlignment(
@@ -408,21 +524,62 @@ public final class OctavoAppearanceStoreTest {
                 OctavoAppearance.PUBLISHER_COLORS_ALLOW),
             legacyDefault.withReducedMotion(true),
         };
+        for (OctavoAppearance legacy : schemaDefaultWithOtherPreferences) {
+            OctavoAppearance expected = legacy.withFontSizeSp(14);
+            byte[] legacyRecord =
+                OctavoAppearanceStore.legacyRecordForTesting(legacy);
+            writeFile(migrating.appearanceFileForTesting(), legacyRecord);
+            OctavoAppearanceStore migratedPreference =
+                new OctavoAppearanceStore(testFilesDirectory);
+
+            assertEquals(expected, migratedPreference.load());
+            assertEquals(expected, migratedPreference.current());
+            assertTrue(migratedPreference.hasPendingMigration());
+            assertEquals(1, migratedPreference.loadSuccessCountForTesting());
+            assertEquals(0, migratedPreference.loadFailureCountForTesting());
+            assertEquals(0, migratedPreference.saveSuccessCountForTesting());
+            assertEquals(0, migratedPreference.saveFailureCountForTesting());
+            assertEquals(0, migratedPreference.corruptFallbackCountForTesting());
+            assertArrayEquals(
+                legacyRecord,
+                readFile(migratedPreference.appearanceFileForTesting()));
+
+            assertTrue(migratedPreference.save(migratedPreference.current()));
+            assertFalse(migratedPreference.hasPendingMigration());
+            assertEquals(1, migratedPreference.saveSuccessCountForTesting());
+            assertEquals(3, recordVersion(readFile(
+                migratedPreference.appearanceFileForTesting())));
+            assertFalse(java.util.Arrays.equals(
+                legacyRecord,
+                readFile(migratedPreference.appearanceFileForTesting())));
+        }
+
+        OctavoAppearance[] preserved = {
+            legacyDefault.withFontSizeSp(16),
+            legacyDefault.withFontSizeSp(21),
+            legacyDefault.withFontSizeSp(24),
+            legacyDefault.withFontSizeSp(28),
+        };
         for (OctavoAppearance expected : preserved) {
-            writeFile(
-                migrating.appearanceFileForTesting(),
-                OctavoAppearanceStore.legacyRecordForTesting(expected));
+            byte[] legacyRecord =
+                OctavoAppearanceStore.legacyRecordForTesting(expected);
+            writeFile(migrating.appearanceFileForTesting(), legacyRecord);
             OctavoAppearanceStore preservedStore =
                 new OctavoAppearanceStore(testFilesDirectory);
 
             assertEquals(expected, preservedStore.load());
-            assertEquals(expected.fontSizeSp(),
-                         preservedStore.current().fontSizeSp());
+            assertEquals(expected, preservedStore.current());
+            assertFalse(preservedStore.hasPendingMigration());
             assertEquals(1, preservedStore.loadSuccessCountForTesting());
             assertEquals(0, preservedStore.loadFailureCountForTesting());
             assertEquals(0, preservedStore.saveSuccessCountForTesting());
             assertEquals(0, preservedStore.saveFailureCountForTesting());
             assertEquals(0, preservedStore.corruptFallbackCountForTesting());
+            assertArrayEquals(
+                legacyRecord,
+                readFile(preservedStore.appearanceFileForTesting()));
+            assertEquals(1, recordVersion(readFile(
+                preservedStore.appearanceFileForTesting())));
         }
 
         OctavoAppearanceStore explicit =
@@ -431,8 +588,162 @@ public final class OctavoAppearanceStoreTest {
         OctavoAppearanceStore explicitReload =
             new OctavoAppearanceStore(testFilesDirectory);
         assertEquals(legacyDefault, explicitReload.load());
+        assertFalse(explicitReload.hasPendingMigration());
         assertEquals(18, explicitReload.current().fontSizeSp());
         assertEquals(0, explicitReload.saveSuccessCountForTesting());
+        assertEquals(3, recordVersion(readFile(
+            explicitReload.appearanceFileForTesting())));
+    }
+
+    @Test
+    public void previousSchemaAndTransitionalFontsMigrateFieldWise()
+        throws IOException {
+        assertEquals(2,
+                     OctavoAppearanceStore.previousStoreVersionForTesting());
+        assertEquals(3,
+                     OctavoAppearanceStore.currentStoreVersionForTesting());
+        OctavoAppearance previousDefault =
+            OctavoAppearance.previousDefault16Sp();
+        /*
+         * This is the captured iQOO tuple whose inherited v1 18sp origin was
+         * lost when it was republished as v2. No remaining v2 field can
+         * distinguish that inheritance from an explicit 18sp choice.
+         */
+        OctavoAppearance realIqooTransitionalRecord =
+            OctavoAppearance.create(
+                OctavoAppearance.THEME_SEPIA,
+                OctavoAppearance.FONT_FAMILY_LITERARY,
+                18,
+                1250,
+                OctavoAppearance.MARGINS_BALANCED,
+                OctavoAppearance.ALIGNMENT_PUBLISHER,
+                OctavoAppearance.PUBLISHER_COLORS_THEME_SAFE,
+                false);
+        OctavoAppearance[] migrationCandidates = {
+            previousDefault,
+            previousDefault.withTheme(OctavoAppearance.THEME_DUSK),
+            previousDefault.withFontFamily(
+                OctavoAppearance.FONT_FAMILY_CLEAR),
+            previousDefault.withLineSpacingPermille(1150),
+            previousDefault.withMargins(OctavoAppearance.MARGINS_WIDE),
+            previousDefault.withAlignment(
+                OctavoAppearance.ALIGNMENT_RAGGED_RIGHT),
+            previousDefault.withPublisherColors(
+                OctavoAppearance.PUBLISHER_COLORS_ALLOW),
+            previousDefault.withReducedMotion(true),
+            realIqooTransitionalRecord,
+        };
+
+        OctavoAppearanceStore target =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertTrue(target.appearanceFileForTesting()
+                       .getParentFile().mkdirs());
+        for (OctavoAppearance legacy : migrationCandidates) {
+            OctavoAppearance expected = legacy.withFontSizeSp(14);
+            byte[] previousRecord =
+                OctavoAppearanceStore.previousRecordForTesting(legacy);
+            writeFile(target.appearanceFileForTesting(), previousRecord);
+            OctavoAppearanceStore loaded =
+                new OctavoAppearanceStore(testFilesDirectory);
+
+            assertEquals(expected, loaded.load());
+            assertEquals(expected, loaded.current());
+            assertTrue(loaded.hasPendingMigration());
+            assertEquals(1, loaded.loadSuccessCountForTesting());
+            assertEquals(0, loaded.loadFailureCountForTesting());
+            assertEquals(0, loaded.saveSuccessCountForTesting());
+            assertEquals(0, loaded.saveFailureCountForTesting());
+            assertEquals(0, loaded.corruptFallbackCountForTesting());
+            assertArrayEquals(
+                previousRecord,
+                readFile(loaded.appearanceFileForTesting()));
+
+            assertTrue(loaded.save(loaded.current()));
+            assertFalse(loaded.hasPendingMigration());
+            assertEquals(1, loaded.saveSuccessCountForTesting());
+            assertEquals(3, recordVersion(readFile(
+                loaded.appearanceFileForTesting())));
+            assertFalse(java.util.Arrays.equals(
+                previousRecord,
+                readFile(loaded.appearanceFileForTesting())));
+        }
+
+        OctavoAppearance[] preserved = {
+            previousDefault.withFontSizeSp(21),
+            previousDefault.withFontSizeSp(24),
+            previousDefault.withFontSizeSp(28),
+        };
+        for (OctavoAppearance expected : preserved) {
+            byte[] previousRecord =
+                OctavoAppearanceStore.previousRecordForTesting(expected);
+            writeFile(target.appearanceFileForTesting(), previousRecord);
+            OctavoAppearanceStore loaded =
+                new OctavoAppearanceStore(testFilesDirectory);
+
+            assertEquals(expected, loaded.load());
+            assertFalse(loaded.hasPendingMigration());
+            assertEquals(expected, loaded.current());
+            assertEquals(1, loaded.loadSuccessCountForTesting());
+            assertEquals(0, loaded.loadFailureCountForTesting());
+            assertEquals(0, loaded.saveSuccessCountForTesting());
+            assertEquals(0, loaded.saveFailureCountForTesting());
+            assertEquals(0, loaded.corruptFallbackCountForTesting());
+            assertArrayEquals(
+                previousRecord,
+                readFile(loaded.appearanceFileForTesting()));
+            assertEquals(2, recordVersion(readFile(
+                loaded.appearanceFileForTesting())));
+        }
+
+        OctavoAppearanceStore explicitV3 =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertTrue(explicitV3.save(realIqooTransitionalRecord));
+        byte[] explicitV3Record =
+            readFile(explicitV3.appearanceFileForTesting());
+        assertEquals(3, recordVersion(explicitV3Record));
+
+        OctavoAppearanceStore explicitV3Reload =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(realIqooTransitionalRecord, explicitV3Reload.load());
+        assertFalse(explicitV3Reload.hasPendingMigration());
+        assertEquals(18, explicitV3Reload.current().fontSizeSp());
+        assertEquals(1, explicitV3Reload.loadSuccessCountForTesting());
+        assertEquals(0, explicitV3Reload.saveSuccessCountForTesting());
+        assertEquals(0, explicitV3Reload.saveFailureCountForTesting());
+        assertArrayEquals(
+            explicitV3Record,
+            readFile(explicitV3Reload.appearanceFileForTesting()));
+    }
+
+    @Test
+    public void legacyVersionsRejectImpossible14SpRecords()
+        throws IOException {
+        OctavoAppearanceStore writer =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertTrue(writer.save(OctavoAppearance.defaults()));
+        byte[] current =
+            readFile(writer.appearanceFileForTesting());
+
+        int[] legacyVersions = {
+            OctavoAppearanceStore.legacyStoreVersionForTesting(),
+            OctavoAppearanceStore.previousStoreVersionForTesting(),
+        };
+        for (int version : legacyVersions) {
+            byte[] impossible =
+                retagRecordWithChecksum(current, version);
+            writeFile(writer.appearanceFileForTesting(), impossible);
+            OctavoAppearanceStore rejected =
+                new OctavoAppearanceStore(testFilesDirectory);
+
+            assertEquals(OctavoAppearance.defaults(), rejected.load());
+            assertEquals(0, rejected.loadSuccessCountForTesting());
+            assertEquals(1, rejected.loadFailureCountForTesting());
+            assertEquals(1, rejected.corruptFallbackCountForTesting());
+            assertEquals(0, rejected.missingFallbackCountForTesting());
+            assertArrayEquals(
+                impossible,
+                readFile(rejected.appearanceFileForTesting()));
+        }
     }
 
     @Test
@@ -453,24 +764,38 @@ public final class OctavoAppearanceStoreTest {
         assertTrue(store.temporaryFileForTesting().mkdir());
 
         assertEquals(OctavoAppearance.defaults(), store.load());
-        assertEquals(16, store.current().fontSizeSp());
+        assertEquals(14, store.current().fontSizeSp());
+        assertTrue(store.hasPendingMigration());
         assertEquals(1, store.loadSuccessCountForTesting());
         assertEquals(0, store.loadFailureCountForTesting());
         assertEquals(0, store.saveSuccessCountForTesting());
-        assertEquals(1, store.saveFailureCountForTesting());
+        assertEquals(0, store.saveFailureCountForTesting());
         assertEquals(0, store.corruptFallbackCountForTesting());
         assertArrayEquals(legacyRecord,
                           readFile(store.appearanceFileForTesting()));
 
+        assertFalse(store.save(store.current()));
+        assertTrue(store.hasPendingMigration());
+        assertEquals(0, store.saveSuccessCountForTesting());
+        assertEquals(1, store.saveFailureCountForTesting());
+        assertArrayEquals(legacyRecord,
+                          readFile(store.appearanceFileForTesting()));
+
         assertTrue(store.temporaryFileForTesting().delete());
-        OctavoAppearanceStore retry =
+        assertTrue(store.save(store.current()));
+        assertFalse(store.hasPendingMigration());
+        assertEquals(1, store.saveSuccessCountForTesting());
+        assertEquals(1, store.saveFailureCountForTesting());
+        assertEquals(3, recordVersion(readFile(
+            store.appearanceFileForTesting())));
+        assertEquals(0, store.corruptFallbackCountForTesting());
+        assertFalse(store.temporaryFileForTesting().exists());
+
+        OctavoAppearanceStore reloaded =
             new OctavoAppearanceStore(filesDirectory);
-        assertEquals(OctavoAppearance.defaults(), retry.load());
-        assertEquals(1, retry.loadSuccessCountForTesting());
-        assertEquals(1, retry.saveSuccessCountForTesting());
-        assertEquals(0, retry.saveFailureCountForTesting());
-        assertEquals(0, retry.corruptFallbackCountForTesting());
-        assertFalse(retry.temporaryFileForTesting().exists());
+        assertEquals(OctavoAppearance.defaults(), reloaded.load());
+        assertFalse(reloaded.hasPendingMigration());
+        assertEquals(0, reloaded.saveSuccessCountForTesting());
     }
 
     @Test
@@ -487,6 +812,7 @@ public final class OctavoAppearanceStoreTest {
                    <= OctavoAppearanceStore.maximumFileBytesForTesting());
         assertEquals(OctavoAppearance.defaults(), missing.current());
         assertEquals(OctavoAppearance.defaults(), missing.load());
+        assertEquals(14, missing.current().fontSizeSp());
         assertEquals(1, missing.missingFallbackCountForTesting());
         assertEquals(0, missing.corruptFallbackCountForTesting());
         assertEquals(0, missing.loadSuccessCountForTesting());
@@ -514,6 +840,7 @@ public final class OctavoAppearanceStoreTest {
         assertOnlyPublishedRecord(missing);
 
         byte[] published = readFile(missing.appearanceFileForTesting());
+        assertEquals(3, recordVersion(published));
         assertFalse(missing.save(null));
         assertEquals(saved, missing.current());
         assertEquals(1, missing.saveSuccessCountForTesting());
@@ -554,6 +881,7 @@ public final class OctavoAppearanceStoreTest {
             new OctavoAppearanceStore(testFilesDirectory);
         assertEquals(OctavoAppearance.defaults(), corrupt.load());
         assertEquals(OctavoAppearance.defaults(), corrupt.current());
+        assertEquals(14, corrupt.current().fontSizeSp());
         assertEquals(0, corrupt.loadSuccessCountForTesting());
         assertEquals(1, corrupt.loadFailureCountForTesting());
         assertEquals(0, corrupt.missingFallbackCountForTesting());
@@ -567,6 +895,7 @@ public final class OctavoAppearanceStoreTest {
         OctavoAppearanceStore oversized =
             new OctavoAppearanceStore(testFilesDirectory);
         assertEquals(OctavoAppearance.defaults(), oversized.load());
+        assertEquals(14, oversized.current().fontSizeSp());
         assertEquals(0, oversized.loadSuccessCountForTesting());
         assertEquals(1, oversized.loadFailureCountForTesting());
         assertEquals(0, oversized.missingFallbackCountForTesting());
@@ -605,6 +934,68 @@ public final class OctavoAppearanceStoreTest {
         } catch (IllegalArgumentException expected) {
             assertNotNull(expected);
         }
+    }
+
+    private static int findGlyphForCodepoint(int[] metrics,
+                                             int codepoint) {
+        for (int glyph = 0;
+             glyph < OctavoTypography.GLYPH_COUNT;
+             ++glyph) {
+            if (metrics[OctavoTypography.CODEPOINT_OFFSET + glyph]
+                == codepoint) {
+                return glyph;
+            }
+        }
+        return -1;
+    }
+
+    private static void assertGlyphHasInk(OctavoTypography typography,
+                                          int glyph,
+                                          int style) {
+        int[] metrics = typography.metrics;
+        int columns = metrics[5];
+        int rowsPerStyle = metrics[6];
+        int cellWidth = metrics[7];
+        int cellHeight = metrics[8];
+        int stride = metrics[11];
+        int column = glyph % columns;
+        int row = style * rowsPerStyle + glyph / columns;
+        int left = column * cellWidth;
+        int top = row * cellHeight;
+        boolean hasInk = false;
+        for (int y = top; y < top + cellHeight && !hasInk; ++y) {
+            for (int x = left; x < left + cellWidth; ++x) {
+                if ((typography.alpha[y * stride + x] & 0xFF) != 0) {
+                    hasInk = true;
+                    break;
+                }
+            }
+        }
+        assertTrue("Publication punctuation glyph has no atlas ink",
+                   hasInk);
+    }
+
+    private static byte[] retagRecordWithChecksum(byte[] bytes,
+                                                   int version) {
+        assertNotNull(bytes);
+        assertTrue(bytes.length >= 2 * Integer.BYTES);
+        byte[] result = bytes.clone();
+        ByteBuffer buffer = ByteBuffer.wrap(result)
+            .order(ByteOrder.BIG_ENDIAN);
+        buffer.putInt(Integer.BYTES, version);
+        int checksumOffset = result.length - Integer.BYTES;
+        CRC32 checksum = new CRC32();
+        checksum.update(result, 0, checksumOffset);
+        buffer.putInt(checksumOffset, (int)checksum.getValue());
+        return result;
+    }
+
+    private static int recordVersion(byte[] bytes) {
+        assertNotNull(bytes);
+        assertTrue(bytes.length >= 2 * Integer.BYTES);
+        return ByteBuffer.wrap(bytes)
+            .order(ByteOrder.BIG_ENDIAN)
+            .getInt(Integer.BYTES);
     }
 
     private static void assertOpaquePalette(OctavoDesignTokens tokens) {

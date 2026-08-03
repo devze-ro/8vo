@@ -28,8 +28,8 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "octavo requires Presentation Engine API 1"
 #endif
-#if READER0_API_VERSION != 5
-#  error "octavo requires Reader0 API 5"
+#if READER0_API_VERSION != 6
+#  error "octavo requires Reader0 API 6"
 #endif
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"
@@ -9093,17 +9093,6 @@ octavo_reader_row_has_safe_justification_styles(
   return 1;
 }
 
-FUNCTION B32
-octavo_reader_row_is_soft_wrapped(const OctavoApp *app,
-                                    const EpubReaderFrameStyleRow *row)
-{
-  if (!app || !row) { return 0; }
-  U32 end = MIN(row->byte_end, (U32)app->frame.visible_text.size);
-  return ((end < app->frame.visible_text.size &&
-           app->frame.visible_text.str[end] == ' ') ||
-          (end > row->byte_start && app->frame.visible_text.str[end - 1] == ' '));
-}
-
 FUNCTION OctavoReaderJustificationBlockRole
 octavo_reader_justification_block_role(DocTextBlockKind block_kind)
 {
@@ -9132,7 +9121,7 @@ octavo_reader_justification_plan_for_row(
     .block_role = octavo_reader_justification_block_role(row->block_kind),
     .publisher_justified = row->text_align == DocTextAlign_Justify,
     .block_last_row = row->block_last_row,
-    .soft_wrapped = octavo_reader_row_is_soft_wrapped(app, row),
+    .soft_wrapped = row->soft_wrapped,
     .safe_styles = octavo_reader_row_has_safe_justification_styles(app, row),
     .heading_level = row->heading_level,
     .line_row = row->line_row,
@@ -9171,6 +9160,12 @@ octavo_reader_styled_row_build(
   {
     return 0;
   }
+  local_end = octavo_reader_visible_row_end(
+    app->frame.visible_text.str,
+    local_start,
+    local_end,
+    row->soft_wrapped);
+  if (local_end <= local_start) return 0;
   OctavoPresentationRowMetrics metrics = {0};
   if (!octavo_resolve_presentation_row_metrics(app, row, &metrics))
     return 0;
@@ -15735,6 +15730,7 @@ octavo_reader_justification_plan_contract(void)
     .block_role = OctavoReaderJustificationBlockRole_Paragraph,
     .publisher_justified = 1,
     .safe_styles = 1,
+    .soft_wrapped = 1,
     .row_byte_count = 32,
     .internal_space_count = 3,
     .natural_space_width_px = 4,
@@ -15768,16 +15764,84 @@ octavo_reader_justification_plan_contract(void)
     return 0;
   }
   input.block_last_row = 0;
+  input.soft_wrapped = 0;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      plan.active || plan.applied_extra_px != 0 ||
+      plan.drawn_width_px != input.natural_width_px)
+  {
+    return 0;
+  }
+  input.soft_wrapped = 1;
   input.internal_space_count = 2;
   input.natural_space_width_px = 2;
   input.natural_width_px = 50;
   input.available_width_px = 80;
   plan = (OctavoReaderJustificationPlan){0};
   if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
-      !plan.active || plan.applied_extra_px != 8 ||
-      plan.extra_per_space_px != 4 || plan.extra_remainder_px != 0 ||
-      plan.drawn_width_px != 58 ||
-      octavo_reader_justification_offset_before_space_px(&plan, 2) != 8)
+      !plan.active || plan.applied_extra_px != 30 ||
+      plan.extra_per_space_px != 15 || plan.extra_remainder_px != 0 ||
+      plan.drawn_width_px != 80 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 2) != 30)
+  {
+    return 0;
+  }
+  input.internal_space_count = 4;
+  input.natural_space_width_px = 5;
+  input.natural_width_px = 260;
+  input.available_width_px = 400;
+  input.text_indent_cols = 4;
+  input.line_row = 3;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      !plan.active || plan.applied_extra_px != 140 ||
+      plan.extra_per_space_px != 35 || plan.extra_remainder_px != 0 ||
+      plan.drawn_width_px != 400 ||
+      octavo_reader_justification_offset_before_space_px(&plan, 4) != 140)
+  {
+    return 0;
+  }
+  input.row_byte_count = OctavoReaderJustificationRowByteCap;
+  input.internal_space_count =
+    OctavoReaderJustificationRowByteCap - 2;
+  input.natural_space_width_px = 1;
+  input.natural_width_px = 1;
+  input.available_width_px = INT32_MAX;
+  input.text_indent_cols = 0;
+  input.line_row = 1;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      !plan.active || plan.applied_extra_px != INT32_MAX - 1 ||
+      plan.drawn_width_px != INT32_MAX)
+  {
+    return 0;
+  }
+
+  input.internal_space_count = 5;
+  input.natural_space_width_px = INT32_MAX;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (!octavo_reader_justification_plan_resolve(&input, &plan) ||
+      !plan.active || plan.applied_extra_px != INT32_MAX - 1 ||
+      plan.drawn_width_px != INT32_MAX)
+  {
+    return 0;
+  }
+  input.natural_space_width_px = -1;
+  plan = (OctavoReaderJustificationPlan){0};
+  if (octavo_reader_justification_plan_resolve(&input, &plan))
+  {
+    return 0;
+  }
+  const U8 hard_preformatted[] = {'A', ' ', ' ', '\n'};
+  const U8 whitespace_only[] = {' ', '\t', '\n'};
+  if (octavo_reader_visible_row_end(
+        hard_preformatted, 0, (U32)sizeof(hard_preformatted), 0) != 3 ||
+      octavo_reader_visible_row_end(
+        hard_preformatted, 0, (U32)sizeof(hard_preformatted), 1) != 1 ||
+      octavo_reader_visible_row_end(
+        whitespace_only, 0, (U32)sizeof(whitespace_only), 0) != 2 ||
+      octavo_reader_visible_row_end(
+        whitespace_only, 0, (U32)sizeof(whitespace_only), 1) != 0)
   {
     return 0;
   }

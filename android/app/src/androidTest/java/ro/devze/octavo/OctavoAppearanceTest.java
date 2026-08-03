@@ -1,5 +1,7 @@
 package ro.devze.octavo;
 
+import static org.junit.Assert.assertArrayEquals;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -40,9 +42,12 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.io.FileInputStream;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
@@ -79,14 +84,25 @@ public final class OctavoAppearanceTest {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             initial = state(scenario);
 
+            assertEquals(
+                0, initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
             ChromeOcclusion chrome = chromeOcclusion(scenario);
+            scenario.onActivity(activity ->
+                assertTrue(activity.setChromeVisibleForTesting(true)));
+            long[] chromeShown = awaitReaderComposition(
+                scenario, chrome, true);
+            assertChromeNativeStateUnchanged(initial, chromeShown);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                chromeShown[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
             scenario.onActivity(activity ->
                 assertTrue(activity.setChromeVisibleForTesting(false)));
             long[] chromeFree = awaitReaderComposition(
                 scenario, chrome, false);
             assertChromeNativeStateUnchanged(initial, chromeFree);
+            assertChromeNativeStateUnchanged(chromeShown, chromeFree);
             assertEquals(
-                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                chromeShown[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
                 chromeFree[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
 
             OctavoAppearance expected = OctavoAppearance.defaults();
@@ -243,23 +259,33 @@ public final class OctavoAppearanceTest {
         throws InterruptedException {
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
+            long beforeOpenMillis = SystemClock.uptimeMillis();
             openFixture(scenario);
             long[] firstPage = awaitInitialPage(scenario);
+            long observedMillis = SystemClock.uptimeMillis();
+            long entryStartedMillis = firstPage[
+                OctavoSurfaceView.STATE_READER_ENTRY_STARTED_MILLIS];
+            long firstFrameMillis = firstPage[
+                OctavoSurfaceView.STATE_FIRST_FRAME_ELAPSED_MILLIS];
             assertTrue(
                 firstPage[OctavoSurfaceView.STATE_FRAME_COUNT] > 0);
             assertTrue(
-                "Reader entry did not publish elapsed-time evidence",
-                firstPage[
-                    OctavoSurfaceView
-                        .STATE_FIRST_FRAME_ELAPSED_MILLIS] > 0);
+                "Reader-entry evidence predates showReader",
+                entryStartedMillis >= beforeOpenMillis);
             assertTrue(
-                "Optimized debug reader entry exceeded 1500 ms: "
-                    + firstPage[
-                        OctavoSurfaceView
-                            .STATE_FIRST_FRAME_ELAPSED_MILLIS],
-                firstPage[
-                    OctavoSurfaceView
-                        .STATE_FIRST_FRAME_ELAPSED_MILLIS] < 1500);
+                "Reader-entry evidence is in the future",
+                entryStartedMillis <= observedMillis);
+            assertTrue(
+                "showReader-to-accepted-post evidence was not published",
+                firstFrameMillis > 0);
+            assertTrue(
+                "Accepted-post evidence exceeds the observation window",
+                firstFrameMillis
+                    <= observedMillis - entryStartedMillis);
+            assertTrue(
+                "Optimized debug showReader-to-accepted-post exceeded "
+                    + "1500 ms: " + firstFrameMillis,
+                firstFrameMillis < 1500);
 
             long[] cache = awaitLocationCacheComplete(scenario);
             assertEquals(1, cache[0]);
@@ -369,6 +395,285 @@ public final class OctavoAppearanceTest {
     }
 
     @Test
+    public void actualResumeGestureKeepsReaderEntryChromeHidden()
+        throws InterruptedException {
+        AtomicReference<Boolean> entryCoverObserved =
+            new AtomicReference<>(false);
+        AtomicReference<Boolean> entryHostChromeHidden =
+            new AtomicReference<>(false);
+        AtomicReference<long[]> entryChromeState = new AtomicReference<>();
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitInitialPage(scenario);
+            scenario.onActivity(OctavoActivity::closeBookForTesting);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                ViewGroup content = activity.findViewById(
+                    android.R.id.content);
+                assertNotNull(content);
+                content.setOnHierarchyChangeListener(
+                    new ViewGroup.OnHierarchyChangeListener() {
+                        @Override
+                        public void onChildViewAdded(
+                            View parent, View child) {
+                            if (child.findViewById(
+                                    R.id.octavo_reader_entry_cover)
+                                == null) {
+                                return;
+                            }
+                            entryCoverObserved.set(true);
+                            OctavoSurfaceView reader =
+                                (OctavoSurfaceView)child.findViewById(
+                                    R.id.octavo_surface);
+                            View top = child.findViewById(
+                                R.id.octavo_reader_top_chrome);
+                            View bottom = child.findViewById(
+                                R.id.octavo_reader_bottom_chrome);
+                            entryHostChromeHidden.set(
+                                reader != null
+                                && top != null
+                                && bottom != null
+                                && !activity.chromeVisibleForTesting()
+                                && !reader.chromeVisibleForTesting()
+                                && chromeViewIsExactlyHidden(top)
+                                && chromeViewIsExactlyHidden(bottom));
+                            entryChromeState.set(
+                                reader == null
+                                    ? null
+                                    : reader.nativeStateForTesting());
+                        }
+
+                        @Override
+                        public void onChildViewRemoved(
+                            View parent, View child) {}
+                    });
+                View resume = findClickableText(
+                    activity.findViewById(android.R.id.content),
+                    activity.getString(R.string.resume));
+                assertNotNull(
+                    "The sample Resume button was unavailable", resume);
+                assertTrue(resume.isShown());
+
+                float x = resume.getWidth() / 2.0f;
+                float y = resume.getHeight() / 2.0f;
+                long now = SystemClock.uptimeMillis();
+                MotionEvent down = MotionEvent.obtain(
+                    now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+                MotionEvent up = MotionEvent.obtain(
+                    now, now + 20, MotionEvent.ACTION_UP, x, y, 0);
+                try {
+                    assertTrue(resume.dispatchTouchEvent(down));
+                    assertTrue(resume.dispatchTouchEvent(up));
+                } finally {
+                    down.recycle();
+                    up.recycle();
+                }
+            });
+
+            long[] firstAccepted = awaitInitialPage(scenario);
+            assertTrue(
+                "Reader entry never installed its page-colored cover",
+                Boolean.TRUE.equals(entryCoverObserved.get()));
+            assertTrue(
+                "Host chrome was visible under the reader-entry cover",
+                Boolean.TRUE.equals(entryHostChromeHidden.get()));
+            assertNotNull(entryChromeState.get());
+            assertEquals(
+                0,
+                entryChromeState.get()[
+                    OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertEquals(
+                0,
+                entryChromeState.get()[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertEquals(
+                0,
+                firstAccepted[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertEquals(
+                0,
+                firstAccepted[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            scenario.onActivity(activity -> {
+                ViewGroup content = activity.findViewById(
+                    android.R.id.content);
+                assertNotNull(content);
+                content.setOnHierarchyChangeListener(null);
+                assertReaderEntryChromeHidden(activity);
+            });
+
+            awaitReaderEntryCoverRemoved(scenario);
+            scenario.onActivity(activity -> {
+                assertNull(activity.findViewById(
+                    R.id.octavo_reader_entry_cover));
+                assertReaderEntryChromeHidden(activity);
+            });
+
+            ChromeOcclusion chrome = chromeOcclusion(scenario);
+            long[] settled = awaitReaderComposition(
+                scenario, chrome, false);
+            assertEquals(
+                0, settled[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertEquals(
+                0,
+                settled[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            scenario.onActivity(
+                OctavoAppearanceTest::assertReaderEntryChromeHidden);
+        }
+    }
+    @Test
+    public void legacyAppearanceMigrationWaitsForFirstAcceptedReaderFrame()
+        throws IOException {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoAppearance captured = capturedTransitionalAppearance();
+        OctavoAppearance expected = captured.withFontSizeSp(14);
+        OctavoAppearanceStore files = new OctavoAppearanceStore(context);
+        byte[] legacyRecord =
+            OctavoAppearanceStore.previousRecordForTesting(captured);
+        writeAppearanceRecord(files, legacyRecord);
+
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                assertEquals(expected, activity.appearanceForTesting());
+                assertTrue(activity.appearanceStoreForTesting()
+                               .hasPendingMigration());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+            });
+            assertArrayEquals(
+                legacyRecord,
+                readAppearanceRecord(files));
+
+            scenario.onActivity(activity ->
+                assertTrue(activity.openFixtureForTesting()));
+            awaitInitialPage(scenario);
+            assertEquals(1, awaitSaveSuccessCount(scenario, 1));
+            scenario.onActivity(activity -> {
+                assertFalse(activity.appearanceStoreForTesting()
+                                .hasPendingMigration());
+                assertEquals(
+                    1,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+            });
+
+            byte[] published = readAppearanceRecord(files);
+            assertEquals(
+                OctavoAppearanceStore.currentStoreVersionForTesting(),
+                appearanceRecordVersion(published));
+            assertFalse(java.util.Arrays.equals(
+                legacyRecord, published));
+        }
+
+        OctavoAppearanceStore reloaded =
+            new OctavoAppearanceStore(context);
+        assertEquals(expected, reloaded.load());
+        assertFalse(reloaded.hasPendingMigration());
+        assertEquals(0, reloaded.saveSuccessCountForTesting());
+    }
+
+    @Test
+    public void migrationPublicationFailureIsVisibleAndRetriesOnPresentation()
+        throws IOException {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoAppearance captured = capturedTransitionalAppearance();
+        OctavoAppearance expected = captured.withFontSizeSp(14);
+        OctavoAppearanceStore files = new OctavoAppearanceStore(context);
+        byte[] legacyRecord =
+            OctavoAppearanceStore.previousRecordForTesting(captured);
+        writeAppearanceRecord(files, legacyRecord);
+        assertTrue(files.temporaryFileForTesting().mkdir());
+
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                assertEquals(expected, activity.appearanceForTesting());
+                assertTrue(activity.appearanceStoreForTesting()
+                               .hasPendingMigration());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+            });
+            assertArrayEquals(
+                legacyRecord,
+                readAppearanceRecord(files));
+
+            scenario.onActivity(activity ->
+                assertTrue(activity.openFixtureForTesting()));
+            awaitInitialPage(scenario);
+            awaitVisibleAppearanceSaveFailure(scenario, 1);
+            assertArrayEquals(
+                legacyRecord,
+                readAppearanceRecord(files));
+            scenario.onActivity(activity -> {
+                assertTrue(activity.appearanceStoreForTesting()
+                               .hasPendingMigration());
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    1,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+                assertEquals(
+                    "Appearance changed, but could not be saved",
+                    activity.lastOpenErrorForTesting());
+            });
+
+            assertTrue(files.temporaryFileForTesting().isDirectory());
+            assertTrue(files.temporaryFileForTesting().delete());
+            moveToNextPresentedPage(scenario);
+            assertEquals(1, awaitSaveSuccessCount(scenario, 1));
+            scenario.onActivity(activity -> {
+                assertFalse(activity.appearanceStoreForTesting()
+                                .hasPendingMigration());
+                assertEquals(
+                    1,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    1,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+            });
+
+            byte[] published = readAppearanceRecord(files);
+            assertEquals(
+                OctavoAppearanceStore.currentStoreVersionForTesting(),
+                appearanceRecordVersion(published));
+            assertFalse(java.util.Arrays.equals(
+                legacyRecord, published));
+        }
+
+        OctavoAppearanceStore reloaded =
+            new OctavoAppearanceStore(context);
+        assertEquals(expected, reloaded.load());
+        assertFalse(reloaded.hasPendingMigration());
+    }
+
+
+    @Test
     public void rapidChoicesCoalesceAndChromeIsPageNeutral()
         throws InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
@@ -420,37 +725,37 @@ public final class OctavoAppearanceTest {
             assertHostAppearance(scenario, latest);
             assertEquals(latest, new OctavoAppearanceStore(context).load());
 
-            long[] visible = coalesced;
-            assertEquals(1,
-                         visible[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            long[] hidden = coalesced;
+            assertEquals(0,
+                         hidden[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
             ChromeOcclusion chrome = chromeOcclusion(scenario);
-            visible = awaitReaderComposition(scenario, chrome, true);
-            assertCanonicalFullViewportLayout(chrome, visible);
+            hidden = awaitReaderComposition(scenario, chrome, false);
+            assertCanonicalFullViewportLayout(chrome, hidden);
             scenario.onActivity(activity ->
-                assertTrue(activity.setChromeVisibleForTesting(false)));
-            long[] hidden = awaitReaderComposition(
-                scenario, chrome, false);
-            assertChromeNativeStateUnchanged(visible, hidden);
+                assertTrue(activity.setChromeVisibleForTesting(true)));
+            long[] visible = awaitReaderComposition(
+                scenario, chrome, true);
+            assertChromeNativeStateUnchanged(hidden, visible);
             assertEquals(
-                visible[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
-                hidden[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+                hidden[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                visible[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
             scenario.onActivity(activity -> {
-                assertFalse(activity.chromeVisibleForTesting());
+                assertTrue(activity.chromeVisibleForTesting());
                 assertEquals(latest, activity.appearanceForTesting());
             });
 
             scenario.onActivity(activity ->
-                assertTrue(activity.setChromeVisibleForTesting(true)));
-            long[] shown = awaitReaderComposition(
-                scenario, chrome, true);
-            assertChromeNativeStateUnchanged(hidden, shown);
-            assertChromeNativeStateUnchanged(visible, shown);
+                assertTrue(activity.setChromeVisibleForTesting(false)));
+            long[] hiddenAgain = awaitReaderComposition(
+                scenario, chrome, false);
+            assertChromeNativeStateUnchanged(hidden, hiddenAgain);
+            assertChromeNativeStateUnchanged(visible, hiddenAgain);
             assertEquals(
-                hidden[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
-                shown[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
-            assertNativeAppearance(shown, latest);
+                visible[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                hiddenAgain[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertNativeAppearance(hiddenAgain, latest);
             scenario.onActivity(activity -> {
-                assertTrue(activity.chromeVisibleForTesting());
+                assertFalse(activity.chromeVisibleForTesting());
                 assertEquals(latest, activity.appearanceForTesting());
             });
 
@@ -696,6 +1001,60 @@ public final class OctavoAppearanceTest {
             assertBaselineLayoutRoundTrip(
                 baselinePage, returnedBaseline);
             flushAndAssertAppearancePersisted(scenario, baseline);
+        }
+    }
+
+    @Test
+    public void publisherJustificationPreservesHardLinesAndPunctuation()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createPublicationEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] presented = awaitInitialPage(scenario);
+            AtomicReference<String> visibleText = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = (OctavoSurfaceView)
+                    activity.findViewById(R.id.octavo_surface);
+                assertNotNull(view);
+                visibleText.set(view.visibleTextForTesting());
+            });
+            assertNotNull(visibleText.get());
+            assertTrue(visibleText.get().contains(
+                "The reader’s deliberate line"));
+            assertTrue(visibleText.get().contains(
+                "“Second line—kept intact.”"));
+            assertTrue(visibleText.get().contains(
+                "Third line…still intact."));
+            assertTrue(
+                "Hard-line fixture produced no justification plans",
+                presented[
+                    OctavoSurfaceView.STATE_JUSTIFICATION_PLAN_COUNT] >= 3);
+            assertEquals(
+                "Publisher justification expanded a hard-break line",
+                0,
+                presented[
+                    OctavoSurfaceView
+                        .STATE_JUSTIFICATION_ACTIVE_ROW_COUNT]);
+            assertEquals(
+                "Hard-break fixture applied inter-word expansion",
+                0,
+                presented[
+                    OctavoSurfaceView
+                        .STATE_JUSTIFICATION_APPLIED_EXTRA_PX]);
+            assertEquals(
+                "Publication punctuation fell back to a missing glyph",
+                0,
+                presented[
+                    OctavoSurfaceView
+                        .STATE_TYPOGRAPHY_MISSING_GLYPH_COUNT]);
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
         }
     }
 
@@ -1052,13 +1411,28 @@ public final class OctavoAppearanceTest {
             awaitInitialPage(scenario);
             awaitLocationCacheComplete(scenario);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            long[] visible = moveToNextPresentedPage(scenario);
+            long[] initialHidden = moveToNextPresentedPage(scenario);
             long anchorSpine =
-                visible[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX];
+                initialHidden[
+                    OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX];
             long anchorOffset =
-                visible[OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET];
+                initialHidden[
+                    OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET];
             ChromeOcclusion chrome = chromeOcclusion(scenario);
-            visible = awaitReaderComposition(scenario, chrome, true);
+            initialHidden = awaitReaderComposition(
+                scenario, chrome, false);
+            assertCanonicalFullViewportLayout(chrome, initialHidden);
+            assertWindowChromeCompositionFrame(
+                scenario, initialHidden, false);
+            scenario.onActivity(activity ->
+                assertTrue(activity.setChromeVisibleForTesting(true)));
+            long[] visible = awaitReaderComposition(
+                scenario, chrome, true);
+            assertChromeNativeStateUnchanged(initialHidden, visible);
+            assertEquals(
+                initialHidden[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                visible[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
             assertMeasuredChromeOcclusion(chrome, visible);
             assertCanonicalFullViewportLayout(chrome, visible);
             assertWindowChromeCompositionFrame(
@@ -1297,9 +1671,13 @@ public final class OctavoAppearanceTest {
             awaitInitialPage(scenario);
             awaitLocationCacheComplete(scenario);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            long[] visible = moveToNextPresentedPage(scenario);
+            long[] hidden = moveToNextPresentedPage(scenario);
             ChromeOcclusion chrome = chromeOcclusion(scenario);
-            visible = awaitReaderComposition(scenario, chrome, true);
+            scenario.onActivity(activity ->
+                assertTrue(activity.setChromeVisibleForTesting(true)));
+            long[] visible = awaitReaderComposition(
+                scenario, chrome, true);
+            assertChromeNativeStateUnchanged(hidden, visible);
             assertCanonicalFullViewportLayout(chrome, visible);
 
             AtomicReference<long[]> afterGesture = new AtomicReference<>();
@@ -1345,11 +1723,11 @@ public final class OctavoAppearanceTest {
             assertEquals(
                 visible[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT],
                 after[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
-            long[] hidden = awaitReaderComposition(
+            long[] hiddenAfterTransition = awaitReaderComposition(
                 scenario, chrome, false);
-            assertChromeNativeStateUnchanged(after, hidden);
+            assertChromeNativeStateUnchanged(after, hiddenAfterTransition);
             assertWindowChromeCompositionFrame(
-                scenario, hidden, false);
+                scenario, hiddenAfterTransition, false);
         }
     }
 
@@ -2951,6 +3329,62 @@ public final class OctavoAppearanceTest {
         });
     }
 
+    private static View findClickableText(View root, String expected) {
+        if (root == null) {
+            return null;
+        }
+        if (root.isClickable()
+            && root instanceof TextView
+            && expected.equals(((TextView)root).getText().toString())) {
+            return root;
+        }
+        if (!(root instanceof ViewGroup)) {
+            return null;
+        }
+        ViewGroup group = (ViewGroup)root;
+        for (int index = 0; index < group.getChildCount(); ++index) {
+            View match = findClickableText(
+                group.getChildAt(index), expected);
+            if (match != null) {
+                return match;
+            }
+        }
+        return null;
+    }
+
+    private static void assertReaderEntryChromeHidden(
+        OctavoActivity activity) {
+        OctavoSurfaceView reader = (OctavoSurfaceView)
+            activity.findViewById(R.id.octavo_surface);
+        View top = activity.findViewById(
+            R.id.octavo_reader_top_chrome);
+        View bottom = activity.findViewById(
+            R.id.octavo_reader_bottom_chrome);
+        assertNotNull(reader);
+        assertNotNull(top);
+        assertNotNull(bottom);
+        assertFalse(activity.chromeVisibleForTesting());
+        assertFalse(reader.chromeVisibleForTesting());
+        long[] snapshot = reader.nativeStateForTesting();
+        assertNotNull(snapshot);
+        assertEquals(
+            0, snapshot[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+        assertEquals(
+            0, snapshot[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+        assertEquals(View.INVISIBLE, top.getVisibility());
+        assertEquals(View.INVISIBLE, bottom.getVisibility());
+        assertEquals(0.0f, top.getAlpha(), 0.0f);
+        assertEquals(0.0f, bottom.getAlpha(), 0.0f);
+        assertFalse(top.isShown());
+        assertFalse(bottom.isShown());
+    }
+
+    private static boolean chromeViewIsExactlyHidden(View view) {
+        return view.getVisibility() == View.INVISIBLE
+            && Float.compare(view.getAlpha(), 0.0f) == 0
+            && !view.isShown();
+    }
+
     private static OctavoSurfaceView surface(
         ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<OctavoSurfaceView> result = new AtomicReference<>();
@@ -3306,9 +3740,9 @@ public final class OctavoAppearanceTest {
         for (int glyph = 1;
              glyph < OctavoTypography.GLYPH_COUNT;
              ++glyph) {
-            char candidate = (char)(
-                OctavoTypography.FIRST_CODEPOINT + glyph);
-            if (!Character.isLetter(candidate)) {
+            int codepoint =
+                OctavoTypography.codepointForGlyphForTesting(glyph);
+            if (!Character.isLetter(codepoint)) {
                 continue;
             }
             int column = glyph % columns;
@@ -3332,7 +3766,7 @@ public final class OctavoAppearanceTest {
                 continue;
             }
             int advance = typography.metrics[
-                OctavoTypography.HEADER_COUNT
+                OctavoTypography.ADVANCE_OFFSET
                     + italicStyle * OctavoTypography.GLYPH_COUNT
                     + glyph];
             int depth = leftSide
@@ -3347,7 +3781,10 @@ public final class OctavoAppearanceTest {
             (leftSide ? "left" : "right")
                 + " runtime overhang probe glyph was unavailable",
             bestGlyph >= 0 && bestDepth > 0);
-        return (char)(OctavoTypography.FIRST_CODEPOINT + bestGlyph);
+        int codepoint =
+            OctavoTypography.codepointForGlyphForTesting(bestGlyph);
+        assertTrue(codepoint <= Character.MAX_VALUE);
+        return (char)codepoint;
     }
 
     private static void assertStyledRuntimeOverhang(
@@ -3415,6 +3852,72 @@ public final class OctavoAppearanceTest {
             + Math.abs(Color.green(pixel) - Color.green(expected))
             + Math.abs(Color.blue(pixel) - Color.blue(expected));
         return distance <= maximumDistance;
+    }
+
+    private static File createPublicationEvidenceEpub(Context context)
+        throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port7-publication-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the publication evidence EPUB");
+        }
+
+        String container =
+            "<?xml version='1.0'?>"
+                + "<container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?>"
+                + "<package xmlns='http://www.idpf.org/2007/opf' "
+                + "version='2.0' unique-identifier='book-id'>"
+                + "<metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Port 7 Publication Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>"
+                + "port7-publication</dc:identifier>"
+                + "<dc:language>en</dc:language></metadata>"
+                + "<manifest>"
+                + "<item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='chapter' href='chapter.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "</manifest><spine toc='ncx'>"
+                + "<itemref idref='chapter'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?>"
+                + "<ncx xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/>"
+                + "<docTitle><text>Port 7 Publication Evidence</text>"
+                + "</docTitle><navMap>"
+                + "<navPoint id='chapter' playOrder='1'>"
+                + "<navLabel><text>Publication evidence</text></navLabel>"
+                + "<content src='chapter.xhtml'/></navPoint>"
+                + "</navMap></ncx>";
+        String chapter =
+            "<?xml version='1.0'?>"
+                + "<html xmlns='http://www.w3.org/1999/xhtml'>"
+                + "<head><title>Publication evidence</title></head>"
+                + "<body><p style='text-align:justify'>"
+                + "The reader’s deliberate line<br/>"
+                + "“Second line—kept intact.”<br/>"
+                + "Third line…still intact."
+                + "</p></body></html>";
+
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(
+                output, "META-INF/container.xml", container);
+            addZipEntry(
+                output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(output, "OEBPS/chapter.xhtml", chapter);
+        }
+        return result;
     }
 
     private static File createStyledEvidenceEpub(
@@ -3800,9 +4303,15 @@ public final class OctavoAppearanceTest {
                                 != 0;
                     }
                 }
+                int codepoint =
+                    OctavoTypography.codepointForGlyphForTesting(glyph);
                 assertTrue(
                     "Printable glyph had no atlas ink",
-                    glyph == 0 || hasInk);
+                    Character.isWhitespace(codepoint)
+                        || Character.isSpaceChar(codepoint)
+                        || Character.getType(codepoint)
+                            == Character.FORMAT
+                        || hasInk);
             }
         }
     }
@@ -3896,6 +4405,97 @@ public final class OctavoAppearanceTest {
                 actual[field]);
         }
     }
+
+    private static OctavoAppearance capturedTransitionalAppearance() {
+        return OctavoAppearance.create(
+            OctavoAppearance.THEME_SEPIA,
+            OctavoAppearance.FONT_FAMILY_LITERARY,
+            18,
+            1250,
+            OctavoAppearance.MARGINS_BALANCED,
+            OctavoAppearance.ALIGNMENT_PUBLISHER,
+            OctavoAppearance.PUBLISHER_COLORS_THEME_SAFE,
+            false);
+    }
+
+    private static void writeAppearanceRecord(
+        OctavoAppearanceStore store,
+        byte[] bytes)
+        throws IOException {
+        File parent = store.appearanceFileForTesting().getParentFile();
+        assertNotNull(parent);
+        assertTrue(parent.isDirectory() || parent.mkdirs());
+        try (FileOutputStream output =
+                 new FileOutputStream(
+                     store.appearanceFileForTesting(), false)) {
+            output.write(bytes);
+            output.flush();
+            output.getFD().sync();
+        }
+    }
+
+    private static byte[] readAppearanceRecord(
+        OctavoAppearanceStore store)
+        throws IOException {
+        File file = store.appearanceFileForTesting();
+        assertTrue(file.isFile());
+        assertEquals(
+            OctavoAppearanceStore.recordBytesForTesting(),
+            file.length());
+        byte[] bytes =
+            new byte[OctavoAppearanceStore.recordBytesForTesting()];
+        int offset = 0;
+        try (FileInputStream input = new FileInputStream(file)) {
+            while (offset < bytes.length) {
+                int count =
+                    input.read(bytes, offset, bytes.length - offset);
+                assertTrue(count > 0);
+                offset += count;
+            }
+            assertEquals(-1, input.read());
+        }
+        return bytes;
+    }
+
+    private static int appearanceRecordVersion(byte[] bytes) {
+        assertNotNull(bytes);
+        assertTrue(bytes.length >= 2 * Integer.BYTES);
+        return ByteBuffer.wrap(bytes)
+            .order(ByteOrder.BIG_ENDIAN)
+            .getInt(Integer.BYTES);
+    }
+
+    private static void awaitVisibleAppearanceSaveFailure(
+        ActivityScenario<OctavoActivity> scenario,
+        long expectedFailureCount) {
+        String expectedMessage =
+            "Appearance changed, but could not be saved";
+        for (int attempt = 0; attempt < 120; ++attempt) {
+            AtomicReference<Boolean> observed =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                View candidate = activity.findViewById(
+                    R.id.octavo_reader_failure);
+                boolean visible =
+                    candidate instanceof TextView
+                    && expectedMessage.contentEquals(
+                        ((TextView)candidate).getText());
+                observed.set(
+                    visible
+                    && expectedMessage.equals(
+                        activity.lastOpenErrorForTesting())
+                    && activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting()
+                        >= expectedFailureCount);
+            });
+            if (Boolean.TRUE.equals(observed.get())) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The gated migration save failure was not visibly reported");
+    }
+
 
     private static void flushPosition(
         ActivityScenario<OctavoActivity> scenario) {

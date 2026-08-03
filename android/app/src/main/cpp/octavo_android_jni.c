@@ -19,11 +19,15 @@
 #define OCTAVO_ANDROID_PATH_CAPACITY 4096u
 #define OCTAVO_ANDROID_TITLE_CAPACITY 256u
 #define OCTAVO_ANDROID_PROGRESS_CAPACITY 128u
-#define OCTAVO_ANDROID_STATE_FIELD_COUNT 95
+#define OCTAVO_ANDROID_STATE_FIELD_COUNT 96
 #define OCTAVO_ANDROID_TYPOGRAPHY_MAGIC 0x4F545950
-#define OCTAVO_ANDROID_TYPOGRAPHY_VERSION 1
+#define OCTAVO_ANDROID_TYPOGRAPHY_VERSION 2
 #define OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT 32
-#define OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT 95
+#define OCTAVO_ANDROID_TYPOGRAPHY_ASCII_LAST 126
+#define OCTAVO_ANDROID_TYPOGRAPHY_LATIN1_FIRST 160
+#define OCTAVO_ANDROID_TYPOGRAPHY_LATIN1_LAST 255
+#define OCTAVO_ANDROID_TYPOGRAPHY_ASCII_COUNT 95
+#define OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP 256
 #define OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT 4
 #define OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT 18
 #define OCTAVO_ANDROID_APPEARANCE_MAGIC 0x4F375041
@@ -99,11 +103,13 @@ typedef struct OctavoAndroidTypography
   int32_t line_advance_px;
   int32_t origin_x;
   int32_t baseline_y;
+  uint32_t codepoints[OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP];
   int32_t advances[OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT]
-                  [OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT];
+                  [OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP];
   uint8_t *alpha;
   size_t alpha_size;
   uint64_t rasterized_glyph_count;
+  uint64_t missing_glyph_count;
   uint64_t rasterized_style_count[OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT];
   int ready;
 } OctavoAndroidTypography;
@@ -213,6 +219,7 @@ typedef struct OctavoAndroidApp
   uint64_t location_warm_first_frame_count;
   uint64_t reader_entry_started_millis;
   uint64_t first_frame_elapsed_millis;
+  int first_frame_timing_finished;
   uint64_t page_move_expected_byte_offset;
   uint32_t page_move_expected_spine_index;
   uint64_t touch_down_time_millis;
@@ -294,11 +301,8 @@ octavo_android_import_typography(JNIEnv *environment,
     environment, metrics_array);
   jsize alpha_count = (*environment)->GetArrayLength(
     environment, alpha_array);
-  const jsize expected_metrics =
-    OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT +
-    OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT *
-      OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT;
-  if (metrics_count != expected_metrics || alpha_count <= 0)
+  if (metrics_count < OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT ||
+      alpha_count <= 0)
   {
     return 0;
   }
@@ -311,7 +315,8 @@ octavo_android_import_typography(JNIEnv *environment,
       header[0] != OCTAVO_ANDROID_TYPOGRAPHY_MAGIC ||
       header[1] != OCTAVO_ANDROID_TYPOGRAPHY_VERSION ||
       header[2] != OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT ||
-      header[3] != OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT ||
+      header[3] <= 0 ||
+      header[3] > OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP ||
       header[4] != OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT ||
       header[5] <= 0 || header[6] <= 0 ||
       header[7] <= 0 || header[8] <= 0 ||
@@ -328,22 +333,59 @@ octavo_android_import_typography(JNIEnv *environment,
   {
     return 0;
   }
-  size_t alpha_size = (size_t)header[11] * (size_t)header[10];
-  if (alpha_size == 0 || alpha_size > 64u * 1024u * 1024u ||
-      alpha_size > (size_t)alpha_count)
+  jsize glyph_count = (jsize)header[3];
+  jsize expected_metrics =
+    OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT + glyph_count +
+    OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT * glyph_count;
+  if (metrics_count != expected_metrics)
+  {
+    return 0;
+  }
+
+  jint raw_codepoints[OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP] = {0};
+  (*environment)->GetIntArrayRegion(
+    environment, metrics_array,
+    OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT,
+    glyph_count, raw_codepoints);
+  if ((*environment)->ExceptionCheck(environment))
+  {
+    return 0;
+  }
+  int has_fallback = 0;
+  int has_space = 0;
+  int has_n = 0;
+  int has_i = 0;
+  int has_w = 0;
+  for (jsize glyph = 0; glyph < glyph_count; ++glyph)
+  {
+    jint codepoint = raw_codepoints[glyph];
+    if (codepoint < OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT ||
+        codepoint > 0x10FFFF ||
+        (codepoint >= 0xD800 && codepoint <= 0xDFFF) ||
+        (glyph > 0 && codepoint <= raw_codepoints[glyph - 1]))
+    {
+      return 0;
+    }
+    has_fallback |= codepoint == '?';
+    has_space |= codepoint == ' ';
+    has_n |= codepoint == 'n';
+    has_i |= codepoint == 'i';
+    has_w |= codepoint == 'W';
+    typography->codepoints[glyph] = (uint32_t)codepoint;
+  }
+  if (!has_fallback || !has_space || !has_n || !has_i || !has_w)
   {
     return 0;
   }
 
   jint raw_advances[
     OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT *
-      OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT] = {0};
+      OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_CAP] = {0};
   (*environment)->GetIntArrayRegion(
     environment,
     metrics_array,
-    OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT,
-    OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT *
-      OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT,
+    OCTAVO_ANDROID_TYPOGRAPHY_HEADER_COUNT + glyph_count,
+    OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT * glyph_count,
     raw_advances);
   if ((*environment)->ExceptionCheck(environment))
   {
@@ -353,12 +395,9 @@ octavo_android_import_typography(JNIEnv *environment,
        style < OCTAVO_ANDROID_TYPOGRAPHY_STYLE_COUNT;
        ++style)
   {
-    for (int32_t glyph = 0;
-         glyph < OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT;
-         ++glyph)
+    for (jsize glyph = 0; glyph < glyph_count; ++glyph)
     {
-      jint advance = raw_advances[
-        style * OCTAVO_ANDROID_TYPOGRAPHY_GLYPH_COUNT + glyph];
+      jint advance = raw_advances[style * glyph_count + glyph];
       if (advance <= 0 || advance > header[7] * 2)
       {
         return 0;
@@ -367,6 +406,12 @@ octavo_android_import_typography(JNIEnv *environment,
     }
   }
 
+  size_t alpha_size = (size_t)header[11] * (size_t)header[10];
+  if (alpha_size == 0 || alpha_size > 64u * 1024u * 1024u ||
+      alpha_size > (size_t)alpha_count)
+  {
+    return 0;
+  }
   uint8_t *alpha = (uint8_t *)malloc(alpha_size);
   if (!alpha)
   {
@@ -428,7 +473,7 @@ octavo_android_import_appearance(JNIEnv *environment,
       config[1] != OCTAVO_ANDROID_APPEARANCE_VERSION ||
       config[2] < 0 || config[2] >= OCTAVO_ANDROID_THEME_COUNT ||
       config[3] < 0 || config[3] > 1 ||
-      (config[4] != 16 && config[4] != 18 &&
+      (config[4] != 14 && config[4] != 16 && config[4] != 18 &&
        config[4] != 21 && config[4] != 24 && config[4] != 28) ||
       (config[5] != 1150 && config[5] != 1250 &&
        config[5] != 1300 && config[5] != 1500) ||
@@ -690,18 +735,60 @@ octavo_android_next_codepoint(const uint8_t *text,
 }
 
 static int32_t
+octavo_android_typography_find_glyph(
+  const OctavoAndroidTypography *typography,
+  uint32_t codepoint)
+{
+  if (!typography || !typography->ready || typography->glyph_count <= 0)
+  {
+    return -1;
+  }
+  int32_t direct = -1;
+  if (codepoint >= OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT &&
+      codepoint <= OCTAVO_ANDROID_TYPOGRAPHY_ASCII_LAST)
+  {
+    direct = (int32_t)codepoint -
+      OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT;
+  }
+  else if (codepoint >= OCTAVO_ANDROID_TYPOGRAPHY_LATIN1_FIRST &&
+           codepoint <= OCTAVO_ANDROID_TYPOGRAPHY_LATIN1_LAST)
+  {
+    direct = OCTAVO_ANDROID_TYPOGRAPHY_ASCII_COUNT +
+      (int32_t)codepoint - OCTAVO_ANDROID_TYPOGRAPHY_LATIN1_FIRST;
+  }
+  if (direct >= 0 && direct < typography->glyph_count &&
+      typography->codepoints[direct] == codepoint)
+  {
+    return direct;
+  }
+  int32_t lower = 0;
+  int32_t upper = typography->glyph_count;
+  while (lower < upper)
+  {
+    int32_t middle = lower + (upper - lower) / 2;
+    uint32_t candidate = typography->codepoints[middle];
+    if (candidate < codepoint)
+    {
+      lower = middle + 1;
+    }
+    else
+    {
+      upper = middle;
+    }
+  }
+  return lower < typography->glyph_count &&
+    typography->codepoints[lower] == codepoint ? lower : -1;
+}
+
+static int32_t
 octavo_android_typography_glyph_index(
   const OctavoAndroidTypography *typography,
   uint32_t codepoint)
 {
-  if (!typography || !typography->ready ||
-      codepoint < (uint32_t)typography->first_codepoint ||
-      codepoint >= (uint32_t)(typography->first_codepoint +
-                              typography->glyph_count))
-  {
-    codepoint = '?';
-  }
-  return (int32_t)codepoint - typography->first_codepoint;
+  int32_t glyph =
+    octavo_android_typography_find_glyph(typography, codepoint);
+  return glyph >= 0 ? glyph :
+    octavo_android_typography_find_glyph(typography, '?');
 }
 
 static int32_t
@@ -718,8 +805,13 @@ octavo_android_typography_advance(
   }
   if (codepoint == '\t')
   {
-    int32_t space = ' ' - typography->first_codepoint;
+    int32_t space = octavo_android_typography_glyph_index(
+      typography, ' ');
     int32_t style = octavo_android_typography_style(flags);
+    if (space < 0 || style < 0 || style >= typography->style_count)
+    {
+      return 0;
+    }
     return MAX(octavo_android_scaled_px(
                  typography->advances[style][space] * 4,
                  scale_permille),
@@ -755,8 +847,16 @@ octavo_android_draw_typography_glyph(OctavoAndroidApp *app,
     return;
   }
   OctavoAndroidTypography *typography = &app->typography;
-  int32_t glyph = octavo_android_typography_glyph_index(
+  int32_t glyph = octavo_android_typography_find_glyph(
     typography, codepoint);
+  if (glyph < 0)
+  {
+    if (typography->missing_glyph_count < UINT64_MAX)
+    {
+      typography->missing_glyph_count += 1u;
+    }
+    glyph = octavo_android_typography_find_glyph(typography, '?');
+  }
   int32_t style = octavo_android_typography_style(flags);
   if (glyph < 0 || glyph >= typography->glyph_count ||
       style < 0 || style >= typography->style_count)
@@ -842,11 +942,25 @@ octavo_android_fill_rect(OctavoAndroidPixels pixels,
   UI0Rect visible = octavo_android_intersect_rect(
     octavo_android_intersect_rect(rect, clip),
     octavo_android_pixel_bounds(pixels));
+  if (!pixels.data || visible.w <= 0 || visible.h <= 0)
+  {
+    return;
+  }
+  uint8_t red = octavo_android_color_channel(color, 16u);
+  uint8_t green = octavo_android_color_channel(color, 8u);
+  uint8_t blue = octavo_android_color_channel(color, 0u);
+  uint8_t alpha = octavo_android_color_channel(color, 24u);
   for (int32_t y = visible.y; y < visible.y + visible.h; ++y)
   {
-    for (int32_t x = visible.x; x < visible.x + visible.w; ++x)
+    uint8_t *pixel = pixels.data +
+      ((size_t)y * (size_t)pixels.stride + (size_t)visible.x) * 4u;
+    for (int32_t x = 0; x < visible.w; ++x)
     {
-      octavo_android_write_pixel(pixels, x, y, color);
+      pixel[0] = red;
+      pixel[1] = green;
+      pixel[2] = blue;
+      pixel[3] = alpha;
+      pixel += 4;
     }
   }
 }
@@ -1362,22 +1476,6 @@ octavo_android_reader_row_has_safe_justification_styles(
   return 1;
 }
 
-static B32
-octavo_android_reader_row_is_soft_wrapped(
-  const OctavoAndroidApp *app,
-  const EpubReaderFrameStyleRow *row)
-{
-  if (!app || !row)
-  {
-    return 0;
-  }
-  U32 end = MIN(row->byte_end, (U32)app->reader_frame.visible_text.size);
-  return ((end < app->reader_frame.visible_text.size &&
-           app->reader_frame.visible_text.str[end] == ' ') ||
-          (end > row->byte_start &&
-           app->reader_frame.visible_text.str[end - 1u] == ' '));
-}
-
 static OctavoReaderJustificationBlockRole
 octavo_android_reader_justification_block_role(DocTextBlockKind block_kind)
 {
@@ -1423,7 +1521,7 @@ octavo_android_reader_justification_plan_for_row(
       app->appearance.alignment == 0 &&
       row->text_align == DocTextAlign_Justify,
     .block_last_row = row->block_last_row,
-    .soft_wrapped = octavo_android_reader_row_is_soft_wrapped(app, row),
+    .soft_wrapped = row->soft_wrapped,
     .safe_styles =
       octavo_android_reader_row_has_safe_justification_styles(app, row),
     .heading_level = row->heading_level,
@@ -1579,7 +1677,8 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     text_clip, octavo_android_pixel_bounds(pixels));
   S32 base_line_height = MAX(app->typography.line_advance_px, 1);
   S32 char_advance = MAX(
-    app->typography.advances[0]['n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT],
+    octavo_android_typography_advance(
+      &app->typography, 'n', 0, 1000u),
     1);
   S32 y = content.y;
   S32 bottom = content.y + content.h;
@@ -1594,12 +1693,11 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
                     (U32)app->reader_frame.visible_text.size);
     U32 end = MIN(row->byte_end,
                   (U32)app->reader_frame.visible_text.size);
-    while (end > start &&
-           (app->reader_frame.visible_text.str[end - 1u] == '\r' ||
-            app->reader_frame.visible_text.str[end - 1u] == '\n'))
-    {
-      --end;
-    }
+    end = octavo_reader_visible_row_end(
+      app->reader_frame.visible_text.str,
+      start,
+      end,
+      row->soft_wrapped);
     if (row->line_row == 0 && row->margin_top_rows > 0)
     {
       y += row->margin_top_rows * base_line_height;
@@ -1851,8 +1949,8 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
       return 0;
     }
     S32 char_advance = MAX(
-      app->typography.advances[0][
-        'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT],
+      octavo_android_typography_advance(
+      &app->typography, 'n', 0, 1000u),
       1);
     S32 line_height = MAX(app->typography.line_advance_px, 1);
     U32 wrap_columns = (U32)MAX(content.w / char_advance, 1);
@@ -2158,6 +2256,11 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
   {
     return 0;
   }
+  if (!app->resumed || !app->window ||
+      !app->reader_frame.ready || !app->reader_view_ready)
+  {
+    return 0;
+  }
   if (octavo_android_presentation_pending(app))
   {
     if (app->page_move_waiting_for_present)
@@ -2300,6 +2403,15 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   {
     return 0;
   }
+  int first_frame_timing = !app->first_frame_timing_finished;
+  uint64_t present_started_millis = first_frame_timing ?
+    octavo_android_uptime_millis() : 0u;
+  uint64_t geometry_set_millis = 0;
+  uint64_t buffer_locked_millis = 0;
+  uint64_t page_built_millis = 0;
+  uint64_t page_filled_millis = 0;
+  uint64_t text_drawn_millis = 0;
+  uint64_t posted_millis = 0;
 
   if (app->forced_pre_present_failures_for_testing > 0)
   {
@@ -2323,6 +2435,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     return 0;
   }
 
+  if (first_frame_timing)
+  {
+    geometry_set_millis = octavo_android_uptime_millis();
+  }
   ANativeWindow_Buffer buffer;
   memset(&buffer, 0, sizeof(buffer));
   if (ANativeWindow_lock(app->window, &buffer, 0) != 0)
@@ -2346,6 +2462,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     return 0;
   }
 
+  if (first_frame_timing)
+  {
+    buffer_locked_millis = octavo_android_uptime_millis();
+  }
   OctavoAndroidPixels pixels = {
     .data = (uint8_t *)buffer.bits,
     .width = buffer.width,
@@ -2361,6 +2481,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 7 page");
     return 0;
+  }
+  if (first_frame_timing)
+  {
+    page_built_millis = octavo_android_uptime_millis();
   }
   if (!octavo_android_pending_frame_matches(app))
   {
@@ -2378,8 +2502,11 @@ octavo_android_present_frame(OctavoAndroidApp *app)
    * chrome composition seamless at its exposed edges.
    */
   octavo_android_fill_rect(pixels, bounds, bounds, page_color);
-  octavo_android_fill_rect(
-    pixels, app->reader_view_layout.page_surface_rect, bounds, page_color);
+  if (first_frame_timing)
+  {
+    page_filled_millis = octavo_android_uptime_millis();
+  }
+
   OctavoAndroidJustificationEvidence justification_evidence = {0};
   if (!octavo_android_draw_reader_text(
         app, pixels, &justification_evidence))
@@ -2392,6 +2519,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       "8vo",
       "Unable to resolve the bounded Android reader justification plan");
     return 0;
+  }
+  if (first_frame_timing)
+  {
+    text_drawn_millis = octavo_android_uptime_millis();
   }
   if (app->chrome_visible && !OCTAVO_ANDROID_HOST_OWNS_READER_CHROME)
   {
@@ -2406,6 +2537,8 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     return 0;
   }
 
+  posted_millis = first_frame_timing ?
+    octavo_android_uptime_millis() : 0u;
   if (app->forced_present_failures_for_testing > 0)
   {
     app->forced_present_failures_for_testing -= 1;
@@ -2467,21 +2600,50 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   }
   app->presented_reader_view_theme = app->reader_view_theme;
   app->presented_reader_view_theme_valid = 1;
-  if (app->first_frame_elapsed_millis == 0 &&
-      app->reader_entry_started_millis > 0)
+  if (first_frame_timing)
   {
-    uint64_t now = octavo_android_uptime_millis();
-    if (now >= app->reader_entry_started_millis)
+    int timing_chain_valid =
+      app->reader_entry_started_millis > 0 &&
+      present_started_millis > 0 &&
+      geometry_set_millis >= present_started_millis &&
+      buffer_locked_millis >= geometry_set_millis &&
+      page_built_millis >= buffer_locked_millis &&
+      page_filled_millis >= page_built_millis &&
+      text_drawn_millis >= page_filled_millis &&
+      posted_millis >= text_drawn_millis &&
+      posted_millis >= app->reader_entry_started_millis;
+    app->first_frame_timing_finished = 1;
+    if (timing_chain_valid)
     {
       app->first_frame_elapsed_millis =
-        MAX(now - app->reader_entry_started_millis, UINT64_C(1));
+        MAX(posted_millis - app->reader_entry_started_millis, UINT64_C(1));
+      __android_log_print(
+        ANDROID_LOG_INFO,
+        "8vo",
+        "Android Port 7 accepted first-frame stages geometry=%llu lock=%llu "
+        "build=%llu fill=%llu draw=%llu post=%llu total=%llu",
+        (unsigned long long)(geometry_set_millis - present_started_millis),
+        (unsigned long long)(buffer_locked_millis - geometry_set_millis),
+        (unsigned long long)(page_built_millis - buffer_locked_millis),
+        (unsigned long long)(page_filled_millis - page_built_millis),
+        (unsigned long long)(text_drawn_millis - page_filled_millis),
+        (unsigned long long)(posted_millis - text_drawn_millis),
+        (unsigned long long)(posted_millis - present_started_millis));
+    }
+    else
+    {
+      __android_log_print(
+        ANDROID_LOG_WARN,
+        "8vo",
+        "Android Port 7 accepted first-frame timing unavailable");
     }
   }
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
     "Android Port 7 frame=%llu surface=%llu size=%dx%d page=%llu/%llu "
-    "reader_bytes=%llu reader_hash=%016llx view_draws=%d first_ms=%llu",
+    "reader_bytes=%llu reader_hash=%016llx view_draws=%d first_ms=%llu "
+    "missing_glyphs=%llu",
     (unsigned long long)app->frame_count,
     (unsigned long long)app->surface_generation,
     app->width,
@@ -2491,7 +2653,8 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     (unsigned long long)app->reader_frame.visible_text.size,
     (unsigned long long)u64_hash_str8(app->reader_frame.visible_text),
     app->reader_view_frame.draw_command_count,
-    (unsigned long long)app->first_frame_elapsed_millis);
+    (unsigned long long)app->first_frame_elapsed_millis,
+    (unsigned long long)app->typography.missing_glyph_count);
   return 1;
 }
 
@@ -2554,15 +2717,30 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                          jintArray appearance_config,
                                          jintArray appearance_colors,
                                          jintArray typography_metrics,
-                                         jbyteArray typography_alpha)
+                                         jbyteArray typography_alpha,
+                                         jlong reader_entry_started_millis)
 {
   (void)type;
+  uint64_t created_millis = octavo_android_uptime_millis();
   OctavoAndroidApp *app = (OctavoAndroidApp *)calloc(1, sizeof(*app));
   if (!app)
   {
     return 0;
   }
-  app->reader_entry_started_millis = octavo_android_uptime_millis();
+  if (reader_entry_started_millis > 0 &&
+      created_millis > 0 &&
+      (uint64_t)reader_entry_started_millis <= created_millis)
+  {
+    app->reader_entry_started_millis =
+      (uint64_t)reader_entry_started_millis;
+  }
+  else
+  {
+    __android_log_print(
+      ANDROID_LOG_WARN,
+      "8vo",
+      "Android Port 7 reader-entry timing unavailable");
+  }
 
   if (resume_requested &&
       (resume_spine_index < 0 ||
@@ -2668,10 +2846,10 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
     app->typography.text_px != next_typography.text_px ||
     app->typography.line_advance_px !=
       next_typography.line_advance_px ||
-    app->typography.advances[0][
-      'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT] !=
-      next_typography.advances[0][
-        'n' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT];
+    octavo_android_typography_advance(
+      &app->typography, 'n', 0, 1000u) !=
+      octavo_android_typography_advance(
+      &next_typography, 'n', 0, 1000u);
   OctavoAndroidAppearance old_appearance = app->appearance;
   OctavoAndroidTypography old_typography = app->typography;
   app->typography = next_typography;
@@ -2846,6 +3024,8 @@ Java_ro_devze_octavo_OctavoNative_surfaceChanged(JNIEnv *environment,
   app->width = (int32_t)width;
   app->height = (int32_t)height;
   app->host_frame_waiting_for_present = 1;
+  app->touch_active = 0;
+  app->touch_direction = 0;
 }
 
 JNIEXPORT void JNICALL
@@ -3047,6 +3227,28 @@ Java_ro_devze_octavo_OctavoNative_setChromeVisible(
 }
 
 JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_movePage(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint direction)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || (direction != -1 && direction != 1))
+  {
+    return 0;
+  }
+  jint result = OCTAVO_ANDROID_TOUCH_HANDLED;
+  if (octavo_android_move_page(app, direction))
+  {
+    result |= OCTAVO_ANDROID_TOUCH_PRESENT_REQUESTED;
+  }
+  return result;
+}
+
+JNIEXPORT jint JNICALL
 Java_ro_devze_octavo_OctavoNative_accessibilityMovePage(
   JNIEnv *environment,
   jclass type,
@@ -3222,10 +3424,10 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[39] = app->typography.ready ? 1 : 0;
   values[40] = app->typography.text_px;
   values[41] = app->typography.line_advance_px;
-  values[42] = app->typography.advances[0][
-    'i' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT];
-  values[43] = app->typography.advances[0][
-    'W' - OCTAVO_ANDROID_TYPOGRAPHY_FIRST_CODEPOINT];
+  values[42] = octavo_android_typography_advance(
+    &app->typography, 'i', 0, 1000u);
+  values[43] = octavo_android_typography_advance(
+    &app->typography, 'W', 0, 1000u);
   values[44] = app->typography.style_count;
   values[45] = (jlong)app->typography.rasterized_glyph_count;
   values[46] = (jlong)app->typography.rasterized_style_count[0];
@@ -3281,6 +3483,7 @@ Java_ro_devze_octavo_OctavoNative_state(JNIEnv *environment,
   values[92] = (jlong)app->justification_evidence.semantic_hash;
   values[93] = (jlong)app->reader_entry_started_millis;
   values[94] = (jlong)app->first_frame_elapsed_millis;
+  values[95] = (jlong)app->typography.missing_glyph_count;
   jlongArray result =
     (*environment)->NewLongArray(environment, OCTAVO_ANDROID_STATE_FIELD_COUNT);
   if (!result)

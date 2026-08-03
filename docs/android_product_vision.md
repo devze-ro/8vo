@@ -81,11 +81,16 @@ The captures contain third-party book text and remain under ignored
 `local/reference/`; they are not part of the public repository.
 
 The current Port 7 refinement makes the reading page one borderless canonical
-full-viewport surface. Hidden chrome is the identity presentation of that
-page; when controls are visible, the Android host uniformly scales and
-translates the same native Surface between the controls. Showing chrome does
-not reserve permanent page bands, repaginate, redraw, or change the committed
-semantic location.
+full-viewport surface. Ordinary entry and book reopen start with chrome hidden;
+Activity recreation alone may restore transient visible chrome. Hidden chrome
+is the identity presentation of that page. When controls are visible, the
+Android host uniformly scales and translates the same native Surface between
+Library/title/single-tap `Aa` and read-only progress, without visible
+Previous/Next buttons. Showing chrome does not reserve permanent page bands,
+repaginate, redraw, or change the committed semantic location. Horizontal
+swipes, taps, virtual actions, and keyboard navigation share the same
+successful-presentation gate, with stale gestures cleared across lifecycle and
+surface boundaries.
 
 ## Night-reading advantage
 
@@ -110,12 +115,31 @@ Port 7 establishes the first bounded implementation of that theme system:
 - generic Android serif and sans-serif choices without introducing an
   unlicensed bundled font.
 
-The global reader default is 16sp. The version-2 appearance migration changes
-only an exact version-1 all-default 18sp record to that new default. Version 1
-did not store whether that identical tuple was explicitly reselected; every
-other version-1 tuple and any version-2 18sp choice is preserved. The bounded
-typography atlas is rebuilt only when its family, resolved pixel size, or line
-spacing key changes.
+The global reader default is 14sp, with six choices from 14sp through 28sp.
+Loading a valid version-1 18sp default, version-2 16sp default, or transitional
+version-2 18sp value produces the 14sp appearance in memory while preserving
+every other valid field and leaving the old bytes untouched. The transitional
+value is a bounded pre-origin ambiguity: the version-2 writer could republish an
+inherited version-1 18sp default after a non-font change. Inherited and explicit
+v2/18 origins cannot be distinguished, so every v2/18 record migrates.
+Version-2 21/24/28sp and every valid version-3 choice remain exact; impossible
+old-schema 14sp records are rejected. Version 3 publishes only after the first
+successfully accepted reader frame. Failed atomic publication remains pending,
+is visibly reported, and retries after a later successful presentation.
+The bounded typography atlas is rebuilt only when its family, resolved pixel
+size, or line-spacing key changes. Atlas version 2 uses a sorted sparse
+233-codepoint map for printable ASCII, U+00A0..U+00FF, and 42 curated
+publication characters, with bounded lookup and missing-glyph diagnostics
+rather than a claim of full Unicode shaping.
+
+Publisher justification also has one cross-platform rule. Reader0
+`0.6.0-dev`/API 6 records authoritative `soft_wrapped` provenance in canonical
+styled rows; measured space/em-dash wraps are true and final/hard-line or image
+boundaries are false. 8vo's shared desktop/Android raster planner consumes that
+field and uses overflow-safe widened arithmetic to fill eligible prose to the
+available measure. Layout-only trailing whitespace is excluded from
+measurement/drawing while visible em dashes remain ink. Ragged right and
+intentional hard lines keep natural word spacing.
 
 The broader product contract still requires:
 
@@ -125,18 +149,32 @@ The broader product contract still requires:
   image treatment;
 - optional schedule/system-theme following without taking away manual choice.
 
-Port 7 implementation is not night-mode acceptance. The current borderless and
-performance refinement passed 27/27 API 36 tests, its 130% system-text probe,
-both Android ABI builds, the desktop regressions, and fresh-process evidence.
-With the user-owned *Gardens of the Moon* EPUB already imported, an externally
-observed Library-to-Resume took 411ms, native creation to the successfully
-presented frame took 220ms, and the sampled transition contained no black or
-near-black app frame. Full evidence and measurement limits are recorded in
-`android_port7.md`. Physical-iQOO evidence from the preceding candidate is
-historical and superseded; it must be repeated on the current APK. Audible
-TalkBack, hands-on keyboard/switch and reduced-motion review, prolonged Paper,
-Warm dark, and OLED reading, and subjective dark-room comfort evidence must
-still be completed before the foundation is accepted.
+Port 7 implementation is not night-mode acceptance. The current source consumes
+Reader0 `0.6.0-dev`/API 6 at
+`59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`. Reader0, companion re10, exact 8vo
+guards/audit, clean dual-ABI Android, strict Windows/public-smoke, ProcessRestart,
+130% accessibility, crash, and byte-exact backup/restore gates passed. The final
+matrix passed 36/36 on the API 36 emulator in 510.019 seconds and 36/36 on the
+iQOO in 108.467 seconds of instrumentation time. Current controlled imported-
+book Resume reached the accepted semantic location in 138ms with 24ms total
+native stages, zero missing glyphs, and no visible reader controls. Every
+completed 33-test API 6, API 5, and earlier record is historical evidence for an
+earlier binary.
+
+The still earlier post-feedback APK's API 36 33/33 run in 96.223
+seconds, restart, 130% system-text, crash-buffer, exact-book visual/timing, and
+Paper/Dusk transition evidence are historical. Its API 34 iQOO 33/33 run in
+104.855 seconds, restart, large-text, crash, visual, swipe, reopen, and timings
+of 140ms first open, 121ms median warm reopen, and 102ms focused reopen are also
+historical. The still older borderless/performance binary's 27/27, 411ms, and
+native-only 220ms results remain a separate superseded record; its 220ms
+boundary is not comparable with the current metric. Full evidence and
+measurement limits are recorded in `android_port7.md`.
+
+The current API 6 candidate's objective gates pass. It still requires audible
+TalkBack, keyboard/switch and reduced-motion review, prolonged Paper, Dusk, Warm
+dark, and OLED reading, and subjective dark-room comfort evidence before the
+foundation is accepted.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots
@@ -204,20 +242,23 @@ duplicating EPUB interpretation, pagination, search anchoring, selection
 anchoring, or navigation logic in Java or the 8vo host.
 
 Port 7 applies that rule concretely. Android owns one global appearance
-record, semantic product palettes, generic system-font acquisition,
-full-viewport Surface composition, chrome, and the custom-view accessibility
-adapter. A layout-affecting change uses Reader0's public canonical location
-navigation to rebuild the page that contains the last successfully presented
-semantic byte. Showing or hiding chrome only composes the already presented
-page; the host does not substitute page-number arithmetic or Java pagination
-for either operation.
+record, semantic product palettes, generic system-font acquisition and its
+bounded sparse atlas, full-viewport Surface composition, chrome, gesture/key
+classification, and the custom-view accessibility adapter. A layout-affecting
+change uses Reader0's public canonical location navigation to rebuild the page
+that contains the last successfully presented semantic byte. Showing or hiding
+chrome only composes the already presented page; tap, swipe, keyboard, and
+accessibility page intents enter one native presentation gate. The host does
+not substitute page-number arithmetic or Java pagination for any operation.
 
 Windows and Android consume one allocation-free 8vo word-spacing plan over
-validated Reader0 rows; the plan does not own line breaking or document
-semantics. The shared Windows theme catalog centralizes its six stable IDs,
-labels, UI0 mappings, and reader/search/highlight roles. Android palettes are
-intentionally independently tuned for Android surfaces and night-reading
-conditions instead of forcing pixel equivalence across platforms.
+validated Reader0 rows; the plan expands only eligible soft-wrapped rows and
+leaves explicit publisher hard lines such as `<br>` verse naturally spaced. It
+does not own line breaking or document semantics. The shared Windows theme
+catalog centralizes its six stable IDs, labels, UI0 mappings, and
+reader/search/highlight roles. Android palettes are intentionally independently
+tuned for Android surfaces and night-reading conditions instead of forcing
+pixel equivalence across platforms.
 
 Reader entry uses native debug code built with `-O2` and symbols. Expensive
 whole-book location metadata is not warmed before the first page: bounded
@@ -225,7 +266,21 @@ one-spine steps run only after a successful presentation and then refresh the
 same page's metadata. A synchronous target-theme cover hides the native
 Surface's initial compositor layer until that successful frame is ready, and
 privacy-safe first-frame timing remains diagnostic evidence rather than a
-second presentation authority.
+second presentation authority. Android fills rows directly, avoids a redundant
+fill, and uses validated direct ASCII/Latin-1 glyph lookup with bounded
+fallback.
+
+The timing boundary begins at the first instruction of `showReader` and ends
+after the first native unlock/post that passes every successful-presentation
+gate. It excludes earlier input dispatch, later compositor display, and the two
+Java frames before cover removal. On the earlier post-feedback
+APK, exact-book warm same-process samples were 825, 566, 582, 563, and 595ms
+(median 582ms), with a final screen-record sample of 529ms. Its iQOO first open
+was 140ms, controlled warm reopens were 121, 80, and 122ms (median 121ms), and
+the focused reopen was 102ms. All are historical. The current controlled iQOO
+Resume reached its accepted semantic location in 138ms with 24ms total native
+stages, zero missing glyphs, and no visible reader controls. The strict automated
+gate remains 1500ms; the older native-only 220ms result is not comparable.
 
 ## Evidence standard
 

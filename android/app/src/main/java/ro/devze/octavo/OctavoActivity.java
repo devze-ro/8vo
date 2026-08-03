@@ -7,6 +7,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -42,8 +43,7 @@ public final class OctavoActivity extends Activity {
     private FrameLayout readerRoot;
     private LinearLayout readerTopChrome;
     private LinearLayout readerBottomChrome;
-    private Button readerPrevious;
-    private Button readerNext;
+    private Button readerLibrary;
     private Button readerSettings;
     private TextView readerProgress;
     private FrameLayout appearanceOverlay;
@@ -57,7 +57,7 @@ public final class OctavoActivity extends Activity {
     private OctavoSurfaceView surfaceView;
     private OctavoLibraryStore.Book activeBook;
     private boolean activityResumed;
-    private boolean chromeVisible = true;
+    private boolean chromeVisible;
     private String lastOpenError;
     private String deferredAppearanceFailure;
     private OctavoAppearance pendingAppearancePersistence;
@@ -74,8 +74,8 @@ public final class OctavoActivity extends Activity {
         appearance = appearanceStore.load();
         boolean appearanceResetAfterCorruption =
             appearanceStore.recoveredFromCorruption();
-        chromeVisible = savedInstanceState == null
-            || savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, true);
+        chromeVisible = savedInstanceState != null
+            && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
         libraryStore = new OctavoLibraryStore(this);
         File fixture = new File(OctavoFixture.install(this));
@@ -195,6 +195,7 @@ public final class OctavoActivity extends Activity {
 
     private boolean showReader(OctavoLibraryStore.Book requested,
                                boolean recordOpened) {
+        long readerEntryStartedMillis = SystemClock.uptimeMillis();
         OctavoLibraryStore.Book current =
             libraryStore.findBook(requested.key);
         OctavoLibraryStore.Book target = current == null ? requested : current;
@@ -204,6 +205,9 @@ public final class OctavoActivity extends Activity {
                 : libraryStore.sessionFor(target);
         if (session == null) {
             return false;
+        }
+        if (recordOpened) {
+            chromeVisible = false;
         }
 
         OctavoSurfaceView replacement;
@@ -215,6 +219,7 @@ public final class OctavoActivity extends Activity {
                     session,
                     appearance,
                     chromeVisible,
+                    readerEntryStartedMillis,
                     createReaderListener());
         } catch (RuntimeException exception) {
             return false;
@@ -293,7 +298,6 @@ public final class OctavoActivity extends Activity {
             "Aa", tokens.buttonSurface, tokens.chromeText);
         settings.setId(R.id.octavo_reader_appearance);
         settings.setContentDescription("Reader appearance");
-        settings.setFocusableInTouchMode(true);
         settings.setOnClickListener(view -> openAppearancePanel());
         top.addView(settings, chromeButtonLayout());
 
@@ -314,13 +318,6 @@ public final class OctavoActivity extends Activity {
         bottom.setBackgroundColor(tokens.chromeSurface);
         bottom.setElevation(dp(2));
 
-        Button previous = createThemedButton(
-            "‹", tokens.buttonSurface, tokens.chromeText);
-        previous.setId(R.id.octavo_reader_previous);
-        previous.setContentDescription("Previous page");
-        previous.setOnClickListener(view ->
-            replacement.movePageForAccessibility(-1));
-        bottom.addView(previous, chromeButtonLayout());
 
         TextView progress = new TextView(this);
         progress.setId(R.id.octavo_reader_progress);
@@ -334,13 +331,6 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         bottom.addView(progress, weightedLayout());
 
-        Button next = createThemedButton(
-            "›", tokens.buttonSurface, tokens.chromeText);
-        next.setId(R.id.octavo_reader_next);
-        next.setContentDescription("Next page");
-        next.setOnClickListener(view ->
-            replacement.movePageForAccessibility(1));
-        bottom.addView(next, chromeButtonLayout());
 
         FrameLayout.LayoutParams bottomLayout =
             new FrameLayout.LayoutParams(
@@ -355,35 +345,22 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         library.setAccessibilityTraversalBefore(settings.getId());
         settings.setAccessibilityTraversalBefore(replacement.getId());
-        replacement.setAccessibilityTraversalBefore(previous.getId());
-        previous.setAccessibilityTraversalBefore(next.getId());
-        next.setAccessibilityTraversalBefore(progress.getId());
+        replacement.setAccessibilityTraversalBefore(progress.getId());
         library.setNextFocusForwardId(settings.getId());
         settings.setNextFocusForwardId(replacement.getId());
-        replacement.setNextFocusForwardId(previous.getId());
-        previous.setNextFocusForwardId(next.getId());
+        replacement.setNextFocusForwardId(library.getId());
         library.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, null, settings));
         settings.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, library, replacement));
-        previous.setOnKeyListener((view, keyCode, event) ->
-            moveReaderKeyboardFocus(
-                keyCode, event, replacement,
-                next.isEnabled() ? next : library));
-        next.setOnKeyListener((view, keyCode, event) ->
-            moveReaderKeyboardFocus(
-                keyCode, event,
-                previous.isEnabled() ? previous : replacement,
-                library));
         readerTopChrome = top;
         readerBottomChrome = bottom;
-        readerPrevious = previous;
-        readerNext = next;
+        readerLibrary = library;
         readerSettings = settings;
         readerProgress = progress;
-        updateReaderNavigationButtons(replacement);
+        updateReaderNavigationAvailability(replacement);
         setChromeViewsVisible(chromeVisible, false);
 
         int chromeWidthSpec = View.MeasureSpec.makeMeasureSpec(
@@ -528,31 +505,29 @@ public final class OctavoActivity extends Activity {
 
             @Override
             public void onReaderPresentationChanged(String label) {
+                if (appearanceStore.hasPendingMigration()) {
+                    persistPresentedAppearance(appearance);
+                }
                 finishReaderEntryCover();
                 if (readerProgress != null && label != null) {
                     readerProgress.setText(label);
                     readerProgress.setContentDescription(label);
                 }
-                updateReaderNavigationButtons(surfaceView);
+                updateReaderNavigationAvailability(surfaceView);
             }
         };
     }
 
-    private void updateReaderNavigationButtons(OctavoSurfaceView view) {
-        if (readerPrevious == null || readerNext == null || view == null) {
+    private void updateReaderNavigationAvailability(OctavoSurfaceView view) {
+        if (view == null) {
             return;
         }
-        boolean canPrevious = view.canMovePrevious();
-        boolean canNext = view.canMoveNext();
-        readerPrevious.setEnabled(canPrevious);
-        readerNext.setEnabled(canNext);
-        int forwardId = canPrevious
-            ? readerPrevious.getId()
-            : canNext ? readerNext.getId() : View.NO_ID;
-        view.setNextFocusForwardId(forwardId);
+        int libraryId = readerLibrary == null
+            ? View.NO_ID : readerLibrary.getId();
+        view.setNextFocusForwardId(libraryId);
         view.setKeyboardBoundaryFocusIds(
             readerSettings == null ? View.NO_ID : readerSettings.getId(),
-            forwardId);
+            libraryId);
     }
 
     private static boolean moveReaderKeyboardFocus(
@@ -862,7 +837,6 @@ public final class OctavoActivity extends Activity {
             || appearancePanel != null) {
             return;
         }
-        surfaceView.setChromeVisible(true);
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
 
@@ -986,6 +960,7 @@ public final class OctavoActivity extends Activity {
 
     private void showLibrary() {
         releaseReader();
+        chromeVisible = false;
         activeBook = null;
         applyWindowAppearance();
         OctavoDesignTokens tokens =
@@ -1213,8 +1188,7 @@ public final class OctavoActivity extends Activity {
         readerRoot = null;
         readerTopChrome = null;
         readerBottomChrome = null;
-        readerPrevious = null;
-        readerNext = null;
+        readerLibrary = null;
         readerSettings = null;
         readerProgress = null;
         systemBarRoot = null;

@@ -3,9 +3,9 @@
 Current pinned reader0 consumer dependency:
 
 - mode: `sibling-source`
-- version: `0.5.0-dev`
-- API version: `5`
-- commit: `b604556723c5a196ed7d2b1249f56bd3d976edb4`
+- version: `0.6.0-dev`
+- API version: `6`
+- commit: `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`
 
 This directory contains dependency metadata, not a source snapshot. 8vo
 locates the live reader0 checkout through `OCTAVO_READER0_DIR` or

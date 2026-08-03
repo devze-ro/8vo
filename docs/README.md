@@ -7,8 +7,10 @@
   Kindle-benchmark capability contract, current Port 6 baseline, target
   classification, service exclusions, and parity-audit procedure.
 - [`android_roadmap.md`](android_roadmap.md) sequences the accepted Ports 0-6
-  foundation, proposed Port 7 reader-experience slice, later capability lanes,
+  foundation, current Port 7 reader-experience candidate, later capability lanes,
   and permanent release gates.
+- [`android_port7.md`](android_port7.md) defines the implemented premium reader
+  appearance foundation and its pending acceptance boundary.
 - [`architecture.md`](architecture.md) describes the current 8vo ownership and
   source-consumption boundaries.
 - [`android_port0.md`](android_port0.md) defines the Android toolchain, native

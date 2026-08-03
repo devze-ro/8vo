@@ -19,6 +19,7 @@ $dependencyCheckPath = Join-Path $RepoRoot "scripts\check_dependencies.ps1"
 $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
 $androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
+$androidJniPath = Join-Path $androidCppRoot "octavo_android_jni.c"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
 if (!(Test-Path -LiteralPath $appPath)) { $failures.Add("missing code/octavo.c") }
 if (!(Test-Path -LiteralPath $themeHeaderPath)) {
@@ -54,6 +55,9 @@ if (!(Test-Path -LiteralPath $win32BuildPath)) {
 if (!(Test-Path -LiteralPath $androidCMakePath)) {
   $failures.Add("missing Android native build definition")
 }
+if (!(Test-Path -LiteralPath $androidJniPath)) {
+  $failures.Add("missing Android native host adapter")
+}
 
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
@@ -70,6 +74,7 @@ if ($failures.Count -eq 0) {
   $win32Build = [System.IO.File]::ReadAllText($win32BuildPath)
   $androidCMake = [System.IO.File]::ReadAllText($androidCMakePath)
   $forbiddenGround0Variable = "LECTERN0_ZERO_" + "FOUNDATION_DIR"
+  $androidJni = [System.IO.File]::ReadAllText($androidJniPath)
   if ($dependencyCheck.IndexOf($forbiddenGround0Variable) -ge 0 -or
       $win32Build.IndexOf($forbiddenGround0Variable) -ge 0) {
     $failures.Add("dependency resolution must not use the forbidden legacy Ground0 environment variable")
@@ -144,10 +149,17 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("octavo must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 5') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 6') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 5 including author metadata")
+    $failures.Add("octavo must consume Reader0 API 6 including author metadata")
   }
+  if ($app.IndexOf('.soft_wrapped = row->soft_wrapped') -lt 0 -or
+      $app.IndexOf('octavo_reader_row_is_soft_wrapped') -ge 0 -or
+      $androidJni.IndexOf('.soft_wrapped = row->soft_wrapped') -lt 0 -or
+      $androidJni.IndexOf('octavo_android_reader_row_is_soft_wrapped') -ge 0) {
+    $failures.Add("Windows and Android must consume Reader0 API 6 authoritative soft-wrap provenance")
+  }
+
   if ($app.IndexOf('#include "ui0.h"') -lt 0) {
     $failures.Add("octavo must consume the UI0 umbrella")
   }
@@ -378,7 +390,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('OctavoAdjacentWarmPageCap = 4') -lt 0 -or
       $app.IndexOf('adjacent_warm_direction') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 5 navigation preparation with bounded four-page host warming")
+    $failures.Add("octavo must consume Reader0 API 6 navigation preparation with bounded four-page host warming")
   }
   $timerResolutionBegins =
     [regex]::Matches($app, 'timeBeginPeriod\s*\(\s*1\s*\)').Count

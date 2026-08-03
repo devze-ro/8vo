@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -126,7 +127,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     static final int STATE_JUSTIFICATION_SEMANTIC_HASH = 92;
     static final int STATE_READER_ENTRY_STARTED_MILLIS = 93;
     static final int STATE_FIRST_FRAME_ELAPSED_MILLIS = 94;
-    static final int STATE_FIELD_COUNT = 95;
+    static final int STATE_TYPOGRAPHY_MISSING_GLYPH_COUNT = 95;
+    static final int STATE_FIELD_COUNT = 96;
 
     private long nativeHandle;
     private boolean hostResumed;
@@ -139,6 +141,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private final OctavoLibraryStore.Book book;
     private final Listener listener;
     private final OctavoReaderAccessibilityProvider accessibilityProvider;
+    private final int swipeMinimumDistancePx;
     private OctavoAppearance presentedAppearance;
     private OctavoAppearance requestedAppearance;
     private OctavoAppearance nativeAppearanceAwaitingPresentation;
@@ -151,6 +154,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean chromeCompositionTransitioning;
     private long chromeCompositionGeneration;
     private long touchCompositionGeneration;
+    private int activePointerId = MotionEvent.INVALID_POINTER_ID;
+    private float gestureDownX;
+    private float gestureDownY;
+    private boolean gestureCommitted;
+    private boolean gestureCancelled;
     private boolean chromeVisible;
     private long lastNotifiedFrameCount;
     private int systemInsetLeft;
@@ -216,8 +224,13 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                       OctavoLibraryStore.Session session,
                       OctavoAppearance appearance,
                       boolean chromeVisible,
+                      long readerEntryStartedMillis,
                       Listener listener) {
         super(context);
+        int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        int minimumDp = Math.round(
+            48.0f * context.getResources().getDisplayMetrics().density);
+        swipeMinimumDistancePx = Math.max(touchSlop * 4, minimumDp);
         this.libraryStore = libraryStore;
         this.listener = listener;
         book = session.book;
@@ -239,7 +252,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             presentedAppearance.nativeConfig(),
             tokens.nativeUi0Colors(),
             typography.metrics,
-            typography.alpha);
+            typography.alpha,
+            readerEntryStartedMillis);
         if (nativeHandle == 0) {
             throw new IllegalStateException(
                 "Unable to create the 8vo native application state");
@@ -297,6 +311,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                                int format,
                                int width,
                                int height) {
+        clearGestureTracking();
         if (nativeHandle != 0) {
             resetPresentationRetries();
             OctavoNative.surfaceChanged(nativeHandle, format, width, height);
@@ -308,6 +323,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        clearGestureTracking();
         if (nativeHandle != 0) {
             capturePresentedPosition();
             flushPresentedPosition();
@@ -324,37 +340,128 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (nativeHandle == 0) {
+        if (nativeHandle == 0 || event == null) {
             return false;
         }
         int action = event.getActionMasked();
         if (chromeCompositionTransitioning) {
+            cancelNativeTouch(event);
+            clearGestureTracking();
             return true;
         }
         if (action == MotionEvent.ACTION_DOWN) {
+            activePointerId = event.getPointerId(0);
+            gestureDownX = event.getX(0);
+            gestureDownY = event.getY(0);
+            gestureCommitted = false;
+            gestureCancelled = false;
             touchCompositionGeneration = chromeCompositionGeneration;
-        } else if ((action == MotionEvent.ACTION_UP
-                    || action == MotionEvent.ACTION_CANCEL)
-                   && touchCompositionGeneration
-                       != chromeCompositionGeneration) {
-            OctavoNative.touch(
-                nativeHandle,
-                MotionEvent.ACTION_CANCEL,
-                event.getX(),
-                event.getY(),
+            return dispatchNativeTouch(
+                MotionEvent.ACTION_DOWN,
+                gestureDownX,
+                gestureDownY,
                 event.getEventTime());
+        }
+        if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            cancelNativeTouch(event);
+            gestureCancelled = true;
             return true;
         }
-        int result = OctavoNative.touch(nativeHandle,
-                                        action,
-                                        event.getX(),
-                                        event.getY(),
-                                        event.getEventTime());
+        int pointerIndex = event.findPointerIndex(activePointerId);
+        if (pointerIndex < 0) {
+            cancelNativeTouch(event);
+            clearGestureTracking();
+            return true;
+        }
+        float x = event.getX(pointerIndex);
+        float y = event.getY(pointerIndex);
+        if (touchCompositionGeneration != chromeCompositionGeneration) {
+            cancelNativeTouch(event);
+            clearGestureTracking();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (gestureCancelled || gestureCommitted) {
+                return true;
+            }
+            float deltaX = x - gestureDownX;
+            float deltaY = y - gestureDownY;
+            float absoluteX = Math.abs(deltaX);
+            float absoluteY = Math.abs(deltaY);
+            if (absoluteX >= swipeMinimumDistancePx
+                && absoluteX > absoluteY * 1.25f) {
+                cancelNativeTouch(event);
+                gestureCommitted = true;
+                requestPageMove(deltaX < 0.0f ? 1 : -1);
+                return true;
+            }
+            if (absoluteY >= swipeMinimumDistancePx
+                && absoluteY > absoluteX) {
+                cancelNativeTouch(event);
+                gestureCancelled = true;
+            }
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            if (gestureCancelled || gestureCommitted) {
+                clearGestureTracking();
+                return true;
+            }
+            boolean handled = dispatchNativeTouch(
+                MotionEvent.ACTION_UP, x, y, event.getEventTime());
+            clearGestureTracking();
+            return handled;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            cancelNativeTouch(event);
+            clearGestureTracking();
+            return true;
+        }
+        return true;
+    }
+
+    private boolean dispatchNativeTouch(int action,
+                                        float x,
+                                        float y,
+                                        long eventTimeMillis) {
+        int result = OctavoNative.touch(
+            nativeHandle, action, x, y, eventTimeMillis);
         if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
             requestNativePresentation();
         }
         if ((result & OctavoNative.TOUCH_CHROME_REQUESTED) != 0) {
             updateChromeVisibility(!chromeVisible, true);
+        }
+        return (result & OctavoNative.TOUCH_HANDLED) != 0;
+    }
+
+    private void cancelNativeTouch(MotionEvent event) {
+        if (nativeHandle == 0) {
+            return;
+        }
+        float x = event == null || event.getPointerCount() == 0
+            ? 0.0f : event.getX(0);
+        float y = event == null || event.getPointerCount() == 0
+            ? 0.0f : event.getY(0);
+        long eventTime = event == null
+            ? android.os.SystemClock.uptimeMillis() : event.getEventTime();
+        OctavoNative.touch(
+            nativeHandle, MotionEvent.ACTION_CANCEL, x, y, eventTime);
+    }
+
+    private void clearGestureTracking() {
+        activePointerId = MotionEvent.INVALID_POINTER_ID;
+        gestureCommitted = false;
+        gestureCancelled = false;
+    }
+
+    private boolean requestPageMove(int direction) {
+        if (nativeHandle == 0) {
+            return false;
+        }
+        int result = OctavoNative.movePage(nativeHandle, direction);
+        if ((result & OctavoNative.TOUCH_PRESENT_REQUESTED) != 0) {
+            requestNativePresentation();
         }
         return (result & OctavoNative.TOUCH_HANDLED) != 0;
     }
@@ -389,6 +496,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 || !chromeVisible
                 || moveKeyboardFocusOutsideReader(backward)) {
                 return true;
+            }
+        }
+        if (event.getRepeatCount() == 0 && event.hasNoModifiers()) {
+            if (keyCode == KeyEvent.KEYCODE_PAGE_UP
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                return requestPageMove(-1);
+            }
+            if (keyCode == KeyEvent.KEYCODE_PAGE_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                return requestPageMove(1);
             }
         }
         if ((keyCode == KeyEvent.KEYCODE_ENTER
@@ -429,6 +546,9 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (nativeHandle == 0) {
             return false;
         }
+        if (chromeVisible == visible) {
+            return true;
+        }
         if (!OctavoNative.setChromeVisible(nativeHandle, visible)) {
             notifyNativePresentationIfChanged();
             requestPendingNativePresentation();
@@ -456,6 +576,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     void beginChromeCompositionTransition(int durationMillis) {
         removeCallbacks(finishChromeCompositionTask);
+        clearGestureTracking();
         chromeCompositionGeneration += 1;
         if (nativeHandle != 0) {
             OctavoNative.touch(
@@ -907,6 +1028,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     void hostPaused() {
+        clearGestureTracking();
         if (nativeHandle != 0 && hostResumed) {
             capturePresentedPosition();
             flushPresentedPosition();

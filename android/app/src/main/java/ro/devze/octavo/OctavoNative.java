@@ -33,7 +33,8 @@ final class OctavoNative {
                               int[] appearanceConfig,
                               int[] appearanceColors,
                               int[] typographyMetrics,
-                              byte[] typographyAlpha);
+                              byte[] typographyAlpha,
+                              long readerEntryStartedMillis);
     static native int applyAppearance(long handle,
                                       int[] appearanceConfig,
                                       int[] appearanceColors,
@@ -67,6 +68,7 @@ final class OctavoNative {
     static native boolean present(long handle);
     static native int navigationAvailability(long handle);
     static native boolean setChromeVisible(long handle, boolean visible);
+    static native int movePage(long handle, int direction);
     static native int accessibilityMovePage(long handle, int direction);
     static native int warmLocationCacheStep(long handle);
     static native long[] locationCacheState(long handle);

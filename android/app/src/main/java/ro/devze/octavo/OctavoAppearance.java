@@ -52,7 +52,7 @@ final class OctavoAppearance {
     static final int PUBLISHER_COLORS_ALLOW = 1;
     static final int PUBLISHER_COLORS_COUNT = 2;
 
-    private static final int[] FONT_SIZES_SP = {16, 18, 21, 24, 28};
+    private static final int[] FONT_SIZES_SP = {14, 16, 18, 21, 24, 28};
     private static final int[] LINE_SPACINGS_PERMILLE = {
         1150, 1250, 1300, 1500
     };
@@ -61,29 +61,25 @@ final class OctavoAppearance {
     private static final OctavoAppearance DEFAULT = new OctavoAppearance(
         THEME_PAPER,
         FONT_FAMILY_LITERARY,
-        16,
+        14,
         1250,
         MARGINS_BALANCED,
         ALIGNMENT_PUBLISHER,
         PUBLISHER_COLORS_THEME_SAFE,
         false);
 
-    /*
-     * This is the exact all-default tuple written before 16sp became the
-     * product default. The store may migrate it only while decoding the
-     * corresponding legacy store version; ordinary 18sp choices remain
-     * valid preferences.
-     */
-    private static final OctavoAppearance LEGACY_ALL_DEFAULT_18SP =
+    /* Frozen schema default used only to construct legacy test records. */
+    private static final OctavoAppearance PREVIOUS_DEFAULT_16SP =
         new OctavoAppearance(
             THEME_PAPER,
             FONT_FAMILY_LITERARY,
-            18,
+            16,
             1250,
             MARGINS_BALANCED,
             ALIGNMENT_PUBLISHER,
             PUBLISHER_COLORS_THEME_SAFE,
             false);
+
 
     private final int themeId;
     private final int fontFamilyId;
@@ -116,8 +112,8 @@ final class OctavoAppearance {
         return DEFAULT;
     }
 
-    boolean isLegacyAllDefault18Sp() {
-        return equals(LEGACY_ALL_DEFAULT_18SP);
+    static OctavoAppearance previousDefault16Sp() {
+        return PREVIOUS_DEFAULT_16SP;
     }
 
     static OctavoAppearance create(int themeId,

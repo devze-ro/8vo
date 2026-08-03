@@ -240,7 +240,7 @@ public final class OctavoBootstrapTest {
         assertEquals("0.7.0-dev", OctavoNative.version());
         assertEquals("android", OctavoNative.platform());
         assertEquals("0.4.3-dev", OctavoNative.groundVersion());
-        assertEquals("0.5.0-dev", OctavoNative.readerVersion());
+        assertEquals("0.6.0-dev", OctavoNative.readerVersion());
         assertEquals("0.1.0-dev", OctavoNative.uiVersion());
         assertEquals("0.3.0-dev", OctavoNative.readerViewVersion());
 

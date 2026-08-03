@@ -12,12 +12,26 @@ import java.nio.ByteBuffer;
 
 final class OctavoTypography {
     static final int MAGIC = 0x4F545950;
-    static final int VERSION = 1;
+    static final int VERSION = 2;
     static final int FIRST_CODEPOINT = 32;
-    static final int GLYPH_COUNT = 95;
+    private static final int LAST_ASCII_CODEPOINT = 126;
+    private static final int FIRST_LATIN1_CODEPOINT = 160;
+    private static final int LAST_LATIN1_CODEPOINT = 255;
+    private static final int[] PUBLICATION_CODEPOINTS = {
+        0x0152, 0x0153, 0x0160, 0x0161, 0x0178, 0x017D, 0x017E,
+        0x0192, 0x02C6, 0x02DC, 0x2002, 0x2003, 0x2007, 0x2009,
+        0x200A, 0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015,
+        0x2018, 0x2019, 0x201A, 0x201B, 0x201C, 0x201D, 0x201E,
+        0x201F, 0x2020, 0x2021, 0x2022, 0x2026, 0x2030, 0x2032,
+        0x2033, 0x2039, 0x203A, 0x2044, 0x20AC, 0x2122, 0x2212
+    };
+    private static final int[] CODEPOINTS = buildCodepoints();
+    static final int GLYPH_COUNT = CODEPOINTS.length;
     static final int STYLE_COUNT = 4;
     static final int COLUMN_COUNT = 16;
     static final int HEADER_COUNT = 18;
+    static final int CODEPOINT_OFFSET = HEADER_COUNT;
+    static final int ADVANCE_OFFSET = CODEPOINT_OFFSET + GLYPH_COUNT;
     private static final int MAX_TEXT_PX = 512;
     private static final int MAX_ATLAS_DIMENSION = 16384;
     private static final int MAX_ATLAS_BYTES = 64 * 1024 * 1024;
@@ -94,8 +108,7 @@ final class OctavoTypography {
             ascent = Math.max(ascent, -font.ascent);
             descent = Math.max(descent, font.descent);
             for (int glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
-                String text = Character.toString(
-                    (char)(FIRST_CODEPOINT + glyph));
+                String text = textForCodepoint(CODEPOINTS[glyph]);
                 paints[style].getTextBounds(text, 0, 1, bounds);
                 minimumLeft = Math.min(minimumLeft, bounds.left);
                 maximumRight = Math.max(maximumRight, bounds.right);
@@ -140,8 +153,7 @@ final class OctavoTypography {
                     int row = glyph / COLUMN_COUNT +
                         style * rowsPerStyle;
                     canvas.drawText(
-                        Character.toString(
-                            (char)(FIRST_CODEPOINT + glyph)),
+                        textForCodepoint(CODEPOINTS[glyph]),
                         column * cellWidth + originX,
                         row * cellHeight + baselineY,
                         paints[style]);
@@ -158,7 +170,7 @@ final class OctavoTypography {
             ByteBuffer pixels = ByteBuffer.allocate((int)alphaBytesLong);
             bitmap.copyPixelsToBuffer(pixels);
             int[] metrics = new int[
-                HEADER_COUNT + STYLE_COUNT * GLYPH_COUNT];
+                ADVANCE_OFFSET + STYLE_COUNT * GLYPH_COUNT];
             metrics[0] = MAGIC;
             metrics[1] = VERSION;
             metrics[2] = FIRST_CODEPOINT;
@@ -182,7 +194,10 @@ final class OctavoTypography {
                 requestedLineAdvance, cellHeight - padding);
             metrics[16] = originX;
             metrics[17] = baselineY;
-            int at = HEADER_COUNT;
+            int at = CODEPOINT_OFFSET;
+            for (int codepoint : CODEPOINTS) {
+                metrics[at++] = codepoint;
+            }
             for (int style = 0; style < STYLE_COUNT; ++style) {
                 for (int glyph = 0; glyph < GLYPH_COUNT; ++glyph) {
                     metrics[at++] = advances[style][glyph];
@@ -217,6 +232,43 @@ final class OctavoTypography {
 
     static synchronized long cacheBuildCountForTesting() {
         return cacheBuildCount;
+    }
+
+    static int codepointForGlyphForTesting(int glyph) {
+        if (glyph < 0 || glyph >= GLYPH_COUNT) {
+            throw new IllegalArgumentException("Glyph index is out of range");
+        }
+        return CODEPOINTS[glyph];
+    }
+
+    private static int[] buildCodepoints() {
+        int asciiCount = LAST_ASCII_CODEPOINT - FIRST_CODEPOINT + 1;
+        int latin1Count = LAST_LATIN1_CODEPOINT - FIRST_LATIN1_CODEPOINT + 1;
+        int[] result = new int[
+            asciiCount + latin1Count + PUBLICATION_CODEPOINTS.length];
+        int at = 0;
+        for (int value = FIRST_CODEPOINT;
+             value <= LAST_ASCII_CODEPOINT;
+             ++value) {
+            result[at++] = value;
+        }
+        for (int value = FIRST_LATIN1_CODEPOINT;
+             value <= LAST_LATIN1_CODEPOINT;
+             ++value) {
+            result[at++] = value;
+        }
+        for (int value : PUBLICATION_CODEPOINTS) {
+            if (at > 0 && value <= result[at - 1]) {
+                throw new IllegalStateException(
+                    "Typography codepoints must be strictly increasing");
+            }
+            result[at++] = value;
+        }
+        return result;
+    }
+
+    private static String textForCodepoint(int codepoint) {
+        return new String(Character.toChars(codepoint));
     }
 
     private static Paint paint(int textPx, Typeface family, int style) {

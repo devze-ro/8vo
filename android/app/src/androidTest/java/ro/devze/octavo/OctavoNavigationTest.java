@@ -188,6 +188,111 @@ public final class OctavoNavigationTest {
             SystemClock.uptimeMillis()));
     }
 
+    private static void dispatchGesture(OctavoSurfaceView surface,
+                                        float downX,
+                                        float downY,
+                                        float moveX,
+                                        float moveY,
+                                        long eventTimeMillis) {
+        MotionEvent down = MotionEvent.obtain(eventTimeMillis,
+                                              eventTimeMillis,
+                                              MotionEvent.ACTION_DOWN,
+                                              downX,
+                                              downY,
+                                              0);
+        MotionEvent move = MotionEvent.obtain(eventTimeMillis,
+                                              eventTimeMillis + 10,
+                                              MotionEvent.ACTION_MOVE,
+                                              moveX,
+                                              moveY,
+                                              0);
+        MotionEvent up = MotionEvent.obtain(eventTimeMillis,
+                                            eventTimeMillis + 20,
+                                            MotionEvent.ACTION_UP,
+                                            moveX,
+                                            moveY,
+                                            0);
+        try {
+            assertTrue(surface.dispatchTouchEvent(down));
+            assertTrue(surface.dispatchTouchEvent(move));
+            assertTrue(surface.dispatchTouchEvent(up));
+        } finally {
+            down.recycle();
+            move.recycle();
+            up.recycle();
+        }
+    }
+
+    private static void dispatchHorizontalSwipe(OctavoSurfaceView surface,
+                                                boolean next,
+                                                long eventTimeMillis) {
+        float width = surface.getWidth();
+        float centerX = width / 2.0f;
+        float centerY = surface.getHeight() / 2.0f;
+        dispatchGesture(surface,
+                        centerX,
+                        centerY,
+                        width * (next ? 0.12f : 0.88f),
+                        centerY,
+                        eventTimeMillis);
+    }
+
+    private static long dispatchHorizontalSwipeDown(
+        OctavoSurfaceView surface) {
+        long downTime = SystemClock.uptimeMillis();
+        float centerX = surface.getWidth() / 2.0f;
+        float centerY = surface.getHeight() / 2.0f;
+        MotionEvent down = MotionEvent.obtain(downTime,
+                                              downTime,
+                                              MotionEvent.ACTION_DOWN,
+                                              centerX,
+                                              centerY,
+                                              0);
+        try {
+            assertTrue(surface.dispatchTouchEvent(down));
+        } finally {
+            down.recycle();
+        }
+        return downTime;
+    }
+
+    private static void dispatchHorizontalSwipeRemainder(
+        OctavoSurfaceView surface,
+        boolean next,
+        long downTime) {
+        long moveTime = Math.max(SystemClock.uptimeMillis(), downTime + 10);
+        float width = surface.getWidth();
+        float centerY = surface.getHeight() / 2.0f;
+        float moveX = width * (next ? 0.12f : 0.88f);
+        MotionEvent move = MotionEvent.obtain(downTime,
+                                              moveTime,
+                                              MotionEvent.ACTION_MOVE,
+                                              moveX,
+                                              centerY,
+                                              0);
+        MotionEvent up = MotionEvent.obtain(downTime,
+                                            moveTime + 10,
+                                            MotionEvent.ACTION_UP,
+                                            moveX,
+                                            centerY,
+                                            0);
+        try {
+            assertTrue(surface.dispatchTouchEvent(move));
+            assertTrue(surface.dispatchTouchEvent(up));
+        } finally {
+            move.recycle();
+            up.recycle();
+        }
+    }
+
+    private static void swipe(ActivityScenario<OctavoActivity> scenario,
+                              boolean next) {
+        scenario.onActivity(activity -> dispatchHorizontalSwipe(
+            (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface),
+            next,
+            SystemClock.uptimeMillis()));
+    }
+
     private static Bitmap copyFrame(OctavoSurfaceView surface)
         throws InterruptedException {
         int width = surface.getWidth();
@@ -261,6 +366,55 @@ public final class OctavoNavigationTest {
                        OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX]
                    < snapshot[
                        OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT]);
+    }
+
+    private static void assertGestureBoundaryPreservedNavigation(
+        long[] beforeRemainder,
+        long[] afterRemainder) {
+        int[] unchangedFields = {
+            OctavoSurfaceView.STATE_SPINE_INDEX,
+            OctavoSurfaceView.STATE_PAGE_INDEX,
+            OctavoSurfaceView.STATE_PAGE_COUNT,
+            OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH,
+            OctavoSurfaceView.STATE_TAP_INTENT_COUNT,
+            OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT,
+            OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT,
+            OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT,
+            OctavoSurfaceView.STATE_PAGE_MOVE_GATE_BLOCK_COUNT,
+            OctavoSurfaceView.STATE_CHROME_VISIBLE,
+            OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT
+        };
+        for (int field : unchangedFields) {
+            assertEquals(
+                "A stale partial swipe changed reader state field " + field,
+                beforeRemainder[field],
+                afterRemainder[field]);
+        }
+    }
+
+    private static long[] awaitSameLocationAfterHostBoundary(
+        ActivityScenario<OctavoActivity> scenario,
+        long[] expected,
+        long previousFrameCount,
+        String failureMessage) {
+        return awaitState(
+            scenario,
+            snapshot ->
+                snapshot[OctavoSurfaceView.STATE_RESUMED] == 1
+                && snapshot[OctavoSurfaceView.STATE_HAS_SURFACE] == 1
+                && snapshot[OctavoSurfaceView.STATE_FRAME_COUNT]
+                    > previousFrameCount
+                && snapshot[OctavoSurfaceView.STATE_SPINE_INDEX]
+                    == expected[OctavoSurfaceView.STATE_SPINE_INDEX]
+                && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX]
+                    == expected[OctavoSurfaceView.STATE_PAGE_INDEX]
+                && snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                    == expected[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                && snapshot[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0
+                && snapshot[
+                    OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+            failureMessage);
     }
 
     @Test
@@ -408,6 +562,341 @@ public final class OctavoNavigationTest {
             } finally {
                 initialPixels.recycle();
             }
+        }
+    }
+
+    @Test
+    public void swipesMoveOnePageRejectNoiseAndRespectPresentationGate()
+        throws InterruptedException {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            long[] initial = awaitInitialPage(scenario);
+            initial = awaitLocationCacheComplete(scenario);
+            long pageCount = initial[OctavoSurfaceView.STATE_PAGE_COUNT];
+            long initialHash =
+                initial[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH];
+            assertTrue("Port 7 swipe fixture needs at least four pages",
+                       pageCount >= 4);
+            assertTrue(
+                "Port 7 14sp default pagination exceeded its regression bound",
+                pageCount <= 64);
+            assertEquals(14,
+                         initial[OctavoSurfaceView.STATE_FONT_SIZE_SP]);
+            assertEquals(
+                "A fresh reader must begin with immersive chrome hidden",
+                0,
+                initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+
+            swipe(scenario, false);
+            long[] beginningBoundary = state(scenario);
+            assertPageAndProgress(beginningBoundary, 1, pageCount);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT] + 1,
+                beginningBoundary[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT]);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT],
+                beginningBoundary[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH],
+                beginningBoundary[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                beginningBoundary[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertNavigationHealthy(beginningBoundary);
+
+            swipe(scenario, true);
+            long[] next = awaitPage(scenario, 2);
+            assertPageAndProgress(next, 2, pageCount);
+            assertEquals(
+                beginningBoundary[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                next[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertTrue(next[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                       != initialHash);
+            assertEquals(
+                beginningBoundary[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                next[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertEquals(
+                "A center-origin horizontal swipe toggled reader chrome",
+                0,
+                next[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertNavigationHealthy(next);
+
+            AtomicReference<long[]> ignoredGestures = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                assertNotNull(view);
+                long now = SystemClock.uptimeMillis();
+                float centerX = view.getWidth() / 2.0f;
+                float centerY = view.getHeight() / 2.0f;
+                dispatchGesture(view,
+                                centerX,
+                                view.getHeight() * 0.20f,
+                                centerX,
+                                view.getHeight() * 0.86f,
+                                now);
+                dispatchGesture(view,
+                                centerX,
+                                centerY,
+                                centerX + 32.0f,
+                                centerY,
+                                now + 40);
+                ignoredGestures.set(view.nativeStateForTesting());
+            });
+            assertNotNull(ignoredGestures.get());
+            long[] ignored = ignoredGestures.get();
+            assertPageAndProgress(ignored, 2, pageCount);
+            assertEquals(next[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH],
+                         ignored[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+            assertEquals(next[OctavoSurfaceView.STATE_FRAME_COUNT],
+                         ignored[OctavoSurfaceView.STATE_FRAME_COUNT]);
+            assertEquals(
+                next[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT],
+                ignored[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                next[OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT],
+                ignored[OctavoSurfaceView.STATE_PAGE_MOVE_BOUNDARY_COUNT]);
+            assertEquals(
+                next[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                ignored[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertNavigationHealthy(ignored);
+
+            swipe(scenario, false);
+            long[] restored = awaitPage(scenario, 1);
+            assertPageAndProgress(restored, 1, pageCount);
+            assertEquals(initialHash,
+                         restored[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]);
+            assertEquals(
+                ignored[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                restored[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                ignored[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                restored[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertNavigationHealthy(restored);
+
+            AtomicReference<long[]> gated = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                assertNotNull(view);
+                long now = SystemClock.uptimeMillis();
+                dispatchHorizontalSwipe(view, true, now);
+                dispatchHorizontalSwipe(view, true, now + 30);
+                gated.set(view.nativeStateForTesting());
+            });
+            assertNotNull(gated.get());
+            assertEquals(
+                1,
+                gated.get()[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
+            assertEquals(
+                restored[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                gated.get()[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertTrue(
+                gated.get()[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_GATE_BLOCK_COUNT]
+                    > restored[
+                        OctavoSurfaceView.STATE_PAGE_MOVE_GATE_BLOCK_COUNT]);
+            assertEquals(
+                restored[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                gated.get()[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+
+            long[] gatedPage = awaitPage(scenario, 2);
+            assertPageAndProgress(gatedPage, 2, pageCount);
+            assertEquals(
+                restored[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                gatedPage[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                restored[OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT] + 1,
+                gatedPage[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTED_COUNT]);
+            assertNavigationHealthy(gatedPage);
+        }
+    }
+
+    @Test
+    public void partialSwipesAreCancelledAcrossHostAndSurfaceBoundaries() {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitInitialPage(scenario);
+            long[] initial = awaitLocationCacheComplete(scenario);
+            assertEquals(0,
+                         initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertNavigationHealthy(initial);
+
+            AtomicReference<Long> partialDownTime = new AtomicReference<>();
+            AtomicReference<Long> frameBeforeBoundary =
+                new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                assertNotNull(view);
+                long[] beforePause = view.nativeStateForTesting();
+                frameBeforeBoundary.set(
+                    beforePause[OctavoSurfaceView.STATE_FRAME_COUNT]);
+                partialDownTime.set(
+                    dispatchHorizontalSwipeDown(view));
+                view.hostPaused();
+                assertEquals(
+                    0,
+                    view.nativeStateForTesting()[
+                        OctavoSurfaceView.STATE_RESUMED]);
+                view.hostResumed();
+            });
+            long[] resumed = awaitSameLocationAfterHostBoundary(
+                scenario,
+                initial,
+                frameBeforeBoundary.get(),
+                "8vo did not re-present the exact page after host resume");
+            assertGestureBoundaryPreservedNavigation(initial, resumed);
+
+            AtomicReference<long[]> beforeRemainder = new AtomicReference<>();
+            AtomicReference<long[]> afterRemainder = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                beforeRemainder.set(view.nativeStateForTesting());
+                dispatchHorizontalSwipeRemainder(
+                    view, true, partialDownTime.get());
+                afterRemainder.set(view.nativeStateForTesting());
+            });
+            assertGestureBoundaryPreservedNavigation(
+                beforeRemainder.get(), afterRemainder.get());
+            assertNavigationHealthy(afterRemainder.get());
+
+            AtomicReference<long[]> pausedBeforeSwipe =
+                new AtomicReference<>();
+            AtomicReference<long[]> pausedAfterSwipe =
+                new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                view.hostPaused();
+                pausedBeforeSwipe.set(view.nativeStateForTesting());
+                assertEquals(
+                    0,
+                    pausedBeforeSwipe.get()[
+                        OctavoSurfaceView.STATE_RESUMED]);
+                dispatchHorizontalSwipe(
+                    view, true, SystemClock.uptimeMillis());
+                pausedAfterSwipe.set(view.nativeStateForTesting());
+                view.hostResumed();
+            });
+            assertGestureBoundaryPreservedNavigation(
+                pausedBeforeSwipe.get(), pausedAfterSwipe.get());
+            long[] afterPausedSwipe = awaitSameLocationAfterHostBoundary(
+                scenario,
+                initial,
+                resumed[OctavoSurfaceView.STATE_FRAME_COUNT],
+                "8vo did not recover after rejecting a paused swipe");
+            assertGestureBoundaryPreservedNavigation(initial, afterPausedSwipe);
+            assertNavigationHealthy(afterPausedSwipe);
+
+            AtomicReference<Long> surfaceGeneration = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                long[] beforeReplacement = view.nativeStateForTesting();
+                frameBeforeBoundary.set(
+                    beforeReplacement[OctavoSurfaceView.STATE_FRAME_COUNT]);
+                surfaceGeneration.set(
+                    beforeReplacement[
+                        OctavoSurfaceView.STATE_SURFACE_GENERATION]);
+                partialDownTime.set(
+                    dispatchHorizontalSwipeDown(view));
+                view.replaceNativeSurfaceForTesting();
+            });
+            long[] replaced = awaitState(
+                scenario,
+                snapshot ->
+                    snapshot[OctavoSurfaceView.STATE_SURFACE_GENERATION]
+                        > surfaceGeneration.get()
+                    && snapshot[OctavoSurfaceView.STATE_FRAME_COUNT]
+                        > frameBeforeBoundary.get()
+                    && snapshot[OctavoSurfaceView.STATE_SPINE_INDEX]
+                        == initial[OctavoSurfaceView.STATE_SPINE_INDEX]
+                    && snapshot[OctavoSurfaceView.STATE_PAGE_INDEX]
+                        == initial[OctavoSurfaceView.STATE_PAGE_INDEX]
+                    && snapshot[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                        == initial[OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH]
+                    && snapshot[
+                        OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]
+                        == 0
+                    && snapshot[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+                "8vo did not re-present the exact page after surface "
+                    + "replacement");
+            assertGestureBoundaryPreservedNavigation(initial, replaced);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                beforeRemainder.set(view.nativeStateForTesting());
+                dispatchHorizontalSwipeRemainder(
+                    view, true, partialDownTime.get());
+                afterRemainder.set(view.nativeStateForTesting());
+            });
+            assertGestureBoundaryPreservedNavigation(
+                beforeRemainder.get(), afterRemainder.get());
+            assertNavigationHealthy(afterRemainder.get());
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                long[] beforeChange = view.nativeStateForTesting();
+                frameBeforeBoundary.set(
+                    beforeChange[OctavoSurfaceView.STATE_FRAME_COUNT]);
+                partialDownTime.set(
+                    dispatchHorizontalSwipeDown(view));
+                view.surfaceChanged(view.getHolder(),
+                                    0,
+                                    view.getWidth(),
+                                    view.getHeight());
+            });
+            long[] changed = awaitSameLocationAfterHostBoundary(
+                scenario,
+                initial,
+                frameBeforeBoundary.get(),
+                "8vo did not re-present the exact page after surfaceChanged");
+            assertGestureBoundaryPreservedNavigation(initial, changed);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                beforeRemainder.set(view.nativeStateForTesting());
+                dispatchHorizontalSwipeRemainder(
+                    view, true, partialDownTime.get());
+                afterRemainder.set(view.nativeStateForTesting());
+            });
+            assertGestureBoundaryPreservedNavigation(
+                beforeRemainder.get(), afterRemainder.get());
+            assertNavigationHealthy(afterRemainder.get());
+
+            swipe(scenario, true);
+            long[] next = awaitPage(scenario, 2);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT] + 1,
+                next[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
+            assertEquals(
+                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                next[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertNavigationHealthy(next);
         }
     }
 

@@ -16,6 +16,7 @@ import android.text.TextUtils;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -63,8 +64,6 @@ public final class OctavoAccessibilityTest {
         OctavoSurfaceView.STATE_SECTION_COUNT,
         OctavoSurfaceView.STATE_PROGRESS_PAGE_INDEX,
         OctavoSurfaceView.STATE_PROGRESS_PAGE_COUNT,
-        OctavoSurfaceView.STATE_PROGRESS_LOCATION_INDEX,
-        OctavoSurfaceView.STATE_PROGRESS_LOCATION_COUNT,
         OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX,
         OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET,
         OctavoSurfaceView.STATE_PAGE_FIRST_BYTE,
@@ -90,30 +89,11 @@ public final class OctavoAccessibilityTest {
             awaitPresentedFrame(scenario);
             long[] initial = awaitLocationMetadataSettled(scenario);
             assertTrue(initial[OctavoSurfaceView.STATE_PAGE_COUNT] >= 4);
-            assertEquals(1, initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+            assertEquals(0, initial[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
 
             SemanticEvidence semantics = semanticEvidence(scenario);
             assertSemanticPacket(semantics);
 
-            assertChromeAccessibilityTree(scenario, true);
-            assertVisibleKeyboardFocusOrder(scenario);
-
-            long[] chromeHidden = clickContent(scenario);
-            assertEquals(0,
-                         chromeHidden[
-                             OctavoSurfaceView.STATE_CHROME_VISIBLE]);
-            assertEquals(
-                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
-                chromeHidden[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
-            assertSemanticPageStateEquals(initial, chromeHidden);
-            assertEquals(
-                initial[OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT],
-                chromeHidden[
-                    OctavoSurfaceView.STATE_PAGE_MOVE_SUCCESS_COUNT]);
-            assertEquals(
-                initial[OctavoSurfaceView.STATE_ACCESSIBILITY_ACTION_COUNT],
-                chromeHidden[
-                    OctavoSurfaceView.STATE_ACCESSIBILITY_ACTION_COUNT]);
             assertPageChromeState(scenario, false);
             assertChromeAccessibilityTree(scenario, false);
             try (ReaderNodes nodes = readerNodes(scenario)) {
@@ -123,21 +103,47 @@ public final class OctavoAccessibilityTest {
             assertContentSearchIsBounded(scenario);
 
             long[] returned = assertGatedAccessibilityNavigation(
-                scenario, chromeHidden);
+                scenario, initial);
             assertSemanticPageStateEquals(initial, returned);
 
-            long[] chromeRestored = activatePageWithKeyboard(scenario);
+            long[] hiddenRecreated = recreateReaderWithChrome(
+                scenario, false);
+            assertSemanticPageStateEquals(returned, hiddenRecreated);
+            assertChromeAccessibilityTree(scenario, false);
+
+            long[] chromeShown = clickContent(scenario);
             assertEquals(1,
-                         chromeRestored[
+                         chromeShown[
                              OctavoSurfaceView.STATE_CHROME_VISIBLE]);
             assertEquals(
-                initial[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 2,
-                chromeRestored[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
-            assertSemanticPageStateEquals(initial, chromeRestored);
+                hiddenRecreated[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                chromeShown[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertSemanticPageStateEquals(hiddenRecreated, chromeShown);
             assertPageChromeState(scenario, true);
             assertChromeAccessibilityTree(scenario, true);
+            assertVisibleKeyboardFocusOrder(scenario);
 
+            long[] visibleRecreated = recreateReaderWithChrome(
+                scenario, true);
+            assertSemanticPageStateEquals(chromeShown, visibleRecreated);
+            assertChromeAccessibilityTree(scenario, true);
+            assertVisibleKeyboardFocusOrder(scenario);
+
+            tapVisibleAppearanceOnce(scenario, visibleRecreated);
             assertAppearancePanel(scenario);
+
+            long[] beforeKeyboardHide = awaitLocationMetadataSettled(
+                scenario);
+            long[] chromeHidden = activatePageWithKeyboard(
+                scenario, false);
+            assertEquals(
+                beforeKeyboardHide[
+                    OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT] + 1,
+                chromeHidden[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+            assertSemanticPageStateEquals(beforeKeyboardHide, chromeHidden);
+            assertPageChromeState(scenario, false);
+            assertChromeAccessibilityTree(scenario, false);
         }
     }
 
@@ -501,12 +507,13 @@ public final class OctavoAccessibilityTest {
                     : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,
                 bottomChrome.getImportantForAccessibility());
 
+            assertNull(activity.findViewById(
+                R.id.octavo_reader_previous));
+            assertNull(activity.findViewById(R.id.octavo_reader_next));
             int[] controlIds = {
                 R.id.octavo_reader_library,
                 R.id.octavo_reader_appearance,
-                R.id.octavo_reader_previous,
                 R.id.octavo_reader_progress,
-                R.id.octavo_reader_next,
             };
             int minimumTouchPixels = Math.round(
                 OctavoDesignTokens.TOUCH_TARGET_DP
@@ -750,15 +757,18 @@ public final class OctavoAccessibilityTest {
 
     private static void assertVisibleKeyboardFocusOrder(
         ActivityScenario<OctavoActivity> scenario) {
-        AtomicReference<Boolean> canPrevious = new AtomicReference<>(false);
         scenario.onActivity(activity -> {
             View library =
                 activity.findViewById(R.id.octavo_reader_library);
+            View appearance =
+                activity.findViewById(R.id.octavo_reader_appearance);
             View previous =
                 activity.findViewById(R.id.octavo_reader_previous);
+            View next = activity.findViewById(R.id.octavo_reader_next);
             assertNotNull(library);
-            assertNotNull(previous);
-            canPrevious.set(previous.isEnabled());
+            assertNotNull(appearance);
+            assertNull(previous);
+            assertNull(next);
             assertTrue(library.requestFocusFromTouch());
         });
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
@@ -771,19 +781,12 @@ public final class OctavoAccessibilityTest {
             scenario,
             OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
         sendTab(false);
-        if (canPrevious.get()) {
-            assertNativeKeyboardFocus(
-                scenario, R.id.octavo_reader_previous);
-            sendTab(false);
-        }
-        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_next);
+        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
 
-        sendTab(true);
-        if (canPrevious.get()) {
-            assertNativeKeyboardFocus(
-                scenario, R.id.octavo_reader_previous);
-            sendTab(true);
-        }
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_appearance);
+        sendTab(false);
         assertSurfaceKeyboardFocus(
             scenario,
             OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
@@ -792,30 +795,6 @@ public final class OctavoAccessibilityTest {
             scenario, R.id.octavo_reader_appearance);
         sendTab(true);
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
-
-        AtomicReference<Boolean> previousEnabled =
-            new AtomicReference<>(false);
-        AtomicReference<Boolean> nextEnabled =
-            new AtomicReference<>(false);
-        scenario.onActivity(activity -> {
-            View previous =
-                activity.findViewById(R.id.octavo_reader_previous);
-            View next =
-                activity.findViewById(R.id.octavo_reader_next);
-            previousEnabled.set(previous.isEnabled());
-            nextEnabled.set(next.isEnabled());
-            previous.setEnabled(true);
-            next.setEnabled(false);
-            assertTrue(previous.requestFocusFromTouch());
-        });
-        sendTab(false);
-        assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
-        scenario.onActivity(activity -> {
-            activity.findViewById(R.id.octavo_reader_previous)
-                .setEnabled(previousEnabled.get());
-            activity.findViewById(R.id.octavo_reader_next)
-                .setEnabled(nextEnabled.get());
-        });
     }
 
     private static void assertKeyboardFocusOrder(
@@ -1151,6 +1130,91 @@ public final class OctavoAccessibilityTest {
         });
     }
 
+    private static long[] recreateReaderWithChrome(
+        ActivityScenario<OctavoActivity> scenario,
+        boolean chromeVisible) {
+        scenario.recreate();
+        awaitPresentedFrame(scenario);
+        long[] recreated = awaitLocationMetadataSettled(scenario);
+        assertEquals(
+            chromeVisible ? 1 : 0,
+            recreated[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+        assertPageChromeState(scenario, chromeVisible);
+        return recreated;
+    }
+
+    private static void tapVisibleAppearanceOnce(
+        ActivityScenario<OctavoActivity> scenario,
+        long[] before) {
+        AtomicReference<long[]> result = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view =
+                (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
+            View appearance =
+                activity.findViewById(R.id.octavo_reader_appearance);
+            assertNotNull(view);
+            assertNotNull(appearance);
+            assertTrue(appearance.isShown());
+            assertTrue(appearance.isEnabled());
+            assertTrue(appearance.isClickable());
+            assertTrue(appearance instanceof TextView);
+            assertEquals(
+                "Aa", ((TextView)appearance).getText().toString());
+            assertNull(activity.appearancePanelForTesting());
+
+            long downTime = SystemClock.uptimeMillis();
+            float x = appearance.getWidth() / 2.0f;
+            float y = appearance.getHeight() / 2.0f;
+            MotionEvent down = MotionEvent.obtain(
+                downTime,
+                downTime,
+                MotionEvent.ACTION_DOWN,
+                x,
+                y,
+                0);
+            MotionEvent up = MotionEvent.obtain(
+                downTime,
+                downTime + 10L,
+                MotionEvent.ACTION_UP,
+                x,
+                y,
+                0);
+            try {
+                assertTrue(appearance.dispatchTouchEvent(down));
+                assertTrue(appearance.dispatchTouchEvent(up));
+            } finally {
+                down.recycle();
+                up.recycle();
+            }
+        });
+        for (int attempt = 0; attempt < 40 && result.get() == null;
+             ++attempt) {
+            scenario.onActivity(activity -> {
+                if (activity.appearancePanelForTesting() == null) {
+                    return;
+                }
+                OctavoSurfaceView view =
+                    (OctavoSurfaceView)activity.findViewById(
+                        R.id.octavo_surface);
+                assertNotNull(view);
+                result.set(view.nativeStateForTesting());
+            });
+            if (result.get() == null) {
+                SystemClock.sleep(25L);
+            }
+        }
+        assertNotNull(result.get());
+        assertSemanticPageStateEquals(before, result.get());
+        assertEquals(before[OctavoSurfaceView.STATE_FRAME_COUNT],
+                     result.get()[OctavoSurfaceView.STATE_FRAME_COUNT]);
+        assertEquals(before[OctavoSurfaceView.STATE_CHROME_VISIBLE],
+                     result.get()[OctavoSurfaceView.STATE_CHROME_VISIBLE]);
+        assertEquals(before[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT],
+                     result.get()[OctavoSurfaceView.STATE_CHROME_TOGGLE_COUNT]);
+        assertEquals(before[OctavoSurfaceView.STATE_TOUCH_COUNT],
+                     result.get()[OctavoSurfaceView.STATE_TOUCH_COUNT]);
+    }
+
     private static long[] clickContent(
         ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<long[]> result = new AtomicReference<>();
@@ -1181,7 +1245,8 @@ public final class OctavoAccessibilityTest {
     }
 
     private static long[] activatePageWithKeyboard(
-        ActivityScenario<OctavoActivity> scenario) {
+        ActivityScenario<OctavoActivity> scenario,
+        boolean expectedVisible) {
         scenario.onActivity(activity -> {
             OctavoSurfaceView view =
                 (OctavoSurfaceView)activity.findViewById(R.id.octavo_surface);
@@ -1202,8 +1267,9 @@ public final class OctavoAccessibilityTest {
         return awaitState(
             scenario,
             snapshot ->
-                snapshot[OctavoSurfaceView.STATE_CHROME_VISIBLE] == 1,
-            "Keyboard activation did not restore the reader chrome");
+                snapshot[OctavoSurfaceView.STATE_CHROME_VISIBLE]
+                    == (expectedVisible ? 1 : 0),
+            "Keyboard activation did not toggle the reader chrome");
     }
 
     private static void assertPageChromeState(
@@ -1386,7 +1452,6 @@ public final class OctavoAccessibilityTest {
         ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<OctavoAppearance> requested = new AtomicReference<>();
         scenario.onActivity(activity -> {
-            activity.openAppearancePanelForTesting();
             OctavoAppearancePanel panel =
                 activity.appearancePanelForTesting();
             assertNotNull(panel);
