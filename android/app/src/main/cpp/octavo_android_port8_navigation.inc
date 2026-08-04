@@ -90,6 +90,7 @@ octavo_android_restore_presented_reader(OctavoAndroidApp *app)
   {
     return 0;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   app->layout_config.focused_spine_index =
     app->presented_anchor_spine_index;
   EpubReaderNavigationResult restoration = {0};
@@ -159,6 +160,7 @@ octavo_android_begin_navigation_transaction(
     return 0;
   }
 
+  octavo_android_invalidate_prepared_static_frame(app);
   app->semantic_navigation_generation += 1u;
   app->semantic_navigation_lifecycle_generation = app->lifecycle_generation;
   app->semantic_navigation_surface_generation = app->surface_generation;
@@ -274,6 +276,7 @@ octavo_android_cancel_pending_navigation(OctavoAndroidApp *app)
   }
   if (app->progress_display_waiting_for_present)
   {
+    octavo_android_invalidate_prepared_static_frame(app);
     app->progress_display_mode = app->progress_display_presented_mode;
     app->progress_display_waiting_for_present = 0;
     changed = 1;
@@ -576,6 +579,18 @@ Java_ro_devze_octavo_OctavoNative_contentsSnapshot(
 {
   (void)type;
   OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  DocDocumentId location_document_before = app ?
+    app->reader.location_document_id : 0;
+  U32 location_spine_count_before = app ?
+    app->reader.location_spine_count : 0;
+  U32 location_next_before = app ?
+    app->reader.location_next_spine_index : 0;
+  U64 location_total_before = app ?
+    app->reader.location_total_text_bytes : 0;
+  B32 location_complete_before = app ?
+    app->reader.location_cache_complete : 0;
+  B32 location_valid_before = app ?
+    app->reader.location_cache_valid : 0;
   U32 row_count = app && app->reader_frame.ready ?
     MIN(app->reader_frame.section_item_count,
         (U32)OCTAVO_ANDROID_NAVIGATION_ROW_CAP) : 0;
@@ -695,6 +710,17 @@ Java_ro_devze_octavo_OctavoNative_contentsSnapshot(
     }
   }
 
+  if (app &&
+      (location_document_before != app->reader.location_document_id ||
+       location_spine_count_before != app->reader.location_spine_count ||
+       location_next_before != app->reader.location_next_spine_index ||
+       location_total_before != app->reader.location_total_text_bytes ||
+       location_complete_before != app->reader.location_cache_complete ||
+       location_valid_before != app->reader.location_cache_valid))
+  {
+    octavo_android_invalidate_prepared_static_frame(app);
+  }
+
   jlongArray result = (*environment)->NewLongArray(environment, value_count);
   if (result)
   {
@@ -772,6 +798,51 @@ Java_ro_devze_octavo_OctavoNative_navigateToContents(
     EpubReaderNavigationReason_Section,
     origin,
     navigation.navigation);
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_navigateToChapter(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong one_based_chapter)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || one_based_chapter <= 0 ||
+      (uint64_t)one_based_chapter > UINT32_MAX)
+  {
+    return OCTAVO_ANDROID_NAVIGATION_INVALID;
+  }
+  if (!octavo_android_navigation_can_begin(app))
+  {
+    if (app) { app->semantic_navigation_gate_block_count += 1u; }
+    return OCTAVO_ANDROID_NAVIGATION_BUSY;
+  }
+
+  EpubReaderNavigationEntry origin =
+    octavo_android_presented_navigation_entry(
+      app, EpubReaderNavigationReason_Section);
+  EpubReaderChapterNavigationResult navigation = {0};
+  EpubReaderResult result = epub_reader_navigate_to_chapter(
+    &app->reader,
+    (U32)one_based_chapter,
+    app->layout_key,
+    app->layout_config,
+    (EpubReaderNavigationOptions){.suppress_history = 1},
+    &navigation);
+  if (result != EpubReaderResult_Ok)
+  {
+    app->semantic_navigation_failure_count += 1u;
+    return octavo_android_navigation_failure_after_restore(app, result);
+  }
+  return octavo_android_begin_direct_navigation(
+    app,
+    1,
+    EpubReaderNavigationReason_Section,
+    origin,
+    navigation.nav_point.navigation);
 }
 
 JNIEXPORT jint JNICALL
@@ -1033,6 +1104,7 @@ Java_ro_devze_octavo_OctavoNative_setProgressDisplayMode(
   }
   if (app->frame_count == 0)
   {
+    octavo_android_invalidate_prepared_static_frame(app);
     app->progress_display_mode = mode;
     app->progress_display_presented_mode = mode;
     app->progress_display_generation += 1u;
@@ -1044,6 +1116,7 @@ Java_ro_devze_octavo_OctavoNative_setProgressDisplayMode(
   {
     return OCTAVO_ANDROID_NAVIGATION_BUSY;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   app->progress_display_mode = mode;
   app->progress_display_generation += 1u;
   app->progress_display_waiting_for_present = 1;

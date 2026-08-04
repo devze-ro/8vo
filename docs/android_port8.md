@@ -1,15 +1,22 @@
 # Android Port 8: structural reader navigation
 
-Status: candidate with passing physical-device automation on
-`android/port8-structural-navigation`, based exactly on accepted Port 7 commit
+Status: corrected candidate on `android/port8-structural-navigation`, based
+exactly on accepted Port 7 commit
 `de7ba5dd5c5730cfb333bb5968d8cf7380203ecd`.
-The shared structural-navigation contract is Reader0 `0.7.0-dev` / public
-API 7 at `58ec6d11575c36176eb85511759d39dc93acb78b`. Reader0, dual-ABI
-Android, API 36 emulator, strict Windows 8vo, isolated re10 qualification,
-API 34 ARM64 iQOO automation, and a controlled private-book Contents
-jump/Return check have passed. Audible TalkBack, subjective
-transition/touch review, and user hands-on acceptance remain pending. Nothing
-in this document claims final Port 8 acceptance, push, or merge.
+The shared contract is Reader0 `0.7.0-dev` / public API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394`. Its companion re10 adoption
+revision is `b1c264f027c90bec480677bfeadfa5e0728776a8`.
+The corrected source closes six reported navigation, pagination, image-page,
+chapter-targeting, and top-padding defects; adds bounded image-only and in-flow
+image presentation; and defines a prepared-frame reuse contract. Corrected
+Reader0, re10, strict Windows, dual-ABI Android, API 36 emulator, and API 34
+iQOO automated gates now pass. The earlier Port 8 physical-device results
+remain predecessor evidence and do not validate the corrected source;
+corrected-source physical evidence is recorded below. Controlled real-book
+review closes the six reported defects. Audible TalkBack, UI polish, subjective
+transition/touch review, and user manual acceptance remain pending.
+Nothing in this document claims final Port 8
+acceptance, push, or merge.
 
 Port 8 adds fast, reversible structural navigation to the premium Port 7
 reader shell. It keeps the last successfully presented semantic location
@@ -28,6 +35,8 @@ A reader can:
 - identify the current section and useful destination progress;
 - jump by Contents row, chapter, canonical location, meaningful page, or
   percentage;
+- present bounded image-only and ordinary in-flow publication images with
+  deterministic failure fallbacks;
 - return exactly to the last successfully presented origin and move forward
   again within a bounded reading session; and
 - choose a coherent chapter, page, location, or percentage progress display.
@@ -46,6 +55,9 @@ is never persisted, announced as current, or exposed through history.
   record. Android renders that record as an accessible hierarchy.
 - The current section is the latest valid destination at or before the last
   successfully presented spine/byte position.
+- An image-only canonical page reports Reader0's effective contained synthetic
+  byte rather than the raw source byte zero. Current-section queries bound and
+  accept that anchor both immediately and after reopen.
 - Rows include a Reader0-derived canonical destination location/percentage
   when available and an explicit fallback when whole-book progress is not yet
   available.
@@ -56,7 +68,20 @@ is never persisted, announced as current, or exposed through history.
 
 ### Go to
 
-- **Chapter** selects a valid structural destination.
+- **Chapter** invokes Reader0's high-level chapter-navigation API. Android never
+  derives a Contents index or substitutes `chapter - 1` arithmetic.
+- Exact EPUB 3 entries whose tokenized, namespace-qualified attribute name is
+  `epub:type` and whose value includes `chapter` win. Unqualified `type`,
+  `xsi:type`, and NCX `class` or depth metadata do not create chapter semantics.
+- Only when exact semantics are absent may Reader0 accept a unique, source-order,
+  contiguous `Chapter 1` through `Chapter N` label sequence. Numbers may be
+  decimal, canonical Roman up to 3999, or English words from one through
+  ninety-nine. Malformed English hundreds, alphanumeric or spaced numeric
+  tails, gaps, reversals, and duplicate numbers reject the fallback instead
+  of guessing.
+- If neither exact semantics nor the complete fallback model is valid, Chapter
+  navigation fails closed with a visible, accessible error and no reader,
+  history, presented-anchor, or durable-state mutation.
 - **Location** accepts a one-based canonical Reader0 location.
 - **Page in this section** is available only while Reader0 proves a complete
   page count for the current layout and spine. It is deliberately
@@ -66,6 +91,41 @@ is never persisted, announced as current, or exposed through history.
   location model.
 - Invalid, unavailable, overflowed, or out-of-range input produces a visible,
   accessible failure and does not mutate the reader.
+
+### Reported-defect closure
+
+The corrected source maps the six reported defects to explicit ownership and
+bounded behavior:
+
+1. **MAPS Contents target failure.** Reader0 reports the effective contained
+   synthetic byte selected for an image-only canonical page instead of exposing
+   raw source byte zero. Current-section queries accept and bound that anchor,
+   including after reopen.
+2. **Inconsistent row counts and unusually large bottom gaps in ordinary
+   prose.** Reader0 fully paginates predecessor spines at or below 16 KiB from
+   byte zero, preserving canonical widow/orphan-aware boundaries and exact row
+   hashes during reverse/forward replay instead of inheriting an arbitrary
+   reverse-window phase.
+3. **Intermittent sparse Scurve/Dramatis Personae page after reverse
+   navigation.** The same canonical small-spine pagination removes the
+   path-dependent short or sparse page produced after arbitrary reverse probes.
+4. **Apparent blank pages between Contents and Dramatis Personae.** Reader0
+   supplies one bounded synthetic canonical page per visual image with exact
+   navigation, history, and current-section anchors; Android now owns bounded
+   decode, cache, fit, fallback, and painting for those frames.
+5. **Go-to Chapter off by one or aimed at a row index.** Android calls Reader0's
+   chapter operation directly. Reader0 prefers exact EPUB chapter semantics and
+   accepts the label fallback only when the complete fail-closed model above is
+   proved.
+6. **Insufficient reader top padding.** Android shifts the content rectangle
+   down by half the resolved vertical inset while preserving its height and
+   page-row capacity. The navigation-overlay source regression also requires
+   unchanged content geometry and capacity when chrome opens or closes.
+
+The prose pagination corrections do not promise identical row counts on every
+page. Paragraph and chapter endings plus legitimate widow/orphan constraints
+may still leave bottom space; the invariant is canonical, path-independent
+pagination rather than artificial full-page fill.
 
 ### Return history
 
@@ -137,18 +197,82 @@ The transaction rules are:
 1. Refuse or latest-only coalesce input while another document mutation awaits
    presentation.
 2. Resolve and publish the target through a high-level Reader0 public API.
-3. Build a canonical frame and prove that it contains the expected target.
-4. Post the native buffer successfully.
-5. Only then update the presented anchor, commit Reader0 history, expose the
+3. Build the canonical candidate frame exactly once and prove that it contains
+   the expected target.
+4. Prepare every candidate image through the bounded media transaction and
+   prove that no resource-backed frame image remains `Unavailable`.
+5. Post the prepared native buffer successfully.
+6. Only then update the presented anchor, commit Reader0 history, expose the
    new current section/progress/accessibility state, and schedule position or
    preference persistence.
-6. On render failure, lifecycle interruption, surface loss, or teardown, keep
+7. On render failure, lifecycle interruption, surface loss, or teardown, keep
    the previous presented anchor authoritative. Do not save or announce the
    provisional target.
 
 Taps, swipes, keyboard moves, accessibility page moves, appearance reflow,
 Contents, Go to, Return, Forward, and progress-display changes share the same
 pending-presentation exclusion boundary.
+
+### Narrow image media transaction
+
+- Reader0 owns document resource identity, canonical image-only and in-flow
+  placement, visual row units, synthetic anchors, and vertical-flow semantics.
+  Android does not inspect EPUB markup to recover them.
+- The Java bridge owns platform `BitmapFactory` decode. Native code exposes only
+  bounded encoded bytes and receives explicit loaded or terminal-failure status
+  plus caller-owned ARGB pixels.
+- Reader0 stats the selected ZIP entry in the same opened archive and applies
+  the caller's remaining encoded-byte allowance before output allocation or
+  entry decompression. `DocError_LimitExceeded` alone becomes Android's
+  non-null empty-array `CacheFull` sentinel; missing, corrupt, or failed
+  extraction remains an isolated `DecodeFailed` result.
+- One frame holds at most 16 image descriptors. Each encoded resource is capped
+  at 16 MiB; decoded input is capped at 4096 pixels per dimension and 8 million
+  pixels. The native cache is capped at 32 entries and 32 MiB of decoded ARGB.
+- Cache replacement is deterministic least-recently-used eviction. Resources in
+  the current candidate frame are pinned, including terminal per-resource
+  status entries. If every possible victim is pinned,
+  only that resource becomes `CacheFull` and the global cache does not latch
+  permanently full.
+- Image-only and ordinary in-flow images are aspect-fitted into Reader0-owned
+  placement. Loaded pixels are painted before text; terminal dimension, decode,
+  missing-resource, or cache failures receive an explicit theme-safe fallback.
+- Reader0's `visual_units` height is the single vertical-flow contract used by
+  both image placement and text traversal. An in-flow image consumes its rows,
+  so following text cannot overlap it or silently use a different height model.
+- Cold open, navigation, reflow, and both appearance candidate and rollback
+  paths prepare image status before publication. A resource-backed descriptor
+  left `Unavailable` cannot count as a successfully presented frame.
+- The Java bridge decodes serially. Each presentation caps cumulative encoded
+  input at 16 MiB and cumulative decoded input at 8,388,608 pixels in addition
+  to the per-resource limits above. Once either budget is exhausted, that
+  resource and every remaining unavailable resource receive terminal
+  `CacheFull`; no later decode begins in that transaction.
+- Reader0's adversarial smoke uses a highly compressible oversized payload and
+  malformed/forged entry metadata to prove exact-limit success, pre-inflate
+  rejection, required-size reporting, safe allocation arithmetic, and exact
+  caller-arena rollback. Windows 8vo and re10 use the same bounded getter with
+  their existing 32 MiB encoded-resource ceilings.
+
+Prepared-frame reuse is part of the same transaction:
+
+- The first Java frame-image snapshot performs the one static candidate build
+  and records a bounded identity token over window, surface and lifecycle
+  generations, exact dimensions, mutation generation, and Reader0 layout,
+  current-page, frame, and location-cache identity.
+- The bridge verification snapshot and the immediately following native present
+  must reuse that token and frame; present never silently rebuilds the candidate.
+  A missing or stale token rejects presentation.
+- Lifecycle, surface, layout, navigation, appearance, progress, and chrome
+  mutations invalidate the token, as does actual location-cache progress. Image
+  decode/cache attachment and test-only failure counters do not.
+- Forced pre- or post-publication failures retain the exact token for bounded
+  retry. Only accepted presentation and commit consume it.
+
+The corrected source includes counters and a bounded test packet for one-build,
+reuse, stale-rejection, retry, and consumption evidence. The corrected API 36
+matrix validates those assertions; predecessor Port 8 results still must not be
+cited as proof of this contract on the pending physical device.
 
 ## Ownership and dependency boundary
 
@@ -175,9 +299,9 @@ The Port 8 startup pins are:
 
 - Ground0 `770b970b4655facfa9700c3d1025d96102365631`;
 - Reader0 `0.7.0-dev` / public API 7 at
-  `58ec6d11575c36176eb85511759d39dc93acb78b`, advanced from base
+  `5fe949d88258cd96884c44b69e4f4ab6f27dc394`, advanced from base
   `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26` for the shared structural-
-  navigation contract;
+  navigation and corrective pagination contract;
 - UI0 `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec`; and
 - Readerview0 `f97f9d38cf857c2cff1f90357cf5d2e5cf40dc03`.
 
@@ -235,9 +359,63 @@ The Reader0 history reasons needed by those future consumers may be retained
 and tested as a shared contract, but Port 8 must not add placeholder UI or
 dummy consumers for them.
 
-## Current candidate evidence
+## Corrected-component and predecessor evidence
 
-The 2026-08-04 local candidate passed:
+Reader0 at `5fe949d88258cd96884c44b69e4f4ab6f27dc394` passed its exact
+dependency/API audit, MSVC `/W4 /WX` build, `--reader-core-smoke`, and
+`--host-smoke`. Companion re10 at
+`b1c264f027c90bec480677bfeadfa5e0728776a8` passed strict product and
+qualification builds plus `--document_engine_smoke` with four anchors, final
+spine 3, and hash `f3c13a55f0349720`. The corrected exact-pin strict Windows
+8vo build and all seven public smokes also pass in 19.6 seconds wall. Stable
+hashes are host `cd460506f219d652`, Reader View `e29cfd3afeea51a1`, visual
+`e6848393c4dc0b95`, cover `a2fabe96a148a6a4`, and inline image
+`5b536d3a66934ec8`.
+
+The corrected Android candidate passed:
+
+- the exact dependency guard and clean debug/test build for `arm64-v8a` and
+  `x86_64`;
+- five consecutive deterministic deferred-location/presentation-gate probes
+  and an 11/11 mixed image/prepared-frame matrix;
+- the complete ordinary API 36 x86_64 emulator matrix, 67/67 with zero skipped,
+  failed, or errored tests in 468.395 seconds of XML time and 494.0 seconds wall;
+- the external seed, confirmed force-stop, and fresh-process restore driver;
+- the focused 130% system-text/disabled-system-animation matrix, 15/15 in
+  80.538 seconds, followed by exact restoration of font scale `1.0`, window and
+  transition scales `1.0`, and the previously absent animator-scale key; and
+- an empty crash buffer. Process exit history contained only expected
+  `USER REQUESTED` force stops from instrumentation and the restart driver, with
+  no crash or ANR.
+- the vivo I2019/iQOO 9 SE, Android 14/API 34 ARM64 ordinary matrix, 67/67
+  with zero skipped, failed, or errored tests in 170.878 seconds of
+  instrumentation time and 171.449 seconds wall;
+- the physical external confirmed-force-stop restore driver, with a
+  1.987-second seed, 1.135-second fresh-process verification, and 4.908-second
+  wall time;
+- the physical 130% system-text/disabled-system-animation matrix, 15/15 in
+  16.185 seconds of instrumentation time and 18.591 seconds wall, followed by
+  exact restoration of font scale `1.0`, window and transition scales `1.0`,
+  and the previously absent animator-scale key;
+- an empty physical crash buffer. Exit history contained only expected
+  `USER REQUESTED` force stops and `PACKAGE UPDATED`, with no crash or ANR;
+- controlled real-book review in which the first MAPS Contents destination
+  opened without error and presented three genuine map leaves before Dramatis
+  Personae; Chapter `1` and `2` resolved to Chapter One and Chapter Two; Return
+  restored the prior prose origin exactly; and a Chapter One-to-Prologue jump
+  followed by five deliberately waited reverse turns produced the expected
+  intermediate pages and full reported Dramatis Personae page through its
+  expected continuation, with no sparse-page recurrence;
+- full reported prose pages, coherent increased top breathing room, and no
+  visible bright or black transition during that review; and
+- byte-exact restoration of the original 26 app files and 4,751,505 payload
+  bytes. The original archive SHA-256 is
+  `52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2`, and
+  the manifest SHA-256 is
+  `A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94`.
+
+Before the six corrective changes and prepared-frame hardening, the 2026-08-04
+Port 8 predecessor passed:
 
 - Reader0's strict dependency/API audit, MSVC `/W4 /WX` build,
   `--reader-core-smoke`, and `--host-smoke`;
@@ -253,7 +431,8 @@ The 2026-08-04 local candidate passed:
 - empty Android crash and fatal-runtime buffers;
 - the synthetic EPUB Resume gate with a representative fresh restore accepted
   in 169ms end-to-end, 129ms in native stages, and zero missing glyphs;
-- strict Windows 8vo `/W4 /WX` plus all seven public smokes in 17.6 seconds;
+- the pre-correction Windows 8vo `/W4 /WX` build plus all seven public smokes in
+  17.6 seconds;
   the repeatable host, Reader View, visual, Presentation, cover, and inline
   hashes were respectively `cd460506f219d652`, `e29cfd3afeea51a1`,
   `e6848393c4dc0b95`, `3a3cf46f0444a1bd`,
@@ -275,23 +454,26 @@ The 2026-08-04 local candidate passed:
   bytes, exact by relative path, length, and SHA-256; and
 - a 294ms restored cold Library launch plus a controlled private-book check.
   The live EPUB marked Chapter One current at destination 154/9549 (1%),
-  presented Chapter Two at 687/9549
-  (7%), returned to the Chapter One origin, enabled Forward only after that
-  accepted return, and exposed Chapter, canonical Location, meaningful Page,
-  and Percentage Go-to controls. The durable catalog anchor remained exactly
+  presented Chapter Two at 687/9549 (7%), returned to the Chapter One
+  origin, enabled Forward only after that accepted return, and exposed Chapter,
+  canonical Location, meaningful Page, and Percentage Go-to controls. The
+  durable catalog anchor remained exactly
   `17:0`; only its expected last-opened timestamp changed.
 
-The API 36 matrix covers deterministic nested, flat, absent, malformed, and
-partially invalid navigation; exact destinations/current identity; all Go-to
-forms; Return/Forward; rapid and failed operations; lifecycle, rotation,
-recreation, surface replacement, reflow, reopen, and process restart;
+That predecessor API 36 matrix covered deterministic nested, flat, absent,
+malformed, and partially invalid navigation; exact destinations/current
+identity; all Go-to forms; Return/Forward; rapid and failed operations;
+lifecycle, rotation, recreation, surface replacement, reflow, reopen, and
+process restart;
 accessibility hierarchy/focus/actions; and compact/large layouts. Composed-
 frame tests retain the Port 7 bright/black-transition protections.
 
-The remaining physical acceptance stage is audible TalkBack/touch exploration
-and subjective review of transition frames, reduced motion, touch comfort, and
-the private-book interaction quality. The automated iQOO matrix and controlled
-real-book structural jump/Return evidence are current and passing.
+Those results remain useful predecessor regression evidence, but they do not
+validate the corrected 8vo source. The corrected emulator, external restart,
+accessibility/reduced-motion, physical iQOO, byte-exact device-data restoration,
+and controlled real-book gates are recorded above. Audible TalkBack, UI polish,
+subjective transition/touch review, and user manual acceptance remain required.
+No pushed or merged 8vo revision or APK hash is claimed here.
 
 ## Acceptance contract
 
@@ -310,6 +492,24 @@ Before Port 8 can be called complete:
   target;
 - progress choices remain coherent across reflow, theme changes, rotation,
   recreation, surface replacement, process restart, and book reopen;
+- image-only Contents targets expose contained synthetic anchors immediately
+  and after reopen, while small-spine reverse/forward pagination is canonical
+  and path-independent;
+- exact namespace-qualified `epub:type` chapter semantics and the complete
+  numbered-label fallback resolve valid chapters without accepting unrelated
+  type attributes, malformed tails, gaps, reversals, or duplicates;
+- bounded image-only and in-flow frames cover success, terminal decode/resource
+  failures, aspect fit, `visual_units` flow, cache turnover beyond 32 resources,
+  current-frame pinning, reflow, recreation, and presentation rollback;
+- prepared-frame diagnostics prove one static build per candidate, exact reuse
+  by bridge verification and present, stale-identity rejection, token retention
+  across bounded forced failures, and consumption only after accepted commit;
+- Java image preparation proves cumulative 16-MiB encoded and 8,388,608-pixel
+  decoded budgets, terminal `CacheFull` publication for the exhausted resource
+  and every remaining unavailable resource, and no decode beyond exhaustion;
+- Reader0's bounded-resource smoke proves that highly compressed oversized,
+  malformed zero-compressed/stored-size, and forged near-`UINT64_MAX` entries
+  cannot allocate or publish resource bytes past the caller ceiling;
 - reader entry and navigation have no bright/black transition frame and do not
   regress the accepted Port 7 Resume boundary;
 - TalkBack hierarchy, labels, state, actions, focus order, 48dp targets, 130%

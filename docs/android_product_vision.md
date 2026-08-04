@@ -149,17 +149,21 @@ The broader product contract still requires:
   image treatment;
 - optional schedule/system-theme following without taking away manual choice.
 
-Port 7 implementation is not night-mode acceptance. The current source consumes
-Reader0 `0.6.0-dev`/API 6 at
+Port 7 implementation is not night-mode acceptance. The accepted Port 7 source
+consumed Reader0 `0.6.0-dev`/API 6 at
 `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`. Reader0, companion re10, exact 8vo
 guards/audit, clean dual-ABI Android, strict Windows/public-smoke, ProcessRestart,
 130% accessibility, crash, and byte-exact backup/restore gates passed. The final
 matrix passed 36/36 on the API 36 emulator in 510.019 seconds and 36/36 on the
-iQOO in 108.467 seconds of instrumentation time. Current controlled imported-
-book Resume reached the accepted semantic location in 138ms with 24ms total
-native stages, zero missing glyphs, and no visible reader controls. Every
-completed 33-test API 6, API 5, and earlier record is historical evidence for an
-earlier binary.
+iQOO in 108.467 seconds of instrumentation time. Controlled imported-book
+Resume reached the accepted semantic location in 138ms with 24ms total native
+stages, zero missing glyphs, and no visible reader controls. Every completed
+33-test API 6, API 5, and earlier record is historical evidence for an earlier
+binary. The current Port 8 candidate consumes Reader0 `0.7.0-dev`/API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394`; its post-feedback corrections have
+completed corrected API 36 and API 34 iQOO automation plus controlled real-book
+review. Audible TalkBack, UI polish, and user subjective/manual acceptance
+remain pending. See `android_port8.md`.
 
 The still earlier post-feedback APK's API 36 33/33 run in 96.223
 seconds, restart, 130% system-text, crash-buffer, exact-book visual/timing, and
@@ -171,10 +175,11 @@ native-only 220ms results remain a separate superseded record; its 220ms
 boundary is not comparable with the current metric. Full evidence and
 measurement limits are recorded in `android_port7.md`.
 
-The current API 6 candidate's objective gates pass. It still requires audible
-TalkBack, keyboard/switch and reduced-motion review, prolonged Paper, Dusk, Warm
-dark, and OLED reading, and subjective dark-room comfort evidence before the
-foundation is accepted.
+The API 6 Port 7 objective gates passed and that foundation is accepted.
+Audible TalkBack, keyboard/switch and reduced-motion review, prolonged Paper,
+Dusk, Warm dark, and OLED reading, and subjective dark-room comfort remain
+broader product follow-up; they do not reopen the accepted Port 7 milestone or
+transfer acceptance evidence to Port 8.
 
 Night-mode acceptance requires physical testing in a dark room on at least one
 OLED handset and one LCD-class display when available. Automated screenshots
@@ -184,9 +189,12 @@ comfort must be reviewed by a person.
 
 ## Capability boundary
 
-The capabilities below are the long-term parity target. Port 7 deliberately
-does not implement a cover library, table of contents, in-book search, text
-selection, highlights/notes, or an annotations workspace.
+The capabilities below are the long-term parity target. Accepted Port 7 did not
+implement a cover library, table of contents, in-book search, text selection,
+highlights/notes, or an annotations workspace. The Port 8 candidate adds only
+bounded structural navigation and narrow frame-image presentation; search,
+selection, annotations, premium library work, synchronization, and broad image
+fidelity remain outside it.
 
 The parity target includes local equivalents for:
 
@@ -251,6 +259,32 @@ chrome only composes the already presented page; tap, swipe, keyboard, and
 accessibility page intents enter one native presentation gate. The host does
 not substitute page-number arithmetic or Java pagination for any operation.
 
+Port 8 applies the same rule to structure and media. Reader0 API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394` owns Contents interpretation,
+contained image-only anchors, exact namespace-qualified `epub:type` chapter
+semantics, the fail-closed numbered-label fallback, canonical small-spine
+pagination,
+location/page/percentage targets, history, image resource identity, placement,
+and `visual_units`. Android owns the sheet, TalkBack hierarchy, serial platform
+decode, a bounded deterministic native LRU with current-frame pinning, aspect
+fit/fallback/painting, and the successful-presentation transaction. It never
+turns chapter input into a Contents index or inspects EPUB markup for images.
+
+For encoded media, Android supplies Reader0 with the remaining presentation
+byte allowance. Reader0 stats the selected ZIP entry in the same opened
+archive and rejects an over-limit declaration before output allocation or
+entry decompression. Only that limit result becomes `CacheFull`; missing and
+corrupt resources remain isolated decode failures.
+
+The first frame-image snapshot builds one static candidate and records exact
+window, lifecycle, surface, mutation, layout, page/frame, and location-cache
+identity. Verification and present reuse that frame; stale identity fails;
+bounded forced failures retain it for retry; accepted presentation consumes it.
+Each serial Java preparation caps cumulative encoded input at 16 MiB and
+decoded input at 8,388,608 pixels, then terminally marks remaining unavailable
+resources `CacheFull`. Deterministic API 36/API 34 validation and controlled
+real-book map-leaf presentation pass; broader media-fidelity review remains.
+
 Windows and Android consume one allocation-free 8vo word-spacing plan over
 validated Reader0 rows; the plan expands only eligible soft-wrapped rows and
 leaves explicit publisher hard lines such as `<br>` verse naturally spaced. It
@@ -277,8 +311,8 @@ Java frames before cover removal. On the earlier post-feedback
 APK, exact-book warm same-process samples were 825, 566, 582, 563, and 595ms
 (median 582ms), with a final screen-record sample of 529ms. Its iQOO first open
 was 140ms, controlled warm reopens were 121, 80, and 122ms (median 121ms), and
-the focused reopen was 102ms. All are historical. The current controlled iQOO
-Resume reached its accepted semantic location in 138ms with 24ms total native
+the focused reopen was 102ms. All are historical. The accepted controlled Port 7
+iQOO Resume reached its semantic location in 138ms with 24ms total native
 stages, zero missing glyphs, and no visible reader controls. The strict automated
 gate remains 1500ms; the older native-only 220ms result is not comparable.
 

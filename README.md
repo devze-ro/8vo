@@ -36,29 +36,29 @@ options.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
-## Android Port 7 candidate
+## Android Port 8 candidate
 
-Accepted Ports 0-6 start on an 8vo-owned library, keep a deterministic
-sample, imports multiple EPUBs through Android's document picker, deduplicates
-identical bytes by SHA-256, and stores an independent successfully presented
+Accepted Ports 0-7 start on an 8vo-owned library, keep a deterministic
+sample, import multiple EPUBs through Android's document picker, deduplicate
+identical bytes by SHA-256, and store an independent successfully presented
 Reader0 position for every book. Imported books can return to the library,
 resume the exact canonical page under the same layout, and be removed without
 deleting the provider-owned original. Catalog, managed-file, picker, lifecycle,
 and presentation policy stay inside 8vo. Reader0 remains authoritative for
 opening, pagination, navigation, canonical frames, and location restore; Port
-4's readable proportional serif typography remains intact.
+7's premium appearance, semantic reflow, immersive chrome, and accessibility
+foundation remain intact.
 
-The Port 7 implementation candidate adds six independently tuned reader
-themes, global typography/layout preferences, canonical semantic-anchor
-reflow, measured immersive chrome, a target-colored theme-transition cover,
-and a custom-reader accessibility bridge with deterministic keyboard focus.
-Its API 36 emulator and dual-ABI build pass, as do its Android 14/API 34
-physical-iQOO, Windows, and re10 automated gates. Real-device UiAutomator
-traversal also reaches named reader controls in both directions without blank
-chrome-container or raw-Surface stops. Audible TalkBack and hands-on keyboard/
-switch review, reduced-motion review, extended reading, and subjective
-dark-room comfort acceptance are still required. Ports 0-6 therefore remain
-the formally accepted Android baseline.
+The Port 8 candidate adds bounded Contents, Go-to, Return/Forward, and progress
+choices through Reader0 API 7. Its corrective slice also closes six reported
+navigation, pagination, image-page, chapter-targeting, and top-padding defects;
+adds narrow, bounded image-only and in-flow image presentation; and hardens the
+media preparation/presentation transaction. Corrected API 36 emulator and API
+34 iQOO automation, external-restart, and 130%-text/animations-off
+qualification are green. Controlled real-book review also closes the six
+reported defects without a visible bright/black transition. Audible TalkBack,
+UI polish, and user subjective/manual acceptance remain pending. Earlier Port
+8 results remain predecessor evidence rather than proof for the current source.
 
 The long-term Android direction is a premium, local-first reader for
 user-owned books with Kindle-class capability and interaction quality, a
@@ -77,12 +77,14 @@ cd android
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The current candidate scope and acceptance record are documented in
-[docs/android_port7.md](docs/android_port7.md); the accepted library milestone
-is documented in [docs/android_port6.md](docs/android_port6.md), the
-document-open/resume
+The current candidate scope and validation boundary are documented in
+[docs/android_port8.md](docs/android_port8.md); the accepted appearance
+foundation is documented in [docs/android_port7.md](docs/android_port7.md),
+and the accepted library milestone in
+[docs/android_port6.md](docs/android_port6.md). The document-open/resume
 milestone is documented in [docs/android_port5.md](docs/android_port5.md), the
-readable typography milestone in [docs/android_port4.md](docs/android_port4.md), the interactive navigation
+readable typography milestone in [docs/android_port4.md](docs/android_port4.md),
+the interactive navigation
 milestone is documented in [docs/android_port3.md](docs/android_port3.md), the
 static-page milestone in [docs/android_port2.md](docs/android_port2.md), the
 lifecycle milestone in [docs/android_port1.md](docs/android_port1.md), and the

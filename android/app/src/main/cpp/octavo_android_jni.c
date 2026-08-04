@@ -37,6 +37,21 @@
 #define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_VERSION 1
 #define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_HEADER_COUNT 3
 #define OCTAVO_ANDROID_SEMANTIC_SNAPSHOT_STRIDE 11
+#define OCTAVO_ANDROID_FRAME_IMAGE_PACKET_VERSION 1
+#define OCTAVO_ANDROID_FRAME_IMAGE_PACKET_HEADER_COUNT 2
+#define OCTAVO_ANDROID_FRAME_IMAGE_PACKET_ROW_STRIDE 4
+#define OCTAVO_ANDROID_PREPARED_FRAME_STATE_VERSION 1
+#define OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT 26
+
+enum
+{
+  OCTAVO_ANDROID_IMAGE_CACHE_CAP = 32,
+  OCTAVO_ANDROID_IMAGE_MAX_DIMENSION = 4096,
+  OCTAVO_ANDROID_IMAGE_MAX_PIXEL_COUNT = 8 * 1024 * 1024,
+  OCTAVO_ANDROID_IMAGE_PIXEL_BUDGET = 32 * 1024 * 1024,
+  OCTAVO_ANDROID_IMAGE_ENCODED_BUDGET = 16 * 1024 * 1024,
+};
+
 
 enum
 {
@@ -121,6 +136,45 @@ typedef struct OctavoAndroidJustificationEvidence
   uint64_t applied_extra_px;
   uint64_t semantic_hash;
 } OctavoAndroidJustificationEvidence;
+typedef struct OctavoAndroidImageCacheEntry
+{
+  U32 resource_index;
+  EpubReaderFrameImageStatus status;
+  U32 *pixels;
+  S32 width;
+  S32 height;
+  S32 stride_pixels;
+  U64 pixel_bytes;
+  U64 last_use_serial;
+} OctavoAndroidImageCacheEntry;
+
+typedef struct OctavoAndroidPreparedStaticFrame
+{
+  B32 valid;
+  ANativeWindow *window;
+  U64 mutation_generation;
+  U64 build_serial;
+  U64 lifecycle_generation;
+  U64 surface_generation;
+  S32 width;
+  S32 height;
+  EpubReaderLayoutKey layout_key;
+  DocDocumentId document_id;
+  U32 active_spine_index;
+  U64 view_byte_offset;
+  B32 has_current_page;
+  U32 current_page_spine_index;
+  U64 current_page_first_byte;
+  U64 current_page_one_past_last_byte;
+  U32 frame_spine_index;
+  U64 frame_view_byte_offset;
+  DocDocumentId location_document_id;
+  U32 location_spine_count;
+  U32 location_next_spine_index;
+  U64 location_total_text_bytes;
+  B32 location_cache_complete;
+  B32 location_cache_valid;
+} OctavoAndroidPreparedStaticFrame;
 
 typedef struct OctavoAndroidApp
 {
@@ -133,6 +187,21 @@ typedef struct OctavoAndroidApp
   OctavoAndroidTypography typography;
   OctavoAndroidAppearance appearance;
 
+  OctavoAndroidImageCacheEntry
+    image_cache[OCTAVO_ANDROID_IMAGE_CACHE_CAP];
+  U32 image_cache_count;
+  U64 image_cache_pixel_bytes;
+  U64 image_cache_use_serial;
+  OctavoAndroidPreparedStaticFrame prepared_static_frame;
+  U64 prepared_static_frame_mutation_generation;
+  U64 prepared_static_frame_build_serial;
+  U64 prepared_static_frame_invalidation_count;
+  U64 prepared_static_frame_build_attempt_count;
+  U64 prepared_static_frame_build_success_count;
+  U64 prepared_static_frame_snapshot_reuse_count;
+  U64 prepared_static_frame_present_reuse_count;
+  U64 prepared_static_frame_stale_reject_count;
+  U64 prepared_static_frame_consume_count;
   Arena *arena;
   EpubReader reader;
   EpubReaderFrameStorage reader_frame_storage;
@@ -269,6 +338,328 @@ octavo_android_from_handle(jlong handle)
   return (OctavoAndroidApp *)(uintptr_t)handle;
 }
 
+static void
+octavo_android_invalidate_prepared_static_frame(OctavoAndroidApp *app)
+{
+  if (!app) { return; }
+  app->prepared_static_frame_mutation_generation += 1u;
+  if (app->prepared_static_frame.valid)
+  {
+    app->prepared_static_frame_invalidation_count += 1u;
+  }
+  memset(&app->prepared_static_frame, 0,
+         sizeof(app->prepared_static_frame));
+}
+
+static B32
+octavo_android_prepared_static_frame_matches(
+  const OctavoAndroidApp *app,
+  ANativeWindow *window,
+  S32 width,
+  S32 height)
+{
+  if (!app || !window || width <= 0 || height <= 0)
+  {
+    return 0;
+  }
+  const OctavoAndroidPreparedStaticFrame *prepared =
+    &app->prepared_static_frame;
+  if (!prepared->valid || !app->resumed || app->window != window ||
+      prepared->window != window || prepared->width != width ||
+      prepared->height != height ||
+      prepared->mutation_generation !=
+        app->prepared_static_frame_mutation_generation ||
+      prepared->build_serial != app->prepared_static_frame_build_serial ||
+      prepared->lifecycle_generation != app->lifecycle_generation ||
+      prepared->surface_generation != app->surface_generation ||
+      app->pagination_dirty || !app->reader_frame.ready ||
+      !app->reader_frame.document_open || !app->reader_view_ready ||
+      !epub_reader_layout_keys_match(prepared->layout_key,
+                                     app->layout_key) ||
+      prepared->document_id != app->reader_frame.document_id ||
+      prepared->active_spine_index != app->reader.active_spine_index ||
+      prepared->view_byte_offset != app->reader.view_byte_offset ||
+      prepared->has_current_page != app->reader.has_current_page ||
+      prepared->frame_spine_index != app->reader_frame.spine_index ||
+      prepared->frame_view_byte_offset !=
+        app->reader_frame.view_byte_offset ||
+      prepared->location_document_id !=
+        app->reader.location_document_id ||
+      prepared->location_spine_count !=
+        app->reader.location_spine_count ||
+      prepared->location_next_spine_index !=
+        app->reader.location_next_spine_index ||
+      prepared->location_total_text_bytes !=
+        app->reader.location_total_text_bytes ||
+      prepared->location_cache_complete !=
+        app->reader.location_cache_complete ||
+      prepared->location_cache_valid != app->reader.location_cache_valid)
+  {
+    return 0;
+  }
+  if (prepared->has_current_page &&
+      (prepared->current_page_spine_index !=
+         app->reader.current_page.spine_index ||
+       prepared->current_page_first_byte !=
+         app->reader.current_page.first_byte ||
+       prepared->current_page_one_past_last_byte !=
+         app->reader.current_page.one_past_last_byte))
+  {
+    return 0;
+  }
+  return 1;
+}
+
+static B32
+octavo_android_record_prepared_static_frame(OctavoAndroidApp *app,
+                                            S32 width,
+                                            S32 height)
+{
+  if (!app || !app->window || !app->resumed || width <= 0 || height <= 0 ||
+      app->pagination_dirty || !app->reader_frame.ready ||
+      !app->reader_frame.document_open || !app->reader_view_ready)
+  {
+    return 0;
+  }
+  OctavoAndroidPreparedStaticFrame prepared = {
+    .valid = 1,
+    .window = app->window,
+    .mutation_generation =
+      app->prepared_static_frame_mutation_generation,
+    .build_serial = app->prepared_static_frame_build_serial,
+    .lifecycle_generation = app->lifecycle_generation,
+    .surface_generation = app->surface_generation,
+    .width = width,
+    .height = height,
+    .layout_key = app->layout_key,
+    .document_id = app->reader_frame.document_id,
+    .active_spine_index = app->reader.active_spine_index,
+    .view_byte_offset = app->reader.view_byte_offset,
+    .has_current_page = app->reader.has_current_page,
+    .current_page_spine_index = app->reader.current_page.spine_index,
+    .current_page_first_byte = app->reader.current_page.first_byte,
+    .current_page_one_past_last_byte =
+      app->reader.current_page.one_past_last_byte,
+    .frame_spine_index = app->reader_frame.spine_index,
+    .frame_view_byte_offset = app->reader_frame.view_byte_offset,
+    .location_document_id = app->reader.location_document_id,
+    .location_spine_count = app->reader.location_spine_count,
+    .location_next_spine_index = app->reader.location_next_spine_index,
+    .location_total_text_bytes = app->reader.location_total_text_bytes,
+    .location_cache_complete = app->reader.location_cache_complete,
+    .location_cache_valid = app->reader.location_cache_valid,
+  };
+  app->prepared_static_frame = prepared;
+  return 1;
+}
+
+static void
+octavo_android_reject_prepared_static_frame(OctavoAndroidApp *app)
+{
+  if (!app) { return; }
+  app->prepared_static_frame_stale_reject_count += 1u;
+  octavo_android_invalidate_prepared_static_frame(app);
+}
+
+static void
+octavo_android_consume_prepared_static_frame(OctavoAndroidApp *app)
+{
+  if (!app || !app->prepared_static_frame.valid) { return; }
+  memset(&app->prepared_static_frame, 0,
+         sizeof(app->prepared_static_frame));
+  app->prepared_static_frame_consume_count += 1u;
+}
+
+static OctavoAndroidImageCacheEntry *
+octavo_android_image_cache_find(OctavoAndroidApp *app, U32 resource_index)
+{
+  if (!app) { return 0; }
+  for (U32 index = 0; index < app->image_cache_count; ++index)
+  {
+    OctavoAndroidImageCacheEntry *entry = app->image_cache + index;
+    if (entry->resource_index == resource_index)
+    {
+      return entry;
+    }
+  }
+  return 0;
+}
+
+static void
+octavo_android_image_cache_touch(OctavoAndroidApp *app,
+                                 OctavoAndroidImageCacheEntry *entry)
+{
+  if (!app || !entry) { return; }
+  if (app->image_cache_use_serial < UINT64_MAX)
+  {
+    app->image_cache_use_serial += 1u;
+  }
+  entry->last_use_serial = app->image_cache_use_serial;
+}
+
+static B32
+octavo_android_frame_resource_is_pinned(const OctavoAndroidApp *app,
+                                        U32 resource_index)
+{
+  if (!app || !app->reader_frame.ready) { return 0; }
+  U32 image_count = MIN(app->reader_frame.image_count,
+                        (U32)EPUB_READER_FRAME_IMAGE_CAP);
+  for (U32 index = 0; index < image_count; ++index)
+  {
+    const EpubReaderFrameImage *image = app->reader_frame.images + index;
+    if (image->has_resource && image->resource_index == resource_index)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void
+octavo_android_image_cache_remove(OctavoAndroidApp *app, U32 index)
+{
+  if (!app || index >= app->image_cache_count) { return; }
+  OctavoAndroidImageCacheEntry *entry = app->image_cache + index;
+  free(entry->pixels);
+  app->image_cache_pixel_bytes =
+    entry->pixel_bytes <= app->image_cache_pixel_bytes ?
+      app->image_cache_pixel_bytes - entry->pixel_bytes : 0;
+  U32 move_count = app->image_cache_count - index - 1u;
+  if (move_count > 0)
+  {
+    memmove(entry, entry + 1, sizeof(*entry) * move_count);
+  }
+  app->image_cache_count -= 1u;
+  memset(app->image_cache + app->image_cache_count,
+         0,
+         sizeof(app->image_cache[0]));
+}
+
+static B32
+octavo_android_image_cache_evict_unpinned(OctavoAndroidApp *app)
+{
+  if (!app) { return 0; }
+  U32 victim_index = UINT32_MAX;
+  U64 victim_serial = UINT64_MAX;
+  for (U32 index = 0; index < app->image_cache_count; ++index)
+  {
+    const OctavoAndroidImageCacheEntry *entry = app->image_cache + index;
+    if (octavo_android_frame_resource_is_pinned(app, entry->resource_index))
+    {
+      continue;
+    }
+    if (victim_index == UINT32_MAX || entry->last_use_serial < victim_serial)
+    {
+      victim_index = index;
+      victim_serial = entry->last_use_serial;
+    }
+  }
+  if (victim_index == UINT32_MAX) { return 0; }
+  octavo_android_image_cache_remove(app, victim_index);
+  return 1;
+}
+
+static B32
+octavo_android_image_cache_make_entry_room(OctavoAndroidApp *app)
+{
+  if (!app) { return 0; }
+  while (app->image_cache_count >= OCTAVO_ANDROID_IMAGE_CACHE_CAP)
+  {
+    if (!octavo_android_image_cache_evict_unpinned(app)) { return 0; }
+  }
+  return 1;
+}
+
+static B32
+octavo_android_image_cache_make_pixel_room(OctavoAndroidApp *app,
+                                           U64 pixel_bytes)
+{
+  if (!app || pixel_bytes > OCTAVO_ANDROID_IMAGE_PIXEL_BUDGET)
+  {
+    return 0;
+  }
+  while (app->image_cache_pixel_bytes > OCTAVO_ANDROID_IMAGE_PIXEL_BUDGET ||
+         pixel_bytes > OCTAVO_ANDROID_IMAGE_PIXEL_BUDGET -
+                         app->image_cache_pixel_bytes)
+  {
+    if (!octavo_android_image_cache_evict_unpinned(app)) { return 0; }
+  }
+  return 1;
+}
+
+static void
+octavo_android_image_cache_release(OctavoAndroidApp *app)
+{
+  if (!app) { return; }
+  for (U32 index = 0; index < app->image_cache_count; ++index)
+  {
+    free(app->image_cache[index].pixels);
+    app->image_cache[index].pixels = 0;
+  }
+  memset(app->image_cache, 0, sizeof(app->image_cache));
+  app->image_cache_count = 0;
+  app->image_cache_pixel_bytes = 0;
+  app->image_cache_use_serial = 0;
+}
+
+static void
+octavo_android_attach_frame_images(OctavoAndroidApp *app)
+{
+  if (!app || !app->reader_frame.ready) { return; }
+  U32 image_count = MIN(app->reader_frame.image_count,
+                        (U32)EPUB_READER_FRAME_IMAGE_CAP);
+  for (U32 index = 0; index < image_count; ++index)
+  {
+    EpubReaderFrameImage *image = app->reader_frame.images + index;
+    image->pixels = 0;
+    image->src_w = 0;
+    image->src_h = 0;
+    image->src_stride_pixels = 0;
+    if (!image->has_resource)
+    {
+      image->status = EpubReaderFrameImageStatus_MissingResource;
+      continue;
+    }
+    OctavoAndroidImageCacheEntry *entry =
+      octavo_android_image_cache_find(app, image->resource_index);
+    if (!entry)
+    {
+      image->status = EpubReaderFrameImageStatus_Unavailable;
+      continue;
+    }
+    octavo_android_image_cache_touch(app, entry);
+    image->status = entry->status;
+    if (entry->status == EpubReaderFrameImageStatus_Loaded &&
+        entry->pixels && entry->width > 0 && entry->height > 0 &&
+        entry->stride_pixels >= entry->width)
+    {
+      image->pixels = entry->pixels;
+      image->src_w = entry->width;
+      image->src_h = entry->height;
+      image->src_stride_pixels = entry->stride_pixels;
+    }
+  }
+}
+
+static B32
+octavo_android_frame_images_prepared(const OctavoAndroidApp *app)
+{
+  if (!app || !app->reader_frame.ready ||
+      app->reader_frame.image_count > EPUB_READER_FRAME_IMAGE_CAP)
+  {
+    return 0;
+  }
+  for (U32 index = 0; index < app->reader_frame.image_count; ++index)
+  {
+    const EpubReaderFrameImage *image = app->reader_frame.images + index;
+    if (image->has_resource &&
+        image->status == EpubReaderFrameImageStatus_Unavailable)
+    {
+      return 0;
+    }
+  }
+  return 1;
+}
 static uint64_t
 octavo_android_uptime_millis(void)
 {
@@ -1075,6 +1466,245 @@ octavo_android_stroke_rect(OctavoAndroidPixels pixels,
     color);
 }
 
+static uint32_t
+octavo_android_image_lerp_channel(uint32_t a,
+                                  uint32_t b,
+                                  uint32_t fraction)
+{
+  return (a * (UINT32_C(65536) - fraction) + b * fraction +
+          UINT32_C(32768)) >> 16;
+}
+
+static UI0Color
+octavo_android_sample_frame_image(const EpubReaderFrameImage *image,
+                                  uint64_t source_x,
+                                  uint64_t source_y)
+{
+  U32 x0 = (U32)(source_x >> 16);
+  U32 y0 = (U32)(source_y >> 16);
+  U32 x1 = MIN(x0 + 1u, (U32)image->src_w - 1u);
+  U32 y1 = MIN(y0 + 1u, (U32)image->src_h - 1u);
+  U32 fx = (U32)(source_x & UINT64_C(0xFFFF));
+  U32 fy = (U32)(source_y & UINT64_C(0xFFFF));
+  U32 samples[4] = {
+    image->pixels[(U64)y0 * (U64)image->src_stride_pixels + x0],
+    image->pixels[(U64)y0 * (U64)image->src_stride_pixels + x1],
+    image->pixels[(U64)y1 * (U64)image->src_stride_pixels + x0],
+    image->pixels[(U64)y1 * (U64)image->src_stride_pixels + x1],
+  };
+  UI0Color result = 0;
+  static const U32 shifts[] = {0u, 8u, 16u, 24u};
+  for (U32 channel = 0; channel < ARRAY_COUNT(shifts); ++channel)
+  {
+    U32 shift = shifts[channel];
+    U32 top = octavo_android_image_lerp_channel(
+      (samples[0] >> shift) & 0xFFu,
+      (samples[1] >> shift) & 0xFFu,
+      fx);
+    U32 bottom = octavo_android_image_lerp_channel(
+      (samples[2] >> shift) & 0xFFu,
+      (samples[3] >> shift) & 0xFFu,
+      fx);
+    U32 value = octavo_android_image_lerp_channel(top, bottom, fy);
+    result |= value << shift;
+  }
+  return result;
+}
+
+static B32
+octavo_android_fit_frame_image(const EpubReaderFrameImage *image,
+                               UI0Rect bounds,
+                               UI0Rect *out_rect)
+{
+  if (out_rect) { *out_rect = (UI0Rect){0}; }
+  if (!image || !out_rect || image->src_w <= 0 || image->src_h <= 0 ||
+      bounds.w <= 0 || bounds.h <= 0)
+  {
+    return 0;
+  }
+  S32 width = bounds.w;
+  S32 height = (S32)(((S64)image->src_h * width) / image->src_w);
+  if (height > bounds.h)
+  {
+    height = bounds.h;
+    width = (S32)(((S64)image->src_w * height) / image->src_h);
+  }
+  if (width <= 0 || height <= 0) { return 0; }
+  *out_rect = ui0_rect(
+    bounds.x + (bounds.w - width) / 2,
+    bounds.y + (bounds.h - height) / 2,
+    width,
+    height);
+  return 1;
+}
+
+static void
+octavo_android_draw_scaled_frame_image(OctavoAndroidPixels pixels,
+                                       const EpubReaderFrameImage *image,
+                                       UI0Rect destination,
+                                       UI0Rect clip)
+{
+  if (!pixels.data || !image || !image->pixels || image->src_w <= 0 ||
+      image->src_h <= 0 || image->src_stride_pixels < image->src_w ||
+      destination.w <= 0 || destination.h <= 0)
+  {
+    return;
+  }
+  UI0Rect visible = octavo_android_intersect_rect(
+    octavo_android_intersect_rect(destination, clip),
+    octavo_android_pixel_bounds(pixels));
+  if (visible.w <= 0 || visible.h <= 0) { return; }
+  U64 x_step = destination.w > 1 ?
+    (((U64)(image->src_w - 1) << 16) / (U64)(destination.w - 1)) : 0;
+  U64 y_step = destination.h > 1 ?
+    (((U64)(image->src_h - 1) << 16) / (U64)(destination.h - 1)) : 0;
+  for (S32 y = visible.y; y < visible.y + visible.h; ++y)
+  {
+    U64 source_y = (U64)(y - destination.y) * y_step;
+    for (S32 x = visible.x; x < visible.x + visible.w; ++x)
+    {
+      U64 source_x = (U64)(x - destination.x) * x_step;
+      UI0Color color = octavo_android_sample_frame_image(
+        image, source_x, source_y);
+      octavo_android_blend_pixel(pixels, x, y, color, 255u);
+    }
+  }
+}
+
+static const EpubReaderFrameStyleRow *
+octavo_android_style_row_for_image(const EpubReaderFrame *frame,
+                                   const EpubReaderFrameImage *image)
+{
+  if (!frame || !image) { return 0; }
+  for (U32 index = 0; index < frame->style_row_count; ++index)
+  {
+    if (frame->style_rows[index].row == image->row)
+    {
+      return frame->style_rows + index;
+    }
+  }
+  return 0;
+}
+
+static S32
+octavo_android_frame_style_row_height(
+  const OctavoAndroidApp *app,
+  const EpubReaderFrameStyleRow *row)
+{
+  if (!app || !row) { return 0; }
+  S32 line_height = MAX(app->typography.line_advance_px, 1);
+  if (row->visual_units > 0)
+  {
+    /* Reader0 expresses an image row's canonical pagination height in
+       visual line units. Every Android vertical traversal uses this helper
+       so image placement and following text cannot drift. */
+    S64 image_height = (S64)row->visual_units * (S64)line_height;
+    return (S32)MIN(MAX(image_height, (S64)1), (S64)INT32_MAX);
+  }
+  U32 line_scale = row->line_height_permille;
+  if (line_scale == 0)
+  {
+    line_scale = MAX(row->font_scale_permille, 1000u);
+  }
+  return MAX(octavo_android_scaled_px(line_height, line_scale), 1);
+}
+
+static UI0Rect
+octavo_android_frame_image_box(OctavoAndroidApp *app,
+                               const EpubReaderFrameImage *image)
+{
+  UI0Rect content = app->reader_view_layout.content_rect;
+  if (image->image_placement == SourceReaderLayoutImagePlacement_ImageOnly)
+  {
+    return content;
+  }
+  const EpubReaderFrameStyleRow *target =
+    octavo_android_style_row_for_image(&app->reader_frame, image);
+  if (!target) { return (UI0Rect){0}; }
+  S32 line_height = MAX(app->typography.line_advance_px, 1);
+  S32 char_advance = MAX(
+    octavo_android_typography_advance(
+      &app->typography, 'n', 0, 1000u), 1);
+  S32 y = content.y;
+  for (U32 index = 0; index < app->reader_frame.style_row_count; ++index)
+  {
+    const EpubReaderFrameStyleRow *row =
+      app->reader_frame.style_rows + index;
+    if (row->line_row == 0 && row->margin_top_rows > 0)
+    {
+      y += row->margin_top_rows * line_height;
+    }
+    S32 row_height = octavo_android_frame_style_row_height(app, row);
+    if (row == target)
+    {
+      S32 left = MAX(row->margin_left_cols, 0) * char_advance;
+      S32 right = MAX(row->margin_right_cols, 0) * char_advance;
+      S32 width = MAX(content.w - left - right, 1);
+      if (image->width_permille > 0 && image->width_permille < 1000u)
+      {
+        width = MAX((S32)(((S64)width * image->width_permille) / 1000), 1);
+      }
+      S32 remaining_height = MAX(content.y + content.h - y, 0);
+      S32 height = (S32)MIN(
+        (S64)row_height, (S64)remaining_height);
+      return height > 0 ?
+        ui0_rect(content.x + left +
+                   (content.w - left - right - width) / 2,
+                 y, width, height) :
+        (UI0Rect){0};
+    }
+    y += row_height;
+    if (row->block_last_row && row->margin_bottom_rows > 0)
+    {
+      y += row->margin_bottom_rows * line_height;
+    }
+  }
+  return (UI0Rect){0};
+}
+
+static B32
+octavo_android_draw_reader_images(OctavoAndroidApp *app,
+                                  OctavoAndroidPixels pixels)
+{
+  if (!app || !app->reader_frame.ready ||
+      app->reader_frame.image_count > EPUB_READER_FRAME_IMAGE_CAP)
+  {
+    return app && app->reader_frame.ready;
+  }
+  UI0Rect page = app->reader_view_layout.page_surface_rect;
+  UI0Rect clip = octavo_android_intersect_rect(
+    page, octavo_android_pixel_bounds(pixels));
+  for (U32 index = 0; index < app->reader_frame.image_count; ++index)
+  {
+    EpubReaderFrameImage *image = app->reader_frame.images + index;
+    UI0Rect box = octavo_android_frame_image_box(app, image);
+    if (box.w <= 0 || box.h <= 0) { return 0; }
+    UI0Rect fitted = {0};
+    if (image->status == EpubReaderFrameImageStatus_Loaded &&
+        image->pixels && octavo_android_fit_frame_image(image, box, &fitted))
+    {
+      octavo_android_draw_scaled_frame_image(pixels, image, fitted, clip);
+      continue;
+    }
+    UI0Color surface =
+      app->reader_view_theme.colors[UI0ColorRole_SurfaceElevated];
+    UI0Color border =
+      app->reader_view_theme.colors[UI0ColorRole_BorderMuted];
+    octavo_android_fill_rect(pixels, box, clip, surface);
+    octavo_android_stroke_rect(pixels, box, clip, border, 2);
+    if (box.w > 24 && box.h > 24)
+    {
+      octavo_android_stroke_rect(
+        pixels,
+        ui0_rect(box.x + 12, box.y + 12, box.w - 24, box.h - 24),
+        clip,
+        border,
+        1);
+    }
+  }
+  return 1;
+}
+
 static void
 octavo_android_draw_glyph(OctavoAndroidPixels pixels,
                           char codepoint,
@@ -1788,13 +2418,7 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
     {
       y += row->margin_top_rows * base_line_height;
     }
-    U32 line_scale = row->line_height_permille;
-    if (line_scale == 0)
-    {
-      line_scale = MAX(row->font_scale_permille, 1000u);
-    }
-    S32 row_height = MAX(
-      octavo_android_scaled_px(base_line_height, line_scale), 1);
+    S32 row_height = octavo_android_frame_style_row_height(app, row);
     if (y + row_height > bottom)
     {
       break;
@@ -1992,6 +2616,23 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
         viewport, &geometry_style, &geometry))
   {
     return 0;
+  }
+  /*
+   * Give the first text row a little more air without changing the
+   * canonical content height. Borrow at most half of the bottom reserve so
+   * page_rows, semantic pagination, and restore anchors remain unchanged.
+   */
+  int64_t page_bottom =
+    (int64_t)geometry.page_surface_rect.y + geometry.page_surface_rect.h;
+  int64_t content_bottom =
+    (int64_t)geometry.content_rect.y + geometry.content_rect.h;
+  int64_t bottom_reserve = page_bottom - content_bottom;
+  if (bottom_reserve > 1)
+  {
+    S32 requested_top_bias = content_inset_y / 2;
+    S32 available_top_bias = (S32)(bottom_reserve / 2);
+    geometry.content_rect.y +=
+      MIN(requested_top_bias, available_top_bias);
   }
   app->reader_view_layout.page_surface_rect = geometry.page_surface_rect;
   app->reader_view_layout.content_rect = geometry.content_rect;
@@ -2355,6 +2996,7 @@ octavo_android_move_page(OctavoAndroidApp *app, S32 direction)
     return 0;
   }
 
+  octavo_android_invalidate_prepared_static_frame(app);
   app->page_move_success_count += 1u;
   app->page_move_waiting_for_present = 1;
   app->page_move_expected_spine_index = change.after.spine_index;
@@ -2493,6 +3135,23 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     }
     return 0;
   }
+  S32 prepared_width = ANativeWindow_getWidth(app->window);
+  S32 prepared_height = ANativeWindow_getHeight(app->window);
+  if (prepared_width <= 0) { prepared_width = app->width; }
+  if (prepared_height <= 0) { prepared_height = app->height; }
+  if (!octavo_android_prepared_static_frame_matches(
+        app, app->window, prepared_width, prepared_height))
+  {
+    app->render_failure_count += 1u;
+    octavo_android_reject_prepared_static_frame(app);
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Refusing to present a missing or stale prepared reader frame");
+    return 0;
+  }
+  app->prepared_static_frame_present_reuse_count += 1u;
+
   int first_frame_timing = !app->first_frame_timing_finished;
   uint64_t present_started_millis = first_frame_timing ?
     octavo_android_uptime_millis() : 0u;
@@ -2562,19 +3221,24 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     .height = buffer.height,
     .stride = buffer.stride,
   };
-  if (!octavo_android_build_static_page(
-        app, (S32)buffer.width, (S32)buffer.height))
+  if (!octavo_android_prepared_static_frame_matches(
+        app, app->window, (S32)buffer.width, (S32)buffer.height))
   {
     app->render_failure_count += 1u;
     octavo_android_draw_failure_frame(app, pixels);
     (void)ANativeWindow_unlockAndPost(app->window);
+    octavo_android_reject_prepared_static_frame(app);
     __android_log_print(
-      ANDROID_LOG_ERROR, "8vo", "Unable to build the Android Port 7 page");
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Prepared reader frame did not match the locked Android buffer");
     return 0;
   }
   if (first_frame_timing)
   {
-    page_built_millis = octavo_android_uptime_millis();
+    /* Static preparation happened before the Java image gate. The accepted
+       first-frame total still includes it through reader_entry_started. */
+    page_built_millis = buffer_locked_millis;
   }
   if (!octavo_android_pending_frame_matches(app))
   {
@@ -2595,6 +3259,30 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   if (first_frame_timing)
   {
     page_filled_millis = octavo_android_uptime_millis();
+  }
+
+  octavo_android_attach_frame_images(app);
+  if (!octavo_android_frame_images_prepared(app))
+  {
+    app->render_failure_count += 1u;
+    octavo_android_draw_failure_frame(app, pixels);
+    (void)ANativeWindow_unlockAndPost(app->window);
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Refusing to present an unprepared Android reader image");
+    return 0;
+  }
+  if (!octavo_android_draw_reader_images(app, pixels))
+  {
+    app->render_failure_count += 1u;
+    octavo_android_draw_failure_frame(app, pixels);
+    (void)ANativeWindow_unlockAndPost(app->window);
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "Unable to present bounded Android reader media");
+    return 0;
   }
 
   OctavoAndroidJustificationEvidence justification_evidence = {0};
@@ -2761,6 +3449,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     app->reader_view_frame.draw_command_count,
     (unsigned long long)app->first_frame_elapsed_millis,
     (unsigned long long)app->typography.missing_glyph_count);
+  octavo_android_consume_prepared_static_frame(app);
   return 1;
 }
 
@@ -2900,6 +3589,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
       arena_release(app->arena);
     }
     octavo_android_release_typography(&app->typography);
+    octavo_android_image_cache_release(app);
     free(app);
     return 0;
   }
@@ -2914,6 +3604,58 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     (unsigned)app->resume_spine_index,
     (unsigned long long)app->resume_byte_offset);
   return (jlong)(uintptr_t)app;
+}
+
+static B32
+octavo_android_prepare_frame_images_with_java(
+  JNIEnv *environment,
+  OctavoAndroidApp *app)
+{
+  if (!environment || !app)
+  {
+    return 0;
+  }
+  jclass bridge = (*environment)->FindClass(
+    environment, "ro/devze/octavo/OctavoReaderImageBridge");
+  if (!bridge)
+  {
+    if ((*environment)->ExceptionCheck(environment))
+    {
+      (*environment)->ExceptionClear(environment);
+    }
+    __android_log_print(
+      ANDROID_LOG_ERROR, "8vo", "Unable to resolve the reader image bridge");
+    return 0;
+  }
+  jmethodID prepare = (*environment)->GetStaticMethodID(
+    environment, bridge, "prepareFrameImages", "(J)Z");
+  if (!prepare)
+  {
+    if ((*environment)->ExceptionCheck(environment))
+    {
+      (*environment)->ExceptionClear(environment);
+    }
+    (*environment)->DeleteLocalRef(environment, bridge);
+    __android_log_print(
+      ANDROID_LOG_ERROR, "8vo", "Unable to resolve reader image preparation");
+    return 0;
+  }
+  jboolean prepared = (*environment)->CallStaticBooleanMethod(
+    environment, bridge, prepare, (jlong)(uintptr_t)app);
+  B32 callback_failed = (*environment)->ExceptionCheck(environment);
+  if (callback_failed)
+  {
+    (*environment)->ExceptionClear(environment);
+  }
+  (*environment)->DeleteLocalRef(environment, bridge);
+  if (callback_failed || prepared != JNI_TRUE)
+  {
+    __android_log_print(
+      ANDROID_LOG_ERROR, "8vo", "Reader image preparation was rejected");
+    return 0;
+  }
+  octavo_android_attach_frame_images(app);
+  return octavo_android_frame_images_prepared(app);
 }
 
 JNIEXPORT jint JNICALL
@@ -2962,6 +3704,7 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
       &next_typography, 'n', 0, 1000u);
   OctavoAndroidAppearance old_appearance = app->appearance;
   OctavoAndroidTypography old_typography = app->typography;
+  octavo_android_invalidate_prepared_static_frame(app);
   app->typography = next_typography;
   app->appearance = next_appearance;
   octavo_android_resolve_appearance_theme(app);
@@ -2973,7 +3716,9 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
     app->pagination_dirty = 1;
   }
 
-  if (octavo_android_present_frame(app))
+  B32 candidate_prepared =
+    octavo_android_prepare_frame_images_with_java(environment, app);
+  if (candidate_prepared && octavo_android_present_frame(app))
   {
     octavo_android_release_typography(&old_typography);
     return 1;
@@ -2981,6 +3726,7 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
   if (app->window && app->resumed)
   {
     OctavoAndroidTypography failed_typography = app->typography;
+    octavo_android_invalidate_prepared_static_frame(app);
     app->typography = old_typography;
     app->appearance = old_appearance;
     octavo_android_release_typography(&failed_typography);
@@ -2988,7 +3734,15 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
     app->appearance_generation += 1u;
     app->appearance_waiting_for_present = 1;
     app->pagination_dirty = 1;
-    (void)octavo_android_present_frame(app);
+    if (octavo_android_prepare_frame_images_with_java(environment, app))
+    {
+      (void)octavo_android_present_frame(app);
+    }
+    else
+    {
+      __android_log_print(
+        ANDROID_LOG_ERROR, "8vo", "Unable to prepare appearance rollback");
+    }
     app->appearance_failure_count += 1u;
     return 0;
   }
@@ -3021,6 +3775,7 @@ Java_ro_devze_octavo_OctavoNative_destroy(JNIEnv *environment,
     app->arena = 0;
   }
   octavo_android_release_typography(&app->typography);
+  octavo_android_image_cache_release(app);
   free(app);
 }
 
@@ -3036,6 +3791,7 @@ Java_ro_devze_octavo_OctavoNative_hostResumed(JNIEnv *environment,
   {
     return;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   app->resumed = 1;
   app->resume_count += 1u;
   app->lifecycle_generation += 1u;
@@ -3054,6 +3810,7 @@ Java_ro_devze_octavo_OctavoNative_hostPaused(JNIEnv *environment,
   {
     return;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   S32 cancellation = octavo_android_cancel_pending_navigation(app);
   if (cancellation < 0)
   {
@@ -3118,6 +3875,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceCreated(JNIEnv *environment,
     }
     ANativeWindow_release(app->window);
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   app->window = window;
   app->width = ANativeWindow_getWidth(window);
   app->height = ANativeWindow_getHeight(window);
@@ -3150,6 +3908,12 @@ Java_ro_devze_octavo_OctavoNative_surfaceChanged(JNIEnv *environment,
   {
     return;
   }
+  if (app->format != (int32_t)format ||
+      app->width != (int32_t)width ||
+      app->height != (int32_t)height)
+  {
+    octavo_android_invalidate_prepared_static_frame(app);
+  }
   app->format = (int32_t)format;
   app->width = (int32_t)width;
   app->height = (int32_t)height;
@@ -3170,6 +3934,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceDestroyed(JNIEnv *environment,
   {
     return;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   S32 cancellation = octavo_android_cancel_pending_navigation(app);
   if (cancellation < 0)
   {
@@ -3208,6 +3973,13 @@ Java_ro_devze_octavo_OctavoNative_windowInsets(JNIEnv *environment,
   {
     return;
   }
+  if (app->inset_left != (int32_t)left ||
+      app->inset_top != (int32_t)top ||
+      app->inset_right != (int32_t)right ||
+      app->inset_bottom != (int32_t)bottom)
+  {
+    octavo_android_invalidate_prepared_static_frame(app);
+  }
   app->inset_left = (int32_t)left;
   app->inset_top = (int32_t)top;
   app->inset_right = (int32_t)right;
@@ -3236,6 +4008,7 @@ Java_ro_devze_octavo_OctavoNative_readerChromeInsets(
     return JNI_TRUE;
   }
 
+  octavo_android_invalidate_prepared_static_frame(app);
   app->reader_chrome_inset_top = (int32_t)top;
   app->reader_chrome_inset_bottom = (int32_t)bottom;
   return JNI_TRUE;
@@ -3331,6 +4104,394 @@ Java_ro_devze_octavo_OctavoNative_utf8RoundTripForTesting(
   return octavo_android_new_utf8_string(environment, text);
 }
 
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_frameImagesSnapshot(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->window || !app->resumed)
+  {
+    return 0;
+  }
+  S32 width = ANativeWindow_getWidth(app->window);
+  S32 height = ANativeWindow_getHeight(app->window);
+  if (width <= 0) { width = app->width; }
+  if (height <= 0) { height = app->height; }
+  if (width <= 0 || height <= 0)
+  {
+    return 0;
+  }
+  if (octavo_android_prepared_static_frame_matches(
+        app, app->window, width, height))
+  {
+    app->prepared_static_frame_snapshot_reuse_count += 1u;
+  }
+  else
+  {
+    if (app->prepared_static_frame.valid)
+    {
+      octavo_android_invalidate_prepared_static_frame(app);
+    }
+    app->prepared_static_frame_build_attempt_count += 1u;
+    if (!octavo_android_build_static_page(app, width, height))
+    {
+      return 0;
+    }
+    app->prepared_static_frame_build_success_count += 1u;
+    app->prepared_static_frame_build_serial += 1u;
+    if (!octavo_android_record_prepared_static_frame(app, width, height))
+    {
+      return 0;
+    }
+  }
+  octavo_android_attach_frame_images(app);
+  U32 image_count = MIN(app->reader_frame.image_count,
+                        (U32)EPUB_READER_FRAME_IMAGE_CAP);
+  jsize value_count =
+    OCTAVO_ANDROID_FRAME_IMAGE_PACKET_HEADER_COUNT +
+    (jsize)image_count * OCTAVO_ANDROID_FRAME_IMAGE_PACKET_ROW_STRIDE;
+  jlong values[
+    OCTAVO_ANDROID_FRAME_IMAGE_PACKET_HEADER_COUNT +
+    EPUB_READER_FRAME_IMAGE_CAP *
+      OCTAVO_ANDROID_FRAME_IMAGE_PACKET_ROW_STRIDE] = {0};
+  values[0] = OCTAVO_ANDROID_FRAME_IMAGE_PACKET_VERSION;
+  values[1] = (jlong)image_count;
+  for (U32 index = 0; index < image_count; ++index)
+  {
+    EpubReaderFrameImage *image = app->reader_frame.images + index;
+    jsize at = OCTAVO_ANDROID_FRAME_IMAGE_PACKET_HEADER_COUNT +
+      (jsize)index * OCTAVO_ANDROID_FRAME_IMAGE_PACKET_ROW_STRIDE;
+    values[at + 0] = (jlong)image->resource_index;
+    values[at + 1] = (jlong)image->status;
+    values[at + 2] = image->has_resource ? 1 : 0;
+    values[at + 3] = (jlong)image->row;
+  }
+  jlongArray result = (*environment)->NewLongArray(environment, value_count);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment, result, 0, value_count, values);
+  }
+  return result;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_ro_devze_octavo_OctavoNative_frameImageEncodedBytes(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint image_index,
+  jlong byte_limit)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->reader_frame.ready || image_index < 0 ||
+      (U32)image_index >= app->reader_frame.image_count ||
+      (U32)image_index >= EPUB_READER_FRAME_IMAGE_CAP ||
+      byte_limit <= 0 ||
+      (U64)byte_limit > OCTAVO_ANDROID_IMAGE_ENCODED_BUDGET)
+  {
+    return 0;
+  }
+  EpubReaderFrameImage *image =
+    app->reader_frame.images + (U32)image_index;
+  if (!image->has_resource ||
+      octavo_android_image_cache_find(app, image->resource_index))
+  {
+    return 0;
+  }
+  ArenaParams parameters = {
+    .reserve_size = (U64)byte_limit + 1u,
+    .commit_size = MIN((U64)byte_limit + 1u, KILOBYTES(64)),
+  };
+  Arena *encoded_arena = arena_alloc(&parameters);
+  if (!encoded_arena) { return 0; }
+  String8 encoded = {0};
+  U64 required_size = 0;
+  DocError resource_result = doc_engine_get_resource_data_bounded(
+    encoded_arena,
+    epub_reader_engine(&app->reader),
+    epub_reader_document_id(&app->reader),
+    image->resource_index,
+    (U64)byte_limit,
+    &encoded,
+    &required_size);
+  jbyteArray result = 0;
+  if (resource_result == DocError_LimitExceeded &&
+      required_size > (U64)byte_limit)
+  {
+    /* A non-null empty array is the explicit aggregate-budget sentinel.
+       Reader0 rejected the entry before output allocation/decompression. */
+    result = (*environment)->NewByteArray(environment, 0);
+  }
+  else if (resource_result == DocError_Ok && encoded.str && encoded.size > 0)
+  {
+    if (encoded.size <= (U64)byte_limit &&
+        encoded.size <= OCTAVO_ANDROID_IMAGE_ENCODED_BUDGET &&
+        encoded.size <= INT32_MAX)
+    {
+      result = (*environment)->NewByteArray(
+        environment, (jsize)encoded.size);
+    }
+    if (result)
+    {
+      jsize result_size = (*environment)->GetArrayLength(environment, result);
+      if (result_size > 0)
+      {
+        (*environment)->SetByteArrayRegion(
+          environment,
+          result,
+          0,
+          result_size,
+          (const jbyte *)encoded.str);
+      }
+    }
+  }
+  arena_release(encoded_arena);
+  return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_setFrameImageDecodeResult(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jint image_index,
+  jint status,
+  jint width,
+  jint height,
+  jintArray argb_pixels)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !app->reader_frame.ready || image_index < 0 ||
+      (U32)image_index >= app->reader_frame.image_count ||
+      (U32)image_index >= EPUB_READER_FRAME_IMAGE_CAP)
+  {
+    return JNI_FALSE;
+  }
+  EpubReaderFrameImage *image =
+    app->reader_frame.images + (U32)image_index;
+  if (!image->has_resource) { return JNI_FALSE; }
+  OctavoAndroidImageCacheEntry *existing =
+    octavo_android_image_cache_find(app, image->resource_index);
+  if (existing)
+  {
+    octavo_android_image_cache_touch(app, existing);
+    octavo_android_attach_frame_images(app);
+    return JNI_TRUE;
+  }
+  EpubReaderFrameImageStatus decoded_status =
+    (EpubReaderFrameImageStatus)status;
+  if (decoded_status != EpubReaderFrameImageStatus_Loaded &&
+      decoded_status != EpubReaderFrameImageStatus_UnsupportedFormat &&
+      decoded_status != EpubReaderFrameImageStatus_DimensionCap &&
+      decoded_status != EpubReaderFrameImageStatus_DecodeFailed &&
+      decoded_status != EpubReaderFrameImageStatus_CacheFull)
+  {
+    return JNI_FALSE;
+  }
+
+  U64 pixel_count = 0;
+  U64 pixel_bytes = 0;
+  U32 *pixels = 0;
+  if (decoded_status == EpubReaderFrameImageStatus_Loaded)
+  {
+    if (!argb_pixels || width <= 0 || height <= 0 ||
+        width > OCTAVO_ANDROID_IMAGE_MAX_DIMENSION ||
+        height > OCTAVO_ANDROID_IMAGE_MAX_DIMENSION)
+    {
+      return JNI_FALSE;
+    }
+    pixel_count = (U64)(U32)width * (U64)(U32)height;
+    pixel_bytes = pixel_count * sizeof(U32);
+    if (pixel_count == 0 ||
+        pixel_count > OCTAVO_ANDROID_IMAGE_MAX_PIXEL_COUNT ||
+        (*environment)->GetArrayLength(environment, argb_pixels) !=
+          (jsize)pixel_count)
+    {
+      return JNI_FALSE;
+    }
+    if (!octavo_android_image_cache_make_pixel_room(app, pixel_bytes))
+    {
+      /* Current-frame pixels stay pinned; this resource alone gets a
+         visible bounded failure instead of disabling all later images. */
+      decoded_status = EpubReaderFrameImageStatus_CacheFull;
+    }
+    else
+    {
+      pixels = (U32 *)malloc((size_t)pixel_bytes);
+      if (!pixels)
+      {
+        decoded_status = EpubReaderFrameImageStatus_CacheFull;
+      }
+      else
+      {
+        (*environment)->GetIntArrayRegion(
+          environment,
+          argb_pixels,
+          0,
+          (jsize)pixel_count,
+          (jint *)pixels);
+        if ((*environment)->ExceptionCheck(environment))
+        {
+          free(pixels);
+          return JNI_FALSE;
+        }
+      }
+    }
+  }
+
+  if (!octavo_android_image_cache_make_entry_room(app))
+  {
+    free(pixels);
+    image->status = EpubReaderFrameImageStatus_CacheFull;
+    __android_log_print(
+      ANDROID_LOG_ERROR,
+      "8vo",
+      "No unpinned Android reader-image cache entry was available");
+    return JNI_FALSE;
+  }
+
+  OctavoAndroidImageCacheEntry *entry =
+    app->image_cache + app->image_cache_count;
+  *entry = (OctavoAndroidImageCacheEntry){
+    .resource_index = image->resource_index,
+    .status = decoded_status,
+    .pixels = pixels,
+    .width = pixels ? width : 0,
+    .height = pixels ? height : 0,
+    .stride_pixels = pixels ? width : 0,
+    .pixel_bytes = pixels ? pixel_bytes : 0,
+    .last_use_serial = 0,
+  };
+  app->image_cache_count += 1u;
+  app->image_cache_pixel_bytes += entry->pixel_bytes;
+  octavo_android_image_cache_touch(app, entry);
+  octavo_android_attach_frame_images(app);
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_clearFrameImageCacheForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app) { return JNI_FALSE; }
+  octavo_android_image_cache_release(app);
+  octavo_android_attach_frame_images(app);
+  return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_frameImageResourceCachedForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong resource_index)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || resource_index < 0 || (U64)resource_index > UINT32_MAX)
+  {
+    return JNI_FALSE;
+  }
+  return octavo_android_image_cache_find(
+    app, (U32)resource_index) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_ro_devze_octavo_OctavoNative_frameImageCurrentFramePinningForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong resource_index)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || resource_index < 0 || (U64)resource_index > UINT32_MAX)
+  {
+    return JNI_FALSE;
+  }
+  U32 pinned_resource = (U32)resource_index;
+  OctavoAndroidImageCacheEntry *pinned =
+    octavo_android_image_cache_find(app, pinned_resource);
+  if (!pinned ||
+      !octavo_android_frame_resource_is_pinned(app, pinned_resource))
+  {
+    return JNI_FALSE;
+  }
+
+  app->image_cache_use_serial = 0;
+  for (U32 index = 0; index < app->image_cache_count; ++index)
+  {
+    OctavoAndroidImageCacheEntry *entry = app->image_cache + index;
+    if (entry->resource_index == pinned_resource)
+    {
+      entry->last_use_serial = 0;
+    }
+    else
+    {
+      app->image_cache_use_serial += 1u;
+      entry->last_use_serial = app->image_cache_use_serial;
+    }
+  }
+
+  U32 candidate = 0xf0000000u;
+  while (app->image_cache_count < OCTAVO_ANDROID_IMAGE_CACHE_CAP)
+  {
+    while (candidate > 0 &&
+           (octavo_android_image_cache_find(app, candidate) ||
+            octavo_android_frame_resource_is_pinned(app, candidate)))
+    {
+      candidate -= 1u;
+    }
+    if (candidate == 0) { return JNI_FALSE; }
+    OctavoAndroidImageCacheEntry *entry =
+      app->image_cache + app->image_cache_count;
+    *entry = (OctavoAndroidImageCacheEntry){
+      .resource_index = candidate,
+      .status = EpubReaderFrameImageStatus_DecodeFailed,
+    };
+    app->image_cache_count += 1u;
+    octavo_android_image_cache_touch(app, entry);
+    candidate -= 1u;
+  }
+
+  U32 victim_resource = 0;
+  U64 victim_serial = UINT64_MAX;
+  for (U32 index = 0; index < app->image_cache_count; ++index)
+  {
+    const OctavoAndroidImageCacheEntry *entry = app->image_cache + index;
+    if (!octavo_android_frame_resource_is_pinned(app,
+                                                  entry->resource_index) &&
+        entry->last_use_serial < victim_serial)
+    {
+      victim_resource = entry->resource_index;
+      victim_serial = entry->last_use_serial;
+    }
+  }
+  U32 count_before = app->image_cache_count;
+  if (victim_serial == UINT64_MAX ||
+      !octavo_android_image_cache_make_entry_room(app))
+  {
+    return JNI_FALSE;
+  }
+  return app->image_cache_count + 1u == count_before &&
+    octavo_android_image_cache_find(app, pinned_resource) &&
+    !octavo_android_image_cache_find(app, victim_resource) ?
+      JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jboolean JNICALL
 Java_ro_devze_octavo_OctavoNative_present(JNIEnv *environment,
                                           jclass type,
@@ -3377,6 +4538,7 @@ Java_ro_devze_octavo_OctavoNative_setChromeVisible(
   {
     return JNI_TRUE;
   }
+  octavo_android_invalidate_prepared_static_frame(app);
   app->chrome_visible = next;
   app->chrome_toggle_count += 1u;
   return JNI_TRUE;
@@ -3471,11 +4633,25 @@ Java_ro_devze_octavo_OctavoNative_warmLocationCacheStep(
     app->location_warm_failure_count += 1u;
     return -1;
   }
+  DocDocumentId before_document = app->reader.location_document_id;
   U32 before = app->reader.location_next_spine_index;
+  U32 before_spine_count = app->reader.location_spine_count;
+  U64 before_total = app->reader.location_total_text_bytes;
+  B32 before_complete = app->reader.location_cache_complete;
+  B32 before_valid = app->reader.location_cache_valid;
   (void)epub_reader_location_cache_ensure(&app->reader);
   B32 complete = app->reader.location_cache_complete &&
     app->reader.location_cache_valid;
   B32 progressed = app->reader.location_next_spine_index > before;
+  if (before_document != app->reader.location_document_id ||
+      before != app->reader.location_next_spine_index ||
+      before_spine_count != app->reader.location_spine_count ||
+      before_total != app->reader.location_total_text_bytes ||
+      before_complete != app->reader.location_cache_complete ||
+      before_valid != app->reader.location_cache_valid)
+  {
+    octavo_android_invalidate_prepared_static_frame(app);
+  }
   if (progressed)
   {
     app->location_warm_progress_count += 1u;
@@ -3522,6 +4698,65 @@ Java_ro_devze_octavo_OctavoNative_locationCacheState(
     return 0;
   }
   (*environment)->SetLongArrayRegion(environment, result, 0, 10, values);
+  return result;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_preparedStaticFrameStateForTesting(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app)
+  {
+    return 0;
+  }
+  S32 window_width = app->window ? ANativeWindow_getWidth(app->window) : 0;
+  S32 window_height = app->window ?
+    ANativeWindow_getHeight(app->window) : 0;
+  const OctavoAndroidPreparedStaticFrame *prepared =
+    &app->prepared_static_frame;
+  jlong values[OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT] = {
+    OCTAVO_ANDROID_PREPARED_FRAME_STATE_VERSION,
+    prepared->valid ? 1 : 0,
+    (jlong)app->prepared_static_frame_mutation_generation,
+    (jlong)app->prepared_static_frame_invalidation_count,
+    (jlong)app->prepared_static_frame_build_attempt_count,
+    (jlong)app->prepared_static_frame_build_success_count,
+    (jlong)app->prepared_static_frame_snapshot_reuse_count,
+    (jlong)app->prepared_static_frame_present_reuse_count,
+    (jlong)app->prepared_static_frame_stale_reject_count,
+    (jlong)app->prepared_static_frame_consume_count,
+    (jlong)prepared->build_serial,
+    (jlong)app->prepared_static_frame_build_serial,
+    (jlong)prepared->lifecycle_generation,
+    (jlong)app->lifecycle_generation,
+    (jlong)prepared->surface_generation,
+    (jlong)app->surface_generation,
+    prepared->width,
+    prepared->height,
+    window_width,
+    window_height,
+    prepared->active_spine_index,
+    app->reader.active_spine_index,
+    (jlong)prepared->view_byte_offset,
+    (jlong)app->reader.view_byte_offset,
+    prepared->location_next_spine_index,
+    app->reader.location_next_spine_index,
+  };
+  jlongArray result = (*environment)->NewLongArray(
+    environment, OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment,
+      result,
+      0,
+      OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT,
+      values);
+  }
   return result;
 }
 

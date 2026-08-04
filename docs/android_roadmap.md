@@ -4,13 +4,14 @@ Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-04. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
-closure. Port 8 structural navigation is now a candidate with passing
-physical-device automation against Reader0 `0.7.0-dev` / API 7. Its Reader0,
-dual-ABI Android, API 36 emulator, strict Windows 8vo, isolated re10, API 34
-ARM64 iQOO automation, exact device-data restore, and a controlled real-book
-Contents jump/Return checks have passed. Audible TalkBack and subjective
-hands-on acceptance remain pending. Later numbering and boundaries may change
-as evidence is collected.
+closure. Port 8 is a corrected structural-navigation candidate against Reader0
+`0.7.0-dev` / API 7 at `5fe949d88258cd96884c44b69e4f4ab6f27dc394`.
+Its corrected Reader0/re10 and strict Windows 8vo gates pass; earlier Port 8
+emulator, iQOO, restore, and real-book results are predecessor evidence. The
+corrected API 36 emulator and API 34 iQOO, external-restart, accessibility/
+reduced-motion, byte-exact restore, and controlled real-book gates pass.
+Audible TalkBack, UI polish, and user subjective/manual acceptance remain
+pending. Later numbering and boundaries may change as evidence is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -33,11 +34,10 @@ Ports 0-7 establish the infrastructure on which the product can safely grow:
 Port 6 is a functional foundation, not a claim of Kindle-level feature or
 visual parity.
 
-Port 7 is the current implementation candidate. It adds the appearance,
+Port 7 is the accepted appearance foundation. It adds the appearance,
 semantic-location reflow, borderless host-composited chrome,
 reader-entry-performance, and accessibility-bridge foundation described
-below. Until its full acceptance matrix passes, Ports 0-6 remain the accepted
-Android baseline.
+below. Ports 0-7 are the accepted Android baseline while Port 8 remains local.
 
 ## Delivery method
 
@@ -61,7 +61,7 @@ pass unchanged-consumer gates in 8vo and re10.
 
 ## Port 7: premium reader appearance foundation
 
-The Port 7 implementation candidate makes one mainstream reflowable EPUB
+The accepted Port 7 implementation makes one mainstream reflowable EPUB
 substantially more configurable and coherent before adding another large
 feature surface. Extended-session comfort remains an acceptance question, not
 an implementation claim.
@@ -250,19 +250,71 @@ one, convert its relevant parity rows into a bounded milestone contract.
 ### Structural navigation
 
 The implementation candidate on `android/port8-structural-navigation` follows
-the bounded [Port 8 contract](android_port8.md). Reader0 API 7 owns EPUB
-structural interpretation and canonical destinations. 8vo owns the calm Android
-surfaces and a presentation transaction that prevents an unpresented jump,
-Return/Forward move, durable reading position, or progress-display choice from
-being committed. History is bounded and session-scoped; only the current
-successfully presented book position and global progress choice are durable.
-The 56/56 API 36 matrix, process restart, 130% text/reduced-animation pass,
-crash review, strict Windows/public smokes, Reader0 validation, and isolated
-re10 qualification are green. The API 34 ARM64 iQOO passed 56/56, its separate
-restart and 15/15 130%-text/reduced-animation gates, empty crash review, and an
-exact 26-file restore. A controlled private-book Contents jump and Return also
-passed. Audible TalkBack and subjective transition/touch/reduced-motion review
-remain pending, so no final Port 8 acceptance is claimed.
+the bounded [Port 8 contract](android_port8.md). Reader0 API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394` owns EPUB structural
+interpretation, canonical destinations, exact chapter resolution, contained
+image-only anchors, small-spine pagination, and bounded session history. 8vo
+owns the calm Android surfaces and the transaction that prevents an unpresented
+jump, Return/Forward move, durable position, or progress-display choice from
+being committed.
+
+The current corrective slice closes six user-reported defects:
+
+- MAPS/image-only Contents destinations use a contained synthetic Reader0
+  anchor immediately and after reopen;
+- predecessor spines at or below 16 KiB paginate canonically from byte zero,
+  removing path-dependent ordinary and intermittent sparse reverse pages;
+- visual image-only map pages are presented instead of appearing blank;
+- Chapter Go-to calls Reader0 instead of treating a number as a Contents index;
+- exact namespace-qualified `epub:type` semantics win and the numbered-label
+  fallback rejects malformed tails, gaps, reversals, and duplicates; and
+- the content rectangle moves down without changing its height or row capacity.
+
+The slice also adds narrow image-only and in-flow image presentation. Reader0
+owns resources, anchors, placement, and `visual_units`; Java owns serial
+platform decode with per-resource bounds; native owns a deterministic
+32-entry/32-MiB LRU with current-frame pinning, aspect fit, terminal fallback,
+and painting. A prepared-frame token makes the first image snapshot the single
+static build, requires verification/present reuse, rejects stale identity,
+retains bounded failed attempts for retry, and is consumed only after accepted
+presentation and commit. Each Java preparation also caps cumulative encoded
+input at 16 MiB and cumulative decoded input at 8,388,608 pixels, terminally
+marking the exhausted and remaining unavailable resources `CacheFull`.
+Reader0 applies the remaining encoded-byte allowance before allocating or
+decompressing the selected ZIP entry, with a distinct limit result so corrupt
+or missing resources remain isolated failures. Its strict adversarial smoke
+covers compressed oversize, malformed metadata, forged sizes, and arena
+rollback. Windows 8vo and re10 adopt the same bounded getter at 32 MiB.
+Deterministic API 36/API 34 validation and controlled presentation of three
+real-book map leaves pass; broader media-fidelity review remains required.
+
+Corrected Reader0 and companion re10 at
+`b1c264f027c90bec480677bfeadfa5e0728776a8` pass their strict gates. The
+corrected strict Windows 8vo build and all seven public smokes also pass in 19.6
+seconds wall. The corrected API 36 matrix passed 67/67 in 468.395 seconds of XML time
+(494.0 seconds wall), after 5/5 presentation-deferral stress and an 11/11 image/
+prepared-frame matrix. External restart and 15/15 130%-text/animations-off
+probes passed, settings restored exactly, and crash/exit review found no crash
+or ANR. The earlier 56/56 API 36, restart, 15/15 large-text/reduced-animation,
+56/56 iQOO, restore, and private-book checks remain predecessor evidence only.
+
+On the corrected source, the API 34 ARM64 iQOO ordinary matrix passed 67/67 in
+170.878 seconds of instrumentation time (171.449 seconds wall). Its confirmed-
+force-stop restore passed with a 1.987-second seed, 1.135-second verification,
+and 4.908-second wall time. The 130%-text/animations-off matrix passed 15/15 in
+16.185 seconds of instrumentation time (18.591 seconds wall), followed by exact
+restoration of font scale `1.0`, window and transition scales `1.0`, and the
+previously absent animator-scale key. The crash buffer was empty and exit
+history contained only expected `USER REQUESTED` and `PACKAGE UPDATED` records,
+with no crash or ANR. Controlled real-book review passed the MAPS, three-map-
+leaf, Chapter One/Two, exact Return, waited reverse-navigation, full-page, top-
+padding, and no-transition-flash checks. The original 26 app files and 4,751,505
+payload bytes were restored byte-exact; archive SHA-256
+`52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2` and
+manifest SHA-256
+`A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94` match the
+original backup. Audible TalkBack, UI polish, and user subjective/manual
+acceptance remain pending, so no final Port 8 acceptance or 8vo hash is claimed.
 
 - hierarchical table of contents with current-section state;
 - go-to page/location/percentage and chapter navigation;
@@ -350,6 +402,10 @@ smallest responsible package. The long-term lane includes:
 - tables, lists, poetry, block quotes, drop caps, links, footnotes, and MathML;
 - publisher styling balanced against explicit reader overrides; and
 - robust malformed/untrusted EPUB handling.
+
+Port 8's narrow frame-image path does not complete this broader media-fidelity
+lane: captions/alt text, zoom/pan, formats, color policy, and representative
+bomb/lifecycle coverage remain later work.
 
 Shared changes must be qualified in both 8vo and re10. Android host code must
 not reproduce the document engine to achieve a screenshot.

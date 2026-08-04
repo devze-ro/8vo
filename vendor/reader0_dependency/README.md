@@ -5,7 +5,7 @@ Current pinned reader0 consumer dependency:
 - mode: `sibling-source`
 - version: `0.7.0-dev`
 - API version: `7`
-- commit: `58ec6d11575c36176eb85511759d39dc93acb78b`
+- commit: `5fe949d88258cd96884c44b69e4f4ab6f27dc394`
 
 This directory contains dependency metadata, not a source snapshot. 8vo
 locates the live reader0 checkout through `OCTAVO_READER0_DIR` or
@@ -22,6 +22,12 @@ persistence, accessibility adaptation, and bounded host-owned caches.
 Reader0 API 7's presented-navigation primitive validates the actual canonical
 destination before 8vo exposes a history entry; failed or interrupted frames
 leave both the prior history and durable position authoritative.
+
+The pinned API 7 revision also exposes bounded encoded-resource extraction.
+Reader0 stats the selected ZIP entry in the same opened archive and returns a
+distinct limit result before output allocation or entry decompression. Android
+uses the remaining presentation byte budget for every image request; the
+Windows reader uses its existing 32 MiB encoded-resource ceiling.
 
 Saved catalog and legacy positions explicitly request Reader0's bounded
 six-page restore before resolving the persisted byte.

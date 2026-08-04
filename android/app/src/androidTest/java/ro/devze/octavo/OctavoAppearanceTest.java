@@ -50,6 +50,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -61,6 +63,16 @@ public final class OctavoAppearanceTest {
     private static final int LITERARY_RIGHT_PROBE = 0xFF143CDC;
     private static final int CLEAR_LEFT_PROBE = 0xFF00AAB8;
     private static final int CLEAR_RIGHT_PROBE = 0xFFC88A00;
+
+    private static final int PREPARED_VALID = 1;
+    private static final int PREPARED_MUTATION_GENERATION = 2;
+    private static final int PREPARED_INVALIDATION_COUNT = 3;
+    private static final int PREPARED_BUILD_ATTEMPTS = 4;
+    private static final int PREPARED_BUILD_SUCCESSES = 5;
+    private static final int PREPARED_SNAPSHOT_REUSES = 6;
+    private static final int PREPARED_PRESENT_REUSES = 7;
+    private static final int PREPARED_STALE_REJECTS = 8;
+    private static final int PREPARED_CONSUMES = 9;
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -342,24 +354,42 @@ public final class OctavoAppearanceTest {
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
-            openFixture(scenario);
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                assertTrue(activity.openFixtureForTesting());
+                OctavoSurfaceView view = (OctavoSurfaceView)
+                    activity.findViewById(R.id.octavo_surface);
+                assertNotNull(view);
+                view.suspendLocationWarmForTesting();
+            });
             long[] firstPage = awaitInitialPage(scenario);
-            long[] beforeCache = locationCacheState(scenario);
-            assertEquals(
-                "The fixture location cache completed before its deferred "
-                    + "failure probe",
-                0,
-                beforeCache[0]);
             OctavoAppearance pending =
                 OctavoAppearance.defaults().withTheme(
                     OctavoAppearance.THEME_SEPIA);
+            AtomicReference<long[]> beforeCacheSnapshot =
+                new AtomicReference<>();
             scenario.onActivity(activity -> {
                 OctavoSurfaceView view = (OctavoSurfaceView)
                     activity.findViewById(R.id.octavo_surface);
                 assertNotNull(view);
+                long[] beforeCache = view.locationCacheStateForTesting();
+                assertNotNull(beforeCache);
+                assertEquals(10, beforeCache.length);
+                assertEquals(
+                    "The fixture location cache completed before its "
+                        + "deferred failure probe",
+                    0,
+                    beforeCache[0]);
+                beforeCacheSnapshot.set(beforeCache);
                 assertTrue(view.forcePrePresentFailuresForTesting(8));
-                activity.requestAppearanceForTesting(pending);
+                assertTrue(
+                    "Deferred metadata did not honor the pending "
+                        + "presentation gate",
+                    view.requestAppearanceWithLocationWarmGateProbeForTesting(
+                        pending));
             });
+            long[] beforeCache = beforeCacheSnapshot.get();
+            assertNotNull(beforeCache);
             long[] exhausted = awaitState(
                 scenario,
                 current ->
@@ -391,6 +421,106 @@ public final class OctavoAppearanceTest {
             assertEquals(stopped[5], stillStopped[5]);
             assertEquals(stopped[7], stillStopped[7]);
             assertEquals(stopped[8], stillStopped[8]);
+        }
+    }
+
+    @Test
+    public void preparedStaticFrameRetriesReuseAndStaleMutationRejects()
+        throws InterruptedException {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitInitialPage(scenario);
+            awaitLocationCacheComplete(scenario);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            long[] baseline = preparedFrameState(scenario);
+            long[] baselineNative = state(scenario);
+
+            AtomicReference<long[]> packet = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                packet.set(view.frameImagesSnapshotForTesting());
+                assertTrue(view.forcePrePresentFailuresForTesting(2));
+            });
+            assertNotNull(packet.get());
+            long[] prepared = preparedFrameState(scenario);
+            assertEquals(1, prepared[PREPARED_VALID]);
+            assertEquals(
+                baseline[PREPARED_BUILD_ATTEMPTS] + 1,
+                prepared[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(
+                baseline[PREPARED_BUILD_SUCCESSES] + 1,
+                prepared[PREPARED_BUILD_SUCCESSES]);
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertFalse(view.presentPreparedFrameForTesting());
+                assertFalse(view.presentPreparedFrameForTesting());
+            });
+            long[] retried = preparedFrameState(scenario);
+            assertEquals(
+                "A forced retry discarded the exact prepared candidate",
+                1,
+                retried[PREPARED_VALID]);
+            assertEquals(
+                prepared[PREPARED_BUILD_SUCCESSES],
+                retried[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                prepared[PREPARED_PRESENT_REUSES] + 2,
+                retried[PREPARED_PRESENT_REUSES]);
+            assertEquals(
+                prepared[PREPARED_CONSUMES],
+                retried[PREPARED_CONSUMES]);
+            assertEquals(
+                prepared[PREPARED_STALE_REJECTS],
+                retried[PREPARED_STALE_REJECTS]);
+
+            scenario.onActivity(activity ->
+                assertTrue(surface(activity)
+                    .presentPreparedFrameForTesting()));
+            long[] accepted = preparedFrameState(scenario);
+            assertEquals(0, accepted[PREPARED_VALID]);
+            assertEquals(
+                retried[PREPARED_BUILD_SUCCESSES],
+                accepted[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                retried[PREPARED_PRESENT_REUSES] + 1,
+                accepted[PREPARED_PRESENT_REUSES]);
+            assertEquals(
+                retried[PREPARED_CONSUMES] + 1,
+                accepted[PREPARED_CONSUMES]);
+            assertEquals(
+                baselineNative[OctavoSurfaceView.STATE_FRAME_COUNT] + 1,
+                state(scenario)[OctavoSurfaceView.STATE_FRAME_COUNT]);
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertNotNull(view.frameImagesSnapshotForTesting());
+            });
+            long[] staleCandidate = preparedFrameState(scenario);
+            assertEquals(1, staleCandidate[PREPARED_VALID]);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.setChromeVisible(true));
+                assertFalse(view.presentPreparedFrameForTesting());
+            });
+            long[] rejected = preparedFrameState(scenario);
+            assertEquals(0, rejected[PREPARED_VALID]);
+            assertTrue(
+                rejected[PREPARED_MUTATION_GENERATION]
+                    > staleCandidate[PREPARED_MUTATION_GENERATION]);
+            assertEquals(
+                staleCandidate[PREPARED_INVALIDATION_COUNT] + 1,
+                rejected[PREPARED_INVALIDATION_COUNT]);
+            assertEquals(
+                staleCandidate[PREPARED_BUILD_SUCCESSES],
+                rejected[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                staleCandidate[PREPARED_STALE_REJECTS] + 1,
+                rejected[PREPARED_STALE_REJECTS]);
+            assertEquals(
+                staleCandidate[PREPARED_CONSUMES],
+                rejected[PREPARED_CONSUMES]);
         }
     }
 
@@ -1059,6 +1189,714 @@ public final class OctavoAppearanceTest {
     }
 
     @Test
+    public void imageOnlyContentsAndReader0ChapterNavigationPresentExactMedia()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createImageNavigationEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] initial = awaitInitialPage(scenario);
+            assertEquals(0,
+                initial[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX]);
+            awaitLocationCacheComplete(scenario);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            long[] beforeChapter = preparedFrameState(scenario);
+
+            long chapterFrame =
+                initial[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong chapterResult = new AtomicLong();
+            scenario.onActivity(activity -> chapterResult.set(
+                surface(activity).requestChapterNavigation(1)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED, chapterResult.get());
+            long[] chapter = awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT]
+                        > chapterFrame
+                    && current[
+                        OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX] == 2
+                    && current[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+                "Reader0 chapter 1 did not present Chapter One");
+            AtomicReference<String> chapterText = new AtomicReference<>();
+            scenario.onActivity(activity -> chapterText.set(
+                surface(activity).visibleTextForTesting()));
+            assertNotNull(chapterText.get());
+            assertTrue(chapterText.get().contains("Chapter One"));
+
+            long[] afterChapter = preparedFrameState(scenario);
+            assertEquals(
+                beforeChapter[PREPARED_BUILD_ATTEMPTS] + 1,
+                afterChapter[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(
+                beforeChapter[PREPARED_BUILD_SUCCESSES] + 1,
+                afterChapter[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                beforeChapter[PREPARED_CONSUMES] + 1,
+                afterChapter[PREPARED_CONSUMES]);
+            assertEquals(0, afterChapter[PREPARED_VALID]);
+
+            long mapsFrame = chapter[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong mapsResult = new AtomicLong();
+            scenario.onActivity(activity -> mapsResult.set(
+                surface(activity).requestContentsNavigation(1)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED, mapsResult.get());
+            long[] maps = awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT] > mapsFrame
+                    && current[
+                        OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX] == 1
+                    && current[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+                "The image-only MAPS contents target did not present");
+            long[] afterMaps = preparedFrameState(scenario);
+            assertEquals(
+                afterChapter[PREPARED_BUILD_ATTEMPTS] + 1,
+                afterMaps[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(
+                afterChapter[PREPARED_BUILD_SUCCESSES] + 1,
+                afterMaps[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                afterChapter[PREPARED_CONSUMES] + 1,
+                afterMaps[PREPARED_CONSUMES]);
+            assertEquals(0, afterMaps[PREPARED_VALID]);
+
+            AtomicReference<long[]> mapsImages = new AtomicReference<>();
+            scenario.onActivity(activity -> mapsImages.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(mapsImages.get());
+
+            long firstMapsPixelHash;
+            Bitmap mapsFramePixels = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(mapsFramePixels, maps);
+                firstMapsPixelHash = framePixelHash(mapsFramePixels);
+            } finally {
+                mapsFramePixels.recycle();
+            }
+
+            long returnFrame = maps[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong returnResult = new AtomicLong();
+            scenario.onActivity(activity -> returnResult.set(
+                surface(activity).requestHistoryNavigation(false)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED, returnResult.get());
+            awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT] > returnFrame
+                    && current[
+                        OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX] == 2
+                    && current[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+                "Return did not restore the presented Chapter One origin");
+
+            long secondMapsFrame =
+                state(scenario)[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong secondMapsResult = new AtomicLong();
+            scenario.onActivity(activity -> secondMapsResult.set(
+                surface(activity).requestContentsNavigation(1)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED, secondMapsResult.get());
+            long[] secondMaps = awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT]
+                        > secondMapsFrame
+                    && current[
+                        OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX] == 1
+                    && current[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0,
+                "The cached MAPS contents target did not present");
+            AtomicReference<long[]> secondImages = new AtomicReference<>();
+            scenario.onActivity(activity -> secondImages.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(secondImages.get());
+            Bitmap secondMapsPixels = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(secondMapsPixels, secondMaps);
+                assertEquals(firstMapsPixelHash,
+                             framePixelHash(secondMapsPixels));
+            } finally {
+                secondMapsPixels.recycle();
+            }
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void coldImagePageIsPreparedBeforeFirstFrameAndRecreation()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createColdImageEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] first = awaitInitialPage(scenario);
+            assertEquals(0,
+                first[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX]);
+            assertEquals(
+                "Cold image preparation required a failed presentation",
+                0,
+                first[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
+            long[] firstPreparation = preparedFrameState(scenario);
+            assertEquals(0, firstPreparation[PREPARED_VALID]);
+            assertEquals(1, firstPreparation[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(1, firstPreparation[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(1, firstPreparation[PREPARED_SNAPSHOT_REUSES]);
+            assertEquals(1, firstPreparation[PREPARED_PRESENT_REUSES]);
+            assertEquals(0, firstPreparation[PREPARED_STALE_REJECTS]);
+            assertEquals(1, firstPreparation[PREPARED_CONSUMES]);
+            AtomicReference<long[]> firstImages = new AtomicReference<>();
+            scenario.onActivity(activity -> firstImages.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(firstImages.get());
+            Bitmap firstPixels = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(firstPixels, first);
+            } finally {
+                firstPixels.recycle();
+            }
+
+            scenario.recreate();
+            long[] recreated = awaitInitialPage(scenario);
+            assertEquals(0,
+                recreated[OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX]);
+            assertEquals(
+                "Recreated image preparation required a failed presentation",
+                0,
+                recreated[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
+            long[] recreatedPreparation = preparedFrameState(scenario);
+            assertEquals(0, recreatedPreparation[PREPARED_VALID]);
+            assertEquals(1, recreatedPreparation[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(1, recreatedPreparation[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(1, recreatedPreparation[PREPARED_SNAPSHOT_REUSES]);
+            assertEquals(1, recreatedPreparation[PREPARED_PRESENT_REUSES]);
+            assertEquals(0, recreatedPreparation[PREPARED_STALE_REJECTS]);
+            assertEquals(1, recreatedPreparation[PREPARED_CONSUMES]);
+            AtomicReference<long[]> recreatedImages = new AtomicReference<>();
+            scenario.onActivity(activity -> recreatedImages.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(recreatedImages.get());
+            Bitmap recreatedPixels = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(recreatedPixels, recreated);
+            } finally {
+                recreatedPixels.recycle();
+            }
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void imageCachePinsCurrentFrameDuringNativeEviction()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createColdImageEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            awaitInitialPage(scenario);
+
+            AtomicReference<long[]> packet = new AtomicReference<>();
+            scenario.onActivity(activity -> packet.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(packet.get());
+            long currentResource =
+                packet.get()[OctavoReaderImageBridge.HEADER_COUNT];
+            AtomicLong evictionProof = new AtomicLong();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                evictionProof.set(
+                    view.frameImageCurrentFramePinningForTesting(
+                        currentResource) ? 1 : 0);
+                assertTrue(view.frameImageResourceCachedForTesting(
+                    currentResource));
+            });
+            assertEquals(
+                "Native eviction displaced a current-frame image",
+                1,
+                evictionProof.get());
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void inFlowImageReservesCanonicalRowsBeforeFollowingText()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createInFlowImageRowEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] presented = awaitInitialPage(scenario);
+            AtomicReference<long[]> images = new AtomicReference<>();
+            AtomicReference<String> visibleText = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                images.set(view.frameImagesSnapshotForTesting());
+                visibleText.set(view.visibleTextForTesting());
+            });
+            assertLoadedFrameImage(images.get());
+            assertNotNull(visibleText.get());
+            assertTrue(visibleText.get().contains(
+                "Following text must begin below the image"));
+
+            Bitmap frame = copyFrame(surface(scenario));
+            try {
+                assertFollowingTextBelowInlineImage(
+                    frame,
+                    presented,
+                    OctavoDesignTokens.forAppearance(
+                        OctavoAppearance.defaults()));
+            } finally {
+                frame.recycle();
+            }
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void imageCacheTurnsOverBeyondThirtyTwoResources()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        File evidence = createImageCacheTurnoverEvidenceEpub(context);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] current = awaitInitialPage(scenario);
+            int pageCount = Math.toIntExact(
+                current[OctavoSurfaceView.STATE_PAGE_COUNT]);
+            assertTrue(
+                "The turnover fixture did not paginate",
+                pageCount > 1);
+
+            AtomicReference<long[]> packet = new AtomicReference<>();
+            scenario.onActivity(activity -> packet.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            Set<Long> loadedResources = new LinkedHashSet<>();
+            collectLoadedFrameImageResources(
+                packet.get(), loadedResources);
+            long firstResource =
+                packet.get()[OctavoReaderImageBridge.HEADER_COUNT];
+
+            for (int page = 2;
+                 page <= pageCount && loadedResources.size() <= 32;
+                 ++page) {
+                final int expectedPage = page;
+                long previousFrame =
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT];
+                scenario.onActivity(activity ->
+                    assertTrue(surface(activity)
+                        .movePageForAccessibility(1)));
+                current = awaitState(
+                    scenario,
+                    state ->
+                        state[OctavoSurfaceView.STATE_FRAME_COUNT]
+                            > previousFrame
+                        && state[OctavoSurfaceView.STATE_PAGE_INDEX]
+                            == expectedPage
+                        && state[
+                            OctavoSurfaceView
+                                .STATE_PAGE_MOVE_PRESENTATION_PENDING] == 0
+                        && state[
+                            OctavoSurfaceView
+                                .STATE_HOST_PRESENTATION_PENDING] == 0,
+                    "Image cache turnover did not present page "
+                        + expectedPage);
+                scenario.onActivity(activity -> packet.set(
+                    surface(activity).frameImagesSnapshotForTesting()));
+                collectLoadedFrameImageResources(
+                    packet.get(), loadedResources);
+            }
+
+            assertTrue(
+                "The turnover fixture did not load more than 32 resources",
+                loadedResources.size() > 32);
+            assertTrue(
+                "The turnover fixture did not reach a distinct late resource",
+                loadedResources.size() > 1);
+            AtomicLong firstCached = new AtomicLong(-1);
+            scenario.onActivity(activity -> firstCached.set(
+                surface(activity)
+                    .frameImageResourceCachedForTesting(firstResource)
+                    ? 1 : 0));
+            assertEquals(
+                "The first image was not evicted after cache turnover",
+                0, firstCached.get());
+            Bitmap lateFrame = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(lateFrame, current);
+            } finally {
+                lateFrame.recycle();
+            }
+
+            long returnFrame =
+                current[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong returnResult = new AtomicLong();
+            scenario.onActivity(activity -> returnResult.set(
+                surface(activity).requestPageNavigation(1)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED, returnResult.get());
+            long[] returned = awaitState(
+                scenario,
+                state ->
+                    state[OctavoSurfaceView.STATE_FRAME_COUNT] > returnFrame
+                    && state[OctavoSurfaceView.STATE_PAGE_INDEX] == 1
+                    && state[
+                        OctavoSurfaceView
+                            .STATE_HOST_PRESENTATION_PENDING] == 0,
+                "The evicted first image did not reload");
+            scenario.onActivity(activity -> packet.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            Set<Long> returnedResources = new LinkedHashSet<>();
+            collectLoadedFrameImageResources(
+                packet.get(), returnedResources);
+            assertTrue(
+                "Cache turnover did not restore the first resource",
+                returnedResources.contains(firstResource));
+            scenario.onActivity(activity -> firstCached.set(
+                surface(activity)
+                    .frameImageResourceCachedForTesting(firstResource)
+                    ? 1 : 0));
+            assertEquals(
+                "The evicted first image was not reinserted on return",
+                1, firstCached.get());
+            Bitmap reloaded = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(reloaded, returned);
+            } finally {
+                reloaded.recycle();
+            }
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void imagePreparationBudgetBoundsAggregateWorkWithoutDecode() {
+        OctavoReaderImageBridge.PreparationBudget encoded =
+            new OctavoReaderImageBridge.PreparationBudget();
+        assertTrue(encoded.canStartResource());
+        assertTrue(encoded.tryChargeEncodedBytes(
+            OctavoReaderImageBridge.MAX_PREPARATION_ENCODED_BYTES - 1));
+        assertEquals(
+            1,
+            encoded.remainingEncodedBytes());
+        assertEquals(
+            OctavoReaderImageBridge.MAX_PREPARATION_ENCODED_BYTES - 1,
+            encoded.encodedBytes());
+        assertFalse(encoded.tryChargeEncodedBytes(2));
+        assertFalse(encoded.canStartResource());
+
+        OctavoReaderImageBridge.PreparationBudget decoded =
+            new OctavoReaderImageBridge.PreparationBudget();
+        assertTrue(decoded.tryChargeEncodedBytes(1));
+        assertTrue(decoded.tryChargeDecodedPixels(
+            OctavoReaderImageBridge.MAX_PREPARATION_DECODED_PIXELS - 1));
+        assertEquals(
+            OctavoReaderImageBridge.MAX_PREPARATION_DECODED_PIXELS - 1,
+            decoded.decodedPixels());
+        assertFalse(decoded.tryChargeDecodedPixels(2));
+        assertFalse(decoded.canStartResource());
+
+        OctavoReaderImageBridge.PreparationBudget exact =
+            new OctavoReaderImageBridge.PreparationBudget();
+        assertTrue(exact.tryChargeEncodedBytes(
+            OctavoReaderImageBridge.MAX_PREPARATION_ENCODED_BYTES));
+        assertTrue(exact.tryChargeDecodedPixels(
+            OctavoReaderImageBridge.MAX_PREPARATION_DECODED_PIXELS));
+        assertFalse(exact.canStartResource());
+    }
+
+    @Test
+    public void imagePreparationPublishesAggregateCacheFullThroughNative()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        byte[] probe = createImageProbeBytes();
+        File evidence = createImagePreparationBudgetEvidenceEpub(
+            context, probe);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            awaitInitialPage(scenario);
+
+            AtomicReference<long[]> packet = new AtomicReference<>();
+            scenario.onActivity(activity -> packet.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertFrameImageStatuses(
+                packet.get(),
+                OctavoReaderImageBridge.STATUS_LOADED,
+                OctavoReaderImageBridge.STATUS_LOADED,
+                OctavoReaderImageBridge.STATUS_LOADED);
+            long firstResource =
+                packet.get()[OctavoReaderImageBridge.HEADER_COUNT];
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.clearFrameImageCacheForTesting());
+                assertFalse(view.frameImageResourceCachedForTesting(
+                    firstResource));
+                assertTrue(view.prepareFrameImagesWithBudgetForTesting(
+                    probe.length * 2L - 1L,
+                    OctavoReaderImageBridge
+                        .MAX_PREPARATION_DECODED_PIXELS));
+                packet.set(view.frameImagesSnapshotForTesting());
+            });
+            assertFrameImageStatuses(
+                packet.get(),
+                OctavoReaderImageBridge.STATUS_LOADED,
+                OctavoReaderImageBridge.STATUS_CACHE_FULL,
+                OctavoReaderImageBridge.STATUS_CACHE_FULL);
+            AtomicLong firstCached = new AtomicLong();
+            scenario.onActivity(activity -> firstCached.set(
+                surface(activity)
+                    .frameImageResourceCachedForTesting(firstResource)
+                    ? 1 : 0));
+            assertEquals(
+                "The admitted image did not remain in the native cache",
+                1, firstCached.get());
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void corruptAndDuplicateImagesDoNotSuppressLaterResources()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        byte[] probe = createImageProbeBytes();
+        File evidence = createImageFailureIsolationEvidenceEpub(
+            context, probe);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(evidence))));
+            long[] state = awaitInitialPage(scenario);
+            AtomicReference<long[]> packet = new AtomicReference<>();
+            scenario.onActivity(activity -> packet.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertFrameImageStatuses(
+                packet.get(),
+                OctavoReaderImageBridge.STATUS_DECODE_FAILED,
+                OctavoReaderImageBridge.STATUS_LOADED,
+                OctavoReaderImageBridge.STATUS_LOADED,
+                OctavoReaderImageBridge.STATUS_LOADED);
+            int firstGood = OctavoReaderImageBridge.HEADER_COUNT
+                + OctavoReaderImageBridge.ROW_STRIDE;
+            int duplicateGood = firstGood
+                + OctavoReaderImageBridge.ROW_STRIDE;
+            assertEquals(
+                "The failure-isolation fixture lost its duplicate resource",
+                packet.get()[firstGood],
+                packet.get()[duplicateGood]);
+            Bitmap frame = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(frame, state);
+            } finally {
+                frame.recycle();
+            }
+        } finally {
+            if (evidence.exists() && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
+    public void appearanceReflowPreparesNewImageAndFailureRollsBack()
+        throws IOException, InterruptedException {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoAppearance compact = OctavoAppearance.defaults()
+            .withReducedMotion(true);
+        OctavoAppearance large = compact.withFontSizeSp(28);
+        File evidence = null;
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitInitialPage(scenario);
+            long[] compactGeometry =
+                requestAndAwaitAppearance(scenario, compact);
+            int compactRows = Math.max(
+                (int)(compactGeometry[
+                    OctavoSurfaceView.STATE_CONTENT_HEIGHT]
+                    / compactGeometry[
+                        OctavoSurfaceView
+                            .STATE_TYPOGRAPHY_LINE_ADVANCE_PX]),
+                8);
+            evidence = createReflowImageEvidenceEpub(context, compactRows);
+            File openedEvidence = evidence;
+            scenario.onActivity(activity ->
+                assertTrue(activity.openDocumentForTesting(
+                    Uri.fromFile(openedEvidence))));
+            long[] firstCompact = awaitInitialPage(scenario);
+            assertNoFrameImages(scenario);
+            assertEquals(
+                0,
+                firstCompact[
+                    OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
+
+            long[] firstLarge =
+                requestAndAwaitAppearance(scenario, large);
+            assertNoFrameImages(scenario);
+            assertTrue("The reflow fixture needs multiple large-text pages",
+                firstLarge[OctavoSurfaceView.STATE_PAGE_COUNT] >= 2);
+            long navigationFrame =
+                firstLarge[OctavoSurfaceView.STATE_FRAME_COUNT];
+            AtomicLong navigationResult = new AtomicLong();
+            scenario.onActivity(activity -> navigationResult.set(
+                surface(activity).requestContentsNavigation(1)));
+            assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED,
+                navigationResult.get());
+            awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_FRAME_COUNT]
+                        > navigationFrame
+                    && current[
+                        OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING]
+                        == 0
+                    && current[
+                        OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX] == 0,
+                "The reflow fixture did not present the post-image anchor");
+            AtomicReference<String> targetText = new AtomicReference<>();
+            scenario.onActivity(activity -> targetText.set(
+                surface(activity).visibleTextForTesting()));
+            assertNotNull(targetText.get());
+            assertTrue(targetText.get().contains("After Media Anchor"));
+            assertNoFrameImages(scenario);
+            awaitLocationCacheComplete(scenario);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            long[] beforeFailure = state(scenario);
+            long[] beforePreparation = preparedFrameState(scenario);
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.forcePrePresentFailuresForTesting(1));
+                activity.requestAppearanceForTesting(compact);
+            });
+            long[] rolledBack = awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_APPEARANCE_FAILURE_COUNT]
+                        == beforeFailure[
+                            OctavoSurfaceView
+                                .STATE_APPEARANCE_FAILURE_COUNT] + 1
+                    && current[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]
+                        == beforeFailure[
+                            OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT] + 1
+                    && current[OctavoSurfaceView.STATE_FRAME_COUNT]
+                        > beforeFailure[OctavoSurfaceView.STATE_FRAME_COUNT]
+                    && current[OctavoSurfaceView.STATE_APPEARANCE_GENERATION]
+                        == current[
+                            OctavoSurfaceView
+                                .STATE_APPEARANCE_PRESENTED_GENERATION]
+                    && current[
+                        OctavoSurfaceView.STATE_REFLOW_PRESENTATION_PENDING]
+                        == 0
+                    && appearanceMatchesState(large, current),
+                "Failed image reflow did not restore the presented appearance");
+            assertEquals(
+                beforeFailure[
+                    OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET],
+                rolledBack[
+                    OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET]);
+            long[] afterRollback = preparedFrameState(scenario);
+            assertEquals(
+                beforePreparation[PREPARED_BUILD_ATTEMPTS] + 2,
+                afterRollback[PREPARED_BUILD_ATTEMPTS]);
+            assertEquals(
+                beforePreparation[PREPARED_BUILD_SUCCESSES] + 2,
+                afterRollback[PREPARED_BUILD_SUCCESSES]);
+            assertEquals(
+                beforePreparation[PREPARED_SNAPSHOT_REUSES] + 2,
+                afterRollback[PREPARED_SNAPSHOT_REUSES]);
+            assertEquals(
+                beforePreparation[PREPARED_PRESENT_REUSES] + 2,
+                afterRollback[PREPARED_PRESENT_REUSES]);
+            assertEquals(
+                beforePreparation[PREPARED_CONSUMES] + 1,
+                afterRollback[PREPARED_CONSUMES]);
+            assertEquals(0, afterRollback[PREPARED_VALID]);
+            assertHostAppearance(scenario, large);
+            assertNoFrameImages(scenario);
+
+            long compactGeneration = rolledBack[
+                OctavoSurfaceView.STATE_APPEARANCE_GENERATION] + 1;
+            scenario.onActivity(activity ->
+                activity.requestAppearanceForTesting(compact));
+            long[] compactWithImage = awaitState(
+                scenario,
+                current ->
+                    current[OctavoSurfaceView.STATE_APPEARANCE_GENERATION]
+                        >= compactGeneration
+                    && current[OctavoSurfaceView.STATE_APPEARANCE_GENERATION]
+                        == current[
+                            OctavoSurfaceView
+                                .STATE_APPEARANCE_PRESENTED_GENERATION]
+                    && current[
+                        OctavoSurfaceView.STATE_REFLOW_PRESENTATION_PENDING]
+                        == 0
+                    && appearanceMatchesState(compact, current),
+                "The prepared compact image reflow did not present");
+            assertHostAppearance(scenario, compact);
+            assertEquals(
+                rolledBack[OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT],
+                compactWithImage[
+                    OctavoSurfaceView.STATE_RENDER_FAILURE_COUNT]);
+            AtomicReference<long[]> images = new AtomicReference<>();
+            scenario.onActivity(activity -> images.set(
+                surface(activity).frameImagesSnapshotForTesting()));
+            assertLoadedFrameImage(images.get());
+            Bitmap pixels = copyFrame(surface(scenario));
+            try {
+                assertImageProbeColors(pixels, compactWithImage);
+            } finally {
+                pixels.recycle();
+            }
+        } finally {
+            if (evidence != null && evidence.exists()
+                && !evidence.delete()) {
+                evidence.deleteOnExit();
+            }
+        }
+    }
+
+    @Test
     public void styledBookProvesFamilyAlignmentAndPublisherColorPolicyPixels()
         throws IOException, InterruptedException {
         Context context = ApplicationProvider.getApplicationContext();
@@ -1516,6 +2354,52 @@ public final class OctavoAppearanceTest {
         }
     }
 
+    @Test
+    public void navigationOverlayDoesNotChangeReaderGeometryOrPageCapacity()
+        throws InterruptedException {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitInitialPage(scenario);
+            awaitLocationCacheComplete(scenario);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            long[] before = state(scenario);
+            assertTopBiasedContentGeometry(before);
+
+            scenario.onActivity(activity -> {
+                activity.openNavigationPanelForTesting();
+                assertNotNull(activity.navigationPanelForTesting());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            long[] overlaid = state(scenario);
+            assertTopBiasedContentGeometry(overlaid);
+
+            int[] neutralFields = {
+                OctavoSurfaceView.STATE_PAGE_SURFACE_X,
+                OctavoSurfaceView.STATE_PAGE_SURFACE_Y,
+                OctavoSurfaceView.STATE_PAGE_SURFACE_WIDTH,
+                OctavoSurfaceView.STATE_PAGE_SURFACE_HEIGHT,
+                OctavoSurfaceView.STATE_CONTENT_X,
+                OctavoSurfaceView.STATE_CONTENT_Y,
+                OctavoSurfaceView.STATE_CONTENT_WIDTH,
+                OctavoSurfaceView.STATE_CONTENT_HEIGHT,
+                OctavoSurfaceView.STATE_VISIBLE_TEXT_HASH,
+                OctavoSurfaceView.STATE_PAGE_INDEX,
+                OctavoSurfaceView.STATE_PAGE_COUNT,
+                OctavoSurfaceView.STATE_PAGE_FIRST_BYTE,
+                OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE,
+                OctavoSurfaceView.STATE_PRESENTED_SPINE_INDEX,
+                OctavoSurfaceView.STATE_PRESENTED_BYTE_OFFSET,
+            };
+            for (int field : neutralFields) {
+                assertEquals(
+                    "Navigation overlay changed canonical reader field "
+                        + field,
+                    before[field],
+                    overlaid[field]);
+            }
+        }
+    }
 
     @Test
     public void compactAndLargeRotationRestoreExactPresentedAnchor() {
@@ -2763,10 +3647,7 @@ public final class OctavoAppearanceTest {
         assertTrue(contentY > pageY);
         assertTrue(contentHeight > 0);
         assertTrue(contentY + contentHeight < pageY + pageHeight);
-        assertEquals(
-            "Canonical reader content lost symmetric vertical insets",
-            contentY - pageY,
-            pageY + pageHeight - contentY - contentHeight);
+        assertTopBiasedContentGeometry(snapshot);
         assertTrue(
             "Native pagination still reserved the top chrome band",
             contentY < chrome.top);
@@ -3145,9 +4026,7 @@ public final class OctavoAppearanceTest {
         assertTrue(contentY + contentHeight <= pageY + pageHeight);
         assertTrue(top > 0);
         assertTrue(bottom > 0);
-        assertEquals(
-            contentY - pageY,
-            pageY + pageHeight - contentY - contentHeight);
+        assertTopBiasedContentGeometry(snapshot);
         assertTrue(contentY < top);
         assertTrue(contentY + contentHeight > height - bottom);
         assertEquals(
@@ -3205,6 +4084,54 @@ public final class OctavoAppearanceTest {
                 expected[field],
                 actual[field]);
         }
+    }
+
+    private static void assertTopBiasedContentGeometry(long[] snapshot) {
+        int pageY =
+            (int)snapshot[OctavoSurfaceView.STATE_PAGE_SURFACE_Y];
+        int pageHeight =
+            (int)snapshot[OctavoSurfaceView.STATE_PAGE_SURFACE_HEIGHT];
+        int contentY =
+            (int)snapshot[OctavoSurfaceView.STATE_CONTENT_Y];
+        int contentHeight =
+            (int)snapshot[OctavoSurfaceView.STATE_CONTENT_HEIGHT];
+        int lineAdvance =
+            (int)snapshot[
+                OctavoSurfaceView.STATE_TYPOGRAPHY_LINE_ADVANCE_PX];
+        int baseVerticalInset = Math.max(pageHeight / 60, 24);
+        int topBias = baseVerticalInset / 2;
+        int expectedContentHeight =
+            pageHeight - baseVerticalInset * 2;
+        int topGap = contentY - pageY;
+        int bottomGap =
+            pageY + pageHeight - contentY - contentHeight;
+
+        assertEquals(
+            "Top padding bias changed canonical content height",
+            expectedContentHeight,
+            contentHeight);
+        assertEquals(
+            "Top padding did not include the bounded reader bias",
+            baseVerticalInset + topBias,
+            topGap);
+        assertEquals(
+            "Top padding bias did not preserve half the bottom reserve",
+            baseVerticalInset - topBias,
+            bottomGap);
+        assertTrue(
+            "Top padding bias exhausted the bottom reserve",
+            bottomGap > 0);
+        assertTrue(lineAdvance > 0);
+        int expectedPageRows = Math.min(
+            Math.max(expectedContentHeight / lineAdvance, 1),
+            512);
+        int actualPageRows = Math.min(
+            Math.max(contentHeight / lineAdvance, 1),
+            512);
+        assertEquals(
+            "Top padding bias changed canonical page-row capacity",
+            expectedPageRows,
+            actualPageRows);
     }
 
     private static void assertReaderGeometryUnchanged(
@@ -3395,6 +4322,13 @@ public final class OctavoAppearanceTest {
         return result.get();
     }
 
+    private static OctavoSurfaceView surface(OctavoActivity activity) {
+        OctavoSurfaceView result = (OctavoSurfaceView)
+            activity.findViewById(R.id.octavo_surface);
+        assertNotNull(result);
+        return result;
+    }
+
     private static long[] state(
         ActivityScenario<OctavoActivity> scenario) {
         long[] result = surface(scenario).nativeStateForTesting();
@@ -3431,6 +4365,24 @@ public final class OctavoAppearanceTest {
         long[] current = snapshot.get();
         assertNotNull(current);
         assertEquals(10, current.length);
+        return current;
+    }
+
+    private static long[] preparedFrameState(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<long[]> snapshot = new AtomicReference<>();
+        scenario.onActivity(activity -> {
+            OctavoSurfaceView view = (OctavoSurfaceView)
+                activity.findViewById(R.id.octavo_surface);
+            snapshot.set(
+                view == null
+                    ? null
+                    : view.preparedStaticFrameStateForTesting());
+        });
+        long[] current = snapshot.get();
+        assertNotNull(current);
+        assertEquals(26, current.length);
+        assertEquals(1, current[0]);
         return current;
     }
 
@@ -3854,6 +4806,694 @@ public final class OctavoAppearanceTest {
         return distance <= maximumDistance;
     }
 
+    private static void assertNoFrameImages(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<long[]> packet = new AtomicReference<>();
+        scenario.onActivity(activity -> packet.set(
+            surface(activity).frameImagesSnapshotForTesting()));
+        assertNotNull(packet.get());
+        assertEquals(
+            OctavoReaderImageBridge.PACKET_VERSION,
+            packet.get()[0]);
+        assertEquals(
+            "An image entered the frame before the intended reflow",
+            0,
+            packet.get()[1]);
+    }
+
+    private static void assertLoadedFrameImage(long[] packet) {
+        assertNotNull(packet);
+        assertEquals(OctavoReaderImageBridge.PACKET_VERSION, packet[0]);
+        assertEquals(1, packet[1]);
+        assertEquals(
+            OctavoReaderImageBridge.STATUS_LOADED,
+            packet[OctavoReaderImageBridge.HEADER_COUNT + 1]);
+        assertEquals(
+            1,
+            packet[OctavoReaderImageBridge.HEADER_COUNT + 2]);
+    }
+
+    private static void collectLoadedFrameImageResources(
+        long[] packet,
+        Set<Long> resources) {
+        assertNotNull(packet);
+        assertEquals(OctavoReaderImageBridge.PACKET_VERSION, packet[0]);
+        int count = Math.toIntExact(packet[1]);
+        assertTrue("The image frame contained no resources", count > 0);
+        assertEquals(
+            OctavoReaderImageBridge.HEADER_COUNT
+                + count * OctavoReaderImageBridge.ROW_STRIDE,
+            packet.length);
+        for (int imageIndex = 0; imageIndex < count; ++imageIndex) {
+            int row = OctavoReaderImageBridge.HEADER_COUNT
+                + imageIndex * OctavoReaderImageBridge.ROW_STRIDE;
+            assertEquals(
+                "A turnover image did not reach the loaded state",
+                OctavoReaderImageBridge.STATUS_LOADED,
+                packet[row + 1]);
+            assertEquals(
+                "A turnover image lost its resource identity",
+                1,
+                packet[row + 2]);
+            resources.add(packet[row]);
+        }
+    }
+
+    private static void assertFrameImageStatuses(
+        long[] packet,
+        int... expectedStatuses) {
+        assertNotNull(packet);
+        assertEquals(OctavoReaderImageBridge.PACKET_VERSION, packet[0]);
+        assertEquals(expectedStatuses.length, packet[1]);
+        assertEquals(
+            OctavoReaderImageBridge.HEADER_COUNT
+                + expectedStatuses.length
+                    * OctavoReaderImageBridge.ROW_STRIDE,
+            packet.length);
+        for (int imageIndex = 0;
+             imageIndex < expectedStatuses.length;
+             ++imageIndex) {
+            int row = OctavoReaderImageBridge.HEADER_COUNT
+                + imageIndex * OctavoReaderImageBridge.ROW_STRIDE;
+            assertEquals(
+                "Unexpected frame-image status at index " + imageIndex,
+                expectedStatuses[imageIndex],
+                packet[row + 1]);
+            assertEquals(1, packet[row + 2]);
+        }
+    }
+
+    private static void assertImageProbeColors(Bitmap frame, long[] state) {
+        int[] colors = {
+            0xFFB71C1C,
+            0xFF1B5E20,
+            0xFF0D47A1,
+            0xFFF9A825,
+        };
+        for (int color : colors) {
+            assertTrue(
+                "Decoded reader image lost probe color "
+                    + Integer.toHexString(color),
+                countPixelsNear(frame, state, color, 0) > 1000);
+        }
+    }
+
+    private static void assertFollowingTextBelowInlineImage(
+        Bitmap frame,
+        long[] state,
+        OctavoDesignTokens tokens) {
+        int left =
+            (int)state[OctavoSurfaceView.STATE_CONTENT_X];
+        int top =
+            (int)state[OctavoSurfaceView.STATE_CONTENT_Y];
+        int right = left
+            + (int)state[OctavoSurfaceView.STATE_CONTENT_WIDTH];
+        int bottom = top
+            + (int)state[OctavoSurfaceView.STATE_CONTENT_HEIGHT];
+        int lineAdvance = (int)state[
+            OctavoSurfaceView.STATE_TYPOGRAPHY_LINE_ADVANCE_PX];
+        int imageBottom = top + 4 * lineAdvance;
+        assertTrue(left >= 0 && top >= 0 && left < right && top < bottom);
+        assertTrue(right <= frame.getWidth());
+        assertTrue(bottom <= frame.getHeight());
+        assertTrue(lineAdvance > 0 && imageBottom < bottom);
+
+        int firstTextY = bottom;
+        int matchingTextPixels = 0;
+        for (int y = top; y < bottom; ++y) {
+            for (int x = left; x < right; ++x) {
+                int pixel = frame.getPixel(x, y);
+                int distance =
+                    Math.abs(Color.red(pixel)
+                             - Color.red(tokens.textPrimary))
+                    + Math.abs(Color.green(pixel)
+                               - Color.green(tokens.textPrimary))
+                    + Math.abs(Color.blue(pixel)
+                               - Color.blue(tokens.textPrimary));
+                if (distance <= 24) {
+                    firstTextY = Math.min(firstTextY, y);
+                    matchingTextPixels += 1;
+                }
+            }
+        }
+        assertTrue(
+            "The in-flow fixture produced no inspectable following text",
+            matchingTextPixels > 40);
+        assertTrue(
+            "Following text overlapped the canonical four-row image box: "
+                + firstTextY + " < " + imageBottom,
+            firstTextY >= imageBottom);
+    }
+
+    private static byte[] createImageProbeBytes() throws IOException {
+        Bitmap image = Bitmap.createBitmap(
+            64, 96, Bitmap.Config.ARGB_8888);
+        try {
+            for (int y = 0; y < image.getHeight(); ++y) {
+                for (int x = 0; x < image.getWidth(); ++x) {
+                    int color = y < image.getHeight() / 2
+                        ? (x < image.getWidth() / 2
+                            ? 0xFFB71C1C : 0xFF1B5E20)
+                        : (x < image.getWidth() / 2
+                            ? 0xFF0D47A1 : 0xFFF9A825);
+                    image.setPixel(x, y, color);
+                }
+            }
+            java.io.ByteArrayOutputStream encoded =
+                new java.io.ByteArrayOutputStream();
+            if (!image.compress(Bitmap.CompressFormat.PNG, 100, encoded)) {
+                throw new IOException(
+                    "Unable to encode deterministic reader image evidence");
+            }
+            return encoded.toByteArray();
+        } finally {
+            image.recycle();
+        }
+    }
+
+    private static byte[] createSolidInlineImageProbeBytes()
+        throws IOException {
+        Bitmap image = Bitmap.createBitmap(
+            192, 64, Bitmap.Config.ARGB_8888);
+        try {
+            image.eraseColor(0xFFFF00FF);
+            java.io.ByteArrayOutputStream encoded =
+                new java.io.ByteArrayOutputStream();
+            if (!image.compress(Bitmap.CompressFormat.PNG, 100, encoded)) {
+                throw new IOException(
+                    "Unable to encode the in-flow image probe");
+            }
+            return encoded.toByteArray();
+        } finally {
+            image.recycle();
+        }
+    }
+
+    private static File createInFlowImageRowEvidenceEpub(Context context)
+        throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port8-inline-image-row-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the in-flow image-row evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?><container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>In-flow Image Row Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>port8-inline-image-row"
+                + "</dc:identifier><dc:language>en</dc:language></metadata>"
+                + "<manifest><item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='chapter' href='chapter.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='probe' href='images/probe.png' "
+                + "media-type='image/png'/></manifest><spine toc='ncx'>"
+                + "<itemref idref='chapter'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>In-flow Image "
+                + "Row Evidence</text></docTitle><navMap><navPoint "
+                + "id='chapter' playOrder='1'><navLabel><text>Chapter "
+                + "One</text></navLabel><content src='chapter.xhtml'/>"
+                + "</navPoint></navMap></ncx>";
+        String chapter =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Chapter One</title></head><body>"
+                + "<img src='images/probe.png' alt='Magenta probe'/>"
+                + "<p>Following text must begin below the image. "
+                + "This deterministic sentence provides enough glyph ink "
+                + "for a bounded vertical-placement assertion.</p>"
+                + "</body></html>";
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(output, "OEBPS/chapter.xhtml", chapter);
+            addZipEntry(
+                output,
+                "OEBPS/images/probe.png",
+                createSolidInlineImageProbeBytes());
+        }
+        return result;
+    }
+
+    private static File createImageCacheTurnoverEvidenceEpub(Context context)
+        throws IOException {
+        final int imageCount = 34;
+        File result = new File(
+            context.getCacheDir(), "port8-image-cache-turnover.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the image-cache turnover EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?><container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        StringBuilder manifest = new StringBuilder(
+            "<item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='gallery' href='gallery.xhtml' "
+                + "media-type='application/xhtml+xml'/>");
+        StringBuilder gallery = new StringBuilder(
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Cache Turnover</title></head><body>");
+        for (int index = 0; index < imageCount; ++index) {
+            manifest.append("<item id='image")
+                .append(index)
+                .append("' href='images/image")
+                .append(index)
+                .append(".png' media-type='image/png'/>");
+            gallery.append("<img src='images/image")
+                .append(index)
+                .append(".png' alt='Cache image ")
+                .append(index + 1)
+                .append("'/>");
+        }
+        gallery.append("</body></html>");
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Image Cache Turnover</dc:title>"
+                + "<dc:identifier id='book-id'>port8-image-cache-turnover"
+                + "</dc:identifier><dc:language>en</dc:language></metadata>"
+                + "<manifest>" + manifest + "</manifest><spine toc='ncx'>"
+                + "<itemref idref='gallery'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>Image Cache "
+                + "Turnover</text></docTitle><navMap><navPoint id='gallery' "
+                + "playOrder='1'><navLabel><text>Gallery</text></navLabel>"
+                + "<content src='gallery.xhtml'/></navPoint></navMap></ncx>";
+        byte[] probe = createImageProbeBytes();
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(
+                output, "OEBPS/gallery.xhtml", gallery.toString());
+            for (int index = 0; index < imageCount; ++index) {
+                addZipEntry(
+                    output,
+                    "OEBPS/images/image" + index + ".png",
+                    probe);
+            }
+        }
+        return result;
+    }
+
+    private static File createImagePreparationBudgetEvidenceEpub(
+        Context context,
+        byte[] probe) throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port8-image-budget-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the image-budget evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?><container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Image Budget Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>port8-image-budget"
+                + "</dc:identifier><dc:language>en</dc:language></metadata>"
+                + "<manifest><item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='gallery' href='gallery.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='one' href='images/one.png' "
+                + "media-type='image/png'/><item id='two' "
+                + "href='images/two.png' media-type='image/png'/>"
+                + "<item id='three' href='images/three.png' "
+                + "media-type='image/png'/></manifest><spine toc='ncx'>"
+                + "<itemref idref='gallery'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>Image Budget "
+                + "Evidence</text></docTitle><navMap><navPoint id='gallery' "
+                + "playOrder='1'><navLabel><text>Gallery</text></navLabel>"
+                + "<content src='gallery.xhtml'/></navPoint></navMap></ncx>";
+        String gallery =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Gallery</title></head><body>"
+                + "<p>Bounded in-flow preparation evidence.</p>"
+                + "<img src='images/one.png' alt='One'/>"
+                + "<img src='images/two.png' alt='Two'/>"
+                + "<img src='images/three.png' alt='Three'/>"
+                + "</body></html>";
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(output, "OEBPS/gallery.xhtml", gallery);
+            addZipEntry(output, "OEBPS/images/one.png", probe);
+            addZipEntry(output, "OEBPS/images/two.png", probe);
+            addZipEntry(output, "OEBPS/images/three.png", probe);
+        }
+        return result;
+    }
+
+    private static File createImageFailureIsolationEvidenceEpub(
+        Context context,
+        byte[] probe) throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port8-image-failure-isolation.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the image-failure evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?><container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Image Failure Isolation</dc:title>"
+                + "<dc:identifier id='book-id'>port8-image-failure"
+                + "</dc:identifier><dc:language>en</dc:language></metadata>"
+                + "<manifest><item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='gallery' href='gallery.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='bad' href='images/bad.png' "
+                + "media-type='image/png'/><item id='good' "
+                + "href='images/good.png' media-type='image/png'/>"
+                + "<item id='later' href='images/later.png' "
+                + "media-type='image/png'/></manifest><spine toc='ncx'>"
+                + "<itemref idref='gallery'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>Image Failure "
+                + "Isolation</text></docTitle><navMap><navPoint "
+                + "id='gallery' playOrder='1'><navLabel><text>Gallery"
+                + "</text></navLabel><content src='gallery.xhtml'/>"
+                + "</navPoint></navMap></ncx>";
+        String gallery =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Gallery</title></head><body>"
+                + "<p>Failure isolation before later media.</p>"
+                + "<img src='images/bad.png' alt='Bad'/>"
+                + "<img src='images/good.png' alt='Good'/>"
+                + "<img src='images/good.png' alt='Good duplicate'/>"
+                + "<img src='images/later.png' alt='Later'/>"
+                + "</body></html>";
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(output, "OEBPS/gallery.xhtml", gallery);
+            addZipEntry(output, "OEBPS/images/good.png", probe);
+            addZipEntry(output, "OEBPS/images/later.png", probe);
+        }
+        return result;
+    }
+
+    private static File createColdImageEvidenceEpub(Context context)
+        throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port8-cold-image-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the cold image evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?>"
+                + "<container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Cold Image Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>port8-cold-image</dc:identifier>"
+                + "<dc:language>en</dc:language></metadata><manifest>"
+                + "<item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='maps' href='maps.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='map' href='images/map.png' "
+                + "media-type='image/png'/></manifest><spine toc='ncx'>"
+                + "<itemref idref='maps'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>Cold Image "
+                + "Evidence</text></docTitle><navMap><navPoint id='maps' "
+                + "playOrder='1'><navLabel><text>MAPS</text></navLabel>"
+                + "<content src='maps.xhtml'/></navPoint></navMap></ncx>";
+        String maps =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>MAPS</title></head><body><img "
+                + "src='images/map.png' alt='Deterministic map'/></body>"
+                + "</html>";
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(output, "OEBPS/maps.xhtml", maps);
+            addZipEntry(
+                output, "OEBPS/images/map.png", createImageProbeBytes());
+        }
+        return result;
+    }
+
+    private static File createReflowImageEvidenceEpub(
+        Context context, int compactRows) throws IOException {
+        int linesBeforeImage = compactRows + 1;
+        int linesBetweenImageAndAnchor = Math.max(
+            (compactRows * 2) / 3, 6);
+        int linesAfterImage = compactRows * 2;
+        File result = new File(
+            context.getCacheDir(), "port8-reflow-image-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the reflow image evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?><container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?><package "
+                + "xmlns='http://www.idpf.org/2007/opf' version='2.0' "
+                + "unique-identifier='book-id'><metadata "
+                + "xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Reflow Image Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>port8-reflow-image</dc:identifier>"
+                + "<dc:language>en</dc:language></metadata><manifest>"
+                + "<item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='chapter' href='chapter.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='map' href='images/map.png' "
+                + "media-type='image/png'/></manifest><spine toc='ncx'>"
+                + "<itemref idref='chapter'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?><ncx "
+                + "xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>Reflow Image "
+                + "Evidence</text></docTitle><navMap><navPoint id='chapter' "
+                + "playOrder='1'><navLabel><text>Chapter One</text></navLabel>"
+                + "<content src='chapter.xhtml'/></navPoint>"
+                + "<navPoint id='after' playOrder='2'><navLabel>"
+                + "<text>After Media Anchor</text></navLabel>"
+                + "<content src='chapter.xhtml#after'/></navPoint>"
+                + "</navMap></ncx>";
+        StringBuilder chapter = new StringBuilder(
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Chapter One</title></head><body><p>");
+        for (int line = 0; line < linesBeforeImage; ++line) {
+            chapter.append("Before media ")
+                .append(line).append(".<br/>");
+        }
+        chapter.append("</p><img src='images/map.png' "
+            + "alt='Reflow map'/><p>");
+        for (int line = 0; line < linesBetweenImageAndAnchor; ++line) {
+            chapter.append("Between media and anchor ")
+                .append(line).append(".<br/>");
+        }
+        chapter.append("</p><h2 id='after'>After Media Anchor</h2><p>");
+        for (int line = 0; line < linesAfterImage; ++line) {
+            chapter.append("After anchor ")
+                .append(line).append(".<br/>");
+        }
+        chapter.append("</p></body></html>");
+        try (ZipOutputStream output =
+                 new ZipOutputStream(new FileOutputStream(result))) {
+            addZipEntry(output, "mimetype", "application/epub+zip");
+            addZipEntry(output, "META-INF/container.xml", container);
+            addZipEntry(output, "OEBPS/content.opf", packageDocument);
+            addZipEntry(output, "OEBPS/toc.ncx", navigation);
+            addZipEntry(
+                output, "OEBPS/chapter.xhtml", chapter.toString());
+            addZipEntry(
+                output, "OEBPS/images/map.png", createImageProbeBytes());
+        }
+        return result;
+    }
+
+    private static File createImageNavigationEvidenceEpub(Context context)
+        throws IOException {
+        File result = new File(
+            context.getCacheDir(), "port8-image-navigation-evidence.epub");
+        if (result.exists() && !result.delete()) {
+            throw new IOException(
+                "Unable to replace the image navigation evidence EPUB");
+        }
+        String container =
+            "<?xml version='1.0'?>"
+                + "<container version='1.0' "
+                + "xmlns='urn:oasis:names:tc:opendocument:"
+                + "xmlns:container'><rootfiles><rootfile "
+                + "full-path='OEBPS/content.opf' "
+                + "media-type='application/oebps-package+xml'/>"
+                + "</rootfiles></container>";
+        String packageDocument =
+            "<?xml version='1.0'?>"
+                + "<package xmlns='http://www.idpf.org/2007/opf' "
+                + "version='2.0' unique-identifier='book-id'>"
+                + "<metadata xmlns:dc='http://purl.org/dc/elements/1.1/'>"
+                + "<dc:title>Port 8 Image Navigation Evidence</dc:title>"
+                + "<dc:identifier id='book-id'>port8-image-nav</dc:identifier>"
+                + "<dc:language>en</dc:language></metadata><manifest>"
+                + "<item id='ncx' href='toc.ncx' "
+                + "media-type='application/x-dtbncx+xml'/>"
+                + "<item id='before' href='before.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='maps' href='maps.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='chapter' href='chapter.xhtml' "
+                + "media-type='application/xhtml+xml'/>"
+                + "<item id='map' href='images/map.png' "
+                + "media-type='image/png'/>"
+                + "</manifest><spine toc='ncx'><itemref idref='before'/>"
+                + "<itemref idref='maps'/>"
+                + "<itemref idref='chapter'/></spine></package>";
+        String navigation =
+            "<?xml version='1.0'?>"
+                + "<ncx xmlns='http://www.daisy.org/z3986/2005/ncx/' "
+                + "version='2005-1'><head/><docTitle><text>"
+                + "Port 8 Image Navigation Evidence</text></docTitle><navMap>"
+                + "<navPoint id='before' playOrder='1'><navLabel>"
+                + "<text>Front Matter</text></navLabel>"
+                + "<content src='before.xhtml'/></navPoint>"
+                + "<navPoint id='maps' playOrder='2'><navLabel>"
+                + "<text>MAPS</text></navLabel><content src='maps.xhtml'/>"
+                + "</navPoint><navPoint id='chapter' playOrder='3'>"
+                + "<navLabel><text>Chapter One</text></navLabel>"
+                + "<content src='chapter.xhtml'/></navPoint>"
+                + "</navMap></ncx>";
+        String before =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Front Matter</title></head><body>"
+                + "<h1>Front Matter</h1><p>Deterministic text before the "
+                + "image-only navigation target.</p></body></html>";
+        String maps =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>MAPS</title></head><body>"
+                + "<img src='images/map.png' alt='Deterministic map'/>"
+                + "</body></html>";
+        String chapter =
+            "<?xml version='1.0'?><html "
+                + "xmlns='http://www.w3.org/1999/xhtml'><head>"
+                + "<title>Chapter One</title></head><body>"
+                + "<h1>Chapter One</h1><p>Reader0 chapter semantics open "
+                + "the numbered chapter rather than the first contents row."
+                + "</p></body></html>";
+
+        Bitmap image = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888);
+        try {
+            for (int y = 0; y < image.getHeight(); ++y) {
+                for (int x = 0; x < image.getWidth(); ++x) {
+                    int color = y < image.getHeight() / 2
+                        ? (x < image.getWidth() / 2
+                            ? 0xFFB71C1C : 0xFF1B5E20)
+                        : (x < image.getWidth() / 2
+                            ? 0xFF0D47A1 : 0xFFF9A825);
+                    image.setPixel(x, y, color);
+                }
+            }
+            java.io.ByteArrayOutputStream encoded =
+                new java.io.ByteArrayOutputStream();
+            assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, encoded));
+            try (ZipOutputStream output =
+                     new ZipOutputStream(new FileOutputStream(result))) {
+                addZipEntry(output, "mimetype", "application/epub+zip");
+                addZipEntry(output, "META-INF/container.xml", container);
+                addZipEntry(output, "OEBPS/content.opf", packageDocument);
+                addZipEntry(output, "OEBPS/toc.ncx", navigation);
+                addZipEntry(output, "OEBPS/before.xhtml", before);
+                addZipEntry(output, "OEBPS/maps.xhtml", maps);
+                addZipEntry(output, "OEBPS/chapter.xhtml", chapter);
+                addZipEntry(output, "OEBPS/images/map.png",
+                            encoded.toByteArray());
+            }
+        } finally {
+            image.recycle();
+        }
+        return result;
+    }
+
     private static File createPublicationEvidenceEpub(Context context)
         throws IOException {
         File result = new File(
@@ -4027,6 +5667,15 @@ public final class OctavoAppearanceTest {
         throws IOException {
         output.putNextEntry(new ZipEntry(name));
         output.write(contents.getBytes(StandardCharsets.UTF_8));
+        output.closeEntry();
+    }
+
+    private static void addZipEntry(ZipOutputStream output,
+                                    String name,
+                                    byte[] contents)
+        throws IOException {
+        output.putNextEntry(new ZipEntry(name));
+        output.write(contents);
         output.closeEntry();
     }
 

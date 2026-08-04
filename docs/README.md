@@ -4,13 +4,18 @@
   local-first Android north star, reader promises, night-reading advantage,
   product boundary, architecture obligations, and evidence standard.
 - [`android_feature_parity.md`](android_feature_parity.md) is the living
-  Kindle-benchmark capability contract, current Port 6 baseline, target
-  classification, service exclusions, and parity-audit procedure.
-- [`android_roadmap.md`](android_roadmap.md) sequences the accepted Ports 0-6
-  foundation, current Port 7 reader-experience candidate, later capability lanes,
-  and permanent release gates.
-- [`android_port7.md`](android_port7.md) defines the implemented premium reader
-  appearance foundation and its pending acceptance boundary.
+  Kindle-benchmark capability contract, accepted Port 7 baseline, Port 8
+  candidate boundary, target classification, service exclusions, and parity-
+  audit procedure.
+- [`android_roadmap.md`](android_roadmap.md) sequences the accepted Ports 0-7
+  foundation, current Port 8 structural-navigation and bounded-image candidate,
+  later capability lanes, and permanent release gates.
+- [`android_port8.md`](android_port8.md) defines the current structural-
+  navigation candidate, reported-defect closures, narrow image support,
+  presentation transaction, completed emulator and physical-device validation
+  boundaries, and pending audible TalkBack, UI-polish, and user acceptance.
+- [`android_port7.md`](android_port7.md) defines the accepted premium reader
+  appearance foundation and retains its historical evidence.
 - [`architecture.md`](architecture.md) describes the current 8vo ownership and
   source-consumption boundaries.
 - [`android_port0.md`](android_port0.md) defines the Android toolchain, native

@@ -3,11 +3,14 @@
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
 accepted Android host is at Port 7. Port 8 structural navigation is a candidate
-with passing physical-device automation against Reader0 `0.7.0-dev` / API 7.
-Its Reader0, dual-ABI Android, API 36 emulator, strict Windows 8vo, isolated
-re10, API 34 ARM64 iQOO automation, and exact durable-data restore gates pass.
-A controlled real-book structural jump/Return check also passed. Audible
-TalkBack and subjective hands-on validation remain pending.
+against Reader0 `0.7.0-dev` / API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394`. The corrected source closes six
+reported navigation, pagination, image-page, chapter-targeting, and top-padding
+defects and adds a prepared-frame media transaction. Earlier Port 8 emulator
+and physical-device results are predecessor evidence. The corrected API 36
+emulator and API 34 iQOO, external-restart, accessibility/reduced-motion, byte-
+exact restore, and controlled real-book gates pass. Audible TalkBack, UI polish,
+and user subjective/manual acceptance remain pending.
 Port 7's Reader0, companion re10, exact 8vo guard/build, final emulator and
 iQOO 36/36 matrices, ProcessRestart, 130% accessibility, crash, backup/restore,
 and hands-on reader-quality closure remain accepted evidence.
@@ -127,6 +130,47 @@ durable, but advance only after successful presentation. Surface loss,
 lifecycle interruption, render failure, or teardown leaves the last presented
 state authoritative.
 
+Port 8 media uses the same transaction. Reader0 owns frame-image resource
+identity, image-only synthetic anchors, in-flow placement, and `visual_units`
+height. The Android Java bridge serially retrieves bounded encoded bytes and
+uses `BitmapFactory`. Reader0 stats each selected ZIP entry in the same opened
+archive and rejects a declaration above the remaining encoded-byte allowance
+before caller-arena output allocation or entry decompression. The distinct
+limit result alone becomes Android's non-null empty-array `CacheFull` sentinel;
+missing and corrupt entries remain isolated decode failures. Native owns
+explicit loaded/terminal status, a
+deterministic 32-entry/32-MiB ARGB LRU, current-frame pinning, aspect fit,
+fallback, painting, and presentation rejection while any resource-backed image
+remains unavailable. In addition to per-resource dimension/pixel bounds, each
+Java preparation transaction caps cumulative encoded input at 16 MiB and
+cumulative decoded input at 8,388,608 pixels. Exhaustion terminally marks that
+resource and every remaining unavailable resource `CacheFull` without starting
+another decode.
+
+The Windows 8vo image host also adopts the shared bounded getter with its
+existing 32 MiB encoded-resource ceiling. Reader0's strict smoke covers a
+highly compressible oversized entry, exact-limit success, required-size
+publication, malformed zero-compressed and stored-size metadata, forged
+near-`UINT64_MAX` sizes, trailing-sentinel compatibility, and caller-arena
+rollback.
+
+Static preparation is single-build. The first frame-image snapshot builds the
+canonical candidate and records a bounded token over exact window dimensions,
+surface/lifecycle/mutation generations, Reader0 layout/page/frame state, and
+location-cache identity. The bridge verification snapshot and native present
+must reuse that exact candidate. Stale identity rejects presentation; bounded
+forced failures retain the token for retry; only accepted presentation and
+commit consume it. Image cache attachment does not invalidate the token, while
+document, layout, lifecycle, surface, chrome geometry, navigation, appearance,
+progress, and actual location-cache mutations do.
+
+Chapter Go-to is also a Reader0 operation. The shared resolver prefers only
+tokenized, exact namespace-qualified `epub:type` chapter semantics; unqualified
+and XSI type attributes and NCX class/depth do not qualify. With no explicit
+chapters, Reader0 accepts only a complete source-order contiguous numbered-
+label model and otherwise fails closed. Java and Android-only C never map a
+chapter number to a Contents index.
+
 ## Ownership and lifetimes
 
 - Reader state, frame storage, UI state, layout inputs, arenas, and caches are
@@ -203,8 +247,27 @@ software renderer. 8vo connects them and owns:
 - the final Win32 backbuffer or Android native-window presentation.
 
 The same resolved font measurements are used for pagination and rasterization.
-Images remain Reader0 document resources, Ground0 decoding mechanisms, and 8vo
-presentation policy.
+Images remain Reader0 document resources and 8vo presentation policy. The
+current narrow Android path intentionally uses the platform decoder: a frame
+is bounded to 16 descriptors; encoded resources to 16 MiB; decoded inputs to
+4096 pixels per dimension and 8 million pixels; and the native cache to 32
+entries/32 MiB. Terminal resource, dimension, decode, and per-resource cache
+failures are explicit theme-safe fallbacks, not hidden blank pages. LRU eviction
+never removes a current-frame resource and never permanently latches the whole
+cache full.
+
+Reader0's image `visual_units` is the canonical vertical-flow contract. Android
+uses the same row-height helper for in-flow image placement and every text
+traversal, so following text cannot overlap the lower image rows. Image-only
+pages expose Reader0's contained synthetic byte for navigation/current-section
+state. Reader0 also canonicalizes reverse pagination for predecessor spines at
+or below 16 KiB from byte zero, removing path-dependent short-page phase while
+retaining legitimate paragraph/chapter-ending and widow/orphan whitespace.
+
+Android resolves the Port 8 page content rectangle by shifting the unchanged-
+height Port 7 rectangle down by half the vertical inset. The result adds top
+breathing room without changing row capacity. Chrome visibility remains a host
+composition transform and cannot alter that rectangle.
 
 Publisher-aligned rows use one allocation-free 8vo justification planner from
 `code/octavo_reader_justification.h` in both the Windows and Android raster
@@ -278,7 +341,7 @@ records through the Win32 MSAA object and adds its host-owned controls, such as
 Close Book. Native object lifetime and execution of returned actions remain in
 the application.
 
-The Android Port 7 implementation candidate remains deliberately bounded.
+The accepted Android Port 7 implementation remains deliberately bounded.
 Java owns the Activity, library and `OctavoAppearancePanel` settings surfaces,
 standard document picker, digest-keyed managed copies, versioned catalog,
 global appearance record, removal policy, system typography acquisition,
@@ -351,25 +414,61 @@ Detailed historical decisions and regression evidence are retained in the
 architectural contract.
 
 The current Port 8 Reader0 boundary is `0.7.0-dev` / public API 7. Its exact
-local commit `58ec6d11575c36176eb85511759d39dc93acb78b` is pinned in
-`vendor/reader0_dependency`. Reader0 strict validation and the 8vo/re10
-consumer gates pass. API 7 adds shared structural destination summaries,
-percentage and meaningful-page navigation, full-model current-section identity,
-UTF-8 labels, and presentation-gated history while retaining the accepted
-authoritative soft-wrap contract.
+local commit `5fe949d88258cd96884c44b69e4f4ab6f27dc394` is pinned in
+`vendor/reader0_dependency`. Reader0, strict Windows 8vo, and re10 consumer
+gates pass. Companion re10's exact adoption revision is
+`b1c264f027c90bec480677bfeadfa5e0728776a8`. API 7 adds shared structural
+destination summaries, exact chapter resolution, contained image-only anchors,
+canonical small-spine reverse pagination, percentage and meaningful-page
+navigation, full-model current-section identity, UTF-8 labels, and
+presentation-gated history while retaining the accepted authoritative soft-wrap
+contract.
 
 The accepted Port 7 ordered Android matrix was 36 tests: appearance store 9,
 appearance 15, navigation 5, library 5, accessibility 1, and bootstrap 1.
-ProcessRestart was a separate two-test driver. The Port 8 ordinary API 36
-matrix passes 56/56; its separate force-stop restart driver, focused 130%
-text/disabled-animation matrix, transition/performance checks, and crash review
-also pass. Exact guards/audit, dual-ABI Android, strict Windows/public smokes,
-Reader0, and isolated re10 pass. The API 34 ARM64 iQOO ordinary matrix also
-passes 56/56 in 121.608 seconds, followed by its external restart driver and a
-15/15 130%-text/disabled-animation run. The physical crash buffer remained
-empty, device settings restored exactly, and all 26 durable files restored
-byte-exact after the suite. A controlled private-book Contents jump and Return
-also passed. Audible TalkBack and subjective physical review remain.
+ProcessRestart was a separate two-test driver. The corrected Port 8 API 36
+ordinary matrix passes 67/67 in 468.395 seconds of XML time (494.0 seconds
+wall), after a 5/5 presentation-deferral stress run and 11/11 mixed image/
+prepared-frame matrix. Its external force-stop restore driver and 15/15
+130%-text/disabled-animation matrix pass, emulator settings restore exactly,
+the crash buffer is empty, and exit history contains no crash or ANR. The
+corrected API 34 ARM64 iQOO ordinary matrix also passes 67/67 in 170.878 seconds
+of instrumentation time (171.449 seconds wall). Its confirmed-force-stop
+restore passed with a 1.987-second seed, 1.135-second verification, and 4.908-
+second wall time. Its 130%-text/disabled-animation matrix passed 15/15 in 16.185
+seconds of instrumentation time (18.591 seconds wall), followed by exact
+restoration of font scale `1.0`, window and transition scales `1.0`, and the
+previously absent animator-scale key. The physical crash buffer was empty and
+exit history contained only expected `USER REQUESTED` force stops and `PACKAGE
+UPDATED`, with no crash or ANR. Controlled real-book review passed the first
+MAPS jump and three genuine map leaves, Chapter One/Two targets, exact Return,
+five waited reverse turns without a sparse-page recurrence, full reported prose
+pages, coherent increased top breathing room, and no visible bright/black
+transition. The original 26 app files and 4,751,505 payload bytes were restored
+byte-exact; original archive SHA-256
+`52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2` and
+manifest SHA-256
+`A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94` match.
+
+The pre-correction Port 8
+ordinary API 36 matrix passed 56/56; its separate force-stop restart driver,
+focused 130% text/disabled-animation matrix, transition/performance checks, and
+crash review also passed. Exact guards/audit, dual-ABI Android, strict
+Windows/public smokes, Reader0, and isolated re10 passed for that predecessor.
+The API 34 ARM64 iQOO
+ordinary matrix also passed 56/56 in 121.608 seconds, followed by its external
+restart driver and a 15/15 130%-text/disabled-animation run. The physical crash
+buffer remained empty, device settings restored exactly, and all 26 durable
+files restored byte-exact after the suite. A controlled private-book Contents
+jump and Return also passed. Those physical results do not validate the
+corrected 8vo source and remain predecessor evidence. Corrected physical
+evidence is recorded above. Audible TalkBack, UI polish, and user subjective/
+manual acceptance remain pending; no final 8vo hash is claimed.
+
+The current strict Windows build and seven public smokes pass in 19.6 seconds wall
+and retain host `cd460506f219d652`, Reader View
+`e29cfd3afeea51a1`, visual `e6848393c4dc0b95`, cover
+`a2fabe96a148a6a4`, and inline image `5b536d3a66934ec8`.
 
 The completed API 6 pre-closure binary passed those 8vo build gates and its API
 36 and iQOO matrices passed 33/33. Backup replay, restart, 130% accessibility,
@@ -414,10 +513,13 @@ median warm reopen, and 102ms focused reopen are also historical. The older
 borderless/performance binary's 27/27, 411ms, and native-only 220ms results and
 the reserved-geometry iQOO 23/23 record remain separate superseded evidence.
 
-The current Port 8 API 7 candidate has passed expanded instrumentation,
-ProcessRestart, 8vo shared/desktop, Reader0/re10, large-text, crash,
-accessibility, alternate-input/reduced-motion, navigation-transition, and
-synthetic Resume-performance gates on the emulator, plus the physical iQOO
-automation and exact restore gates. A controlled private-book
-structural-navigation check also passed. Audible TalkBack and subjective
-physical acceptance remain.
+The pre-correction Port 8 API 7 candidate passed expanded instrumentation,
+ProcessRestart, 8vo shared/desktop, large-text, crash, accessibility, alternate-
+input/reduced-motion, navigation-transition, synthetic Resume-performance,
+physical iQOO automation, exact restore, and a controlled private-book
+structural-navigation check. The corrected Reader0/re10 pair passes its strict
+shared-consumer gates, and corrected strict Windows 8vo passes; the corrected
+Android source passes the final API 36 emulator and API 34 iQOO, external-
+restart, large-text/reduced-animation, byte-exact restore, and controlled real-
+book gates described above. Audible TalkBack, UI polish, and user subjective/
+manual acceptance remain pending.

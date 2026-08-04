@@ -169,6 +169,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean presentationFailureNotified;
     private boolean locationWarmPosted;
     private boolean locationWarmComplete;
+    private boolean locationWarmSuspendedForTesting;
     private boolean chromeCompositionTransitioning;
     private long chromeCompositionGeneration;
     private long touchCompositionGeneration;
@@ -201,9 +202,14 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         drainAppearanceRequest();
     };
     private final Runnable warmLocationCache = () -> {
+        runLocationWarmStep();
+    };
+
+    private int runLocationWarmStep() {
         locationWarmPosted = false;
-        if (nativeHandle == 0 || !hostResumed || locationWarmComplete) {
-            return;
+        if (nativeHandle == 0 || !hostResumed || locationWarmComplete
+            || locationWarmSuspendedForTesting) {
+            return Integer.MIN_VALUE;
         }
         int result = OctavoNative.warmLocationCacheStep(nativeHandle);
         if (result == LOCATION_WARM_COMPLETED_REFRESH) {
@@ -226,7 +232,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 notifyReaderLocationSummaryFailure();
             }
         }
-    };
+        return result;
+    }
     private final Runnable finishChromeCompositionTask =
         this::finishChromeCompositionTransition;
 
@@ -767,12 +774,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     int requestChapterNavigation(long oneBasedChapter) {
-        if (nativeHandle == 0 || oneBasedChapter <= 0
-            || oneBasedChapter > Integer.MAX_VALUE) {
+        if (nativeHandle == 0 || oneBasedChapter <= 0) {
             return finishNavigationRequest(
                 OctavoNative.NAVIGATION_INVALID);
         }
-        return requestContentsNavigation((int)oneBasedChapter - 1);
+        return finishNavigationRequest(
+            OctavoNative.navigateToChapter(nativeHandle, oneBasedChapter));
     }
 
     int requestLocationNavigation(long oneBasedLocation) {
@@ -890,6 +897,50 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             : OctavoNative.accessibilitySemanticSnapshot(nativeHandle);
     }
 
+    long[] frameImagesSnapshotForTesting() {
+        return nativeHandle == 0
+            ? null
+            : OctavoNative.frameImagesSnapshot(nativeHandle);
+    }
+
+    boolean clearFrameImageCacheForTesting() {
+        return nativeHandle != 0
+            && OctavoNative.clearFrameImageCacheForTesting(nativeHandle);
+    }
+
+    boolean frameImageResourceCachedForTesting(long resourceIndex) {
+        return nativeHandle != 0
+            && OctavoNative.frameImageResourceCachedForTesting(
+                nativeHandle, resourceIndex);
+    }
+
+    boolean frameImageCurrentFramePinningForTesting(long resourceIndex) {
+        return nativeHandle != 0
+            && OctavoNative.frameImageCurrentFramePinningForTesting(
+                nativeHandle, resourceIndex);
+    }
+
+    boolean prepareFrameImagesWithBudgetForTesting(
+        long maximumEncodedBytes,
+        long maximumDecodedPixels) {
+        return nativeHandle != 0
+            && OctavoReaderImageBridge.prepareFrameImagesForTesting(
+                nativeHandle,
+                maximumEncodedBytes,
+                maximumDecodedPixels);
+    }
+
+    long[] preparedStaticFrameStateForTesting() {
+        return nativeHandle == 0
+            ? null
+            : OctavoNative.preparedStaticFrameStateForTesting(nativeHandle);
+    }
+
+    boolean presentPreparedFrameForTesting() {
+        return nativeHandle != 0
+            && OctavoNative.present(nativeHandle);
+    }
+
     String accessibilitySemanticNameForTesting(int recordIndex) {
         return nativeHandle == 0
             ? null
@@ -920,6 +971,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (nativeHandle == 0) {
             return;
         }
+        OctavoReaderImageBridge.prepareFrameImages(nativeHandle);
         if (OctavoNative.present(nativeHandle)) {
             resetPresentationRetries();
             notifyNativePresentationIfChanged();
@@ -1360,7 +1412,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private void scheduleLocationWarm(long delayMillis) {
         if (nativeHandle == 0 || !hostResumed || locationWarmComplete
             || locationWarmPosted || lastNotifiedFrameCount <= 0
-            || presentationFailureNotified) {
+            || presentationFailureNotified
+            || locationWarmSuspendedForTesting) {
             return;
         }
         locationWarmPosted = postDelayed(
@@ -1467,6 +1520,56 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         requestAppearance(appearance);
     }
 
+    void suspendLocationWarmForTesting() {
+        removeCallbacks(warmLocationCache);
+        locationWarmPosted = false;
+        locationWarmSuspendedForTesting = true;
+    }
+
+    boolean requestAppearanceWithLocationWarmGateProbeForTesting(
+        OctavoAppearance appearance) {
+        if (nativeHandle == 0 || appearance == null) {
+            return false;
+        }
+
+        /*
+         * A normal appearance request is coalesced for 90ms, close to the
+         * location-warm and presentation-retry timers. Drive the same request
+         * and warm paths in one UI callback so instrumentation proves the
+         * pending-presentation gate without racing those timers.
+         */
+        removeCallbacks(warmLocationCache);
+        locationWarmPosted = false;
+        locationWarmSuspendedForTesting = false;
+        requestAppearance(appearance);
+        removeCallbacks(applyRequestedAppearance);
+        appearanceApplyPosted = false;
+        drainAppearanceRequest();
+
+        long[] pending = OctavoNative.state(nativeHandle);
+        long[] before = OctavoNative.locationCacheState(nativeHandle);
+        if (!validState(pending) || !presentationPending(pending)
+            || before == null || before.length != 10) {
+            requestPendingNativePresentation();
+            return false;
+        }
+
+        int result = runLocationWarmStep();
+        long[] after = OctavoNative.locationCacheState(nativeHandle);
+        requestPendingNativePresentation();
+        if (result != LOCATION_WARM_DEFERRED
+            || after == null || after.length != 10
+            || after[7] != before[7] + 1) {
+            return false;
+        }
+        for (int index = 0; index < before.length; ++index) {
+            if (index != 7 && after[index] != before[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     boolean forcePresentFailuresForTesting(int count) {
         return nativeHandle != 0
             && OctavoNative.forcePresentFailuresForTesting(
@@ -1528,6 +1631,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             appearanceApplyPosted = false;
             locationWarmPosted = false;
             locationWarmComplete = true;
+            locationWarmSuspendedForTesting = false;
             chromeCompositionTransitioning = false;
             resetPresentationRetries();
             requestedAppearance = null;

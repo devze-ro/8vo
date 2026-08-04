@@ -72,6 +72,23 @@ final class OctavoNative {
     static native boolean forceSurfaceAcquisitionFailuresForTesting(
         long handle, int count);
     static native String utf8RoundTripForTesting();
+    static native long[] frameImagesSnapshot(long handle);
+    static native byte[] frameImageEncodedBytes(long handle,
+                                                int imageIndex,
+                                                long byteLimit);
+    static native boolean setFrameImageDecodeResult(long handle,
+                                                    int imageIndex,
+                                                    int status,
+                                                    int width,
+                                                    int height,
+                                                    int[] argbPixels);
+    static native boolean clearFrameImageCacheForTesting(long handle);
+    static native boolean frameImageResourceCachedForTesting(
+        long handle,
+        long resourceIndex);
+    static native boolean frameImageCurrentFramePinningForTesting(
+        long handle,
+        long resourceIndex);
     static native boolean present(long handle);
     static native int navigationAvailability(long handle);
     static native boolean setChromeVisible(long handle, boolean visible);
@@ -79,10 +96,12 @@ final class OctavoNative {
     static native int accessibilityMovePage(long handle, int direction);
     static native int warmLocationCacheStep(long handle);
     static native long[] locationCacheState(long handle);
+    static native long[] preparedStaticFrameStateForTesting(long handle);
     static native long[] navigationState(long handle);
     static native long[] contentsSnapshot(long handle);
     static native String contentsLabel(long handle, int rowIndex);
     static native int navigateToContents(long handle, int navIndex);
+    static native int navigateToChapter(long handle, long oneBasedChapter);
     static native int navigateToLocation(long handle, long oneBasedLocation);
     static native int navigateToPage(long handle, long oneBasedPage);
     static native int navigateToPercent(long handle, int percent);

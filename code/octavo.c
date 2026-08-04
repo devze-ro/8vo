@@ -1812,7 +1812,7 @@ octavo_image_cache_get(OctavoImageCache *cache,
   }
 
   ArenaParams arena_params = {
-    .reserve_size = MEGABYTES(32),
+    .reserve_size = MEGABYTES(32) + 1,
     .commit_size = KILOBYTES(64),
   };
   Arena *encoded_arena = arena_alloc(&arena_params);
@@ -1820,11 +1820,13 @@ octavo_image_cache_get(OctavoImageCache *cache,
 
   String8 encoded_bytes = {0};
   DocError resource_result =
-    doc_engine_get_resource_data(encoded_arena,
-                                 engine,
-                                 document_id,
-                                 resource_index,
-                                 &encoded_bytes);
+    doc_engine_get_resource_data_bounded(encoded_arena,
+                                         engine,
+                                         document_id,
+                                         resource_index,
+                                         MEGABYTES(32),
+                                         &encoded_bytes,
+                                         0);
   if (resource_result == DocError_Ok)
   {
     OS_DecodedImage decoded = {0};
@@ -1842,6 +1844,11 @@ octavo_image_cache_get(OctavoImageCache *cache,
       entry->height = (S32)decoded.height;
       entry->stride_pixels = (S32)decoded.stride_pixels;
     }
+  }
+  else if (resource_result == DocError_LimitExceeded)
+  {
+    entry->status = EpubReaderFrameImageStatus_CacheFull;
+    cache->cache_full_count += 1;
   }
   arena_release(encoded_arena);
   return entry;
