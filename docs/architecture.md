@@ -2,10 +2,12 @@
 
 8vo is a native reader with a format-neutral application shell. The working
 product host is Windows and EPUB is its only document backend today. The
-accepted Android host is at Port 7. Port 8 structural navigation is an
-emulator-qualified candidate against Reader0 `0.7.0-dev` / API 7. Its
-Reader0, dual-ABI Android, API 36 emulator, strict Windows 8vo, and isolated
-re10 gates pass; physical-device and hands-on real-book validation is pending.
+accepted Android host is at Port 7. Port 8 structural navigation is a candidate
+with passing physical-device automation against Reader0 `0.7.0-dev` / API 7.
+Its Reader0, dual-ABI Android, API 36 emulator, strict Windows 8vo, isolated
+re10, API 34 ARM64 iQOO automation, and exact durable-data restore gates pass.
+A controlled real-book structural jump/Return check also passed. Audible
+TalkBack and subjective hands-on validation remain pending.
 Port 7's Reader0, companion re10, exact 8vo guard/build, final emulator and
 iQOO 36/36 matrices, ProcessRestart, 130% accessibility, crash, backup/restore,
 and hands-on reader-quality closure remain accepted evidence.
@@ -362,8 +364,12 @@ ProcessRestart was a separate two-test driver. The Port 8 ordinary API 36
 matrix passes 56/56; its separate force-stop restart driver, focused 130%
 text/disabled-animation matrix, transition/performance checks, and crash review
 also pass. Exact guards/audit, dual-ABI Android, strict Windows/public smokes,
-Reader0, and isolated re10 pass. Physical iQOO and private real-book validation
-are the remaining gates.
+Reader0, and isolated re10 pass. The API 34 ARM64 iQOO ordinary matrix also
+passes 56/56 in 121.608 seconds, followed by its external restart driver and a
+15/15 130%-text/disabled-animation run. The physical crash buffer remained
+empty, device settings restored exactly, and all 26 durable files restored
+byte-exact after the suite. A controlled private-book Contents jump and Return
+also passed. Audible TalkBack and subjective physical review remain.
 
 The completed API 6 pre-closure binary passed those 8vo build gates and its API
 36 and iQOO matrices passed 33/33. Backup replay, restart, 130% accessibility,
@@ -411,5 +417,7 @@ the reserved-geometry iQOO 23/23 record remain separate superseded evidence.
 The current Port 8 API 7 candidate has passed expanded instrumentation,
 ProcessRestart, 8vo shared/desktop, Reader0/re10, large-text, crash,
 accessibility, alternate-input/reduced-motion, navigation-transition, and
-synthetic Resume-performance gates. Private real-book and physical-device
-acceptance remain.
+synthetic Resume-performance gates on the emulator, plus the physical iQOO
+automation and exact restore gates. A controlled private-book
+structural-navigation check also passed. Audible TalkBack and subjective
+physical acceptance remain.

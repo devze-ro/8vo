@@ -1,13 +1,15 @@
 # Android Port 8: structural reader navigation
 
-Status: locally qualified emulator candidate on
+Status: candidate with passing physical-device automation on
 `android/port8-structural-navigation`, based exactly on accepted Port 7 commit
 `de7ba5dd5c5730cfb333bb5968d8cf7380203ecd`.
 The shared structural-navigation contract is Reader0 `0.7.0-dev` / public
 API 7 at `58ec6d11575c36176eb85511759d39dc93acb78b`. Reader0, dual-ABI
-Android, API 36 emulator, strict Windows 8vo, and isolated re10 qualification
-have passed. Physical-device and hands-on real-book acceptance remain pending.
-Nothing in this document claims final Port 8 acceptance, push, or merge.
+Android, API 36 emulator, strict Windows 8vo, isolated re10 qualification,
+API 34 ARM64 iQOO automation, and a controlled private-book Contents
+jump/Return check have passed. Audible TalkBack, subjective
+transition/touch review, and user hands-on acceptance remain pending. Nothing
+in this document claims final Port 8 acceptance, push, or merge.
 
 Port 8 adds fast, reversible structural navigation to the premium Port 7
 reader shell. It keeps the last successfully presented semantic location
@@ -235,7 +237,7 @@ dummy consumers for them.
 
 ## Current candidate evidence
 
-The 2026-08-03 local candidate passed:
+The 2026-08-04 local candidate passed:
 
 - Reader0's strict dependency/API audit, MSVC `/W4 /WX` build,
   `--reader-core-smoke`, and `--host-smoke`;
@@ -255,11 +257,29 @@ The 2026-08-03 local candidate passed:
   the repeatable host, Reader View, visual, Presentation, cover, and inline
   hashes were respectively `cd460506f219d652`, `e29cfd3afeea51a1`,
   `e6848393c4dc0b95`, `3a3cf46f0444a1bd`,
-  `a2fabe96a148a6a4`, and `5b536d3a66934ec8`; and
+  `a2fabe96a148a6a4`, and `5b536d3a66934ec8`;
 - isolated re10 strict product/qualification builds, product image budgets,
   and `--document_engine_smoke` against the additive Reader0 API 7 adoption.
   The smoke retained four anchors, final spine 3, and hash
-  `f3c13a55f0349720`.
+  `f3c13a55f0349720`;
+- the vivo I2019/iQOO 9 SE, Android 14/API 34 ARM64 ordinary matrix, 56/56 in
+  121.608 seconds of instrumentation time and 122.475 seconds wall time;
+- the physical seed/confirmed-force-stop/fresh-process driver in 4.593 seconds,
+  with 1.786-second seed and 1.087-second verification halves;
+- the physical 130% system-text/disabled-system-animation matrix, 15/15 in
+  15.580 seconds of instrumentation time and 17.244 seconds wall time, followed
+  by exact restoration of the system font scale and all three animation-scale
+  settings;
+- an empty physical crash buffer;
+- a staged restore of all 26 durable `files/` records and 4,751,505 payload
+  bytes, exact by relative path, length, and SHA-256; and
+- a 294ms restored cold Library launch plus a controlled private-book check.
+  The live EPUB marked Chapter One current at destination 154/9549 (1%),
+  presented Chapter Two at 687/9549
+  (7%), returned to the Chapter One origin, enabled Forward only after that
+  accepted return, and exposed Chapter, canonical Location, meaningful Page,
+  and Percentage Go-to controls. The durable catalog anchor remained exactly
+  `17:0`; only its expected last-opened timestamp changed.
 
 The API 36 matrix covers deterministic nested, flat, absent, malformed, and
 partially invalid navigation; exact destinations/current identity; all Go-to
@@ -268,9 +288,10 @@ recreation, surface replacement, reflow, reopen, and process restart;
 accessibility hierarchy/focus/actions; and compact/large layouts. Composed-
 frame tests retain the Port 7 bright/black-transition protections.
 
-The physical iQOO matrix, audible TalkBack/touch-exploration review, and
-hands-on navigation in the private real book remain the final acceptance
-stage. The user must reconnect and unlock that device before it begins.
+The remaining physical acceptance stage is audible TalkBack/touch exploration
+and subjective review of transition frames, reduced motion, touch comfort, and
+the private-book interaction quality. The automated iQOO matrix and controlled
+real-book structural jump/Return evidence are current and passing.
 
 ## Acceptance contract
 

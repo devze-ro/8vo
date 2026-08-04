@@ -1,11 +1,12 @@
 # 8vo Android
 
 This directory is the Android application root. Ports 0-7 are accepted. Port 8
-is the locally qualified structural-navigation emulator candidate against
-Reader0 `0.7.0-dev` / public API 7. Reader0, dual-ABI Android, API 36
-emulator, strict Windows 8vo, and isolated re10 qualification pass; the
-physical-device and hands-on real-book stage remains pending. The candidate
-retains Port 7's premium appearance, semantic reflow, borderless host-composited
+is the structural-navigation candidate with passing physical-device automation
+against Reader0 `0.7.0-dev` / public API 7. Its Reader0, dual-ABI Android,
+API 36 emulator, strict Windows 8vo, isolated re10, API 34 ARM64 iQOO
+automation, exact durable-data restore, and controlled private-book Contents
+jump/Return checks have passed. Audible TalkBack and subjective hands-on review
+remain pending. The candidate retains Port 7's premium appearance, semantic reflow, borderless host-composited
 chrome, first-frame coverage, and custom-reader accessibility bridge while
 adding a bounded Contents/Go-to/Return model:
 
@@ -123,7 +124,8 @@ of instrumentation time and the iQOO took 108.467 seconds. Every 33-test API 6
 run remains historical evidence for an earlier binary. Port 8 adds structural
 navigation without treating the accepted Port 7 measurements as new validation;
 its dependency, build, emulator, accessibility, lifecycle, performance, and
-physical-device gates remain pending.
+physical-device automation gates pass; audible and subjective review remain
+pending.
 Neither milestone is the end-state Android experience. The product target is
 a premium, local-first reader for user-owned
 books that reaches Kindle-class reading, navigation, search, annotation,
@@ -247,13 +249,27 @@ seconds; the separate confirmed-force-stop restart probe and a 15/15
 empty. A representative synthetic fresh restore was accepted in 169ms
 end-to-end with 129ms in native stages and zero missing glyphs.
 
+On the vivo I2019/iQOO 9 SE, Android 14/API 34 ARM64, the ordinary suite passed
+56/56 in 121.608 seconds of instrumentation time (122.475 seconds wall). The
+external seed/confirmed-force-stop/fresh-process probe passed in 4.593 seconds.
+At 130% system text with system animations disabled, the focused matrix passed
+15/15 in 15.580 seconds (17.244 seconds wall), and the original system settings
+were restored exactly. The crash buffer was empty. A staged restore reproduced
+all 26 durable files and 4,751,505 payload bytes by path, length, and SHA-256.
+Restored cold Library launch took 294ms. On the private real book, the Contents
+hierarchy marked Chapter One current at 154/9549 (1%), a controlled jump
+presented Chapter Two at 687/9549 (7%), Return restored the origin, and Forward
+became available only after that accepted return. The durable anchor remained
+exactly `17:0`; only expected last-opened bookkeeping changed. All four Go-to
+forms were exposed.
+
 Reader0 strict validation passed. Strict Windows 8vo and all seven public
 smokes passed in 17.6 seconds. Isolated re10 strict product/qualification and
 `--document_engine_smoke` passed with four anchors, final spine 3, and hash
 `f3c13a55f0349720`. These are current-candidate results, not evidence
-inferred from Port 7. The physical iQOO matrix, audible TalkBack review, and
-hands-on private real-book navigation remain pending, so Port 8 is not yet
-accepted.
+inferred from Port 7. Audible TalkBack/touch exploration and subjective
+transition, reduced-motion, and touch-quality review remain pending, so Port 8
+is not yet accepted.
 
 The accepted Port 7 source consumed Reader0 `0.6.0-dev` / public API 6 at
 `59e9efdaca17b316aa2b1f5a7be0cbdebf5e4c26`. Reader0 and companion re10 at
@@ -345,7 +361,7 @@ Unicode shaping, complete publication accessibility, cover/library expansion,
 search, selection, annotations, and synchronization remain deferred. Port 8
 adds structural navigation only; spatial previews and advanced scrubbing remain
 deferred. See [`../docs/android_port8.md`](../docs/android_port8.md) for the
-current implementation and pending acceptance boundary,
+current implementation and human acceptance boundary,
 [`../docs/android_port7.md`](../docs/android_port7.md) for the accepted appearance
 milestone, and
 [`../docs/android_port6.md`](../docs/android_port6.md) for the accepted

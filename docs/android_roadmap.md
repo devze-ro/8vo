@@ -1,14 +1,16 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-03. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-04. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
-closure. Port 8 structural navigation is now a locally qualified emulator
-candidate against Reader0 `0.7.0-dev` / API 7. Reader0, dual-ABI Android,
-API 36 emulator, strict Windows 8vo, and isolated re10 gates pass; physical
-iQOO and hands-on real-book acceptance remain pending. Later numbering and
-boundaries may change as evidence is collected.
+closure. Port 8 structural navigation is now a candidate with passing
+physical-device automation against Reader0 `0.7.0-dev` / API 7. Its Reader0,
+dual-ABI Android, API 36 emulator, strict Windows 8vo, isolated re10, API 34
+ARM64 iQOO automation, exact device-data restore, and a controlled real-book
+Contents jump/Return checks have passed. Audible TalkBack and subjective
+hands-on acceptance remain pending. Later numbering and boundaries may change
+as evidence is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -256,7 +258,10 @@ being committed. History is bounded and session-scoped; only the current
 successfully presented book position and global progress choice are durable.
 The 56/56 API 36 matrix, process restart, 130% text/reduced-animation pass,
 crash review, strict Windows/public smokes, Reader0 validation, and isolated
-re10 qualification are green. Physical iQOO and hands-on real-book navigation
+re10 qualification are green. The API 34 ARM64 iQOO passed 56/56, its separate
+restart and 15/15 130%-text/reduced-animation gates, empty crash review, and an
+exact 26-file restore. A controlled private-book Contents jump and Return also
+passed. Audible TalkBack and subjective transition/touch/reduced-motion review
 remain pending, so no final Port 8 acceptance is claimed.
 
 - hierarchical table of contents with current-section state;
