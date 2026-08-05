@@ -198,25 +198,25 @@ the application does not claim a cross-file transaction. Failed annotation
 mutations restore the in-memory state and leave editable drafts available for
 retry.
 
-Android Port 7 stores exactly one global appearance in
+Android stores exactly one global appearance in
 `<files>/port7/appearance.v1`, separately from the Port 6 catalog and per-book
 locations. The current version-3 fixed record has an explicit version, shape,
 size bound, and CRC32 checksum. Missing, corrupt, or new appearance state falls
-back to Paper, Literary system serif, 14sp, Classic spacing, Balanced width,
+back to Paper, Literary system serif, 16sp, Classic spacing, Balanced width,
 Publisher alignment, theme-safe publisher colors, and reduced motion off.
 Loading a valid version-1 18sp default, version-2 16sp default, or transitional
-version-2 18sp value returns a 14sp in-memory appearance while preserving every
+version-2 18sp value returns a 16sp in-memory appearance while preserving every
 other valid field, marks migration pending, and leaves the old bytes untouched.
 The transitional value is a bounded pre-origin ambiguity: before explicit
 choice-origin metadata, the version-2 writer could republish an inherited
 version-1 18sp default after a non-font change. Inherited and explicit v2/18
 origins cannot be distinguished, so the bounded policy migrates every v2/18
-record. Version-2 21/24/28sp choices and every valid version-3 record remain
-exact. Because 14sp was not in either old schema, a version-1 or version-2
-record carrying it is invalid. Per-book appearance overrides are deliberately
-absent.
+record. Version-2 21/24/28sp choices and every valid version-3 record, including
+14sp, remain exact. Because 14sp was not in either old schema, a version-1 or
+version-2 record carrying it is invalid. Per-book appearance overrides are
+deliberately absent.
 
-The Activity publishes pending v3/14sp state only after the first successfully
+The Activity publishes pending v3/16sp state only after the first successfully
 accepted reader frame; a library-only launch cannot rewrite it. Publication
 requires a synchronized same-directory temporary file and `ATOMIC_MOVE` with
 `REPLACE_EXISTING`. Unsupported or failed atomic publication preserves the old
@@ -264,10 +264,11 @@ state. Reader0 also canonicalizes reverse pagination for predecessor spines at
 or below 16 KiB from byte zero, removing path-dependent short-page phase while
 retaining legitimate paragraph/chapter-ending and widow/orphan whitespace.
 
-Android resolves the Port 8 page content rectangle by shifting the unchanged-
-height Port 7 rectangle down by half the vertical inset. The result adds top
-breathing room without changing row capacity. Chrome visibility remains a host
-composition transform and cannot alter that rectangle.
+Android retains Readerview0's base vertical inset, then adds one full base
+inset above content and removes the same amount from the canonical content
+height. This yields two base reserves above and one below; Reader0 reflows to
+the reduced row capacity. Chrome visibility remains a host composition transform
+and cannot alter that rectangle.
 
 Publisher-aligned rows use one allocation-free 8vo justification planner from
 `code/octavo_reader_justification.h` in both the Windows and Android raster
@@ -449,6 +450,15 @@ byte-exact; original archive SHA-256
 `52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2` and
 manifest SHA-256
 `A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94` match.
+
+The 2026-08-05 geometry/default/gutter follow-up passed its API 36 and API 34
+ordinary, external-restart, and 130%-text/disabled-animation gates. The iQOO
+ordinary matrix passed 67/67 in 167.136 seconds and the focused matrix passed
+15/15 in 14.625 seconds. A fresh physical Library measured the synchronous 16dp
+root gutter at x=44 and x=1036 on 1080px; first reader ink began 85px below the
+app content edge. Device settings restored exactly, the crash buffer was empty,
+and the pre-test 26-file app snapshot restored byte-exact with manifest SHA-256
+`9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
 The pre-correction Port 8
 ordinary API 36 matrix passed 56/56; its separate force-stop restart driver,

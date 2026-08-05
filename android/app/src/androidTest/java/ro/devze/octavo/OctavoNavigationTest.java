@@ -594,9 +594,9 @@ public final class OctavoNavigationTest {
             assertTrue("Port 7 swipe fixture needs at least four pages",
                        pageCount >= 4);
             assertTrue(
-                "Port 7 14sp default pagination exceeded its regression bound",
+                "Port 8 16sp default pagination exceeded its regression bound",
                 pageCount <= 64);
-            assertEquals(14,
+            assertEquals(16,
                          initial[OctavoSurfaceView.STATE_FONT_SIZE_SP]);
             assertEquals(
                 "A fresh reader must begin with immersive chrome hidden",

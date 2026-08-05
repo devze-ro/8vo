@@ -2618,22 +2618,14 @@ octavo_android_resolve_reader_layout(OctavoAndroidApp *app,
     return 0;
   }
   /*
-   * Give the first text row a little more air without changing the
-   * canonical content height. Borrow at most half of the bottom reserve so
-   * page_rows, semantic pagination, and restore anchors remain unchanged.
+   * Add one full base inset above the first row while retaining the resolved
+   * bottom reserve. Shrinking the canonical content height by the same amount
+   * lets Reader0 reflow normally and prevents dense pages from crowding the
+   * bottom edge.
    */
-  int64_t page_bottom =
-    (int64_t)geometry.page_surface_rect.y + geometry.page_surface_rect.h;
-  int64_t content_bottom =
-    (int64_t)geometry.content_rect.y + geometry.content_rect.h;
-  int64_t bottom_reserve = page_bottom - content_bottom;
-  if (bottom_reserve > 1)
-  {
-    S32 requested_top_bias = content_inset_y / 2;
-    S32 available_top_bias = (S32)(bottom_reserve / 2);
-    geometry.content_rect.y +=
-      MIN(requested_top_bias, available_top_bias);
-  }
+  S32 top_bias = MIN(content_inset_y, geometry.content_rect.h - 1);
+  geometry.content_rect.y += top_bias;
+  geometry.content_rect.h -= top_bias;
   app->reader_view_layout.page_surface_rect = geometry.page_surface_rect;
   app->reader_view_layout.content_rect = geometry.content_rect;
   if (app->reader_view_layout.progress_visible)

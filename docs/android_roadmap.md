@@ -81,7 +81,7 @@ an implementation claim.
 - The reader-preferences surface offers six font sizes, Android generic serif
   and sans-serif families, four line-spacing choices, three margins/content
   widths, supported publisher/ragged-right alignment, explicit publisher-color
-  policy, and reduced motion. The default is 14sp and no font asset is bundled.
+  policy, and reduced motion. The default is 16sp and no font asset is bundled.
 - Paper, sepia, dusk, warm-dark, OLED, and high-contrast themes are available.
 - Every reader, chrome, and system-bar role is tuned semantically per theme
   instead of mechanically inverting one palette.
@@ -89,15 +89,16 @@ an implementation claim.
   until the first successfully presented frame; it avoids a black or
   wrong-theme reader-entry frame.
 - One checksummed version-3 global appearance persists independently from
-  per-book locations. New, missing, or corrupt state uses 14sp. Loading a valid
+  per-book locations. New, missing, or corrupt state uses 16sp. Loading a valid
   version-1 18sp default, version-2 16sp default, or transitional version-2
-  18sp value returns a 14sp in-memory appearance while preserving every other
+  18sp value returns a 16sp in-memory appearance while preserving every other
   valid field, marks migration pending, and leaves the old bytes untouched.
   The transitional value is a bounded pre-origin ambiguity: the version-2
   writer could republish an inherited version-1 18sp default after a non-font
   change. Inherited and explicit v2/18 origins cannot be distinguished, so
   every v2/18 record migrates. Version-2 21/24/28sp and every valid version-3
-  choice remain exact; impossible old-schema 14sp records are rejected.
+  choice, including 14sp, remain exact; impossible old-schema 14sp records are
+  rejected.
   Version 3 publishes only after the first successfully accepted reader frame.
   Failed atomic publication remains pending, is visibly reported, and retries
   after a later successful presentation. Per-book overrides are explicitly
@@ -315,6 +316,16 @@ manifest SHA-256
 `A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94` match the
 original backup. Audible TalkBack, UI polish, and user subjective/manual
 acceptance remain pending, so no final Port 8 acceptance or 8vo hash is claimed.
+
+The 2026-08-05 visual follow-up changes the fresh default to 16sp, establishes
+two base top reserves and one base bottom reserve with canonical Reader0 reflow,
+and gives the Library one synchronous 16dp outer gutter. Its API 36 ordinary
+matrix passed 67/67 and its API 34 ARM64 repeat passed 67/67 in 167.136 seconds;
+both external restart and 15/15 130%-text/disabled-animation gates passed. The
+iQOO Library measured x=44 through x=1036 on a 1080px display, settings restored
+exactly, the crash buffer remained empty, and all 26 original app files restored
+byte-exact with manifest SHA-256
+`9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
 - hierarchical table of contents with current-section state;
 - go-to page/location/percentage and chapter navigation;

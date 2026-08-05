@@ -13,9 +13,11 @@ Reader0, re10, strict Windows, dual-ABI Android, API 36 emulator, and API 34
 iQOO automated gates now pass. The earlier Port 8 physical-device results
 remain predecessor evidence and do not validate the corrected source;
 corrected-source physical evidence is recorded below. Controlled real-book
-review closes the six reported defects. Audible TalkBack, UI polish, subjective
-transition/touch review, and user manual acceptance remain pending.
-Nothing in this document claims final Port 8
+review closes the six reported defects. A 2026-08-05 spacing, fresh-default,
+and Library-gutter refinement now passes the API 36 emulator and API 34
+physical gates below; hands-on review remains pending. Audible TalkBack, UI
+polish, subjective transition/touch review, and user manual acceptance remain
+pending. Nothing in this document claims final Port 8
 acceptance, push, or merge.
 
 Port 8 adds fast, reversible structural navigation to the premium Port 7
@@ -117,15 +119,22 @@ bounded behavior:
    chapter operation directly. Reader0 prefers exact EPUB chapter semantics and
    accepts the label fallback only when the complete fail-closed model above is
    proved.
-6. **Insufficient reader top padding.** Android shifts the content rectangle
-   down by half the resolved vertical inset while preserving its height and
-   page-row capacity. The navigation-overlay source regression also requires
-   unchanged content geometry and capacity when chrome opens or closes.
+6. **Reader edge reserves.** Android retains Readerview0's base vertical inset,
+   adds one full base inset above the content, and reduces the canonical content
+   height by the same amount. The result is an exact two-base top reserve and
+   one-base bottom reserve; Reader0 reflows to the new capacity. Opening or
+   closing navigation/chrome cannot change this geometry.
 
-The prose pagination corrections do not promise identical row counts on every
-page. Paragraph and chapter endings plus legitimate widow/orphan constraints
-may still leave bottom space; the invariant is canonical, path-independent
-pagination rather than artificial full-page fill.
+The prose pagination corrections do not promise identical row counts or exact
+last-glyph alignment on every page. Paragraph and chapter endings plus Reader0's
+legitimate widow/orphan constraints may still leave one additional line of
+bottom space; the invariant is canonical, path-independent pagination with a
+stable minimum page-edge reserve rather than artificial full-page fill.
+
+A subsequent visual refinement also makes 16sp the fresh, missing, or corrupt
+appearance default while preserving every valid version-3 choice, including
+14sp. The Library installs a 16dp root gutter synchronously before any optional
+system-inset callback, and book rows use that single shared outer alignment.
 
 ### Return history
 
@@ -413,6 +422,30 @@ The corrected Android candidate passed:
   `52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2`, and
   the manifest SHA-256 is
   `A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94`.
+
+The 2026-08-05 visual refinement passed the exact dependency and architecture
+guards, dual-ABI debug/test build, a focused appearance/navigation/library
+matrix at 45/45 in 128.97 seconds, and the complete ordinary API 36 matrix at
+67/67 in 250.953 seconds. The external seed/confirmed-force-stop/fresh-process
+driver passes. The 130% system-text/disabled-animation matrix passes 15/15 in
+27.952 seconds; font scale `1.0`, window and transition scales `1.0`, and the
+previously absent animator-scale key restored exactly. The app crash buffer is
+empty and exit history contains only expected `USER REQUESTED` force stops. A
+fresh 1080px-wide Library dump places its title at x=42 and the Add EPUB right
+edge at x=1038, proving the synchronous 16dp outer gutter. Repeat API 34
+physical validation passed the ordinary matrix 67/67 in 167.136 seconds, the
+external confirmed-force-stop restart driver, and the focused matrix 15/15 in
+14.625 seconds at 130% system text with animations disabled. Font scale `1.0`,
+window and transition scales `1.0`, and the previously absent animator setting
+restored exactly. The crash buffer remained empty and exit history contained
+only expected `USER REQUESTED` force stops. A fresh 1080px iQOO Library dump
+places the title at x=44 and Add EPUB's right edge at x=1036; a fresh reader
+capture places first ink 85px below the app content edge while retaining the
+one-base canonical bottom reserve. The original 26 app files and 4,751,505
+bytes were restored byte-exact. The archive SHA-256 is
+`1678B1DC0356FC84CF48CCEFA3508C210B23D736327CBFAC71E0EE054AB9FC3F` and the
+manifest SHA-256 is
+`9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
 Before the six corrective changes and prepared-frame hardening, the 2026-08-04
 Port 8 predecessor passed:

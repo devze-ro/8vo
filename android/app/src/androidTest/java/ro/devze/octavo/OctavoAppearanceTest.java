@@ -658,7 +658,7 @@ public final class OctavoAppearanceTest {
         throws IOException {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoAppearance captured = capturedTransitionalAppearance();
-        OctavoAppearance expected = captured.withFontSizeSp(14);
+        OctavoAppearance expected = captured.withFontSizeSp(16);
         OctavoAppearanceStore files = new OctavoAppearanceStore(context);
         byte[] legacyRecord =
             OctavoAppearanceStore.previousRecordForTesting(captured);
@@ -721,7 +721,7 @@ public final class OctavoAppearanceTest {
         throws IOException {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoAppearance captured = capturedTransitionalAppearance();
-        OctavoAppearance expected = captured.withFontSizeSp(14);
+        OctavoAppearance expected = captured.withFontSizeSp(16);
         OctavoAppearanceStore files = new OctavoAppearanceStore(context);
         byte[] legacyRecord =
             OctavoAppearanceStore.previousRecordForTesting(captured);
@@ -2364,7 +2364,7 @@ public final class OctavoAppearanceTest {
             awaitLocationCacheComplete(scenario);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             long[] before = state(scenario);
-            assertTopBiasedContentGeometry(before);
+            assertReservedContentGeometry(before);
 
             scenario.onActivity(activity -> {
                 activity.openNavigationPanelForTesting();
@@ -2372,7 +2372,7 @@ public final class OctavoAppearanceTest {
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             long[] overlaid = state(scenario);
-            assertTopBiasedContentGeometry(overlaid);
+            assertReservedContentGeometry(overlaid);
 
             int[] neutralFields = {
                 OctavoSurfaceView.STATE_PAGE_SURFACE_X,
@@ -3647,7 +3647,7 @@ public final class OctavoAppearanceTest {
         assertTrue(contentY > pageY);
         assertTrue(contentHeight > 0);
         assertTrue(contentY + contentHeight < pageY + pageHeight);
-        assertTopBiasedContentGeometry(snapshot);
+        assertReservedContentGeometry(snapshot);
         assertTrue(
             "Native pagination still reserved the top chrome band",
             contentY < chrome.top);
@@ -4026,7 +4026,7 @@ public final class OctavoAppearanceTest {
         assertTrue(contentY + contentHeight <= pageY + pageHeight);
         assertTrue(top > 0);
         assertTrue(bottom > 0);
-        assertTopBiasedContentGeometry(snapshot);
+        assertReservedContentGeometry(snapshot);
         assertTrue(contentY < top);
         assertTrue(contentY + contentHeight > height - bottom);
         assertEquals(
@@ -4086,7 +4086,7 @@ public final class OctavoAppearanceTest {
         }
     }
 
-    private static void assertTopBiasedContentGeometry(long[] snapshot) {
+    private static void assertReservedContentGeometry(long[] snapshot) {
         int pageY =
             (int)snapshot[OctavoSurfaceView.STATE_PAGE_SURFACE_Y];
         int pageHeight =
@@ -4099,27 +4099,27 @@ public final class OctavoAppearanceTest {
             (int)snapshot[
                 OctavoSurfaceView.STATE_TYPOGRAPHY_LINE_ADVANCE_PX];
         int baseVerticalInset = Math.max(pageHeight / 60, 24);
-        int topBias = baseVerticalInset / 2;
+        int topBias = baseVerticalInset;
         int expectedContentHeight =
-            pageHeight - baseVerticalInset * 2;
+            pageHeight - baseVerticalInset * 2 - topBias;
         int topGap = contentY - pageY;
         int bottomGap =
             pageY + pageHeight - contentY - contentHeight;
 
         assertEquals(
-            "Top padding bias changed canonical content height",
+            "Reader reserves changed canonical content height",
             expectedContentHeight,
             contentHeight);
         assertEquals(
-            "Top padding did not include the bounded reader bias",
+            "Top padding did not include the full reader reserve",
             baseVerticalInset + topBias,
             topGap);
         assertEquals(
-            "Top padding bias did not preserve half the bottom reserve",
-            baseVerticalInset - topBias,
+            "Reader did not preserve the full bottom reserve",
+            baseVerticalInset,
             bottomGap);
         assertTrue(
-            "Top padding bias exhausted the bottom reserve",
+            "Reader exhausted the bottom reserve",
             bottomGap > 0);
         assertTrue(lineAdvance > 0);
         int expectedPageRows = Math.min(
@@ -4129,7 +4129,7 @@ public final class OctavoAppearanceTest {
             Math.max(contentHeight / lineAdvance, 1),
             512);
         assertEquals(
-            "Top padding bias changed canonical page-row capacity",
+            "Reader reserves changed canonical page-row capacity",
             expectedPageRows,
             actualPageRows);
     }

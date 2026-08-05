@@ -61,7 +61,7 @@ final class OctavoAppearance {
     private static final OctavoAppearance DEFAULT = new OctavoAppearance(
         THEME_PAPER,
         FONT_FAMILY_LITERARY,
-        14,
+        16,
         1250,
         MARGINS_BALANCED,
         ALIGNMENT_PUBLISHER,

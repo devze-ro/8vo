@@ -115,16 +115,17 @@ Port 7 establishes the first bounded implementation of that theme system:
 - generic Android serif and sans-serif choices without introducing an
   unlicensed bundled font.
 
-The global reader default is 14sp, with six choices from 14sp through 28sp.
+The global reader default is 16sp, with six choices from 14sp through 28sp.
 Loading a valid version-1 18sp default, version-2 16sp default, or transitional
-version-2 18sp value produces the 14sp appearance in memory while preserving
+version-2 18sp value produces the 16sp appearance in memory while preserving
 every other valid field and leaving the old bytes untouched. The transitional
 value is a bounded pre-origin ambiguity: the version-2 writer could republish an
 inherited version-1 18sp default after a non-font change. Inherited and explicit
 v2/18 origins cannot be distinguished, so every v2/18 record migrates.
-Version-2 21/24/28sp and every valid version-3 choice remain exact; impossible
-old-schema 14sp records are rejected. Version 3 publishes only after the first
-successfully accepted reader frame. Failed atomic publication remains pending,
+Version-2 21/24/28sp and every valid version-3 choice, including 14sp, remain
+exact; impossible old-schema 14sp records are rejected. Version 3 publishes
+only after the first successfully accepted reader frame. Failed atomic
+publication remains pending,
 is visibly reported, and retries after a later successful presentation.
 The bounded typography atlas is rebuilt only when its family, resolved pixel
 size, or line-spacing key changes. Atlas version 2 uses a sorted sparse
@@ -162,8 +163,11 @@ stages, zero missing glyphs, and no visible reader controls. Every completed
 binary. The current Port 8 candidate consumes Reader0 `0.7.0-dev`/API 7 at
 `5fe949d88258cd96884c44b69e4f4ab6f27dc394`; its post-feedback corrections have
 completed corrected API 36 and API 34 iQOO automation plus controlled real-book
-review. Audible TalkBack, UI polish, and user subjective/manual acceptance
-remain pending. See `android_port8.md`.
+review. The 2026-08-05 16sp-default, reader-reserve, and Library-gutter follow-up
+also passes API 36 and API 34 automation, objective physical layout measurement,
+empty-crash review, and byte-exact device-data restoration. Audible TalkBack,
+UI polish, and user subjective/manual acceptance remain pending. See
+`android_port8.md`.
 
 The still earlier post-feedback APK's API 36 33/33 run in 96.223
 seconds, restart, 130% system-text, crash-buffer, exact-book visual/timing, and

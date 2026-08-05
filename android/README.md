@@ -7,8 +7,10 @@ Pre-correction Port 8 automation remains predecessor evidence; the corrected
 8vo source has completed its final API 36 emulator and API 34 iQOO,
 external-restart, and 130%-text/disabled-animation automation. Controlled
 real-book review closes the six reported defects. Audible TalkBack, UI polish,
-and user subjective/manual acceptance remain pending. The
-candidate retains Port 7's premium appearance, semantic reflow, borderless
+and user subjective/manual acceptance remain pending. A 2026-08-05 spacing,
+default-size, and Library-gutter refinement has completed its API 36 emulator
+and API 34 physical gates; hands-on review remains pending.
+The candidate retains Port 7's premium appearance, semantic reflow, borderless
 host-composited chrome, first-frame coverage, and custom-reader accessibility
 bridge while adding a bounded Contents/Go-to/Return model:
 
@@ -18,6 +20,8 @@ bridge while adding a bounded Contents/Go-to/Return model:
   SurfaceView scale/translation composition, and successfully presented
   appearance persistence in the Activity host. Ordinary book entry starts with
   chrome hidden; Activity recreation alone may restore its transient visibility.
+  The Library installs its 16dp outer gutter synchronously, then adds any real
+  system left/right inset delivered by the window.
 - `OctavoLibraryStore` owns the bounded versioned catalog, streams distinct
   imports into SHA-256-keyed app-private storage, atomically saves per-book
   successfully presented positions, and removes only managed copies.
@@ -29,15 +33,16 @@ bridge while adding a bounded Contents/Go-to/Return model:
   restrained-motion values.
 - `OctavoAppearanceStore` owns the bounded version-3, CRC32-protected global
   `<files>/port7/appearance.v1` record. New, missing, or corrupt state uses
-  14sp. Loading a valid version-1 18sp default, version-2 16sp default, or
-  transitional version-2 18sp value returns a 14sp in-memory appearance while
+  16sp. Loading a valid version-1 18sp default, version-2 16sp default, or
+  transitional version-2 18sp value returns a 16sp in-memory appearance while
   preserving every other valid field, marks migration pending, and leaves the
   version-1/version-2 bytes untouched. The transitional value is a bounded
   pre-origin ambiguity: an inherited version-1 18sp default could be republished
   by the version-2 writer after a non-font change. That inherited state cannot
   be distinguished from an explicit v2/18 choice, so the bounded policy migrates
   every v2/18 record. Version-2 21/24/28sp choices and every valid version-3
-  record remain exact; impossible old-schema 14sp is invalid. Version 3 is
+  record, including 14sp, remain exact; impossible old-schema 14sp is invalid.
+  Version 3 is
   published only after the first successfully accepted reader frame. The store
   requires descriptor sync and a same-directory atomic replace; failure
   preserves the old bytes, keeps migration pending, reports a visible
@@ -62,7 +67,10 @@ bridge while adding a bounded Contents/Go-to/Return model:
   successful-presentation gate. The Activity composes visible chrome by
   uniformly scaling/translating this canonical full-viewport page; hidden chrome
   restores its identity transform. Only successfully presented Reader0
-  locations and appearances become durable.
+  locations and appearances become durable. Native reader geometry reserves
+  two base vertical insets above content and one below it; the reduced canonical
+  height reflows through Reader0, while publisher margins and widow/orphan carries
+  remain authoritative.
 - `OctavoReaderImageBridge` owns serial Android `BitmapFactory` decode for the
   bounded frame-image packet. A frame exposes at most 16 descriptors; encoded
   resource bytes are capped at 16 MiB, and decoded input is capped at 4096
@@ -140,10 +148,10 @@ bridge while adding a bounded Contents/Go-to/Return model:
   The verification snapshot and native present reuse that frame; a stale token
   rejects publication. Bounded forced failures retain it for retry, and only an
   accepted presentation and commit consume it.
-- The corrected inset policy moves the unchanged-height content rectangle down
-  by half the resolved vertical inset. This adds calm top breathing room without
-  changing row capacity; opening or closing navigation chrome still cannot
-  repaginate the book.
+- The corrected inset policy retains one base reserve below the content and
+  adds one full base reserve above it, yielding two top reserves and one bottom
+  reserve. The canonical content height shrinks accordingly so Reader0 reflows;
+  opening or closing navigation chrome still cannot repaginate the book.
 
 There is no process-global mutable application state. The Java view holds the
 native handle and destroys it when the Activity is destroyed.
@@ -303,6 +311,26 @@ wall). The external confirmed-force-stop restore passed, as did 15/15 at 130%
 system text with animations disabled in 80.538 seconds. Emulator settings were
 restored exactly; the crash buffer was empty and process exit history contained
 only expected `USER REQUESTED` force stops, with no crash or ANR.
+
+The 2026-08-05 visual refinement passed the exact dependency/architecture
+guards, dual-ABI debug/test build, a focused 45/45 matrix, and the ordinary
+API 36 matrix at 67/67 in 250.953 seconds. Its external restart driver and
+15/15 130%-text/disabled-animation matrix also pass; font and animation
+settings restored exactly and the app crash buffer remained empty. On the
+1080px-wide emulator Library, the title begins at x=42 and the Add EPUB button
+ends at x=1038, proving the intended 16dp outer gutter on both sides. The API 34
+physical repeat also passed 67/67 in 167.136 seconds, the confirmed-force-stop
+restart driver, and 15/15 at 130% system text with animations disabled in
+14.625 seconds. Its font and animation settings restored exactly, crash buffer
+remained empty, and exit history contained only expected force stops. On the
+1080px-wide iQOO Library, the corresponding bounds are x=44 and x=1036. A fresh
+reader capture places first ink 85px below the app content edge while retaining
+the exact one-base canonical bottom reserve. The original 26 files and
+4,751,505 bytes were restored byte-exact; archive SHA-256
+`1678B1DC0356FC84CF48CCEFA3508C210B23D736327CBFAC71E0EE054AB9FC3F` and
+manifest SHA-256
+`9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`
+match the pre-test snapshot.
 
 On the vivo I2019/iQOO 9 SE, Android 14/API 34 ARM64, the corrected ordinary
 matrix passed 67/67 in 170.878 seconds of instrumentation time (171.449 seconds

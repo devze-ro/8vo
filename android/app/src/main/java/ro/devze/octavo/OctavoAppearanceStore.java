@@ -28,7 +28,7 @@ final class OctavoAppearanceStore {
      * version 2 without recording its origin. That makes version-2 18sp
      * inherently ambiguous: it can be either the inherited default or an
      * explicit choice. The bounded one-time policy therefore migrates
-     * version-1 18sp and version-2 16sp or 18sp to the current 14sp default,
+     * version-1 18sp and version-2 16sp or 18sp to the current 16sp default,
      * retaining every other appearance field. Other pre-v3 sizes and every
      * version-3 size remain exact. All versions retain the bounded 60-byte
      * record and native payload version.

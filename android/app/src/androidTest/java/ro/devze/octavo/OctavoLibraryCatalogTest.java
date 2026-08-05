@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.View;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -187,6 +188,15 @@ public final class OctavoLibraryCatalogTest {
             assertTrue(activity.libraryVisibleForTesting());
             assertEquals(expectedBooks,
                          activity.libraryStoreForTesting().bookCount());
+            View library = activity.findViewById(R.id.octavo_library);
+            assertNotNull(library);
+            int minimumGutter = Math.round(
+                OctavoDesignTokens.SPACE_LG_DP
+                * activity.getResources().getDisplayMetrics().density);
+            assertTrue("Library left gutter was not installed synchronously",
+                       library.getPaddingLeft() >= minimumGutter);
+            assertTrue("Library right gutter was not installed synchronously",
+                       library.getPaddingRight() >= minimumGutter);
         });
     }
 

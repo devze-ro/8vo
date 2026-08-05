@@ -1493,7 +1493,9 @@ public final class OctavoActivity extends Activity {
 
         libraryRoot = root;
         FrameLayout windowRoot = createSystemBarFrame(
-            root, dp(16), tokens.librarySurface);
+            root,
+            dp(OctavoDesignTokens.SPACE_LG_DP),
+            tokens.librarySurface);
         setContentView(windowRoot, matchParentLayout());
         windowRoot.requestApplyInsets();
     }
@@ -1503,7 +1505,7 @@ public final class OctavoActivity extends Activity {
             OctavoDesignTokens.forAppearance(appearance);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setPadding(0, dp(10), 0, dp(10));
 
         TextView title = new TextView(this);
         title.setText(book.title);
@@ -1611,6 +1613,7 @@ public final class OctavoActivity extends Activity {
             OctavoDesignTokens.forAppearance(appearance);
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(contentBackground);
+        content.setPadding(horizontalPadding, 0, horizontalPadding, 0);
         frame.addView(content, matchParentLayout());
 
         View status = new View(this);
