@@ -6,8 +6,10 @@ public API 7 at `5fe949d88258cd96884c44b69e4f4ab6f27dc394`.
 Pre-correction Port 8 automation remains predecessor evidence; the corrected
 8vo source has completed its final API 36 emulator and API 34 iQOO,
 external-restart, and 130%-text/disabled-animation automation. Controlled
-real-book review closes the six reported defects. Audible TalkBack, UI polish,
-and user subjective/manual acceptance remain pending. A 2026-08-05 spacing,
+real-book review closes the six reported defects. The first bounded Navigation
+polish slice now passes its API 36 emulator gates; audible TalkBack, the
+remaining Appearance/chrome/Library polish, and user subjective/manual
+acceptance remain pending. A 2026-08-05 spacing,
 default-size, and Library-gutter refinement has completed its API 36 emulator
 and API 34 physical gates; hands-on review remains pending.
 The candidate retains Port 7's premium appearance, semantic reflow, borderless
@@ -312,6 +314,32 @@ system text with animations disabled in 80.538 seconds. Emulator settings were
 restored exactly; the crash buffer was empty and process exit history contained
 only expected `USER REQUESTED` force stops, with no crash or ANR.
 
+The 2026-08-06 bounded Navigation-polish slice keeps the same exact dependency
+pins and Reader0 semantics while replacing screen-local theme mirroring with a
+versioned UI0 API 91 snapshot and product-neutral native-Android adapter. The
+architecture/dependency guards and dual-ABI debug/test build pass. On the API
+36 x86_64 emulator, the focused UI0/Navigation suite passed 26/26 in 1.997
+seconds, the ordinary matrix passed 85/85 in 245.948 seconds, the confirmed-
+force-stop restart driver passed, and the 130%-text/disabled-animation matrix
+passed 22/22 in 22.543 seconds. The crash buffer was empty and exit history
+contained only expected `USER REQUESTED` force stops. Emulator settings restored
+exactly to font scale `1.0`, window and transition scales `1.0`, and an absent
+animator key. On API 26, the corresponding results are 26/26 in 1.449 seconds,
+85/85 in 180.560 seconds, restart pass, and 22/22 at 130% text with animations
+disabled in 22.217 seconds; its crash buffer was empty. The API 26 run renders
+the framework cursor and all three selection handles with the fixed `#8B7560`
+compatibility accent and proves at least 3.5:1 contrast on all six UI0-derived
+input surfaces.
+
+The desktop light/dark Contents captures and live API 36 Paper, Dusk, and High
+Contrast captures now accept bounded portrait-phone Navigation look-and-feel
+parity. Non-High Contrast current rails follow UI0 `AccentHover`; High Contrast
+keeps its blue identity and uses contrast-safe selected-row text. Pixel-for-
+pixel desktop rendering, full-app parity, large-viewport/RTL review, audible
+TalkBack, alternate-input review, strict UI0 role-to-face metrics, subjective
+motion/touch review, and the remaining Appearance/chrome/Library polish remain
+open. The physical phone was not used.
+
 The 2026-08-05 visual refinement passed the exact dependency/architecture
 guards, dual-ABI debug/test build, a focused 45/45 matrix, and the ordinary
 API 36 matrix at 67/67 in 250.953 seconds. Its external restart driver and
@@ -321,7 +349,14 @@ settings restored exactly and the app crash buffer remained empty. On the
 ends at x=1038, proving the intended 16dp outer gutter on both sides. The API 34
 physical repeat also passed 67/67 in 167.136 seconds, the confirmed-force-stop
 restart driver, and 15/15 at 130% system text with animations disabled in
-14.625 seconds. Its font and animation settings restored exactly, crash buffer
+14.625 seconds. Its settings database restored exactly to font scale `1.0`,
+window and transition scales `1.0`, and the previously absent animator-scale
+key. A later hands-on check found that some vivo SystemUI animations still
+behaved as disabled; explicitly setting the animator duration scale to `1.0`
+repaired the device. Future physical reduced-motion runs must be coordinated
+with the user; device-wide animations must not be disabled outside that test
+window. Restore window, transition, and animator scales explicitly to `1.0`,
+then verify visible behavior as well as stored values. The crash buffer
 remained empty, and exit history contained only expected force stops. On the
 1080px-wide iQOO Library, the corresponding bounds are x=44 and x=1036. A fresh
 reader capture places first ink 85px below the app content edge while retaining
@@ -337,11 +372,11 @@ matrix passed 67/67 in 170.878 seconds of instrumentation time (171.449 seconds
 wall). The external confirmed-force-stop restore passed with a 1.987-second
 seed, 1.135-second verification, and 4.908-second wall time. At 130% system text
 with system animations disabled, the focused matrix passed 15/15 in 16.185
-seconds of instrumentation time (18.591 seconds wall). Font scale `1.0`, window
-and transition scales `1.0`, and the previously absent animator-scale key were
-restored exactly. The crash buffer was empty; exit history contained only
-expected `USER REQUESTED` force stops and `PACKAGE UPDATED`, with no crash or
-ANR.
+seconds of instrumentation time (18.591 seconds wall). The settings database
+restored exactly to font scale `1.0`, window and transition scales `1.0`, and
+the previously absent animator-scale key. The crash buffer was empty; exit
+history contained only expected `USER REQUESTED` force stops and `PACKAGE
+UPDATED`, with no crash or ANR.
 
 Controlled review on the real *Gardens of the Moon* EPUB opened the first MAPS
 Contents destination without error and presented three genuine map leaves
@@ -357,8 +392,9 @@ archive SHA-256 is
 `52C4C27FA8E8D4C268950D6AB918D72DA130864D94556945BD815B1D12A901F2`; the
 manifest SHA-256 is
 `A060016D369EC0E8902070A10206E09D82BC27BBACEB387F872F2C669F5D0B94`.
-Audible TalkBack, UI polish, and user subjective/manual acceptance remain
-pending. No pushed or merged 8vo revision or APK hash is claimed here.
+Audible TalkBack, the remaining bounded polish, and user subjective/manual
+acceptance remain pending. No pushed or merged 8vo revision or APK hash is
+claimed here.
 
 #### Pre-correction Port 8 evidence
 
@@ -373,9 +409,11 @@ On the vivo I2019/iQOO 9 SE, Android 14/API 34 ARM64, that ordinary suite passed
 56/56 in 121.608 seconds of instrumentation time (122.475 seconds wall). The
 external seed/confirmed-force-stop/fresh-process probe passed in 4.593 seconds.
 At 130% system text with system animations disabled, the focused matrix passed
-15/15 in 15.580 seconds (17.244 seconds wall), and the original system settings
-were restored exactly. The crash buffer was empty. A staged restore reproduced
-all 26 durable files and 4,751,505 payload bytes by path, length, and SHA-256.
+15/15 in 15.580 seconds (17.244 seconds wall). The settings database restored
+exactly to font scale `1.0`, window and transition scales `1.0`, and the
+previously absent animator-scale key; the later vivo behavior caveat above
+applies. The crash buffer was empty. A staged restore reproduced all 26 durable
+files and 4,751,505 payload bytes by path, length, and SHA-256.
 Restored cold Library launch took 294ms. On the private real book, the Contents
 hierarchy marked Chapter One current at 154/9549 (1%), a controlled jump
 presented Chapter Two at 687/9549 (7%), Return restored the origin, and Forward
@@ -406,7 +444,8 @@ The final ordered matrix passed 36/36 on the API 36 emulator in 510.019 seconds
 of instrumentation time (511.173 seconds wall) and 36/36 on the iQOO in 108.467
 seconds (109.069 seconds wall): appearance store 9, appearance 15, navigation 5,
 library 5, accessibility 1, and bootstrap 1. ProcessRestart, 130% accessibility,
-scale restoration, and empty crash-buffer checks passed on both targets.
+emulator scale restoration, iQOO settings-database restoration, and empty
+crash-buffer checks passed.
 
 The fresh 9,141,760-byte pretest backup
 (`245FA5B9B3E73E7DC9B1DFC5DCE1DDAEFE80F514C4DB9E8F3BA550280C7F9A1`) restored

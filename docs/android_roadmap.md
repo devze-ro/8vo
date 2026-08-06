@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-04. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-06. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -10,8 +10,13 @@ Its corrected Reader0/re10 and strict Windows 8vo gates pass; earlier Port 8
 emulator, iQOO, restore, and real-book results are predecessor evidence. The
 corrected API 36 emulator and API 34 iQOO, external-restart, accessibility/
 reduced-motion, byte-exact restore, and controlled real-book gates pass.
-Audible TalkBack, UI polish, and user subjective/manual acceptance remain
-pending. Later numbering and boundaries may change as evidence is collected.
+The first bounded Navigation-polish slice passes its API 26 and API 36 emulator
+guards/build, 26/26 focused, 85/85 ordinary, restart, and 22/22 large-text/
+reduced-animation gates. The API 26 framework cursor/handle compatibility gate
+also passes. Desktop light/dark versus Android light/dark/High Contrast portrait
+Navigation visual review passes. Audible TalkBack, full-app visual parity,
+remaining bounded polish, and user subjective/manual acceptance remain pending.
+boundaries may change as evidence is collected.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -186,9 +191,10 @@ The final ordered matrix passed 36/36 on the API 36 emulator in 510.019 seconds
 of instrumentation time (511.173 seconds wall) and 36/36 on the iQOO in 108.467
 seconds (109.069 seconds wall): appearance store 9, appearance 15, navigation 5,
 library 5, accessibility 1, and bootstrap 1. ProcessRestart, 130% accessibility,
-scale restoration, and empty crash-buffer checks passed on both targets. The
-passing migration cases prove non-mutating v1/v2 load, accepted-frame-only
-v3/14sp publication, visible pending failure, and later-presentation retry.
+emulator scale restoration, iQOO settings-database restoration, and empty
+crash-buffer checks passed. The passing migration cases prove non-mutating
+v1/v2 load, accepted-frame-only v3/14sp publication, visible pending failure,
+and later-presentation retry.
 
 The 9,141,760-byte pretest backup restored all 63 files byte-exact. Restored
 cold Library start was 287ms, and controlled imported-book Resume reached the
@@ -304,10 +310,11 @@ On the corrected source, the API 34 ARM64 iQOO ordinary matrix passed 67/67 in
 force-stop restore passed with a 1.987-second seed, 1.135-second verification,
 and 4.908-second wall time. The 130%-text/animations-off matrix passed 15/15 in
 16.185 seconds of instrumentation time (18.591 seconds wall), followed by exact
-restoration of font scale `1.0`, window and transition scales `1.0`, and the
-previously absent animator-scale key. The crash buffer was empty and exit
-history contained only expected `USER REQUESTED` and `PACKAGE UPDATED` records,
-with no crash or ANR. Controlled real-book review passed the MAPS, three-map-
+restoration of the settings database to font scale `1.0`, window and transition
+scales `1.0`, and the previously absent animator-scale key. The crash buffer
+was empty and exit history contained only expected `USER REQUESTED` and
+`PACKAGE UPDATED` records, with no crash or ANR. Controlled real-book review
+passed the MAPS, three-map-
 leaf, Chapter One/Two, exact Return, waited reverse-navigation, full-page, top-
 padding, and no-transition-flash checks. The original 26 app files and 4,751,505
 payload bytes were restored byte-exact; archive SHA-256
@@ -322,9 +329,16 @@ two base top reserves and one base bottom reserve with canonical Reader0 reflow,
 and gives the Library one synchronous 16dp outer gutter. Its API 36 ordinary
 matrix passed 67/67 and its API 34 ARM64 repeat passed 67/67 in 167.136 seconds;
 both external restart and 15/15 130%-text/disabled-animation gates passed. The
-iQOO Library measured x=44 through x=1036 on a 1080px display, settings restored
-exactly, the crash buffer remained empty, and all 26 original app files restored
-byte-exact with manifest SHA-256
+iQOO Library measured x=44 through x=1036 on a 1080px display. The settings
+database restored exactly to font scale `1.0`, window and transition scales
+`1.0`, and the previously absent animator-scale key. A later hands-on check
+found that some vivo SystemUI animations still behaved as disabled; explicitly
+setting the animator duration scale to `1.0` repaired the device. Future
+physical reduced-motion runs must be coordinated with the user; device-wide
+animations must not be disabled outside that test window. Restore window,
+transition, and animator scales explicitly to `1.0`, then verify visible
+behavior as well as stored values. The crash buffer remained empty, and all 26
+original app files restored byte-exact with manifest SHA-256
 `9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
 - hierarchical table of contents with current-section state;

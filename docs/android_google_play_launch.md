@@ -1,0 +1,217 @@
+# Android Google Play launch contract
+
+Status: launch-gap audit and frozen first-release scope for the Android Port 8
+candidate. Policy links were checked on 2026-08-06 and must be rechecked before
+submission. This document authorizes no push, merge, signing-key operation,
+Play Console mutation, or publication.
+
+## First-release scope
+
+The first Google Play release is a local-first EPUB reader for
+user-owned books. It includes only:
+
+- the bounded app-private Library, Android document picker, managed-copy import,
+  duplicate detection, removal, and per-book resume already owned by 8vo;
+- Reader0-authoritative EPUB interpretation, pagination, locations, Contents,
+  Chapter/Location/Page/Percentage Go-to, and presentation-gated Return/Forward;
+- the accepted appearance choices, native reader chrome, progress-display
+  choices, lifecycle/surface recovery, and successful-presentation durability;
+- the current bounded text and image presentation contract, including explicit
+  failure states and existing cache/resource limits;
+- native Android layout, input, system Back/insets, 48dp actions, system text
+  scaling, keyboard/switch paths, and the existing accessibility bridge;
+- bounded UI polish of Navigation first, then Appearance, reader chrome, and
+  Library, using the agreed UI0-derived native-Android pattern; and
+- an English-first store listing and application surface.
+
+The launch must use either a polished empty Library or a launch-quality original,
+public-domain, or otherwise licensed sample. The current engineering fixture
+labelled `Octavo Android Port 6` is test evidence, not acceptable first-run
+product content.
+
+## Explicitly deferred
+
+The first release does not add:
+
+- full-text search, selection, bookmarks, highlights, notes, or an annotations
+  workspace;
+- collections, library search, cover/thumbnail expansion, or spatial previews;
+- accounts, analytics, advertising, cloud services, synchronization, or Google
+  Drive integration;
+- embedded publication fonts, full complex-script shaping, or complete EPUB
+  publication semantics for headings, links, tables, notes, and language;
+- fixed-layout EPUB, comics, audio/video books, or broad publisher-fidelity work;
+- per-book appearance overrides or cross-device-identical pagination;
+- broad localization beyond the English-first release; or
+- a speculative shared Android framework or re10 extraction before a real
+  second consumer proves the identical contract.
+
+Store copy and screenshots must describe only shipped behavior. Private book
+content and Kindle branding, assets, trade dress, or comparisons must not be
+used in the listing.
+
+## Release blockers
+
+### Product and identity
+
+- Confirm `ro.devze.octavo` as the permanent application ID before the first
+  Play upload. Confirm the public product name, stable version name, unique
+  version code, default language, category, pricing, and distribution regions.
+- Replace the `0.8.0-dev` release identity with a deliberate public version while
+  keeping native and Android version records coherent.
+- Add a production adaptive launcher icon and round icon. Prepare the required
+  512x512 Play icon, 1024x500 feature graphic, short and full descriptions, and
+  at least two accurate screenshots. Google documents the current mandatory
+  assets in [Add preview assets](https://support.google.com/googleplay/android-developer/answer/9866151?hl=en).
+- Replace or remove the engineering sample from first-run Library state and move
+  Alpha/Beta fixture books used only by instrumentation out of production assets.
+- Complete audible TalkBack/touch-exploration and hands-on transition, touch,
+  keyboard/switch, compact/large viewport, and first-run review after the bounded
+  polish candidate passes on the emulator.
+
+### Release artifact and signing
+
+- Define a reproducible release build and produce a signed Android App Bundle;
+  new Play apps publish with AABs under the current
+  [Android App Bundle requirement](https://support.google.com/googleplay/android-developer/answer/9844679?hl=en-GB).
+- Establish an upload-key and Play App Signing plan following
+  [Play App Signing guidance](https://support.google.com/googleplay/android-developer/answer/9842756?hl=en).
+  Keystores, passwords, certificates with private material, and signing
+  properties must remain outside the repository. No key may be created or
+  registered as part of ordinary implementation work.
+- Add keystore patterns to ignore rules before any local signing setup. Plan the
+  one-time transition from the currently installed Android-debug-signed package;
+  it cannot be upgraded in place by a differently signed Play build.
+- Generate and retain native debug symbols for the release AAB and upload the
+  matching symbol archive. Java shrinking/obfuscation should remain off for the
+  first release unless separately justified and qualified; if enabled, retain
+  and upload its exact mapping file.
+- Package the MPL-2.0 license, required third-party notices/license texts, and a
+  durable source-availability statement as required by
+  `THIRD_PARTY_NOTICES.md`.
+
+### Privacy and Play policy
+
+- Publish an active, app-specific privacy policy. Complete the Data safety form
+  even if the final declaration is that no data is collected or shared; Google
+  explicitly requires the form and privacy-policy link for such apps in
+  [Data safety](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en).
+- Keep the current local-only boundary: no Internet permission, runtime data SDK,
+  analytics, ads, accounts, or off-device book/progress transmission unless the
+  scope and declarations are reopened explicitly.
+- Remove or debug-gate production diagnostics that record the full app-private
+  document path, EPUB title, or reading anchor. In particular, the state-created
+  log in `octavo_android_jni.c` currently publishes document and title values.
+- Complete Play App-content declarations, including ads, app access, target
+  audience/content, content rating, and privacy/security. The applicable Console
+  declarations are summarized by Google in
+  [Prepare your app for review](https://support.google.com/googleplay/android-developer/answer/9859455?hl=en).
+- Provide the required support email and a durable support/privacy website.
+
+## Already-good evidence
+
+- `compileSdk` and `targetSdk` are 36. This already meets the Android 16/API 36
+  threshold that applies to new apps and updates from 2026-08-31 under the
+  current [target API policy](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en-AU).
+- `minSdk` 26 is explicit. The application declares no Android permissions, no
+  service/provider/receiver, and only its launcher Activity is exported. The
+  exact debug candidate now passes the API 26 focused, ordinary, restart,
+  accessibility, scaled-text, reduced-motion, and crash-buffer gates. API 26
+  release support still requires the Play-equivalent signed-artifact smoke
+  below; the code-level minimum-SDK blocker is closed.
+- The migrated Navigation inputs use the resolved UI0 selection role on every
+  supported API. API 29+ applies the exact resolved accent with public per-view
+  cursor/handle setters. API 26-28 use the fixed native compatibility accent
+  `#8B7560` through public `colorAccent` and `colorControlActivated` theme
+  attributes. Automated checks prove at least 3.5:1 contrast against all six
+  actual UI0-derived input surfaces, and an API 26 framework check renders the
+  cursor plus center/left/right handles and finds the exact color. The binding
+  is guarded by the architecture audit and survives live product-theme changes
+  without reflection or private APIs.
+- The app has no Internet permission or production runtime SDK dependency. EPUB
+  selection uses `ACTION_OPEN_DOCUMENT`; selected bytes, catalog state,
+  appearance, progress choice, and reading positions stay app-private.
+- `allowBackup` is false, imports and catalogs are bounded, failures remain
+  visible, and managed-copy removal does not delete the provider-owned original.
+- Both packaged ABIs are 64-bit: `arm64-v8a` and `x86_64`.
+- The existing debug APK passes 16-KB zip alignment, and both existing native
+  libraries have 0x4000 ELF load alignment. This is useful toolchain evidence,
+  but the signed release AAB and Play-generated APKs still require the same gate
+  because Google requires 16-KB support for applicable submissions; see
+  [Support 16 KB page sizes](https://developer.android.com/guide/practices/page-sizes).
+- Exact dependency/architecture guards, strict shared/desktop consumers,
+  dual-ABI debug/test builds, API 36 emulator, API 34 physical-device,
+  lifecycle/restart, large-text/reduced-motion, crash-buffer, deterministic
+  rendering, and byte-exact app-data restoration evidence already pass for the
+  current functional candidate.
+- For the 2026-08-06 Navigation-polish tree, API 26 passes 26/26 focused,
+  85/85 ordinary in 180.560 seconds, confirmed-force-stop restart, and 22/22
+  at 130% text with animations disabled in 22.217 seconds. API 36 passes the
+  corresponding 26/26 focused, 85/85 ordinary in 245.948 seconds, restart, and
+  22/22 reduced-motion matrix in 22.543 seconds. Both crash buffers are empty;
+  the API 36 exit history contains only expected user-requested force stops.
+  Bounded portrait-phone Navigation visual parity also passes in light, dark,
+
+## Release qualification plan
+
+Qualification is ordered and stops on the first failed gate:
+
+1. Freeze the reviewed commit and exact Ground0, Reader0, UI0, and Readerview0
+   pins. Require clean participating worktrees and pass dependency and
+   architecture guards without using `LECTERN0_ZERO_FOUNDATION_DIR`.
+2. Run source/license review, Android lint and release-vital lint, and verify the
+   final merged manifest, permissions, exported components, package ID, version,
+   launcher assets, notices, privacy copy, and absence of signing secrets.
+3. Build the signed release AAB through the documented release path. Verify its
+   signature, validate it with the matching bundle tool, retain hashes and native
+   symbols, and prove 64-bit plus 16-KB ELF/package alignment on generated APKs.
+4. Generate Play-equivalent split APKs. On a clean API 26 emulator, first pass a
+   bounded install/launch, Library-to-reader-to-Navigation, system Back,
+   rotation/recreation, process-restart, and accessibility-node smoke. If that
+   declared minimum cannot be qualified, raise `minSdk` deliberately before
+   release. Then install the same candidate on the API 36 emulator and run the
+   focused deterministic/polish matrix, complete ordinary matrix, lifecycle/
+   restart, large-text/reduced-motion, accessibility (including attached live-
+   region event delivery), explicit UI0 role-to-face metric comparison,
+   transition, crash/ANR, and clean-install/upgrade-state checks.
+5. Upload the exact signed AAB to internal testing only after the local release
+   gates pass. Inspect App Bundle Explorer output, device compatibility, policy
+   warnings, native-symbol association, and the Play pre-launch report. Install
+   Play-generated artifacts rather than treating the locally assembled debug APK
+   as release evidence.
+6. Request the physical device only after emulator and Play-generated-artifact
+   gates pass. Coordinate any device-wide animation changes. Restore window,
+   transition, and animator duration scales explicitly to `1.0`, then verify
+   visible vivo SystemUI behavior as well as stored values.
+7. Run the physical focused and ordinary matrices, confirmed-force-stop restart,
+   hands-on TalkBack/touch/transition review, crash/ANR review, and byte-exact
+   app-data restoration. Record the final AAB, symbol, manifest, dependency, and
+   validation hashes.
+8. Complete a bounded internal/closed-track soak, triage Play Vitals and tester
+   feedback, confirm rollback and support procedures, then request explicit user
+   approval for any production submission or rollout.
+
+## Console and account prerequisites requiring confirmation
+
+The repository cannot establish whether the following are complete:
+
+- Play developer identity verification, account ownership, required agreements,
+  payments/profile setup, and permission to manage Play App Signing;
+- availability and registration of `ro.devze.octavo`. Play package registration
+  becomes mandatory on 2026-09-30 under the current
+  [package-registration requirement](https://support.google.com/googleplay/android-developer/answer/16984799?hl=en-EN);
+- whether this is a personal developer account created after 2023-11-13. If so,
+  production access requires at least 12 closed-test users opted in continuously
+  for 14 days before applying, as documented in
+  [Testing requirements for new personal accounts](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en-EN);
+- production-access eligibility, test-track availability, app-signing enrollment,
+  upload-certificate registration, and managed-publishing configuration;
+- the privacy-policy/support URLs, contact email, listing assets and translations,
+  category/tags, target audience, content rating, Data safety, ads/app-access
+  answers, pricing, countries/regions, and release notes; and
+- Play Console policy, device-catalog, pre-launch-report, and App Bundle Explorer
+  findings for the exact release AAB.
+
+These items are launch gates, not assumptions. They require explicit review in
+the relevant owner account. This repository change must not create signing
+material, upload artifacts, change Console state, push, merge, or publish.

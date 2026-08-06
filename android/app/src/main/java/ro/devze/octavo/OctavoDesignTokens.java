@@ -41,7 +41,7 @@ final class OctavoDesignTokens {
             0xFFB25724, 0xFF873D18, 0xFFFFFBF6,
             0xFFF4D8BF, 0xFFF0C96F, 0xFFF5E29A,
             0xFF2F7955, 0xFFA46A17, 0xFFAD3D3D,
-            0xFF315F9C, 0x990E0C09,
+            0xFF873D18, 0x990E0C09,
             0xFFEEE7DC, 0xFFFFFFFF,
             0xFFF7F3EA, 0xFFF7F3EA, 0xFFFAF7F0),
         new OctavoDesignTokens(
@@ -57,7 +57,7 @@ final class OctavoDesignTokens {
             0xFFA94E24, 0xFF7D3418, 0xFFFFF8E9,
             0xFFE6BF8A, 0xFFE3B64F, 0xFFF1D67A,
             0xFF3F7655, 0xFF9A6016, 0xFF96352F,
-            0xFF245F91, 0x991A1208,
+            0xFF7D3418, 0x991A1208,
             0xFFE1CCA6, 0xFFF8EACE,
             0xFFE8D5B0, 0xFFEEDDBB, 0xFFEEDDBB),
         new OctavoDesignTokens(
@@ -73,7 +73,7 @@ final class OctavoDesignTokens {
             0xFFC89A64, 0xFFA77745, 0xFF1A1510,
             0xFF4E5F72, 0xFF8B6D37, 0xFF6F5F38,
             0xFF6DB58B, 0xFFD2A95E, 0xFFEC958D,
-            0xFF83A7D4, 0xCC080B0E,
+            0xFFA77745, 0xCC080B0E,
             0xFF343E47, 0xFF1B2228,
             0xFF1E252C, 0xFF1A2026, 0xFF222A31),
         new OctavoDesignTokens(
@@ -89,7 +89,7 @@ final class OctavoDesignTokens {
             0xFFC68B5B, 0xFFA66B3E, 0xFF17110D,
             0xFF5A4031, 0xFF72542F, 0xFF5C4B2D,
             0xFF74AE83, 0xFFD0A15E, 0xFFD87870,
-            0xFF9CB5CF, 0xCC070605,
+            0xFFA66B3E, 0xCC070605,
             0xFF292520, 0xFF201D1A,
             0xFF12110F, 0xFF0F0E0D, 0xFF171513),
         new OctavoDesignTokens(
@@ -105,7 +105,7 @@ final class OctavoDesignTokens {
             0xFFB98755, 0xFF93663E, 0xFF000000,
             0xFF3D3028, 0xFF604922, 0xFF4E4428,
             0xFF62A777, 0xFFC49450, 0xFFD36E68,
-            0xFF7FA9D8, 0xDD000000,
+            0xFF93663E, 0xDD000000,
             0xFF181818, 0xFF101010,
             0xFF000000, 0xFF000000, 0xFF000000),
         new OctavoDesignTokens(
@@ -121,7 +121,7 @@ final class OctavoDesignTokens {
             0xFF0047AB, 0xFF002F74, 0xFFFFFFFF,
             0xFFA9D2FF, 0xFFFFC400, 0xFFFFE66D,
             0xFF006B3C, 0xFF7A4A00, 0xFFB00020,
-            0xFFB33A00, 0xBB000000,
+            0xFF002F74, 0xBB000000,
             0xFFE6E6E6, 0xFFFFFFFF,
             0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
     };

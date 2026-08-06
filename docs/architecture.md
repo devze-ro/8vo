@@ -385,6 +385,13 @@ document selection, persistence, removal, accessibility adaptation, and
 successful-presentation policy remain host responsibilities. Port 8 also keeps
 the navigation sheet, input presentation, Back policy, focus, and durable
 progress choice in the Android host without duplicating EPUB interpretation.
+The first bounded polish slice resolves one versioned UI0 API 91 snapshot in
+native code, validates and owns it by value in Java, and translates it through a
+product-neutral Android-SDK-only adapter. Navigation consumes those semantic
+roles and derived component states while retaining native Views, dp/sp scaling,
+insets, scrolling, focus, TalkBack structure, and successful-presentation
+gating. The adapter is intentionally local to 8vo until a real re10 Android
+consumer proves an identical extraction boundary.
 Thumbnails, cover-library expansion, full-text search, text selection,
 bookmarks/highlights/notes workspace, per-book appearances, embedded fonts,
 complete publication accessibility, full Unicode shaping, and synchronization
@@ -438,10 +445,11 @@ of instrumentation time (171.449 seconds wall). Its confirmed-force-stop
 restore passed with a 1.987-second seed, 1.135-second verification, and 4.908-
 second wall time. Its 130%-text/disabled-animation matrix passed 15/15 in 16.185
 seconds of instrumentation time (18.591 seconds wall), followed by exact
-restoration of font scale `1.0`, window and transition scales `1.0`, and the
-previously absent animator-scale key. The physical crash buffer was empty and
-exit history contained only expected `USER REQUESTED` force stops and `PACKAGE
-UPDATED`, with no crash or ANR. Controlled real-book review passed the first
+restoration of the settings database to font scale `1.0`, window and transition
+scales `1.0`, and the previously absent animator-scale key. The physical crash
+buffer was empty and exit history contained only expected `USER REQUESTED`
+force stops and `PACKAGE UPDATED`, with no crash or ANR. Controlled real-book
+review passed the first
 MAPS jump and three genuine map leaves, Chapter One/Two targets, exact Return,
 five waited reverse turns without a sparse-page recurrence, full reported prose
 pages, coherent increased top breathing room, and no visible bright/black
@@ -456,8 +464,16 @@ ordinary, external-restart, and 130%-text/disabled-animation gates. The iQOO
 ordinary matrix passed 67/67 in 167.136 seconds and the focused matrix passed
 15/15 in 14.625 seconds. A fresh physical Library measured the synchronous 16dp
 root gutter at x=44 and x=1036 on 1080px; first reader ink began 85px below the
-app content edge. Device settings restored exactly, the crash buffer was empty,
-and the pre-test 26-file app snapshot restored byte-exact with manifest SHA-256
+app content edge. The settings database restored exactly to font scale `1.0`,
+window and transition scales `1.0`, and the previously absent animator-scale
+key. A later hands-on check found that some vivo SystemUI animations still
+behaved as disabled; explicitly setting the animator duration scale to `1.0`
+repaired the device. Future physical reduced-motion runs must be coordinated
+with the user; device-wide animations must not be disabled outside that test
+window. Restore window, transition, and animator scales explicitly to `1.0`,
+then verify visible behavior as well as stored values. The crash buffer was
+empty, and the pre-test 26-file app snapshot restored byte-exact with manifest
+SHA-256
 `9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
 The pre-correction Port 8
@@ -468,7 +484,9 @@ Windows/public smokes, Reader0, and isolated re10 passed for that predecessor.
 The API 34 ARM64 iQOO
 ordinary matrix also passed 56/56 in 121.608 seconds, followed by its external
 restart driver and a 15/15 130%-text/disabled-animation run. The physical crash
-buffer remained empty, device settings restored exactly, and all 26 durable
+buffer remained empty, and the settings database restored exactly to font scale
+`1.0`, window and transition scales `1.0`, and the previously absent
+animator-scale key; the later vivo behavior caveat above applies. All 26 durable
 files restored byte-exact after the suite. A controlled private-book Contents
 jump and Return also passed. Those physical results do not validate the
 corrected 8vo source and remain predecessor evidence. Corrected physical

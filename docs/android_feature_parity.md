@@ -1,6 +1,6 @@
 # Android feature-parity contract
 
-Last reviewed: 2026-08-04. Baseline implementation: accepted Android Ports 0-7
+Last reviewed: 2026-08-06. Baseline implementation: accepted Android Ports 0-7
 plus the corrected Android Port 8 structural-navigation candidate against
 Reader0 `0.7.0-dev` / API 7 at
 `5fe949d88258cd96884c44b69e4f4ab6f27dc394`. Earlier Port 8 API 36/iQOO
@@ -8,8 +8,12 @@ automation, exact data restore, and controlled real-book Contents jump/Return
 checks are predecessor evidence. Corrected-source API 36 and API 34 iQOO
 validation passes 67/67 plus external restart and 15/15 large-text/reduced-
 animation gates. Controlled real-book navigation closes the six reported
-defects. Audible TalkBack, UI polish, and user subjective/manual acceptance
-remain pending.
+defects. The first bounded Navigation-polish slice passes its API 26 and API 36
+emulator guards/build, 26/26 focused, 85/85 ordinary, restart, and 22/22 large-
+text/reduced-animation gates. The API 26 framework cursor/handle compatibility
+gate also passes. Desktop light/dark versus Android light/dark/High Contrast
+portrait Navigation visual review passes. Audible TalkBack, full-app visual
+parity, remaining bounded polish, and user subjective/manual acceptance remain
 
 This is the living capability contract for the premium 8vo Android product
 described in `android_product_vision.md`. Kindle for Android is the principal
@@ -134,10 +138,10 @@ comfort remain product follow-up; they are not Port 8 acceptance evidence.
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
 | TalkBack | Improve | Port 8 retains the bounded reader virtual tree and adds a native Android Contents hierarchy, navigation controls, validation states, and presentation-gated announcements. Corrected API 36 and API 34 physical semantics, hierarchy, focus order, actions, and 48dp automation pass, including both 15/15 large-text matrices; audible touch exploration remains pending. | Extend publication semantics with accurate headings, lists, links, alt text, tables, notes, and language. |
-| Large text/display scale | Improve | Port 7 offers six reader sizes from 14sp through 28sp. Port 8's corrected Contents/Go-to/accessibility matrix passed 15/15 at 130% system text on API 36 and 15/15 on the API 34 iQOO in 16.185 seconds of instrumentation time (18.591 seconds wall). Font scale `1.0`, window and transition scales `1.0`, and the previously absent animator-scale key were restored exactly; broader-device validation remains pending. | No clipped/hidden actions at supported scales; broaden device coverage. |
+| Large text/display scale | Improve | Port 7 offers six reader sizes from 14sp through 28sp. Port 8's corrected Contents/Go-to/accessibility matrix passed 15/15 at 130% system text on API 36 and 15/15 on the API 34 iQOO in 16.185 seconds of instrumentation time (18.591 seconds wall). Emulator settings restored exactly. On the iQOO, the settings database restored exactly to font scale `1.0`, window and transition scales `1.0`, and the previously absent animator-scale key. A later hands-on check found that some vivo SystemUI animations still behaved as disabled; explicitly setting the animator duration scale to `1.0` repaired the device. Broader-device validation remains pending. | No clipped/hidden actions at supported scales; broaden device coverage. |
 | Touch targets and alternate actions | Match | Port 8 retains the 48dp token, virtual actions, Page Up/Page Down, D-pad, keyboard focus, and accessible Contents/Go-to/Return actions without visible Previous/Next buttons. Corrected API 36 automation passes; hands-on keyboard/switch review remains pending. | Minimum accessible targets, switch/keyboard paths, labels, focus order, and no gesture-only essential action. |
 | Contrast choices | Improve | Accepted Port 7 emulator/iQOO automation verified deterministic role thresholds for five comfort palettes plus independently tuned High contrast. Subjective comfort verification remains pending. | Comfortable themes plus verified high-contrast alternatives; never force one contrast profile on every reader. |
-| Reduced motion | Improve | Port 8 retains the durable explicit zero-duration choice. Its corrected navigation surface passed 15/15 with system animations disabled on API 36 and API 34, with exact setting restoration. No visible bright/black transition appeared during controlled physical review; user subjective quality and automatic system-preference following remain pending. | Honor system preference and provide a non-animated equivalent for every transition. |
+| Reduced motion | Improve | Port 8 retains the durable explicit zero-duration choice. Its corrected navigation surface passed 15/15 with system animations disabled on API 36 and API 34. Emulator settings restored exactly. The iQOO settings database restored exactly to font scale `1.0`, window and transition scales `1.0`, and the previously absent animator-scale key, but a later vivo SystemUI behavior check found that some animations still behaved as disabled. Explicitly setting the animator duration scale to `1.0` repaired the device. No visible bright/black transition appeared during controlled physical review; user subjective quality and automatic system-preference following remain pending. | Coordinate physical runs with the user; do not disable device-wide animations outside the test window. Restore window, transition, and animator scales explicitly to `1.0`, then verify visible behavior as well as stored values. Honor system preference and provide a non-animated equivalent for every transition. |
 | Screen-reader publication content | Match | Port 7 exposes bounded current-page text and essential controls, not headings, lists, links, images, tables, notes, or language structure. | Reading order, headings, lists, links, alt text, tables, notes, and language exposed accurately. |
 | Reading aids | Improve/Audit | Missing | Explore focus/ruler, dyslexia-friendly choices, spacing, and per-user presets without claiming medical benefit. |
 

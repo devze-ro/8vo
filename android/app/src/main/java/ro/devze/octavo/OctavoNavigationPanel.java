@@ -2,11 +2,11 @@ package ro.devze.octavo;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -23,7 +23,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Host-owned structural-navigation sheet. The Activity owns presentation and
@@ -41,13 +43,9 @@ final class OctavoNavigationPanel extends LinearLayout {
         void onProgressDisplayRequested(OctavoProgressDisplay display);
     }
 
-    private static final int TITLE_TEXT_SP = 26;
-    private static final int SECTION_TEXT_SP = 18;
-    private static final int BODY_TEXT_SP = 16;
-    private static final int NOTE_TEXT_SP = 14;
     private static final int MAX_VISUAL_DEPTH = 4;
-    private static final int INDENT_DP = 12;
     private static final int MAX_STATUS_CHARS = 320;
+    private static final int COMPACT_HEIGHT_DP = 360;
 
     private final Listener listener;
     private final LinearLayout header;
@@ -77,13 +75,25 @@ final class OctavoNavigationPanel extends LinearLayout {
     private final List<Button> neutralButtons = new ArrayList<>();
     private final List<Button> actionButtons = new ArrayList<>();
     private final List<EditText> inputs = new ArrayList<>();
+    private final Map<TextView, Ui0AndroidThemeSnapshot.TypographyRole>
+        semanticTextRoles = new HashMap<>();
     private TextView contentsEmptyState;
 
     private OctavoNavigation snapshot;
     private OctavoAppearance appearance;
+    private Ui0AndroidThemeSnapshot ui0Theme;
+    private Ui0AndroidThemeAdapter ui0Adapter;
     private OctavoProgressDisplay presentedProgress;
+    private FocusedRow deferredRowFocus;
     private boolean synchronizing;
     private boolean statusIsError;
+    private int statusRevision;
+    private boolean failureOwnsStatus;
+    private long failureTransactionGeneration = -1;
+    private boolean acceptedRequestOwnsStatus;
+    private long acceptedTransactionGeneration = -1;
+    private boolean compactHeightConfigured;
+    private boolean compactHeightApplied;
 
     OctavoNavigationPanel(Context context, Listener listener) {
         this(context,
@@ -104,19 +114,22 @@ final class OctavoNavigationPanel extends LinearLayout {
         this.listener = listener;
         appearance = initialAppearance == null
             ? OctavoAppearance.defaults() : initialAppearance;
+        ui0Theme = resolveTheme(appearance);
+        ui0Adapter = new Ui0AndroidThemeAdapter(
+            ui0Theme,
+            getResources().getDisplayMetrics().density);
         presentedProgress = initialProgress == null
             ? OctavoProgressDisplay.defaults() : initialProgress;
 
         setId(R.id.octavo_navigation_panel);
         setOrientation(VERTICAL);
-        setPadding(dp(OctavoDesignTokens.SPACE_XL_DP),
-                   dp(OctavoDesignTokens.SPACE_XL_DP),
-                   dp(OctavoDesignTokens.SPACE_XL_DP),
-                   dp(OctavoDesignTokens.SPACE_XXL_DP));
-        setFocusable(true);
-        setFocusableInTouchMode(true);
-        setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
-        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        int panelPadding = ui0Adapter.densityPx(
+            Ui0AndroidThemeSnapshot.DensityRole.PANEL_PADDING);
+        setPadding(panelPadding, panelPadding, panelPadding, panelPadding);
+        setFocusable(false);
+        setFocusableInTouchMode(false);
+        setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         if (Build.VERSION.SDK_INT >= 28) {
             setAccessibilityPaneTitle(
                 context.getString(R.string.reader_navigation));
@@ -128,7 +141,7 @@ final class OctavoNavigationPanel extends LinearLayout {
         addView(header, matchWrap());
 
         title = textView(context.getString(R.string.reader_navigation),
-                         TITLE_TEXT_SP,
+                         Ui0AndroidThemeSnapshot.TypographyRole.PAGE_TITLE,
                          Typeface.BOLD,
                          primaryText);
         title.setId(R.id.octavo_navigation_title);
@@ -153,7 +166,8 @@ final class OctavoNavigationPanel extends LinearLayout {
         tabs.setContentDescription("Navigation sections");
         tabs.setFocusable(false);
         LinearLayout.LayoutParams tabsLayout = matchWrap();
-        tabsLayout.topMargin = dp(OctavoDesignTokens.SPACE_LG_DP);
+        tabsLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.SECTION_GAP);
         addView(tabs, tabsLayout);
 
         contentsTab = tab(
@@ -172,7 +186,8 @@ final class OctavoNavigationPanel extends LinearLayout {
         historyControls.setGravity(Gravity.CENTER_VERTICAL);
         historyControls.setContentDescription("Navigation history");
         LinearLayout.LayoutParams historyLayout = matchWrap();
-        historyLayout.topMargin = dp(OctavoDesignTokens.SPACE_MD_DP);
+        historyLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.CONTROL_GAP);
         addView(historyControls, historyLayout);
 
         returnButton = button(
@@ -198,21 +213,36 @@ final class OctavoNavigationPanel extends LinearLayout {
         });
         neutralButtons.add(forwardButton);
         LinearLayout.LayoutParams forwardLayout = weightedWrap();
-        forwardLayout.leftMargin = dp(OctavoDesignTokens.SPACE_SM_DP);
+        forwardLayout.setMarginStart(ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.CONTROL_GAP));
         historyControls.addView(forwardButton, forwardLayout);
 
         status = textView("Preparing navigation.",
-                          NOTE_TEXT_SP,
+                           Ui0AndroidThemeSnapshot.TypographyRole.CAPTION,
                           Typeface.NORMAL,
                           secondaryText);
         status.setId(R.id.octavo_navigation_status);
-        status.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+        status.setMinHeight(controlHeightPx());
         status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setMaxLines(3);
+        status.setEllipsize(TextUtils.TruncateAt.END);
         status.setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_POLITE);
         status.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        status.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override
+            public void onInitializeAccessibilityNodeInfo(
+                View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                if (statusIsError) {
+                    info.setError(status.getText());
+                }
+            }
+        });
         LinearLayout.LayoutParams statusLayout = matchWrap();
-        statusLayout.topMargin = dp(OctavoDesignTokens.SPACE_SM_DP);
-        statusLayout.bottomMargin = dp(OctavoDesignTokens.SPACE_SM_DP);
+        statusLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.ROW_GAP);
+        statusLayout.bottomMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.ROW_GAP);
         addView(status, statusLayout);
 
         body = new FrameLayout(context);
@@ -268,7 +298,8 @@ final class OctavoNavigationPanel extends LinearLayout {
         body.addView(goToScroll, matchMatchFrame());
 
         TextView goToHeading = textView("Go to",
-                                        SECTION_TEXT_SP,
+                                        Ui0AndroidThemeSnapshot
+                                            .TypographyRole.SECTION_TITLE,
                                         Typeface.BOLD,
                                         primaryText);
         markHeading(goToHeading);
@@ -276,12 +307,14 @@ final class OctavoNavigationPanel extends LinearLayout {
         TextView goToNote = textView(
             "Choose an exact structural or canonical destination. Your "
                 + "saved place changes only after the destination is shown.",
-            NOTE_TEXT_SP,
+            Ui0AndroidThemeSnapshot.TypographyRole.CAPTION,
             Typeface.NORMAL,
             secondaryText);
         LinearLayout.LayoutParams goToNoteLayout = matchWrap();
-        goToNoteLayout.topMargin = dp(OctavoDesignTokens.SPACE_XS_DP);
-        goToNoteLayout.bottomMargin = dp(OctavoDesignTokens.SPACE_MD_DP);
+        goToNoteLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.TEXT_STACK_GAP);
+        goToNoteLayout.bottomMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.ROW_GAP);
         goToContent.addView(goToNote, goToNoteLayout);
 
         chapterControl = addGoToControl(
@@ -311,24 +344,26 @@ final class OctavoNavigationPanel extends LinearLayout {
 
         TextView progressHeading = textView(
             context.getString(R.string.navigation_progress_display),
-            SECTION_TEXT_SP,
+            Ui0AndroidThemeSnapshot.TypographyRole.SECTION_TITLE,
             Typeface.BOLD,
             primaryText);
         markHeading(progressHeading);
         LinearLayout.LayoutParams progressHeadingLayout = matchWrap();
-        progressHeadingLayout.topMargin =
-            dp(OctavoDesignTokens.SPACE_XL_DP);
+        progressHeadingLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.MAJOR_GROUP_GAP);
         goToContent.addView(progressHeading, progressHeadingLayout);
 
         TextView progressNote = textView(
             "Choose the compact progress detail shown in the reader. The "
                 + "choice becomes current after a matching page is shown.",
-            NOTE_TEXT_SP,
+            Ui0AndroidThemeSnapshot.TypographyRole.CAPTION,
             Typeface.NORMAL,
             secondaryText);
         LinearLayout.LayoutParams progressNoteLayout = matchWrap();
-        progressNoteLayout.topMargin = dp(OctavoDesignTokens.SPACE_XS_DP);
-        progressNoteLayout.bottomMargin = dp(OctavoDesignTokens.SPACE_SM_DP);
+        progressNoteLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.TEXT_STACK_GAP);
+        progressNoteLayout.bottomMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.ROW_GAP);
         goToContent.addView(progressNote, progressNoteLayout);
 
         progressOptions = new RadioGroup(context);
@@ -337,41 +372,26 @@ final class OctavoNavigationPanel extends LinearLayout {
         progressOptions.setContentDescription("Reader progress choices");
         progressOptions.setFocusable(false);
         for (OctavoProgressDisplay display : OctavoProgressDisplay.values()) {
-            RadioButton option = new RadioButton(context);
+            RadioButton option = new PresentedProgressRadioButton(context);
             option.setId(View.generateViewId());
             option.setTag(display);
             option.setText(display.label());
-            option.setTextSize(BODY_TEXT_SP);
+            option.setTextSize(ui0Adapter.textSizeSp(
+                Ui0AndroidThemeSnapshot.TypographyRole.BUTTON));
             option.setGravity(Gravity.CENTER_VERTICAL);
-            option.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
-            option.setPadding(dp(OctavoDesignTokens.SPACE_MD_DP),
-                              dp(OctavoDesignTokens.SPACE_SM_DP),
-                              dp(OctavoDesignTokens.SPACE_MD_DP),
-                              dp(OctavoDesignTokens.SPACE_SM_DP));
+            option.setMinHeight(controlHeightPx());
+            option.setPadding(controlPaddingXPx(),
+                              controlPaddingYPx(),
+                              controlPaddingXPx(),
+                              controlPaddingYPx());
             option.setContentDescription(
                 display.label() + " reader progress display");
             option.setDefaultFocusHighlightEnabled(false);
+            option.setOnClickListener(
+                view -> requestProgressDisplay(option));
             progressOptions.addView(option, matchWrapRadio());
             progressButtons.add(option);
         }
-        progressOptions.setOnCheckedChangeListener((group, checkedId) -> {
-            if (synchronizing || checkedId == RadioGroup.NO_ID) {
-                return;
-            }
-            if (!navigationInteractive()) {
-                updateProgressDisplay(presentedProgress);
-                return;
-            }
-            RadioButton checked = group.findViewById(checkedId);
-            if (checked != null
-                && checked.getTag() instanceof OctavoProgressDisplay) {
-                listener.onProgressDisplayRequested(
-                    (OctavoProgressDisplay)checked.getTag());
-                showStatus(
-                    "Progress display will change after the updated page "
-                        + "is shown.");
-            }
-        });
         goToContent.addView(progressOptions, matchWrap());
 
         tabs.setOnCheckedChangeListener((group, checkedId) -> {
@@ -387,12 +407,97 @@ final class OctavoNavigationPanel extends LinearLayout {
         applyAppearance(appearance);
     }
 
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+        boolean compactHeight = heightMode != MeasureSpec.UNSPECIFIED
+            && MeasureSpec.getSize(heightMeasureSpec)
+                <= ui0Adapter.dp(COMPACT_HEIGHT_DP);
+        applyCompactHeight(compactHeight);
+        int statusLines = compactHeight ? 1 : 3;
+        if (status.getMaxLines() != statusLines) {
+            status.setMaxLines(statusLines);
+        }
+        title.setMaxLines(compactHeight ? 1 : 2);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
+    private void applyCompactHeight(boolean compactHeight) {
+        if (compactHeightConfigured
+                && compactHeightApplied == compactHeight) {
+            return;
+        }
+        compactHeightConfigured = true;
+        compactHeightApplied = compactHeight;
+        int compactGap = ui0Adapter.treePx(
+            Ui0AndroidThemeSnapshot.TreeMetric.ROW_GAP);
+        int panelVerticalPadding = compactHeight
+            ? compactGap
+            : ui0Adapter.densityPx(
+                Ui0AndroidThemeSnapshot.DensityRole.PANEL_PADDING);
+        setPadding(getPaddingLeft(),
+                   panelVerticalPadding,
+                   getPaddingRight(),
+                   panelVerticalPadding);
+
+        LinearLayout.LayoutParams tabsLayout =
+            (LinearLayout.LayoutParams)tabs.getLayoutParams();
+        tabsLayout.topMargin = compactHeight
+            ? ui0Adapter.spacingPx(
+                Ui0AndroidThemeSnapshot.SpacingRole.CONTROL_GAP)
+            : ui0Adapter.spacingPx(
+                Ui0AndroidThemeSnapshot.SpacingRole.SECTION_GAP);
+        tabs.setLayoutParams(tabsLayout);
+
+        LinearLayout.LayoutParams statusLayout =
+            (LinearLayout.LayoutParams)status.getLayoutParams();
+        int statusMargin = compactHeight
+            ? compactGap
+            : ui0Adapter.spacingPx(
+                Ui0AndroidThemeSnapshot.SpacingRole.ROW_GAP);
+        statusLayout.topMargin = statusMargin;
+        statusLayout.bottomMargin = statusMargin;
+        status.setLayoutParams(statusLayout);
+        status.setMinHeight(compactHeight ? 0 : controlHeightPx());
+    }
+
     void updateSnapshot(OctavoNavigation navigation) {
+        updateSnapshot(navigation, true);
+    }
+
+    void updateSnapshotWithStatus(OctavoNavigation navigation,
+                                  String message) {
+        updateSnapshot(navigation, false);
+        showStatus(message);
+        acceptedRequestOwnsStatus =
+            snapshot != null && snapshot.isPending();
+        acceptedTransactionGeneration = acceptedRequestOwnsStatus
+            ? snapshot.transactionGeneration() : -1;
+    }
+
+    void updateAlreadyPresentedSnapshot(OctavoNavigation navigation) {
+        clearFailureStatusOwnership();
+        clearAcceptedRequestStatusOwnership();
+        updateSnapshot(navigation, true);
+    }
+
+    private void updateSnapshot(OctavoNavigation navigation,
+                                boolean publishSnapshotStatus) {
+        FocusedRow focused = focusedRow();
+        boolean reuse = contentsStructurallyEquivalent(navigation);
         snapshot = navigation;
-        rebuildContents();
+        if (reuse) {
+            refreshContentsInPlace();
+        } else {
+            rebuildContents();
+        }
         updateAvailability();
-        updateSnapshotStatus();
+        if (publishSnapshotStatus) {
+            updateSnapshotStatus();
+        }
         refreshFocusOrder();
+        reconcileRowFocus(focused);
     }
 
     void updateProgressDisplay(OctavoProgressDisplay progress) {
@@ -419,81 +524,196 @@ final class OctavoNavigationPanel extends LinearLayout {
             throw new IllegalArgumentException(
                 "Navigation appearance is required");
         }
+        Ui0AndroidThemeSnapshot resolved;
+        try {
+            resolved = resolveTheme(newAppearance);
+        } catch (IllegalStateException failure) {
+            showError(
+                "Reader navigation styling could not be updated. Close and "
+                    + "reopen Navigation to retry.");
+            return;
+        }
         appearance = newAppearance;
-        OctavoDesignTokens tokens =
-            OctavoDesignTokens.forAppearance(newAppearance);
-        setBackgroundColor(tokens.sheetSurface);
-        header.setBackgroundColor(tokens.sheetSurface);
-        body.setBackgroundColor(tokens.sheetSurface);
-        contentsScroll.setBackgroundColor(tokens.sheetSurface);
-        contentsList.setBackgroundColor(tokens.sheetSurface);
-        goToScroll.setBackgroundColor(tokens.sheetSurface);
-        goToContent.setBackgroundColor(tokens.sheetSurface);
+        ui0Theme = resolved;
+        ui0Adapter = new Ui0AndroidThemeAdapter(
+            ui0Theme,
+            getResources().getDisplayMetrics().density);
+        compactHeightConfigured = false;
+        int panelPadding = ui0Adapter.densityPx(
+            Ui0AndroidThemeSnapshot.DensityRole.PANEL_PADDING);
+        setPadding(panelPadding, panelPadding, panelPadding, panelPadding);
+        int sheet = ui0Adapter.color(
+            Ui0AndroidThemeSnapshot.ColorRole.SIDEBAR_BACKGROUND);
+        setBackground(ui0Adapter.panelBackground());
+        header.setBackgroundColor(sheet);
+        body.setBackgroundColor(sheet);
+        contentsScroll.setBackgroundColor(sheet);
+        contentsList.setBackgroundColor(sheet);
+        goToScroll.setBackgroundColor(sheet);
+        goToContent.setBackgroundColor(sheet);
+        for (Map.Entry<TextView,
+                       Ui0AndroidThemeSnapshot.TypographyRole> entry
+                 : semanticTextRoles.entrySet()) {
+            entry.getKey().setTextSize(
+                ui0Adapter.textSizeSp(entry.getValue()));
+        }
         for (TextView text : primaryText) {
-            text.setTextColor(tokens.textPrimary);
-            text.setHighlightColor(tokens.selection);
+            text.setTextColor(ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_PRIMARY));
+            text.setHighlightColor(ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.SELECTION));
         }
         for (TextView text : secondaryText) {
-            text.setTextColor(tokens.textSecondary);
-            text.setHighlightColor(tokens.selection);
+            text.setTextColor(ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_SECONDARY));
+            text.setHighlightColor(ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.SELECTION));
         }
-        status.setTextColor(statusIsError ? tokens.error
-                                          : tokens.textSecondary);
-        dismissButton.setTextColor(tokens.onAccent);
-        dismissButton.setBackground(actionBackground(tokens));
+        status.setTextColor(statusIsError
+            ? ui0Adapter.color(Ui0AndroidThemeSnapshot.ColorRole.DANGER)
+            : ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_SECONDARY));
+        dismissButton.setTextColor(ui0Adapter.actionTextColors());
+        dismissButton.setBackground(ui0Adapter.actionBackground());
         for (Button button : neutralButtons) {
-            button.setTextColor(neutralTextColors(tokens));
-            button.setBackground(neutralBackground(tokens));
+            applyButtonGeometry(button);
+            button.setTextColor(ui0Adapter.neutralTextColors());
+            button.setBackground(ui0Adapter.neutralBackground());
         }
         for (Button button : actionButtons) {
+            applyButtonGeometry(button);
             if (button == dismissButton) {
                 continue;
             }
-            button.setTextColor(actionTextColors(tokens));
-            button.setBackground(actionBackground(tokens));
+            button.setTextColor(ui0Adapter.actionTextColors());
+            button.setBackground(ui0Adapter.actionBackground());
         }
-        ColorStateList radioText = radioTextColors(tokens);
-        ColorStateList radioTint = radioTint(tokens);
+        ColorStateList radioText = ui0Adapter.radioTextColors();
+        ColorStateList radioTint = ui0Adapter.radioTintColors();
         for (RadioButton tab : new RadioButton[] {contentsTab, goToTab}) {
+            applyRadioGeometry(tab);
             tab.setTextColor(radioText);
             tab.setButtonTintList(radioTint);
-            tab.setBackground(optionBackground(tokens));
+            tab.setBackground(ui0Adapter.optionBackground());
         }
         for (RadioButton option : progressButtons) {
+            applyRadioGeometry(option);
             option.setTextColor(radioText);
             option.setButtonTintList(radioTint);
-            option.setBackground(optionBackground(tokens));
+            option.setBackground(ui0Adapter.optionBackground());
         }
         for (EditText input : inputs) {
-            input.setTextColor(tokens.textPrimary);
-            input.setHintTextColor(tokens.textMuted);
-            input.setBackground(inputBackground(tokens));
+            input.setTextSize(ui0Adapter.textSizeSp(
+                Ui0AndroidThemeSnapshot.TypographyRole.BODY));
+            input.setMinHeight(controlHeightPx());
+            input.setPadding(textInputPaddingXPx(),
+                             textInputPaddingYPx(),
+                             textInputPaddingXPx(),
+                             textInputPaddingYPx());
+            input.setTextColor(ui0Adapter.inputTextColors());
+            input.setHintTextColor(ui0Adapter.inputHintColors());
+            input.setBackground(ui0Adapter.inputBackground());
+            ui0Adapter.applyTextInputEditingColors(input);
         }
         for (RowBinding binding : rowBindings) {
-            applyRowStyle(binding, tokens);
+            applyRowStyle(binding);
         }
         invalidate();
     }
 
     void showError(String message) {
+        clearAcceptedRequestStatusOwnership();
+        failureOwnsStatus = true;
+        failureTransactionGeneration = snapshot == null
+            ? -1 : snapshot.transactionGeneration();
         setStatus(message == null || message.trim().isEmpty()
                       ? "Navigation could not complete that request."
                       : message,
-                  true,
                   true);
     }
 
     void showStatus(String message) {
+        clearFailureStatusOwnership();
+        clearAcceptedRequestStatusOwnership();
         setStatus(message == null || message.trim().isEmpty()
                       ? "Navigation is ready."
                       : message,
-                  false,
-                  true);
+                  false);
+    }
+
+    private boolean contentsStructurallyEquivalent(
+        OctavoNavigation navigation) {
+        if (snapshot == null || navigation == null
+            || snapshot.rowCount() == 0
+            || snapshot.rowCount() != navigation.rowCount()
+            || rowBindings.size() != navigation.rowCount()) {
+            return false;
+        }
+        for (int index = 0; index < navigation.rowCount(); ++index) {
+            RowBinding binding = rowBindings.get(index);
+            OctavoNavigation.Row row = navigation.row(index);
+            boolean parent = index + 1 < navigation.rowCount()
+                && navigation.row(index + 1).depth() > row.depth();
+            if (binding.row.navIndex() != row.navIndex()
+                || binding.row.depth() != row.depth()
+                || !binding.row.label().equals(row.label())
+                || binding.parent != parent) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void refreshContentsInPlace() {
+        for (int index = 0; index < snapshot.rowCount(); ++index) {
+            RowBinding binding = rowBindings.get(index);
+            binding.row = snapshot.row(index);
+            binding.parent = index + 1 < snapshot.rowCount()
+                && snapshot.row(index + 1).depth()
+                    > binding.row.depth();
+            refreshRowPresentation(binding);
+        }
+    }
+
+    private void requestProgressDisplay(RadioButton requested) {
+        if (synchronizing || requested == null) {
+            return;
+        }
+        if (!navigationInteractive()) {
+            updateProgressDisplay(presentedProgress);
+            return;
+        }
+        if (requested.isChecked()) {
+            return;
+        }
+        Object tag = requested.getTag();
+        if (tag instanceof OctavoProgressDisplay) {
+            listener.onProgressDisplayRequested(
+                (OctavoProgressDisplay)tag);
+            // User activation never changes checked state. Only a later
+            // presented callback may advance it.
+            updateProgressDisplay(presentedProgress);
+        }
+    }
+
+    private void refreshRowPresentation(RowBinding binding) {
+        binding.button.setTag(binding.row.navIndex());
+        binding.button.setContentDescription(
+            rowDescription(binding.row, binding.parent));
+        if (Build.VERSION.SDK_INT >= 28) {
+            binding.button.setAccessibilityHeading(binding.parent);
+        }
+        applyRowStyle(binding);
     }
 
     private void rebuildContents() {
+        Map<Integer, Integer> previousIds = new HashMap<>();
+        for (RowBinding binding : rowBindings) {
+            previousIds.put(binding.row.navIndex(), binding.button.getId());
+        }
         if (contentsEmptyState != null) {
             secondaryText.remove(contentsEmptyState);
+            semanticTextRoles.remove(contentsEmptyState);
             contentsEmptyState = null;
         }
         contentsList.removeAllViews();
@@ -503,10 +723,10 @@ final class OctavoNavigationPanel extends LinearLayout {
                 snapshot == null
                     ? "No navigation information is available yet."
                     : "This book has no usable structural destinations.",
-                BODY_TEXT_SP,
+                Ui0AndroidThemeSnapshot.TypographyRole.BODY,
                 Typeface.NORMAL,
                 secondaryText);
-            empty.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            empty.setMinHeight(rowHeightPx());
             contentsEmptyState = empty;
             empty.setGravity(Gravity.CENTER_VERTICAL);
             contentsList.addView(empty, matchWrap());
@@ -517,25 +737,24 @@ final class OctavoNavigationPanel extends LinearLayout {
             OctavoNavigation.Row row = snapshot.row(index);
             boolean parent = index + 1 < snapshot.rowCount()
                 && snapshot.row(index + 1).depth() > row.depth();
-            Button destination = button(visibleRowText(row),
-                                        rowDescription(row, parent));
-            destination.setTag(row.navIndex());
-            destination.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            destination.setTextAlignment(TEXT_ALIGNMENT_VIEW_START);
-            destination.setSingleLine(false);
-            destination.setMaxLines(3);
-            destination.setAllCaps(false);
+            Ui0NavigationRow destination = new Ui0NavigationRow(getContext());
+            Integer previousId = previousIds.get(row.navIndex());
+            destination.setId(previousId == null
+                                  ? View.generateViewId() : previousId);
+            configureButton(destination,
+                            rowDescription(row, parent));
+            RowBinding binding = new RowBinding(destination,
+                                                row,
+                                                parent,
+                                                index);
             destination.setOnClickListener(
                 view -> {
-                    if (navigationInteractive()
-                        && row.isDestinationValid()) {
-                        listener.onContentsJump((Integer)view.getTag());
+                    if (binding.button.isEnabled()
+                        && navigationInteractive()
+                        && binding.row.isDestinationValid()) {
+                        listener.onContentsJump(binding.row.navIndex());
                     }
                 });
-            if (parent) {
-                markHeading(destination);
-            }
-            final int rowIndex = index;
             destination.setAccessibilityDelegate(
                 new View.AccessibilityDelegate() {
                     @Override
@@ -544,26 +763,20 @@ final class OctavoNavigationPanel extends LinearLayout {
                         super.onInitializeAccessibilityNodeInfo(host, info);
                         info.setCollectionItemInfo(
                             AccessibilityNodeInfo.CollectionItemInfo.obtain(
-                                rowIndex,
+                                binding.rowIndex,
                                 1,
                                 0,
                                 1,
-                                parent,
-                                row.isCurrent()));
+                                binding.parent,
+                                binding.row.isCurrent()));
                     }
                 });
-            RowBinding binding = new RowBinding(destination, row, parent);
             rowBindings.add(binding);
+            refreshRowPresentation(binding);
             LinearLayout.LayoutParams rowLayout = matchWrap();
-            rowLayout.leftMargin = dp(Math.min(row.depth(), MAX_VISUAL_DEPTH)
-                                      * INDENT_DP);
-            rowLayout.bottomMargin = dp(OctavoDesignTokens.SPACE_XS_DP);
+            rowLayout.bottomMargin = ui0Adapter.treePx(
+                Ui0AndroidThemeSnapshot.TreeMetric.ROW_GAP);
             contentsList.addView(destination, rowLayout);
-        }
-        OctavoDesignTokens tokens =
-            OctavoDesignTokens.forAppearance(appearance);
-        for (RowBinding binding : rowBindings) {
-            applyRowStyle(binding, tokens);
         }
     }
 
@@ -609,36 +822,51 @@ final class OctavoNavigationPanel extends LinearLayout {
     }
 
     private void updateSnapshotStatus() {
+        /*
+         * An explicit failure owns the live status through equivalent native
+         * rollback/ready refresh packets, even if the failed transaction
+         * generation reaches Java after the error. Only a newer pending
+         * transaction (or showStatus from a new user request) supersedes it.
+         */
+        if (failureOwnsStatus) {
+            if (!failureStatusIsSuperseded()) {
+                return;
+            }
+            clearFailureStatusOwnership();
+        }
+        if (acceptedRequestOwnsStatus) {
+            if (snapshot != null && snapshot.isPending()
+                && snapshot.transactionGeneration()
+                    == acceptedTransactionGeneration) {
+                return;
+            }
+            clearAcceptedRequestStatusOwnership();
+        }
         if (snapshot == null) {
             setStatus("Navigation information is unavailable.",
-                      true,
-                      false);
+                      true);
         } else if (snapshot.isPending()) {
             setStatus(
                 "Opening destination. Your current place remains saved "
                     + "until it appears.",
-                false,
                 false);
         } else if (!snapshot.isReady()) {
-            setStatus("Navigation is not ready for this book.", true, false);
+            setStatus("Navigation is not ready for this book.", true);
         } else if (snapshot.isFallback()) {
             setStatus(
                 "This book has no usable contents document. Reading "
                     + "sections are shown instead.",
-                false,
                 false);
         } else if (snapshot.isTruncated()) {
             setStatus("Showing the first " + snapshot.rowCount() + " of "
                           + snapshot.totalCount() + " destinations.",
-                      false,
                       false);
         } else if (snapshot.currentRow() >= 0) {
             setStatus("Current section: "
                           + snapshot.row(snapshot.currentRow()).label(),
-                      false,
                       false);
         } else {
-            setStatus("Navigation is ready.", false, false);
+            setStatus("Navigation is ready.", false);
         }
     }
 
@@ -661,7 +889,8 @@ final class OctavoNavigationPanel extends LinearLayout {
         LinearLayout section = new LinearLayout(getContext());
         section.setOrientation(VERTICAL);
         TextView heading = textView(label,
-                                    BODY_TEXT_SP,
+                                    Ui0AndroidThemeSnapshot
+                                        .TypographyRole.BODY,
                                     Typeface.BOLD,
                                     primaryText);
         markHeading(heading);
@@ -671,18 +900,20 @@ final class OctavoNavigationPanel extends LinearLayout {
         controls.setOrientation(HORIZONTAL);
         controls.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams controlsLayout = matchWrap();
-        controlsLayout.topMargin = dp(OctavoDesignTokens.SPACE_XS_DP);
+        controlsLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.TEXT_STACK_GAP);
         section.addView(controls, controlsLayout);
 
         EditText input = new EditText(getContext());
         input.setId(inputId);
-        input.setTextSize(BODY_TEXT_SP);
+        input.setTextSize(ui0Adapter.textSizeSp(
+            Ui0AndroidThemeSnapshot.TypographyRole.BODY));
         input.setSingleLine(true);
-        input.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
-        input.setPadding(dp(OctavoDesignTokens.SPACE_MD_DP),
-                         dp(OctavoDesignTokens.SPACE_SM_DP),
-                         dp(OctavoDesignTokens.SPACE_MD_DP),
-                         dp(OctavoDesignTokens.SPACE_SM_DP));
+        input.setMinHeight(controlHeightPx());
+        input.setPadding(textInputPaddingXPx(),
+                         textInputPaddingYPx(),
+                         textInputPaddingXPx(),
+                         textInputPaddingYPx());
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setImeOptions(EditorInfo.IME_ACTION_GO);
         input.setHint(label);
@@ -713,11 +944,13 @@ final class OctavoNavigationPanel extends LinearLayout {
         go.setOnClickListener(view -> submit.run());
         actionButtons.add(go);
         LinearLayout.LayoutParams goLayout = wrapWrap();
-        goLayout.leftMargin = dp(OctavoDesignTokens.SPACE_SM_DP);
+        goLayout.setMarginStart(ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.CONTROL_GAP));
         controls.addView(go, goLayout);
 
         LinearLayout.LayoutParams sectionLayout = matchWrap();
-        sectionLayout.topMargin = dp(OctavoDesignTokens.SPACE_LG_DP);
+        sectionLayout.topMargin = ui0Adapter.spacingPx(
+            Ui0AndroidThemeSnapshot.SpacingRole.SECTION_GAP);
         goToContent.addView(section, sectionLayout);
         return new GoToControl(section, input, go);
     }
@@ -730,7 +963,6 @@ final class OctavoNavigationPanel extends LinearLayout {
                                    Integer.MAX_VALUE);
         if (value != null) {
             listener.onChapter(value.intValue());
-            showStatus("Opening chapter " + value + ".");
         }
     }
 
@@ -746,7 +978,6 @@ final class OctavoNavigationPanel extends LinearLayout {
                                    maximum);
         if (value != null) {
             listener.onLocation(value);
-            showStatus("Opening location " + value + ".");
         }
     }
 
@@ -762,7 +993,6 @@ final class OctavoNavigationPanel extends LinearLayout {
                                    maximum);
         if (value != null) {
             listener.onPage(value);
-            showStatus("Opening page " + value + ".");
         }
     }
 
@@ -776,7 +1006,6 @@ final class OctavoNavigationPanel extends LinearLayout {
                                    100);
         if (value != null) {
             listener.onPercentage(value.intValue());
-            showStatus("Opening " + value + " percent.");
         }
     }
 
@@ -807,8 +1036,8 @@ final class OctavoNavigationPanel extends LinearLayout {
         }
     }
 
-    private String visibleRowText(OctavoNavigation.Row row) {
-        StringBuilder text = new StringBuilder(row.label());
+    private String visibleRowCaption(OctavoNavigation.Row row) {
+        StringBuilder text = new StringBuilder();
         String detail = rowProgress(row);
         if (row.isCurrent()) {
             text.append("\nCurrent section");
@@ -817,6 +1046,9 @@ final class OctavoNavigationPanel extends LinearLayout {
             }
         } else if (!detail.isEmpty()) {
             text.append('\n').append(detail);
+        }
+        if (text.length() > 0 && Character.isWhitespace(text.charAt(0))) {
+            text.deleteCharAt(0);
         }
         return text.toString();
     }
@@ -859,23 +1091,22 @@ final class OctavoNavigationPanel extends LinearLayout {
         return progress.toString();
     }
 
-    private void setStatus(String message,
-                           boolean error,
-                           boolean announce) {
+    private void setStatus(String message, boolean error) {
         String normalized = message.trim();
         if (normalized.length() > MAX_STATUS_CHARS) {
             normalized = normalized.substring(0, MAX_STATUS_CHARS);
         }
+        if (statusIsError == error
+            && normalized.contentEquals(status.getText())) {
+            return;
+        }
         statusIsError = error;
         status.setText(normalized);
-        status.setContentDescription((error ? "Navigation error. " : "")
-                                     + normalized);
-        OctavoDesignTokens tokens =
-            OctavoDesignTokens.forAppearance(appearance);
-        status.setTextColor(error ? tokens.error : tokens.textSecondary);
-        if (announce && isAttachedToWindow()) {
-            status.announceForAccessibility(status.getContentDescription());
-        }
+        ++statusRevision;
+        status.setTextColor(error
+            ? ui0Adapter.color(Ui0AndroidThemeSnapshot.ColorRole.DANGER)
+            : ui0Adapter.color(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_SECONDARY));
     }
 
     private void refreshFocusOrder() {
@@ -923,16 +1154,117 @@ final class OctavoNavigationPanel extends LinearLayout {
         }
     }
 
+    private boolean failureStatusIsSuperseded() {
+        return snapshot != null
+            && snapshot.isPending()
+            && (failureTransactionGeneration < 0
+                || snapshot.transactionGeneration()
+                    > failureTransactionGeneration);
+    }
+
+    private void clearFailureStatusOwnership() {
+        failureOwnsStatus = false;
+        failureTransactionGeneration = -1;
+    }
+
+    private void clearAcceptedRequestStatusOwnership() {
+        acceptedRequestOwnsStatus = false;
+        acceptedTransactionGeneration = -1;
+    }
+
+    private FocusedRow focusedRow() {
+        for (RowBinding binding : rowBindings) {
+            if (binding.button.hasFocus()
+                || binding.button.isAccessibilityFocused()) {
+                return new FocusedRow(binding.row.navIndex(),
+                                      binding.button.hasFocus(),
+                                      binding.button
+                                          .isAccessibilityFocused());
+            }
+        }
+        return null;
+    }
+
+    private void reconcileRowFocus(FocusedRow focused) {
+        if (focused != null) {
+            deferredRowFocus = focused;
+        }
+        if (deferredRowFocus == null) {
+            return;
+        }
+        RowBinding target = null;
+        for (RowBinding binding : rowBindings) {
+            if (binding.row.navIndex() == deferredRowFocus.navIndex) {
+                target = binding;
+                break;
+            }
+        }
+        if (target == null || hasOtherControlFocus(target.button)) {
+            deferredRowFocus = null;
+            return;
+        }
+        if (!target.button.isEnabled()) {
+            return;
+        }
+        if (deferredRowFocus.keyboard) {
+            target.button.requestFocus();
+        }
+        if (deferredRowFocus.accessibility) {
+            target.button.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+        }
+        deferredRowFocus = null;
+    }
+
+    private boolean hasOtherControlFocus(View target) {
+        View keyboard = findFocus();
+        return keyboard != null && keyboard != this && keyboard != target
+            || hasOtherAccessibilityFocus(this, target);
+    }
+
+    private static boolean hasOtherAccessibilityFocus(View view,
+                                                       View target) {
+        if (view != target && view.isAccessibilityFocused()) {
+            return true;
+        }
+        if (!(view instanceof ViewGroup)) {
+            return false;
+        }
+        ViewGroup group = (ViewGroup)view;
+        for (int index = 0; index < group.getChildCount(); ++index) {
+            if (hasOtherAccessibilityFocus(group.getChildAt(index), target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    View preferredInitialFocus() {
+        if (snapshot != null && snapshot.currentRow() >= 0) {
+            int currentNavIndex = snapshot.row(snapshot.currentRow())
+                .navIndex();
+            for (RowBinding binding : rowBindings) {
+                if (binding.row.navIndex() == currentNavIndex
+                    && binding.button.isEnabled()) {
+                    return binding.button;
+                }
+            }
+        }
+        return dismissButton;
+    }
+
     private TextView textView(String value,
-                              int textSizeSp,
+                              Ui0AndroidThemeSnapshot.TypographyRole role,
                               int style,
                               List<TextView> themeGroup) {
         TextView view = new TextView(getContext());
         view.setText(value);
-        view.setTextSize(textSizeSp);
+        view.setTextSize(ui0Adapter.textSizeSp(role));
         view.setTypeface(Typeface.DEFAULT, style);
         view.setLineSpacing(0.0f, 1.12f);
         themeGroup.add(view);
+        semanticTextRoles.put(view, role);
         return view;
     }
 
@@ -940,210 +1272,91 @@ final class OctavoNavigationPanel extends LinearLayout {
         Button button = new Button(getContext());
         button.setId(View.generateViewId());
         button.setText(value);
-        button.setTextSize(BODY_TEXT_SP);
-        button.setAllCaps(false);
-        button.setMinWidth(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
-        button.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
-        button.setPadding(dp(OctavoDesignTokens.SPACE_MD_DP),
-                          dp(OctavoDesignTokens.SPACE_SM_DP),
-                          dp(OctavoDesignTokens.SPACE_MD_DP),
-                          dp(OctavoDesignTokens.SPACE_SM_DP));
-        button.setGravity(Gravity.CENTER);
+        configureButton(button, description);
+        return button;
+    }
+
+    private void configureButton(Button button, String description) {
+        applyButtonGeometry(button);
         button.setContentDescription(description);
         button.setDefaultFocusHighlightEnabled(false);
-        return button;
+    }
+
+    private void applyButtonGeometry(Button button) {
+        button.setTextSize(ui0Adapter.textSizeSp(
+            Ui0AndroidThemeSnapshot.TypographyRole.BUTTON));
+        button.setAllCaps(false);
+        button.setMinWidth(controlHeightPx());
+        button.setMinHeight(controlHeightPx());
+        button.setPadding(controlPaddingXPx(),
+                          controlPaddingYPx(),
+                          controlPaddingXPx(),
+                          controlPaddingYPx());
+        button.setGravity(Gravity.CENTER);
     }
 
     private RadioButton tab(String value, String description) {
         RadioButton tab = new RadioButton(getContext());
         tab.setText(value);
-        tab.setTextSize(BODY_TEXT_SP);
-        tab.setGravity(Gravity.CENTER);
-        tab.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
-        tab.setPadding(dp(OctavoDesignTokens.SPACE_MD_DP),
-                       dp(OctavoDesignTokens.SPACE_SM_DP),
-                       dp(OctavoDesignTokens.SPACE_MD_DP),
-                       dp(OctavoDesignTokens.SPACE_SM_DP));
+        applyRadioGeometry(tab);
         tab.setContentDescription(description);
         tab.setDefaultFocusHighlightEnabled(false);
         return tab;
     }
 
-    private void applyRowStyle(RowBinding binding,
-                               OctavoDesignTokens tokens) {
-        binding.button.setTextColor(
-            binding.row.isCurrent()
-                ? tokens.textPrimary : tokens.textSecondary);
-        binding.button.setBackground(
-            rowBackground(tokens, binding.row.isCurrent()));
+    private void applyRadioGeometry(RadioButton tab) {
+        tab.setTextSize(ui0Adapter.textSizeSp(
+            Ui0AndroidThemeSnapshot.TypographyRole.BUTTON));
+        tab.setGravity(Gravity.CENTER);
+        tab.setMinHeight(controlHeightPx());
+        tab.setPadding(controlPaddingXPx(),
+                       controlPaddingYPx(),
+                       controlPaddingXPx(),
+                       controlPaddingYPx());
     }
 
-    private StateListDrawable rowBackground(OctavoDesignTokens tokens,
-                                            boolean current) {
-        StateListDrawable result = new StateListDrawable();
-        result.addState(new int[] {-android.R.attr.state_enabled},
-                        rounded(tokens.sheetSurface,
-                                tokens.dividerMuted,
-                                1));
-        result.addState(new int[] {android.R.attr.state_pressed},
-                        rounded(tokens.buttonSurface,
-                                tokens.accentPressed,
-                                1));
-        result.addState(new int[] {android.R.attr.state_focused},
-                        rounded(current ? tokens.selection
-                                        : tokens.buttonSurface,
-                                tokens.focus,
-                                2));
-        result.addState(new int[] {},
-                        rounded(current ? tokens.selection
-                                        : tokens.sheetSurface,
-                                current ? tokens.accent
-                                        : tokens.dividerMuted,
-                                1));
-        return result;
-    }
-
-    private StateListDrawable neutralBackground(OctavoDesignTokens tokens) {
-        StateListDrawable result = new StateListDrawable();
-        result.addState(new int[] {-android.R.attr.state_enabled},
-                        rounded(tokens.sheetSurface,
-                                tokens.dividerMuted,
-                                1));
-        result.addState(new int[] {android.R.attr.state_pressed},
-                        rounded(tokens.buttonSurface,
-                                tokens.accentPressed,
-                                1));
-        result.addState(new int[] {android.R.attr.state_focused},
-                        rounded(tokens.buttonSurface, tokens.focus, 2));
-        result.addState(new int[] {},
-                        rounded(tokens.buttonSurface,
-                                tokens.divider,
-                                1));
-        return result;
-    }
-
-    private StateListDrawable actionBackground(OctavoDesignTokens tokens) {
-        StateListDrawable result = new StateListDrawable();
-        result.addState(new int[] {-android.R.attr.state_enabled},
-                        rounded(tokens.dividerMuted,
-                                tokens.dividerMuted,
-                                1));
-        result.addState(new int[] {android.R.attr.state_pressed},
-                        rounded(tokens.accentPressed,
-                                tokens.accentPressed,
-                                1));
-        result.addState(new int[] {android.R.attr.state_focused},
-                        rounded(tokens.accent, tokens.focus, 2));
-        result.addState(new int[] {},
-                        rounded(tokens.accent, tokens.accent, 1));
-        return result;
-    }
-
-    private StateListDrawable optionBackground(OctavoDesignTokens tokens) {
-        StateListDrawable result = new StateListDrawable();
-        result.addState(new int[] {
-            android.R.attr.state_checked,
-            android.R.attr.state_focused
-        }, rounded(tokens.selection, tokens.focus, 2));
-        result.addState(new int[] {android.R.attr.state_checked},
-                        rounded(tokens.selection, tokens.accent, 1));
-        result.addState(new int[] {android.R.attr.state_pressed},
-                        rounded(tokens.buttonSurface,
-                                tokens.accentPressed,
-                                1));
-        result.addState(new int[] {android.R.attr.state_focused},
-                        rounded(tokens.buttonSurface, tokens.focus, 2));
-        result.addState(new int[] {},
-                        rounded(tokens.sheetSurface,
-                                tokens.dividerMuted,
-                                1));
-        return result;
-    }
-
-    private StateListDrawable inputBackground(OctavoDesignTokens tokens) {
-        StateListDrawable result = new StateListDrawable();
-        result.addState(new int[] {-android.R.attr.state_enabled},
-                        rounded(tokens.sheetSurface,
-                                tokens.dividerMuted,
-                                1));
-        result.addState(new int[] {android.R.attr.state_focused},
-                        rounded(tokens.inputSurface, tokens.focus, 2));
-        result.addState(new int[] {},
-                        rounded(tokens.inputSurface, tokens.divider, 1));
-        return result;
-    }
-
-    private GradientDrawable rounded(int fill,
-                                     int stroke,
-                                     int strokeWidthDp) {
-        GradientDrawable result = new GradientDrawable();
-        result.setShape(GradientDrawable.RECTANGLE);
-        result.setColor(fill);
-        result.setCornerRadius(dp(OctavoDesignTokens.RADIUS_MEDIUM_DP));
-        result.setStroke(dp(strokeWidthDp), stroke);
-        return result;
-    }
-
-    private static ColorStateList neutralTextColors(
-        OctavoDesignTokens tokens) {
-        return new ColorStateList(
-            new int[][] {
-                new int[] {-android.R.attr.state_enabled},
-                new int[] {}
-            },
-            new int[] {tokens.textMuted, tokens.textPrimary});
-    }
-
-    private static ColorStateList actionTextColors(
-        OctavoDesignTokens tokens) {
-        return new ColorStateList(
-            new int[][] {
-                new int[] {-android.R.attr.state_enabled},
-                new int[] {}
-            },
-            new int[] {tokens.textMuted, tokens.onAccent});
-    }
-
-    private static ColorStateList radioTextColors(
-        OctavoDesignTokens tokens) {
-        return new ColorStateList(
-            new int[][] {
-                new int[] {-android.R.attr.state_enabled},
-                new int[] {android.R.attr.state_checked},
-                new int[] {}
-            },
-            new int[] {
-                tokens.textMuted,
-                tokens.textPrimary,
-                tokens.textSecondary
-            });
-    }
-
-    private static ColorStateList radioTint(OctavoDesignTokens tokens) {
-        return new ColorStateList(
-            new int[][] {
-                new int[] {-android.R.attr.state_enabled},
-                new int[] {android.R.attr.state_checked},
-                new int[] {}
-            },
-            new int[] {
-                tokens.divider,
-                tokens.accent,
-                tokens.textMuted
-            });
+    private void applyRowStyle(RowBinding binding) {
+        binding.button.setTextSize(ui0Adapter.textSizeSp(
+            Ui0AndroidThemeSnapshot.TypographyRole.BODY));
+        binding.button.setHierarchyText(
+            binding.row.label(),
+            visibleRowCaption(binding.row),
+            binding.parent,
+            ui0Adapter.relativeTextScale(
+                Ui0AndroidThemeSnapshot.TypographyRole.CAPTION,
+                Ui0AndroidThemeSnapshot.TypographyRole.BODY),
+            ui0Adapter.hierarchyTextColors(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_PRIMARY),
+            ui0Adapter.hierarchyTextColors(
+                Ui0AndroidThemeSnapshot.ColorRole.TEXT_SECONDARY));
+        binding.button.setSelected(binding.row.isCurrent());
+        binding.button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        binding.button.setMinHeight(rowHeightPx());
+        int depth = Math.min(binding.row.depth(), MAX_VISUAL_DEPTH);
+        binding.button.setPaddingRelative(
+                                          ui0Adapter
+                                              .hierarchyTextStartPx(depth),
+                                          controlPaddingYPx(),
+                                          ui0Adapter.treePx(
+                                              Ui0AndroidThemeSnapshot
+                                                  .TreeMetric.PADDING_X),
+                                          controlPaddingYPx());
+        int railWidth = ui0Adapter.treePx(
+            Ui0AndroidThemeSnapshot.TreeMetric.CURRENT_BAR_WIDTH);
+        binding.button.setCurrentRail(
+            binding.row.isCurrent(),
+            ui0Adapter.currentIndicatorColor(),
+            railWidth,
+            ui0Adapter.currentRailInsetPx(),
+            ui0Adapter.currentRailRadiusPx());
+        binding.button.setBackground(ui0Adapter.rowBackground(
+            binding.row.isCurrent()));
     }
 
     private void markHeading(TextView view) {
         if (Build.VERSION.SDK_INT >= 28) {
             view.setAccessibilityHeading(true);
         }
-    }
-
-    private int dp(int value) {
-        return Math.max(1,
-                        Math.round(value
-                                   * getResources()
-                                       .getDisplayMetrics().density));
     }
 
     private static LinearLayout.LayoutParams matchWrap() {
@@ -1199,6 +1412,42 @@ final class OctavoNavigationPanel extends LinearLayout {
         return status;
     }
 
+    FrameLayout bodyForTesting() {
+        return body;
+    }
+
+    ScrollView goToScrollForTesting() {
+        return goToScroll;
+    }
+
+    int statusRevisionForTesting() {
+        return statusRevision;
+    }
+
+    int inputDisabledTextColorForTesting() {
+        return ui0Adapter.inputTextColors().getColorForState(
+            new int[] {-android.R.attr.state_enabled},
+            Color.TRANSPARENT);
+    }
+
+    int hierarchyLabelColorForTesting() {
+        return ui0Adapter.color(
+            Ui0AndroidThemeSnapshot.ColorRole.TEXT_PRIMARY);
+    }
+
+    int hierarchyCaptionColorForTesting() {
+        return ui0Adapter.color(
+            Ui0AndroidThemeSnapshot.ColorRole.TEXT_SECONDARY);
+    }
+
+    int inputSelectionColorForTesting() {
+        return ui0Adapter.textSelectionColor();
+    }
+
+    int inputCaretColorForTesting() {
+        return ui0Adapter.textCaretColor();
+    }
+
     EditText chapterInputForTesting() {
         return chapterControl.input;
     }
@@ -1231,6 +1480,36 @@ final class OctavoNavigationPanel extends LinearLayout {
         return presentedProgress;
     }
 
+    int rowFocusedFillForTesting(boolean current) {
+        return ui0Adapter.focusedRowFill(current);
+    }
+
+    int rowSelectedFillForTesting() {
+        return ui0Adapter.selectedRowFill();
+    }
+
+    float currentRailRadiusForTesting() {
+        return ui0Adapter.currentRailRadiusPx();
+    }
+
+    int treeIndentPxForTesting() {
+        return ui0Adapter.treePx(
+            Ui0AndroidThemeSnapshot.TreeMetric.INDENT_WIDTH);
+    }
+
+    int hierarchyBaseStartPxForTesting() {
+        return ui0Adapter.hierarchyTextStartPx(0);
+    }
+
+    int hierarchyTextStartPxForTesting(int depth) {
+        return ui0Adapter.hierarchyTextStartPx(depth);
+    }
+
+    int semanticTextSizeSpForTesting(
+        Ui0AndroidThemeSnapshot.TypographyRole role) {
+        return ui0Adapter.textSizeSp(role);
+    }
+
     private static final class GoToControl {
         final LinearLayout root;
         final EditText input;
@@ -1250,16 +1529,81 @@ final class OctavoNavigationPanel extends LinearLayout {
     }
 
     private static final class RowBinding {
-        final Button button;
-        final OctavoNavigation.Row row;
-        final boolean parent;
+        final Ui0NavigationRow button;
+        OctavoNavigation.Row row;
+        boolean parent;
+        final int rowIndex;
 
-        RowBinding(Button button,
+        RowBinding(Ui0NavigationRow button,
                    OctavoNavigation.Row row,
-                   boolean parent) {
+                   boolean parent,
+                   int rowIndex) {
             this.button = button;
             this.row = row;
             this.parent = parent;
+            this.rowIndex = rowIndex;
+        }
+    }
+
+    private static Ui0AndroidThemeSnapshot resolveTheme(
+        OctavoAppearance appearance) {
+        OctavoDesignTokens product =
+            OctavoDesignTokens.forAppearance(appearance);
+        Ui0AndroidThemeSnapshot resolved = Ui0AndroidThemeSnapshot.parse(
+            OctavoNative.ui0AndroidThemeSnapshot(
+                product.darkAppearance,
+                product.nativeUi0Colors()));
+        if (resolved == null) {
+            throw new IllegalStateException(
+                "UI0 Android theme snapshot is unavailable or incompatible");
+        }
+        return resolved;
+    }
+
+    int overlayColor() {
+        return ui0Adapter.color(Ui0AndroidThemeSnapshot.ColorRole.OVERLAY);
+    }
+
+    private int controlHeightPx() {
+        return ui0Adapter.densityPx(
+            Ui0AndroidThemeSnapshot.DensityRole.CONTROL_HEIGHT);
+    }
+
+    private int rowHeightPx() {
+        return ui0Adapter.rowHeightPx();
+    }
+
+    private int controlPaddingXPx() {
+        return ui0Adapter.controlPx(
+            Ui0AndroidThemeSnapshot.ControlMetric.PADDING_X);
+    }
+
+    private int controlPaddingYPx() {
+        return ui0Adapter.controlPx(
+            Ui0AndroidThemeSnapshot.ControlMetric.PADDING_Y);
+    }
+
+    private int textInputPaddingXPx() {
+        return ui0Adapter.textInputPx(
+            Ui0AndroidThemeSnapshot.TextInputMetric.PADDING_X);
+    }
+
+    private int textInputPaddingYPx() {
+        return ui0Adapter.textInputPx(
+            Ui0AndroidThemeSnapshot.TextInputMetric.PADDING_Y);
+    }
+
+    private static final class FocusedRow {
+        final int navIndex;
+        final boolean keyboard;
+        final boolean accessibility;
+
+        FocusedRow(int navIndex,
+                   boolean keyboard,
+                   boolean accessibility) {
+            this.navIndex = navIndex;
+            this.keyboard = keyboard;
+            this.accessibility = accessibility;
         }
     }
 }

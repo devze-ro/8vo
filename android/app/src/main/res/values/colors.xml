@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <!--
+      Android 8-9 expose editor cursor/handle colors only through theme
+      attributes. This fixed compatibility color retains at least 3.5:1
+      contrast against every supported UI0-derived Navigation input surface.
+      API 29+ replaces it per view with the exact resolved UI0 accent.
+    -->
+    <color name='octavo_legacy_editor_accent'>#8B7560</color>
+</resources>

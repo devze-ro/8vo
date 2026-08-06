@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.TextUtils;
@@ -210,6 +211,8 @@ public final class OctavoAccessibilityTest {
 
     private static long[] awaitLocationMetadataSettled(
         ActivityScenario<OctavoActivity> scenario) {
+        long previousFrameCount = -1;
+        int stableSamples = 0;
         for (int attempt = 0; attempt < 200; ++attempt) {
             OctavoSurfaceView view = surface(scenario);
             long[] cache = view.locationCacheStateForTesting();
@@ -224,7 +227,20 @@ public final class OctavoAccessibilityTest {
                     OctavoSurfaceView.STATE_REFLOW_PRESENTATION_PENDING] == 0
                 && snapshot[
                     OctavoSurfaceView.STATE_HOST_PRESENTATION_PENDING] == 0) {
-                return snapshot;
+                long frameCount =
+                    snapshot[OctavoSurfaceView.STATE_FRAME_COUNT];
+                if (frameCount == previousFrameCount) {
+                    stableSamples += 1;
+                } else {
+                    previousFrameCount = frameCount;
+                    stableSamples = 1;
+                }
+                if (stableSamples >= 4) {
+                    return snapshot;
+                }
+            } else {
+                previousFrameCount = -1;
+                stableSamples = 0;
             }
             SystemClock.sleep(25);
         }
@@ -1290,6 +1306,15 @@ public final class OctavoAccessibilityTest {
                         OctavoReaderAccessibilityProvider
                             .VIRTUAL_PAGE_CONTENT);
             assertNotNull(page);
+            if (Build.VERSION.SDK_INT < 30) {
+                CharSequence hint = page.getHintText();
+                assertNotNull(hint);
+                assertTrue(hint.length() > 14);
+                assertEquals(visible ? 'h' : 's', hint.charAt(14));
+                page.recycle();
+                assertEquals(visible, activity.chromeVisibleForTesting());
+                return;
+            }
             assertNotNull(page.getStateDescription());
             assertTrue(page.getStateDescription().toString()
                            .contains(visible ? "visible" : "hidden"));

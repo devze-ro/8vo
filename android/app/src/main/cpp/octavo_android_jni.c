@@ -42,6 +42,72 @@
 #define OCTAVO_ANDROID_FRAME_IMAGE_PACKET_ROW_STRIDE 4
 #define OCTAVO_ANDROID_PREPARED_FRAME_STATE_VERSION 1
 #define OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT 26
+#define OCTAVO_ANDROID_UI0_SNAPSHOT_MAGIC 0x4F553941
+#define OCTAVO_ANDROID_UI0_SNAPSHOT_VERSION 1
+#if UI0_API_VERSION != 91
+#error Android_Port_8_UI0_snapshot_requires_API_91
+#endif
+typedef char OctavoAndroidUi0ColorRoleCountGuard[
+  UI0ColorRole_Count == 26 ? 1 : -1];
+typedef char OctavoAndroidUi0SpacingRoleCountGuard[
+  UI0SpacingRole_Count == 8 ? 1 : -1];
+typedef char OctavoAndroidUi0RadiusRoleCountGuard[
+  UI0RadiusRole_Count == 7 ? 1 : -1];
+typedef char OctavoAndroidUi0TypographyRoleCountGuard[
+  UI0TypographyRole_Count == 8 ? 1 : -1];
+typedef char OctavoAndroidUi0DensityRoleCountGuard[
+  UI0DensityRole_Count == 6 ? 1 : -1];
+typedef char OctavoAndroidUi0StateRoleCountGuard[
+  UI0StateRole_Count == 7 ? 1 : -1];
+typedef char OctavoAndroidUi0DrawStateCountGuard[
+  UI0DrawState_Count == 7 ? 1 : -1];
+typedef char OctavoAndroidUi0ColorWidthGuard[
+  sizeof(jint) == sizeof(UI0Color) ? 1 : -1];
+
+enum
+{
+  OCTAVO_ANDROID_UI0_SNAPSHOT_HEADER_COUNT = 20,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_STRIDE = 2,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_STRIDE = 3,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_STRIDE = 3,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_COUNT = 10,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_COUNT = 9,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_COUNT = 4,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_COUNT = 6,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_COLOR_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_HEADER_COUNT,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_SPACING_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_COLOR_OFFSET + UI0ColorRole_Count,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_RADIUS_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_SPACING_OFFSET + UI0SpacingRole_Count,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_RADIUS_OFFSET + UI0RadiusRole_Count,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_DENSITY_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_OFFSET +
+    UI0TypographyRole_Count * OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_STRIDE,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_DENSITY_OFFSET + UI0DensityRole_Count,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_OFFSET +
+    UI0StateRole_Count * OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_STRIDE,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_OFFSET +
+    UI0DrawState_Count * OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_STRIDE,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET +
+    OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_COUNT,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET +
+    OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_COUNT,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET +
+    OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_COUNT,
+  OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT =
+    OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET +
+    OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_COUNT,
+};
+typedef char OctavoAndroidUi0PacketCountGuard[
+  OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT == 154 ? 1 : -1];
 
 enum
 {
@@ -3445,6 +3511,38 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   return 1;
 }
 
+static UI0Color
+octavo_android_ui0_tree_fill(UI0DrawTheme theme, UI0TreeStateFlags state)
+{
+  UI0DrawCommand commands[8];
+  UI0DrawContext draw;
+  UI0TreeRecord record;
+  memset(commands, 0, sizeof(commands));
+  memset(&record, 0, sizeof(record));
+  ui0_draw_context_init(&draw);
+  ui0_draw_begin_frame(&draw, commands, 8, theme);
+  record.id = 1;
+  record.tree_id = 1;
+  record.state = state;
+  record.rect = ui0_rect(0, 0, 48, 48);
+  record.hit_rect = record.rect;
+  record.clip_rect = record.rect;
+  record.text_rect = record.rect;
+  record.expander_rect = ui0_rect(0, 0, 1, 1);
+  record.current_rect = ui0_rect(0, 0, 2, 48);
+  record.label_hash = 1;
+  record.label_len = 1;
+  (void)ui0_tree_draw_record(&draw, &record);
+  for (UI0S32 index = 0; index < draw.command_count; index += 1)
+  {
+    if (commands[index].op == UI0DrawOp_ControlFill)
+    {
+      return commands[index].color;
+    }
+  }
+  return 0;
+}
+
 JNIEXPORT jstring JNICALL
 Java_ro_devze_octavo_OctavoNative_version(JNIEnv *environment, jclass type)
 {
@@ -3481,6 +3579,199 @@ Java_ro_devze_octavo_OctavoNative_uiVersion(JNIEnv *environment, jclass type)
 {
   (void)type;
   return (*environment)->NewStringUTF(environment, UI0_VERSION_STRING);
+}
+
+JNIEXPORT jintArray JNICALL
+Java_ro_devze_octavo_OctavoNative_ui0AndroidThemeSnapshot(
+  JNIEnv *environment,
+  jclass type,
+  jboolean dark_appearance,
+  jintArray appearance_colors)
+{
+  (void)type;
+  if (!environment || !appearance_colors ||
+      (*environment)->GetArrayLength(environment, appearance_colors) !=
+        UI0ColorRole_Count)
+  {
+    return 0;
+  }
+  jint colors[UI0ColorRole_Count];
+  (*environment)->GetIntArrayRegion(
+    environment, appearance_colors, 0, UI0ColorRole_Count, colors);
+  if ((*environment)->ExceptionCheck(environment))
+  {
+    return 0;
+  }
+
+  UI0ThemeProfile profile = ui0_theme_profile_for_kind(
+    dark_appearance ? UI0ThemeProfile_Dark : UI0ThemeProfile_Light);
+  UI0TokenPatch patch = ui0_token_patch(profile.resolved.kind);
+  for (UI0S32 role = 0; role < UI0ColorRole_Count; role += 1)
+  {
+    ui0_token_patch_set_color(
+      &patch, (UI0ColorRole)role, (UI0Color)(uint32_t)colors[role]);
+  }
+  const UI0DensityRole interactive_density[] =
+  {
+    UI0DensityRole_ControlHeight,
+    UI0DensityRole_IconButtonSize,
+    UI0DensityRole_RowMinHeight,
+    UI0DensityRole_MenuItemHeight,
+  };
+  for (UI0U32 index = 0;
+       index < sizeof(interactive_density) / sizeof(interactive_density[0]);
+       index += 1)
+  {
+    UI0DensityRole role = interactive_density[index];
+    UI0S32 value = profile.resolved.density[role];
+    ui0_token_patch_set_density(&patch, role, value < 48 ? 48 : value);
+  }
+
+  UI0ResolvedTheme resolved =
+    ui0_resolve_token_patch(&profile.resolved, &patch);
+  UI0DrawTheme draw = ui0_draw_theme_from_resolved(&resolved);
+  UI0TreeStyle tree = ui0_tree_style_from_resolved(&resolved);
+  UI0ControlStyle control = ui0_control_style_from_resolved(&resolved);
+  UI0TextInputStyle text_input =
+    ui0_text_input_style_from_resolved(&resolved);
+  jint packet[OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT];
+  memset(packet, 0, sizeof(packet));
+  packet[0] = OCTAVO_ANDROID_UI0_SNAPSHOT_MAGIC;
+  packet[1] = OCTAVO_ANDROID_UI0_SNAPSHOT_VERSION;
+  packet[2] = UI0_API_VERSION;
+  packet[3] = OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT;
+  packet[4] = (jint)resolved.kind;
+  packet[5] = UI0ColorRole_Count;
+  packet[6] = UI0SpacingRole_Count;
+  packet[7] = UI0RadiusRole_Count;
+  packet[8] = UI0TypographyRole_Count;
+  packet[9] = OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_STRIDE;
+  packet[10] = UI0DensityRole_Count;
+  packet[11] = UI0StateRole_Count;
+  packet[12] = OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_STRIDE;
+  packet[13] = UI0DrawState_Count;
+  packet[14] = OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_STRIDE;
+  packet[15] = OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_COUNT;
+  packet[16] = OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_COUNT;
+  packet[17] = OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_COUNT;
+  packet[18] = OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_COUNT;
+  packet[19] = 0;
+
+  for (UI0S32 role = 0; role < UI0ColorRole_Count; role += 1)
+  {
+    packet[OCTAVO_ANDROID_UI0_SNAPSHOT_COLOR_OFFSET + role] =
+      (jint)resolved.colors[role];
+  }
+  for (UI0S32 role = 0; role < UI0SpacingRole_Count; role += 1)
+  {
+    packet[OCTAVO_ANDROID_UI0_SNAPSHOT_SPACING_OFFSET + role] =
+      (jint)resolved.spacing[role];
+  }
+  for (UI0S32 role = 0; role < UI0RadiusRole_Count; role += 1)
+  {
+    packet[OCTAVO_ANDROID_UI0_SNAPSHOT_RADIUS_OFFSET + role] =
+      (jint)resolved.radius[role];
+  }
+  for (UI0S32 role = 0; role < UI0TypographyRole_Count; role += 1)
+  {
+    UI0S32 offset = OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_OFFSET +
+      role * OCTAVO_ANDROID_UI0_SNAPSHOT_TYPOGRAPHY_STRIDE;
+    packet[offset] = (jint)resolved.typography[role].char_width;
+    packet[offset + 1] = (jint)resolved.typography[role].line_height;
+  }
+  for (UI0S32 role = 0; role < UI0DensityRole_Count; role += 1)
+  {
+    packet[OCTAVO_ANDROID_UI0_SNAPSHOT_DENSITY_OFFSET + role] =
+      (jint)resolved.density[role];
+  }
+  for (UI0S32 role = 0; role < UI0StateRole_Count; role += 1)
+  {
+    UI0S32 offset = OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_OFFSET +
+      role * OCTAVO_ANDROID_UI0_SNAPSHOT_STATE_STRIDE;
+    packet[offset] = (jint)resolved.state[role].fill_role;
+    packet[offset + 1] = (jint)resolved.state[role].text_role;
+    packet[offset + 2] = (jint)resolved.state[role].border_role;
+  }
+  for (UI0S32 state = 0; state < UI0DrawState_Count; state += 1)
+  {
+    UI0S32 offset = OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_OFFSET +
+      state * OCTAVO_ANDROID_UI0_SNAPSHOT_DRAW_STRIDE;
+    packet[offset] = (jint)draw.state[state].fill;
+    packet[offset + 1] = (jint)draw.state[state].text;
+    packet[offset + 2] = (jint)draw.state[state].border;
+  }
+
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET] = (jint)tree.row_height;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 1] = (jint)tree.row_gap;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 2] = (jint)tree.padding_x;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 3] = (jint)tree.text_height;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 4] = (jint)tree.indent_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 5] = (jint)tree.expander_size;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 6] = (jint)tree.expander_gap;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 7] =
+    (jint)tree.current_bar_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 8] =
+    (jint)tree.current_bar_gap;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TREE_OFFSET + 9] = (jint)tree.char_width;
+
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET] = (jint)control.padding_x;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 1] =
+    (jint)control.padding_y;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 2] =
+    (jint)control.segment_padding_x;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 3] =
+    (jint)control.indicator_size;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 4] =
+    (jint)control.indicator_gap;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 5] =
+    (jint)control.toggle_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 6] =
+    (jint)control.toggle_height;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 7] =
+    (jint)control.char_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_CONTROL_OFFSET + 8] =
+    (jint)control.text_height;
+
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET] =
+    (jint)octavo_android_ui0_tree_fill(
+      draw, UI0TreeState_Focused | UI0TreeState_FocusVisible);
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET + 1] =
+    (jint)octavo_android_ui0_tree_fill(draw, UI0TreeState_Selected);
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET + 2] =
+    (jint)draw.focus_color;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_SUMMARY_OFFSET + 3] =
+    (jint)draw.focus_color;
+
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET] =
+    (jint)text_input.padding_x;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET + 1] =
+    (jint)text_input.padding_y;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET + 2] =
+    (jint)text_input.text_height;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET + 3] =
+    (jint)text_input.caret_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET + 4] =
+    (jint)text_input.min_selection_width;
+  packet[OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_OFFSET + 5] =
+    (jint)text_input.measure.fallback_char_width;
+
+  jintArray result = (*environment)->NewIntArray(
+    environment, OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT);
+  if (!result)
+  {
+    return 0;
+  }
+  (*environment)->SetIntArrayRegion(
+    environment,
+    result,
+    0,
+    OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT,
+    packet);
+  if ((*environment)->ExceptionCheck(environment))
+  {
+    return 0;
+  }
+  return result;
 }
 
 JNIEXPORT jstring JNICALL

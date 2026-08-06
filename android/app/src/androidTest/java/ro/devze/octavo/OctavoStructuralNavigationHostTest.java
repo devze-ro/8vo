@@ -3,21 +3,36 @@ package ro.devze.octavo;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.content.Context;
+import android.content.res.Configuration;
+import android.graphics.drawable.ColorDrawable;
+import android.os.Build;
 import android.text.InputType;
+import android.text.Layout;
+import android.text.Spanned;
+import android.text.TextUtils;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.TextAppearanceSpan;
 import android.view.ContextThemeWrapper;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.util.DisplayMetrics;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -238,6 +253,140 @@ public final class OctavoStructuralNavigationHostTest {
     }
 
     @Test
+    public void navigationSheetMotionStartsFromLogicalEnd() {
+        runOnMain(() -> {
+            Context target = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+            View panel = new View(target);
+            panel.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+            assertEquals(24,
+                         OctavoActivity.navigationPanelStartTranslationX(
+                             panel,
+                             24));
+            panel.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            assertEquals(-24,
+                         OctavoActivity.navigationPanelStartTranslationX(
+                             panel,
+                             24));
+            View anchor = new View(target);
+            View inheritedPanel = new View(target);
+            anchor.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            OctavoActivity.resolveSideSheetLayoutDirection(
+                inheritedPanel, anchor);
+            assertEquals(View.LAYOUT_DIRECTION_RTL,
+                         inheritedPanel.getLayoutDirection());
+            assertEquals(-24,
+                         OctavoActivity.navigationPanelStartTranslationX(
+                             inheritedPanel,
+                             24));
+            assertEquals(0,
+                         OctavoActivity.navigationPanelStartTranslationX(
+                             panel,
+                             0));
+        });
+    }
+
+    @Test
+    public void compactLandscapeInsetKeepsSideSheetInsideSafeOverlay() {
+        runOnMain(() -> {
+            Context target = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+            int windowWidth = 480;
+            int windowHeight = 320;
+            int lateralInset = 48;
+            int statusInset = 24;
+            int navigationInset = 48;
+            int outerGap = 24;
+            Configuration compactConfiguration = new Configuration(
+                target.getResources().getConfiguration());
+            compactConfiguration.fontScale = 1.3f;
+            compactConfiguration.densityDpi = DisplayMetrics.DENSITY_DEFAULT;
+            compactConfiguration.screenWidthDp = windowWidth;
+            compactConfiguration.screenHeightDp = windowHeight;
+            compactConfiguration.orientation =
+                Configuration.ORIENTATION_LANDSCAPE;
+            Context compact = target.createConfigurationContext(
+                compactConfiguration);
+            Context themed = new ContextThemeWrapper(
+                compact, R.style.Theme_Octavo);
+            OctavoNavigationPanel sheet = newPanel(
+                themed, new RecordingListener());
+            OctavoNavigation navigation = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 4, 4), nestedLabels());
+            assertNotNull(navigation);
+            sheet.updateSnapshot(navigation);
+            sheet.showError(
+                "Navigation failed and the last presented page could not be "
+                    + "restored. Reopen the book to continue from a known "
+                    + "reading position.");
+            sheet.goToTabForTesting().performClick();
+
+            FrameLayout root = new FrameLayout(themed);
+            root.setPadding(
+                lateralInset, statusInset, 0, navigationInset);
+            FrameLayout overlay = new FrameLayout(themed);
+            root.addView(
+                overlay,
+                new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            int safeWidth = windowWidth - lateralInset;
+            int sheetWidth = OctavoActivity.boundedSideSheetWidth(
+                safeWidth, outerGap, 560);
+            overlay.addView(
+                sheet,
+                new FrameLayout.LayoutParams(
+                    sheetWidth,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    Gravity.END));
+
+            root.measure(
+                View.MeasureSpec.makeMeasureSpec(
+                    windowWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(
+                    windowHeight, View.MeasureSpec.EXACTLY));
+            root.layout(0, 0, windowWidth, windowHeight);
+
+            assertEquals(safeWidth, overlay.getWidth());
+            assertEquals(windowHeight - statusInset - navigationInset,
+                         overlay.getHeight());
+            assertEquals(safeWidth - outerGap, sheet.getWidth());
+            assertEquals(outerGap, sheet.getLeft());
+            assertEquals(overlay.getWidth(), sheet.getRight());
+            assertEquals(1, sheet.statusForTesting().getMaxLines());
+            int minimumTarget = OctavoDesignTokens.TOUCH_TARGET_DP;
+            assertTrue(sheet.bodyForTesting().getHeight() >= minimumTarget);
+            sheet.applyAppearance(OctavoAppearance.defaults());
+            root.measure(
+                View.MeasureSpec.makeMeasureSpec(
+                    windowWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(
+                    windowHeight, View.MeasureSpec.EXACTLY));
+            root.layout(0, 0, windowWidth, windowHeight);
+            assertEquals(1, sheet.statusForTesting().getMaxLines());
+            assertTrue(sheet.bodyForTesting().getHeight() >= minimumTarget);
+
+            ScrollView goTo = sheet.goToScrollForTesting();
+            RadioGroup options = sheet.progressOptionsForTesting();
+            View finalChoice = options.getChildAt(options.getChildCount() - 1);
+            goTo.fullScroll(View.FOCUS_DOWN);
+            int maximumScroll = Math.max(
+                0, goTo.getChildAt(0).getHeight() - goTo.getHeight());
+            goTo.scrollTo(0, maximumScroll);
+            int finalChoiceBottom = descendantBottom(finalChoice, goTo);
+            assertTrue(
+                "finalChoiceBottom=" + finalChoiceBottom
+                    + " scrollY=" + goTo.getScrollY()
+                    + " height=" + goTo.getHeight()
+                    + " contentHeight=" + goTo.getChildAt(0).getHeight()
+                    + " visibility=" + goTo.getVisibility(),
+                finalChoiceBottom
+                    <= goTo.getScrollY() + goTo.getHeight());
+            assertFalse(goTo.canScrollVertically(1));
+        });
+    }
+
+    @Test
     public void retryFailureMessagesDistinguishRollbackFailure() {
         assertEquals(
             "Navigation was not committed because the page could not be "
@@ -287,11 +436,24 @@ public final class OctavoStructuralNavigationHostTest {
             panel.updateSnapshot(navigation);
 
             assertSame(navigation, panel.snapshotForTesting());
+            assertFalse(panel.isFocusable());
+            assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO,
+                         panel.getImportantForAccessibility());
+            AccessibilityNodeInfo panelInfo =
+                panel.createAccessibilityNodeInfo();
+            assertFalse(panelInfo.isFocusable());
+            panelInfo.recycle();
+            if (Build.VERSION.SDK_INT >= 28) {
+                assertEquals(panel.getContext().getString(
+                                 R.string.reader_navigation),
+                             panel.getAccessibilityPaneTitle());
+            }
             assertEquals("Current section: Chapter One",
                          panel.statusForTesting().getText().toString());
             assertEquals(
                 View.ACCESSIBILITY_LIVE_REGION_POLITE,
                 panel.statusForTesting().getAccessibilityLiveRegion());
+            assertStatusAccessibility(panel, null);
             assertEquals("Reader navigation",
                          panel.findViewById(R.id.octavo_navigation_title)
                              .getContentDescription());
@@ -302,9 +464,11 @@ public final class OctavoStructuralNavigationHostTest {
 
             LinearLayout list = panel.contentsListForTesting();
             assertEquals(3, list.getChildCount());
-            Button part = (Button)list.getChildAt(0);
-            Button current = (Button)list.getChildAt(1);
-            Button unavailable = (Button)list.getChildAt(2);
+            Ui0NavigationRow part = (Ui0NavigationRow)list.getChildAt(0);
+            Ui0NavigationRow current =
+                (Ui0NavigationRow)list.getChildAt(1);
+            Ui0NavigationRow unavailable =
+                (Ui0NavigationRow)list.getChildAt(2);
 
             assertEquals("Part One\nLocation 1 of 17 | 0 percent | Page 1 of 4",
                          part.getText().toString());
@@ -323,6 +487,95 @@ public final class OctavoStructuralNavigationHostTest {
             assertTrue(part.isEnabled());
             assertTrue(current.isEnabled());
             assertFalse(unavailable.isEnabled());
+            assertEquals(3, part.getMaxLines());
+            assertSame(TextUtils.TruncateAt.END, part.getEllipsize());
+            RelativeSizeSpan[] captionScales =
+                ((Spanned)part.getText()).getSpans(
+                    0,
+                    part.getText().length(),
+                    RelativeSizeSpan.class);
+            assertEquals(1, captionScales.length);
+            assertEquals(0.875f,
+                         captionScales[0].getSizeChange(),
+                         0.0f);
+            Spanned partText = (Spanned)part.getText();
+            int captionStart = partText.toString().indexOf('\n') + 1;
+            TextAppearanceSpan[] labelColors = partText.getSpans(
+                0, captionStart - 1, TextAppearanceSpan.class);
+            TextAppearanceSpan[] captionColors = partText.getSpans(
+                captionStart, partText.length(), TextAppearanceSpan.class);
+            assertEquals(1, labelColors.length);
+            assertEquals(1, captionColors.length);
+            assertEquals(panel.hierarchyLabelColorForTesting(),
+                         labelColors[0].getTextColor().getDefaultColor());
+            assertEquals(panel.hierarchyCaptionColorForTesting(),
+                         captionColors[0].getTextColor().getDefaultColor());
+            assertFalse(part.isCurrentForTesting());
+            assertTrue(current.isCurrentForTesting());
+            assertTrue(current.isSelected());
+            assertTrue(current.railWidthForTesting() > 0);
+            assertEquals(panel.currentRailRadiusForTesting(),
+                         current.railRadiusForTesting(),
+                         0.01f);
+            assertTrue(current.railRadiusForTesting()
+                       <= current.railWidthForTesting() / 2.0f);
+            LinearLayout.LayoutParams partLayout =
+                (LinearLayout.LayoutParams)part.getLayoutParams();
+            LinearLayout.LayoutParams currentLayout =
+                (LinearLayout.LayoutParams)current.getLayoutParams();
+            assertEquals(ViewGroup.LayoutParams.MATCH_PARENT,
+                         partLayout.width);
+            assertEquals(ViewGroup.LayoutParams.MATCH_PARENT,
+                         currentLayout.width);
+            assertEquals(0, partLayout.getMarginStart());
+            assertEquals(0, currentLayout.getMarginStart());
+            assertEquals(dp(panel.getContext(), 38),
+                         panel.hierarchyBaseStartPxForTesting());
+            assertEquals(panel.hierarchyBaseStartPxForTesting(),
+                         part.getPaddingStart());
+            assertEquals(panel.hierarchyTextStartPxForTesting(1),
+                         current.getPaddingStart());
+            assertTrue(Math.abs(
+                           panel.treeIndentPxForTesting()
+                               - (current.getPaddingStart()
+                                  - part.getPaddingStart()))
+                       <= 1);
+            assertEquals(28, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.PAGE_TITLE));
+            assertEquals(20, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.SECTION_TITLE));
+            assertEquals(16, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.BODY));
+            assertEquals(14, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.CAPTION));
+            assertEquals(14, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.METADATA));
+            assertEquals(16, panel.semanticTextSizeSpForTesting(
+                Ui0AndroidThemeSnapshot.TypographyRole.BUTTON));
+            assertTextSizeSp((TextView)panel.findViewById(
+                                 R.id.octavo_navigation_title),
+                             28);
+            LinearLayout goToContent = panel.findViewById(
+                R.id.octavo_navigation_go_to_content);
+            assertTextSizeSp((TextView)goToContent.getChildAt(0), 20);
+            assertTextSizeSp(panel.statusForTesting(), 14);
+            assertTextSizeSp(part, 16);
+            assertTextSizeSp(panel.dismissButtonForTesting(), 16);
+            assertTextSizeSp(panel.chapterInputForTesting(), 16);
+            assertEquals(panel.inputSelectionColorForTesting(),
+                         panel.chapterInputForTesting().getHighlightColor());
+            if (Build.VERSION.SDK_INT >= 29) {
+                assertTrue(panel.chapterInputForTesting()
+                    .getTextCursorDrawable() instanceof ColorDrawable);
+                assertEquals(panel.inputCaretColorForTesting(),
+                    ((ColorDrawable)panel.chapterInputForTesting()
+                        .getTextCursorDrawable()).getColor());
+            }
+            assertSame(current, panel.preferredInitialFocus());
+            assertEquals(panel.rowSelectedFillForTesting(),
+                         panel.rowFocusedFillForTesting(true));
+            assertTrue(panel.rowFocusedFillForTesting(false)
+                       != panel.rowFocusedFillForTesting(true));
 
             AccessibilityNodeInfo collection =
                 list.createAccessibilityNodeInfo();
@@ -358,6 +611,183 @@ public final class OctavoStructuralNavigationHostTest {
             assertEquals(panel.contentsTabForTesting().getId(),
                          panel.dismissButtonForTesting()
                              .getNextFocusForwardId());
+
+            int stableCurrentId = current.getId();
+            requestDeterministicFocus(current);
+            panel.updateSnapshot(navigation);
+            Ui0NavigationRow rebuiltCurrent = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(1);
+            assertSame(current, rebuiltCurrent);
+            assertEquals(stableCurrentId, rebuiltCurrent.getId());
+            assertTrue(rebuiltCurrent.hasFocus());
+        });
+    }
+
+    @Test
+    public void narrowScaledHierarchyKeepsWrappedLabelAndCaptionVisible() {
+        runOnMain(() -> {
+            Context target = InstrumentationRegistry.getInstrumentation()
+                .getTargetContext();
+            Configuration scaledConfiguration = new Configuration(
+                target.getResources().getConfiguration());
+            scaledConfiguration.fontScale = 1.3f;
+            Context scaled = target.createConfigurationContext(
+                scaledConfiguration);
+            Context themed = new ContextThemeWrapper(
+                scaled, R.style.Theme_Octavo);
+            RecordingListener listener = new RecordingListener();
+            OctavoNavigationPanel panel = newPanel(themed, listener);
+            String longLabel = "AnUnusuallyLongNavigationHeading";
+            OctavoNavigation navigation = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 4, 4),
+                new String[] {
+                    longLabel,
+                    "Chapter One",
+                    "Scene"
+                });
+            assertNotNull(navigation);
+            panel.updateSnapshot(navigation);
+
+            Ui0NavigationRow row = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(0);
+            assertEquals(3, row.getMaxLines());
+            assertEquals(1.3f,
+                         themed.getResources().getConfiguration().fontScale,
+                         0.001f);
+            int narrowWidth = row.getCompoundPaddingLeft()
+                + row.getCompoundPaddingRight()
+                + Math.max(1,
+                           (int)Math.ceil(
+                               row.getPaint().measureText(longLabel) * 0.60f));
+            row.measure(
+                View.MeasureSpec.makeMeasureSpec(
+                    narrowWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(
+                    0, View.MeasureSpec.UNSPECIFIED));
+            row.layout(0, 0, row.getMeasuredWidth(), row.getMeasuredHeight());
+
+            Layout layout = row.getLayout();
+            assertNotNull(layout);
+            assertTrue(layout.getLineCount() <= 3);
+            String renderedText = row.getText().toString();
+            int captionStart = renderedText.indexOf('\n') + 1;
+            assertTrue(captionStart > 0);
+            int captionLine = layout.getLineForOffset(captionStart);
+            assertTrue(captionLine >= 2);
+            assertTrue(captionLine < layout.getLineCount());
+            int visibleEnd = layout.getEllipsisCount(captionLine) > 0
+                ? layout.getLineStart(captionLine)
+                    + layout.getEllipsisStart(captionLine)
+                : layout.getLineEnd(captionLine);
+            assertTrue(visibleEnd > captionStart);
+            assertTrue(row.getMeasuredHeight()
+                       >= row.getTotalPaddingTop()
+                           + layout.getHeight()
+                           + row.getTotalPaddingBottom());
+            assertTrue(row.getMeasuredHeight() > row.getMinHeight());
+            assertTrue(row.getMinHeight() >= dp(themed, 48));
+        });
+    }
+
+    @Test
+    public void structuralChangeDoesNotStealFocusFromAnotherControl() {
+        runOnMain(() -> {
+            RecordingListener listener = new RecordingListener();
+            OctavoNavigationPanel panel = newPanel(listener);
+            OctavoNavigation ready = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 4, 4), nestedLabels());
+            assertNotNull(ready);
+            panel.updateSnapshot(ready);
+            Ui0NavigationRow originalCurrent = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(1);
+            requestDeterministicFocus(originalCurrent);
+
+            OctavoNavigation pending = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY | OctavoNavigation.FLAG_PENDING,
+                             5,
+                             4),
+                nestedLabels());
+            assertNotNull(pending);
+            panel.updateSnapshot(pending);
+            requestDeterministicFocus(panel.dismissButtonForTesting());
+
+            String[] changedLabels =
+                new String[] {"Part Two", "Chapter One", "Scene"};
+            OctavoNavigation changed = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 6, 6), changedLabels);
+            assertNotNull(changed);
+            panel.updateSnapshot(changed);
+            Ui0NavigationRow replacement = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(1);
+            assertNotSame(originalCurrent, replacement);
+            assertTrue(panel.dismissButtonForTesting().hasFocus());
+            assertFalse(replacement.hasFocus());
+        });
+    }
+
+    @Test
+    public void equivalentPendingRollbackRetainsRowsFocusAndStatusIdentity() {
+        runOnMain(() -> {
+            RecordingListener listener = new RecordingListener();
+            OctavoNavigationPanel panel = newPanel(listener);
+            OctavoNavigation ready = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 4, 4), nestedLabels());
+            assertNotNull(ready);
+            panel.updateSnapshot(ready);
+
+            Ui0NavigationRow part = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(0);
+            Ui0NavigationRow current = (Ui0NavigationRow)
+                panel.contentsListForTesting().getChildAt(1);
+            int statusRevision = panel.statusRevisionForTesting();
+            panel.updateSnapshot(ready);
+            assertSame(part, panel.contentsListForTesting().getChildAt(0));
+            assertSame(current, panel.contentsListForTesting().getChildAt(1));
+            assertEquals(statusRevision, panel.statusRevisionForTesting());
+
+            requestDeterministicFocus(current);
+            OctavoNavigation pending = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY | OctavoNavigation.FLAG_PENDING,
+                             5,
+                             4),
+                nestedLabels());
+            assertNotNull(pending);
+            panel.updateSnapshot(pending);
+            assertSame(part, panel.contentsListForTesting().getChildAt(0));
+            assertSame(current, panel.contentsListForTesting().getChildAt(1));
+            assertFalse(current.isEnabled());
+
+            panel.showError("Navigation was rolled back.");
+            OctavoNavigation rollback = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 6, 4), nestedLabels());
+            assertNotNull(rollback);
+            panel.updateSnapshot(rollback);
+            assertSame(part, panel.contentsListForTesting().getChildAt(0));
+            assertSame(current, panel.contentsListForTesting().getChildAt(1));
+            assertTrue(current.isEnabled());
+            assertTrue(current.hasFocus());
+            assertTrue(current.getContentDescription().toString()
+                           .contains("current section"));
+            assertEquals("Navigation was rolled back.",
+                         panel.statusForTesting().getText().toString());
+            assertStatusAccessibility(panel, "Navigation was rolled back.");
+            int failureRevision = panel.statusRevisionForTesting();
+            panel.showError("Navigation was rolled back.");
+            assertEquals(failureRevision, panel.statusRevisionForTesting());
+            assertStatusAccessibility(panel, "Navigation was rolled back.");
+
+            OctavoNavigation retryPending =
+                OctavoNavigation.fromNativePacket(
+                    nestedPacket(
+                        FLAGS_READY | OctavoNavigation.FLAG_PENDING,
+                        7,
+                        4),
+                    nestedLabels());
+            assertNotNull(retryPending);
+            panel.updateSnapshot(retryPending);
+            assertTrue(panel.statusForTesting().getText().toString()
+                           .startsWith("Opening destination"));
+            assertStatusAccessibility(panel, null);
         });
     }
 
@@ -384,6 +814,13 @@ public final class OctavoStructuralNavigationHostTest {
             assertFalse(panel.locationInputForTesting().isEnabled());
             assertFalse(panel.pageInputForTesting().isEnabled());
             assertFalse(panel.percentageInputForTesting().isEnabled());
+            assertTrue(panel.locationInputForTesting()
+                           .getTextColors().isStateful());
+            assertTrue(panel.locationInputForTesting()
+                           .getHintTextColors().isStateful());
+            assertEquals(panel.inputDisabledTextColorForTesting(),
+                         panel.locationInputForTesting()
+                             .getCurrentTextColor());
             for (int index = 0;
                  index < panel.progressOptionsForTesting().getChildCount();
                  ++index) {
@@ -426,8 +863,9 @@ public final class OctavoStructuralNavigationHostTest {
             panel.findViewById(R.id.octavo_navigation_page_go)
                 .performClick();
             assertEquals(0, listener.pageCount);
-            assertTrue(panel.statusForTesting().getContentDescription()
-                           .toString().startsWith("Navigation error."));
+            assertStatusAccessibility(
+                panel,
+                panel.statusForTesting().getText().toString());
 
             panel.percentageInputForTesting().setText("0");
             panel.findViewById(R.id.octavo_navigation_percentage_go)
@@ -438,13 +876,50 @@ public final class OctavoStructuralNavigationHostTest {
             RadioButton pageOption = progressOption(
                 panel.progressOptionsForTesting(),
                 OctavoProgressDisplay.PAGE);
+            RadioButton percentageOption = progressOption(
+                panel.progressOptionsForTesting(),
+                OctavoProgressDisplay.PERCENTAGE);
             assertNotNull(pageOption);
+            assertNotNull(percentageOption);
+            assertTrue(pageOption instanceof PresentedProgressRadioButton);
+            assertEquals(percentageOption.getId(),
+                         panel.progressOptionsForTesting()
+                             .getCheckedRadioButtonId());
+            percentageOption.performClick();
+            assertEquals(0, listener.progressCount);
+            listener.observedRequestedProgress = pageOption;
+            listener.observedPresentedProgress = percentageOption;
+            List<Boolean> checkedStatesAtEvents = new java.util.ArrayList<>();
+            pageOption.setAccessibilityDelegate(
+                new View.AccessibilityDelegate() {
+                    @Override
+                    public void sendAccessibilityEvent(
+                        View host, int eventType) {
+                        checkedStatesAtEvents.add(
+                            ((RadioButton)host).isChecked());
+                        super.sendAccessibilityEvent(host, eventType);
+                    }
+                });
             pageOption.performClick();
             assertEquals(1, listener.progressCount);
             assertSame(OctavoProgressDisplay.PAGE,
                        listener.lastProgress);
             assertSame(OctavoProgressDisplay.PERCENTAGE,
                        panel.presentedProgressForTesting());
+            assertTrue(listener.progressRequestObserved);
+            assertFalse(listener.requestSawRequestedChecked);
+            assertTrue(listener.requestSawPresentedChecked);
+            assertFalse(checkedStatesAtEvents.isEmpty());
+            for (boolean checkedAtEvent : checkedStatesAtEvents) {
+                assertFalse(checkedAtEvent);
+            }
+            assertEquals(percentageOption.getId(),
+                         panel.progressOptionsForTesting()
+                             .getCheckedRadioButtonId());
+            panel.showError("Progress display could not be presented.");
+            assertEquals(percentageOption.getId(),
+                         panel.progressOptionsForTesting()
+                             .getCheckedRadioButtonId());
             panel.updateProgressDisplay(OctavoProgressDisplay.PAGE);
             assertSame(OctavoProgressDisplay.PAGE,
                        panel.presentedProgressForTesting());
@@ -452,6 +927,69 @@ public final class OctavoStructuralNavigationHostTest {
                          panel.progressOptionsForTesting()
                              .getCheckedRadioButtonId());
         });
+    }
+
+    @Test
+    public void acceptedRequestPublishesOneLiveStatusMutation() {
+        runOnMain(() -> {
+            OctavoNavigationPanel panel = newPanel(new RecordingListener());
+            OctavoNavigation ready = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 4, 4), nestedLabels());
+            OctavoNavigation pending = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY | OctavoNavigation.FLAG_PENDING,
+                             5,
+                             4),
+                nestedLabels());
+            assertNotNull(ready);
+            assertNotNull(pending);
+            panel.updateSnapshot(ready);
+            int revision = panel.statusRevisionForTesting();
+
+            panel.updateSnapshotWithStatus(
+                pending, "Opening location 17.");
+
+            assertEquals(revision + 1, panel.statusRevisionForTesting());
+            assertEquals("Opening location 17.",
+                         panel.statusForTesting().getText().toString());
+            assertStatusAccessibility(panel, null);
+            panel.updateSnapshot(pending);
+            assertEquals(revision + 1, panel.statusRevisionForTesting());
+            assertEquals("Opening location 17.",
+                         panel.statusForTesting().getText().toString());
+
+            OctavoNavigation presented = OctavoNavigation.fromNativePacket(
+                nestedPacket(FLAGS_READY, 5, 5), nestedLabels());
+            assertNotNull(presented);
+            panel.updateSnapshot(presented);
+            assertEquals(revision + 2, panel.statusRevisionForTesting());
+            assertEquals("Current section: Chapter One",
+                         panel.statusForTesting().getText().toString());
+
+            panel.showError("The destination could not be opened.");
+            int errorRevision = panel.statusRevisionForTesting();
+            assertStatusAccessibility(
+                panel, "The destination could not be opened.");
+            panel.updateAlreadyPresentedSnapshot(presented);
+            assertEquals(errorRevision + 1,
+                         panel.statusRevisionForTesting());
+            assertEquals("Current section: Chapter One",
+                         panel.statusForTesting().getText().toString());
+            assertStatusAccessibility(panel, null);
+        });
+    }
+
+    @Test
+    public void navigationThemeFailureMessageIsVisibleAndRetryable() {
+        assertEquals(
+            "Reader navigation styling is unavailable. Reopen Navigation "
+                + "to retry.",
+            OctavoActivity.navigationThemeFailureMessage());
+        assertTrue(OctavoActivity.navigationRequestIsPending(
+            OctavoNative.NAVIGATION_ACCEPTED));
+        assertFalse(OctavoActivity.navigationRequestIsPending(
+            OctavoNative.NAVIGATION_ALREADY_PRESENTED));
+        assertFalse(OctavoActivity.navigationRequestIsPending(
+            OctavoNative.NAVIGATION_INVALID));
     }
 
     private static void assertRejected(long[] valid,
@@ -604,8 +1142,14 @@ public final class OctavoStructuralNavigationHostTest {
             .getTargetContext();
         Context themed = new ContextThemeWrapper(
             target, R.style.Theme_Octavo);
+        return newPanel(themed, listener);
+    }
+
+    private static OctavoNavigationPanel newPanel(
+        Context context,
+        RecordingListener listener) {
         return new OctavoNavigationPanel(
-            themed,
+            context,
             OctavoAppearance.defaults(),
             OctavoProgressDisplay.PERCENTAGE,
             listener);
@@ -635,6 +1179,36 @@ public final class OctavoStructuralNavigationHostTest {
                                        .getDisplayMetrics().density));
     }
 
+    private static void assertTextSizeSp(TextView view, int expectedSp) {
+        TextView probe = new TextView(view.getContext());
+        probe.setTextSize(expectedSp);
+        assertEquals(probe.getTextSize(),
+                     view.getTextSize(),
+                     0.01f);
+    }
+
+    private static int descendantBottom(View descendant, View ancestor) {
+        int bottom = descendant.getBottom();
+        View current = descendant;
+        while (current.getParent() instanceof View
+                && current.getParent() != ancestor) {
+            current = (View)current.getParent();
+            bottom += current.getTop();
+        }
+        assertSame(ancestor, current.getParent());
+        return bottom;
+    }
+
+    private static void assertStatusAccessibility(
+        OctavoNavigationPanel panel,
+        String expectedError) {
+        TextView status = panel.statusForTesting();
+        assertNull(status.getContentDescription());
+        AccessibilityNodeInfo info = status.createAccessibilityNodeInfo();
+        assertEquals(expectedError, info.getError());
+        info.recycle();
+    }
+
     private static void assertWholeNumberInput(EditText input) {
         assertEquals(InputType.TYPE_CLASS_NUMBER,
                      input.getInputType() & InputType.TYPE_MASK_CLASS);
@@ -643,7 +1217,13 @@ public final class OctavoStructuralNavigationHostTest {
                          & InputType.TYPE_NUMBER_FLAG_DECIMAL);
         assertEquals(0,
                      input.getInputType()
-                         & InputType.TYPE_NUMBER_FLAG_SIGNED);
+                          & InputType.TYPE_NUMBER_FLAG_SIGNED);
+    }
+
+    private static void requestDeterministicFocus(View view) {
+        view.setFocusableInTouchMode(true);
+        assertTrue(view.requestFocus());
+        assertTrue(view.hasFocus());
     }
 
     private static RadioButton progressOption(
@@ -669,6 +1249,11 @@ public final class OctavoStructuralNavigationHostTest {
         long lastPage;
         int lastPercentage;
         OctavoProgressDisplay lastProgress;
+        RadioButton observedRequestedProgress;
+        RadioButton observedPresentedProgress;
+        boolean progressRequestObserved;
+        boolean requestSawRequestedChecked;
+        boolean requestSawPresentedChecked;
 
         @Override
         public void onDismiss() {
@@ -717,6 +1302,13 @@ public final class OctavoStructuralNavigationHostTest {
             eventCount += 1;
             progressCount += 1;
             lastProgress = display;
+            progressRequestObserved = true;
+            requestSawRequestedChecked =
+                observedRequestedProgress != null
+                    && observedRequestedProgress.isChecked();
+            requestSawPresentedChecked =
+                observedPresentedProgress != null
+                    && observedPresentedProgress.isChecked();
         }
     }
 }

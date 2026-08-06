@@ -20,6 +20,18 @@ $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
 $androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
 $androidJniPath = Join-Path $androidCppRoot "octavo_android_jni.c"
+$androidJavaRoot =
+  Join-Path $RepoRoot 'android\app\src\main\java\ro\devze\octavo'
+$androidUi0ThemeSnapshotPath =
+  Join-Path $androidJavaRoot 'Ui0AndroidThemeSnapshot.java'
+$androidUi0ThemeAdapterPath =
+  Join-Path $androidJavaRoot 'Ui0AndroidThemeAdapter.java'
+$androidNavigationPanelPath =
+  Join-Path $androidJavaRoot 'OctavoNavigationPanel.java'
+$androidLegacyEditorColorPath =
+  Join-Path $RepoRoot 'android\app\src\main\res\values\colors.xml'
+$androidLegacyEditorThemePath =
+  Join-Path $RepoRoot 'android\app\src\main\res\values-v26\styles.xml'
 $androidNavigationPath =
   Join-Path $androidCppRoot "octavo_android_port8_navigation.inc"
 if (!(Test-Path -LiteralPath $buildPath)) { $failures.Add("missing code/build.c") }
@@ -64,6 +76,20 @@ if (!(Test-Path -LiteralPath $androidNavigationPath)) {
   $failures.Add("missing Android structural-navigation adapter")
 }
 
+if (!(Test-Path -LiteralPath $androidUi0ThemeSnapshotPath -PathType Leaf)) {
+  $failures.Add('missing typed Android UI0 theme snapshot boundary')
+}
+if (!(Test-Path -LiteralPath $androidUi0ThemeAdapterPath -PathType Leaf)) {
+  $failures.Add('missing product-neutral UI0-to-Android theme adapter')
+}
+if (!(Test-Path -LiteralPath $androidNavigationPanelPath -PathType Leaf)) {
+  $failures.Add('missing Android Navigation panel consumer')
+}
+if (!(Test-Path -LiteralPath $androidLegacyEditorColorPath -PathType Leaf) -or
+    !(Test-Path -LiteralPath $androidLegacyEditorThemePath -PathType Leaf)) {
+  $failures.Add('missing Android 8-9 editor compatibility theme resources')
+}
+
 if ($failures.Count -eq 0) {
   $build = [System.IO.File]::ReadAllText($buildPath)
   $app = [System.IO.File]::ReadAllText($appPath)
@@ -82,6 +108,229 @@ if ($failures.Count -eq 0) {
   $androidJni = [System.IO.File]::ReadAllText($androidJniPath)
   $androidNavigation =
     [System.IO.File]::ReadAllText($androidNavigationPath)
+  $androidUi0ThemeSnapshot =
+    [System.IO.File]::ReadAllText($androidUi0ThemeSnapshotPath)
+  $androidUi0ThemeAdapter =
+    [System.IO.File]::ReadAllText($androidUi0ThemeAdapterPath)
+  $androidNavigationPanel =
+    [System.IO.File]::ReadAllText($androidNavigationPanelPath)
+  $androidLegacyEditorColor =
+    [System.IO.File]::ReadAllText($androidLegacyEditorColorPath)
+  $androidLegacyEditorTheme =
+    [System.IO.File]::ReadAllText($androidLegacyEditorThemePath)
+  $nativeUi0SnapshotMarkers = @(
+    '#if UI0_API_VERSION != 91',
+    'OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT == 154',
+    'OCTAVO_ANDROID_UI0_SNAPSHOT_TEXT_INPUT_COUNT = 6',
+    'packet[19] = 0;',
+    'Java_ro_devze_octavo_OctavoNative_ui0AndroidThemeSnapshot',
+    'ui0_token_patch_set_color',
+    'ui0_token_patch_set_density',
+    'UI0DensityRole_ControlHeight',
+    'UI0DensityRole_IconButtonSize',
+    'UI0DensityRole_RowMinHeight',
+    'UI0DensityRole_MenuItemHeight',
+    'value < 48 ? 48 : value',
+    'ui0_resolve_token_patch',
+    'ui0_draw_theme_from_resolved',
+    'ui0_tree_style_from_resolved',
+    'ui0_control_style_from_resolved',
+    'ui0_text_input_style_from_resolved',
+    'ui0_tree_draw_record'
+  )
+  foreach ($marker in $nativeUi0SnapshotMarkers) {
+    if ($androidJni.IndexOf($marker) -lt 0) {
+      $failures.Add('Android UI0 snapshot must retain its exact API 91 public native derivation')
+      break
+    }
+  }
+  $javaUi0SnapshotMarkers = @(
+    'static final int MAGIC = 0x4F553941;',
+    'static final int VERSION = 1;',
+    'static final int UI0_API_VERSION = 91;',
+    'static final int PACKET_LENGTH = 154;',
+    'enum TextInputMetric',
+    'static Ui0AndroidThemeSnapshot parse(int[] source)',
+    'source.length != PACKET_LENGTH',
+    'int[] packet = source.clone();',
+    'packet[0] != MAGIC',
+    'packet[1] != VERSION',
+    'packet[2] != UI0_API_VERSION',
+    'packet[3] != PACKET_LENGTH',
+    'packet[18] != TextInputMetric.values().length',
+    'packet[19] != 0',
+    'validMetrics(',
+    'DensityRole.CONTROL_HEIGHT.ordinal()] < 48',
+    'int textInput(TextInputMetric metric)',
+    'return packet.clone();'
+  )
+  foreach ($marker in $javaUi0SnapshotMarkers) {
+    if ($androidUi0ThemeSnapshot.IndexOf($marker) -lt 0 -or
+        $androidUi0ThemeSnapshot.IndexOf('OctavoNative') -ge 0) {
+      $failures.Add('Android UI0 snapshot parser must retain strict API 91 packet validation and ownership')
+      break
+    }
+  }
+  $androidUi0AdapterMarkers = @(
+    'final class Ui0AndroidThemeAdapter {',
+    'Ui0AndroidThemeAdapter(Ui0AndroidThemeSnapshot snapshot, float density)',
+    'Float.isFinite(density)',
+    'int color(Ui0AndroidThemeSnapshot.ColorRole role)',
+    'int textSizeSp(Ui0AndroidThemeSnapshot.TypographyRole role)',
+    'float relativeTextScale(',
+    'int spacingPx(Ui0AndroidThemeSnapshot.SpacingRole role)',
+    'int radiusPx(Ui0AndroidThemeSnapshot.RadiusRole role)',
+    'int densityPx(Ui0AndroidThemeSnapshot.DensityRole role)',
+    'int treePx(Ui0AndroidThemeSnapshot.TreeMetric metric)',
+    'int controlPx(Ui0AndroidThemeSnapshot.ControlMetric metric)',
+    'int textInputPx(Ui0AndroidThemeSnapshot.TextInputMetric metric)',
+    'int hierarchyTextStartPx(int depth)',
+    'Ui0AndroidThemeSnapshot.TreeMetric.EXPANDER_SIZE',
+    'Ui0AndroidThemeSnapshot.TreeMetric.EXPANDER_GAP',
+    'int currentRailInsetPx()',
+    'GradientDrawable panelBackground()',
+    'LayerDrawable rowBackground(boolean current)',
+    'StateListDrawable neutralBackground()',
+    'StateListDrawable actionBackground()',
+    'StateListDrawable optionBackground()',
+    'StateListDrawable inputBackground()',
+    'ColorStateList hierarchyTextColors(',
+    'ColorStateList neutralTextColors()',
+    'ColorStateList actionTextColors()',
+    'ColorStateList radioTextColors()',
+    'ColorStateList radioTintColors()',
+    'ColorStateList inputTextColors()',
+    'ColorStateList inputHintColors()',
+    'snapshot.drawText(',
+    'Ui0AndroidThemeSnapshot.DrawState.DISABLED'
+  )
+  foreach ($marker in $androidUi0AdapterMarkers) {
+    if ($androidUi0ThemeAdapter.IndexOf($marker) -lt 0) {
+      $failures.Add(
+        'Android UI0 adapter must retain the complete typed native translation surface')
+      break
+    }
+  }
+  if ($androidLegacyEditorColor.IndexOf(
+        '<color name=''octavo_legacy_editor_accent''>#8B7560</color>') -lt 0 -or
+      $androidLegacyEditorTheme.IndexOf(
+        '<item name=''android:colorAccent''>@color/octavo_legacy_editor_accent</item>') -lt 0 -or
+      $androidLegacyEditorTheme.IndexOf(
+        '<item name=''android:colorControlActivated''>@color/octavo_legacy_editor_accent</item>') -lt 0) {
+    $failures.Add(
+      'Android 8-9 editor compatibility must retain the qualified fixed accent and both public theme bindings')
+  }
+  $androidUi0AdapterInstanceFields = [regex]::Matches(
+    $androidUi0ThemeAdapter,
+    '(?m)^    (?![^\r\n;]*\bstatic\b)(?:public |protected |private )?(?:final )?[A-Za-z0-9_<>\[\].?]+\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*=[^;]+)?;\s*$')
+  $androidUi0AdapterFieldText = @(
+    $androidUi0AdapterInstanceFields |
+      ForEach-Object { $_.Value.Trim() })
+  $androidUi0AdapterConstructorCount = [regex]::Matches(
+    $androidUi0ThemeAdapter,
+    '(?m)^    Ui0AndroidThemeAdapter\s*\(').Count
+  $androidUi0AdapterConstructor = [regex]::Match(
+    $androidUi0ThemeAdapter,
+    '(?m)^    Ui0AndroidThemeAdapter\s*\(\s*Ui0AndroidThemeSnapshot\s+snapshot\s*,\s*float\s+density\s*\)')
+  if ($androidUi0AdapterInstanceFields.Count -ne 2 -or
+      $androidUi0AdapterFieldText -notcontains
+        'private final Ui0AndroidThemeSnapshot snapshot;' -or
+      $androidUi0AdapterFieldText -notcontains 'private final float density;' -or
+      $androidUi0AdapterConstructorCount -ne 1 -or
+      !$androidUi0AdapterConstructor.Success) {
+    $failures.Add(
+      'Android UI0 adapter instance ownership must remain snapshot-and-density only')
+  }
+  $androidUi0AdapterForbiddenPatterns = @(
+    '(?i)\bOctavoActivity\b',
+    '(?i)\bOctavoNavigationPanel\b',
+    '(?i)\bOctavoNative\b',
+    '(?i)\bOctavoDesignTokens\b',
+    '(?i)\blistener\b',
+    '(?i)\bworkflow\b',
+    '(?i)\bstore\b',
+    '(?i)\bresources?\b',
+    '(?<!android\.)\bR\.[A-Za-z_]',
+    '\bgetResources\s*\(',
+    '\bgetString\s*\('
+  )
+  foreach ($pattern in $androidUi0AdapterForbiddenPatterns) {
+    if ($androidUi0ThemeAdapter -match $pattern) {
+      $failures.Add(
+        'Android UI0 adapter must remain free of product workflow and resource coupling')
+      break
+    }
+  }
+
+  $androidNavigationAdapterMarkers = @(
+    'private Ui0AndroidThemeAdapter ui0Adapter;',
+    'new Ui0AndroidThemeAdapter(',
+    'ui0Adapter.panelBackground()',
+    'ui0Adapter.rowBackground(',
+    'ui0Adapter.neutralBackground()',
+    'ui0Adapter.actionBackground()',
+    'ui0Adapter.optionBackground()',
+    'ui0Adapter.inputBackground()',
+    'ui0Adapter.hierarchyTextColors(',
+    'ui0Adapter.neutralTextColors()',
+    'ui0Adapter.actionTextColors()',
+    'ui0Adapter.radioTextColors()',
+    'ui0Adapter.radioTintColors()',
+    'ui0Adapter.inputTextColors()',
+    'ui0Adapter.inputHintColors()',
+    '.hierarchyTextStartPx(depth)',
+    'ui0Adapter.currentRailInsetPx()',
+    'ui0Adapter.textSizeSp(',
+    'ui0Adapter.relativeTextScale('
+  )
+  foreach ($marker in $androidNavigationAdapterMarkers) {
+    if ($androidNavigationPanel.IndexOf($marker) -lt 0) {
+      $failures.Add(
+        'Android Navigation must create and exclusively consume the typed UI0 Android adapter')
+      break
+    }
+  }
+  $resolveThemeMatch = [regex]::Match(
+    $androidNavigationPanel,
+    '(?s)private static Ui0AndroidThemeSnapshot resolveTheme\s*\(\s*OctavoAppearance appearance\s*\)\s*\{.*?return resolved;\s*\}')
+  $nativeThemeResolveCount = [regex]::Matches(
+    $androidNavigationPanel,
+    'OctavoNative\.ui0AndroidThemeSnapshot\s*\(').Count
+  $snapshotParseCount = [regex]::Matches(
+    $androidNavigationPanel,
+    'Ui0AndroidThemeSnapshot\.parse\s*\(').Count
+  if (!$resolveThemeMatch.Success -or
+      [regex]::Matches($resolveThemeMatch.Value, ';').Count -ne 4 -or
+      $nativeThemeResolveCount -ne 1 -or
+      $snapshotParseCount -ne 1 -or
+      $resolveThemeMatch.Value.IndexOf(
+        'OctavoNative.ui0AndroidThemeSnapshot(') -lt 0 -or
+      $resolveThemeMatch.Value.IndexOf(
+        'Ui0AndroidThemeSnapshot.parse(') -lt 0) {
+    $failures.Add(
+      'Android Navigation native theme resolution must remain one thin validated snapshot factory')
+  }
+  $navigationTextSizeCallCount = [regex]::Matches(
+    $androidNavigationPanel,
+    '\.setTextSize\s*\(').Count
+  $navigationSemanticTextSizeCallCount = [regex]::Matches(
+    $androidNavigationPanel,
+    '\.setTextSize\s*\(\s*ui0Adapter\.textSizeSp\s*\(').Count
+  if ($navigationTextSizeCallCount -eq 0 -or
+      $navigationTextSizeCallCount -ne $navigationSemanticTextSizeCallCount -or
+      $androidNavigationPanel -match
+        '\.setTextSize\s*\(\s*(?:android\.util\.TypedValue\.[^,]+\s*,\s*)?\d+(?:\.\d+)?[fFdD]?\s*\)' -or
+      $androidNavigationPanel -match
+        '\bnew\s+(?:GradientDrawable|StateListDrawable|ColorStateList)\b' -or
+      $androidNavigationPanel -match
+        '(?m)^\s*private\s+(?:static\s+)?(?:int|float)\s+dp\s*\(' -or
+      $androidNavigationPanel.IndexOf('Ui0AndroidThemeSnapshot.resolve(') -ge 0 -or
+      $androidNavigationPanel.IndexOf('INDENT_DP') -ge 0 -or
+      $androidNavigationPanel.IndexOf(
+        'rowBackground(OctavoDesignTokens') -ge 0) {
+    $failures.Add(
+      'Android Navigation must not retain local theme, drawable, text-size, or dp translation')
+  }
   if ($dependencyCheck.IndexOf($forbiddenGround0Variable) -ge 0 -or
       $win32Build.IndexOf($forbiddenGround0Variable) -ge 0) {
     $failures.Add("dependency resolution must not use the forbidden legacy Ground0 environment variable")

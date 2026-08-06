@@ -28,6 +28,8 @@ final class OctavoNative {
     static native String groundVersion();
     static native String readerVersion();
     static native String uiVersion();
+    static native int[] ui0AndroidThemeSnapshot(boolean darkAppearance,
+                                                int[] colors);
     static native String readerViewVersion();
     static native long create(String filesPath,
                               String cachePath,

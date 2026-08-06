@@ -15,10 +15,11 @@ remain predecessor evidence and do not validate the corrected source;
 corrected-source physical evidence is recorded below. Controlled real-book
 review closes the six reported defects. A 2026-08-05 spacing, fresh-default,
 and Library-gutter refinement now passes the API 36 emulator and API 34
-physical gates below; hands-on review remains pending. Audible TalkBack, UI
-polish, subjective transition/touch review, and user manual acceptance remain
-pending. Nothing in this document claims final Port 8
-acceptance, push, or merge.
+physical gates below; hands-on review remains pending. The first bounded
+Navigation-polish slice now passes its API 26 and API 36 emulator gates; audible
+TalkBack, remaining Appearance/chrome/Library polish, subjective transition/
+touch review, and user manual acceptance remain pending. Nothing in this
+document claims final Port 8 acceptance, push, or merge.
 
 Port 8 adds fast, reversible structural navigation to the premium Port 7
 reader shell. It keeps the last successfully presented semantic location
@@ -404,8 +405,8 @@ The corrected Android candidate passed:
   wall time;
 - the physical 130% system-text/disabled-system-animation matrix, 15/15 in
   16.185 seconds of instrumentation time and 18.591 seconds wall, followed by
-  exact restoration of font scale `1.0`, window and transition scales `1.0`,
-  and the previously absent animator-scale key;
+  exact restoration of the settings database to font scale `1.0`, window and
+  transition scales `1.0`, and the previously absent animator-scale key;
 - an empty physical crash buffer. Exit history contained only expected
   `USER REQUESTED` force stops and `PACKAGE UPDATED`, with no crash or ANR;
 - controlled real-book review in which the first MAPS Contents destination
@@ -435,11 +436,18 @@ fresh 1080px-wide Library dump places its title at x=42 and the Add EPUB right
 edge at x=1038, proving the synchronous 16dp outer gutter. Repeat API 34
 physical validation passed the ordinary matrix 67/67 in 167.136 seconds, the
 external confirmed-force-stop restart driver, and the focused matrix 15/15 in
-14.625 seconds at 130% system text with animations disabled. Font scale `1.0`,
-window and transition scales `1.0`, and the previously absent animator setting
-restored exactly. The crash buffer remained empty and exit history contained
-only expected `USER REQUESTED` force stops. A fresh 1080px iQOO Library dump
-places the title at x=44 and Add EPUB's right edge at x=1036; a fresh reader
+14.625 seconds at 130% system text with animations disabled. The settings
+database restored exactly to font scale `1.0`, window and transition scales
+`1.0`, and the previously absent animator-scale key. A later hands-on check
+found that some vivo SystemUI animations still behaved as disabled; explicitly
+setting the animator duration scale to `1.0` repaired the device. Future
+physical reduced-motion runs must be coordinated with the user; device-wide
+animations must not be disabled outside that test window. Restore window,
+transition, and animator scales explicitly to `1.0`, then verify visible
+behavior as well as stored values. The crash buffer remained empty and exit
+history contained only expected `USER REQUESTED` force stops. A fresh 1080px
+iQOO Library dump places the title at x=44 and Add EPUB's right edge at x=1036;
+a fresh reader
 capture places first ink 85px below the app content edge while retaining the
 one-base canonical bottom reserve. The original 26 app files and 4,751,505
 bytes were restored byte-exact. The archive SHA-256 is
@@ -480,8 +488,8 @@ Port 8 predecessor passed:
   with 1.786-second seed and 1.087-second verification halves;
 - the physical 130% system-text/disabled-system-animation matrix, 15/15 in
   15.580 seconds of instrumentation time and 17.244 seconds wall time, followed
-  by exact restoration of the system font scale and all three animation-scale
-  settings;
+  by exact restoration of the settings database to font scale `1.0`, window
+  and transition scales `1.0`, and the previously absent animator-scale key;
 - an empty physical crash buffer;
 - a staged restore of all 26 durable `files/` records and 4,751,505 payload
   bytes, exact by relative path, length, and SHA-256; and
@@ -504,8 +512,27 @@ frame tests retain the Port 7 bright/black-transition protections.
 Those results remain useful predecessor regression evidence, but they do not
 validate the corrected 8vo source. The corrected emulator, external restart,
 accessibility/reduced-motion, physical iQOO, byte-exact device-data restoration,
-and controlled real-book gates are recorded above. Audible TalkBack, UI polish,
-subjective transition/touch review, and user manual acceptance remain required.
+and controlled real-book gates are recorded above. The 2026-08-06 bounded
+Navigation-polish slice adds a versioned UI0 API 91 snapshot and product-neutral
+native-Android adapter without changing Reader0 semantics. Exact guards and
+dual-ABI builds pass. Its API 36 emulator results are 26/26 focused in 1.997
+seconds, 85/85 ordinary in 245.948 seconds, confirmed-force-stop restart pass,
+and 22/22 at 130% system text with animations disabled in 22.543 seconds. API
+26 passes 26/26 focused in 1.449 seconds, 85/85 ordinary in 180.560 seconds,
+restart, and 22/22 at 130% text with animations disabled in 22.217 seconds. Both
+crash buffers were empty. The API 26 run renders the framework cursor and
+center/left/right selection handles with the fixed `#8B7560` compatibility
+accent and proves at least 3.5:1 contrast against every supported UI0-derived
+input surface.
+
+Desktop light/dark Contents captures and live API 36 Paper, Dusk, and High
+Contrast captures accept bounded portrait-phone Navigation look-and-feel
+parity, including UI0 accent-family current indicators and contrast-safe High
+Contrast current-row text. Pixel-for-pixel desktop rendering, full-app parity,
+audible TalkBack, attached live-region delivery, manual large-viewport/RTL and
+alternate-input review, strict UI0 role-to-face metrics, remaining bounded
+polish, subjective transition/touch review, and user manual acceptance remain
+required. No physical device was used for this slice.
 No pushed or merged 8vo revision or APK hash is claimed here.
 
 ## Acceptance contract

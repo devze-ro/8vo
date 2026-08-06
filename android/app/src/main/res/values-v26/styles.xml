@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <style name='Theme.Octavo' parent='@android:style/Theme.Material.NoActionBar'>
+        <item name='android:windowActionModeOverlay'>true</item>
+        <item name='android:windowBackground'>#171513</item>
+        <item name='android:colorAccent'>@color/octavo_legacy_editor_accent</item>
+        <item name='android:colorControlActivated'>@color/octavo_legacy_editor_accent</item>
+        <item name='android:navigationBarColor'>#0F0E0D</item>
+        <item name='android:statusBarColor'>#12110F</item>
+        <item name='android:windowLightNavigationBar'>false</item>
+        <item name='android:windowLightStatusBar'>false</item>
+    </style>
+</resources>
