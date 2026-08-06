@@ -392,10 +392,19 @@ roles and derived component states while retaining native Views, dp/sp scaling,
 insets, scrolling, focus, TalkBack structure, and successful-presentation
 gating. The adapter is intentionally local to 8vo until a real re10 Android
 consumer proves an identical extraction boundary.
-Thumbnails, cover-library expansion, full-text search, text selection,
-bookmarks/highlights/notes workspace, per-book appearances, embedded fonts,
-complete publication accessibility, full Unicode shaping, and synchronization
-remain deferred. The current bounded contract is in
+Port 9 adds a bounded Reader0-backed search adapter and native Android sheet.
+Reader0 alone owns matching, snippets, canonical result locations, hit ranges,
+active-result state, and Search history. Android consumes a versioned packet
+bounded to 64 retained rows, owns IME/focus/TalkBack/native rendering, and uses
+the existing successful-presentation transaction for direct and next/previous
+jumps. Query/clear failure restores the last successful result set, and search
+state is deliberately cleared across Activity recreation and process death.
+
+Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
+text selection, bookmarks/highlights/notes workspace, per-book appearances,
+embedded fonts, complete publication accessibility, full Unicode shaping, and
+synchronization remain deferred. The current bounded contracts are in
+[`android_port9.md`](android_port9.md) and
 [`android_port8.md`](android_port8.md); accepted Port 7 detail remains in
 [`android_port7.md`](android_port7.md).
 

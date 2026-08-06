@@ -11,6 +11,7 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeProvider;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
@@ -764,6 +765,89 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return snapshot;
     }
 
+    OctavoSearch searchSnapshot() {
+        if (nativeHandle == 0) {
+            notifyNavigationRequestFailure(
+                "Search is not available until the book is ready.");
+            return null;
+        }
+        long[] packet = OctavoNative.searchSnapshot(nativeHandle);
+        if (packet == null || packet.length < OctavoSearch.HEADER_COUNT
+            || packet[0] != OctavoSearch.VERSION
+            || packet[1] != OctavoSearch.HEADER_COUNT
+            || packet[2] != OctavoSearch.ROW_STRIDE || packet[4] < 0
+            || packet[4] > OctavoSearch.MAX_ROWS
+            || packet.length != OctavoSearch.HEADER_COUNT
+                + packet[4] * OctavoSearch.ROW_STRIDE) {
+            notifyNavigationRequestFailure(
+                "Search information is unavailable.");
+            return null;
+        }
+        int count = (int)packet[4];
+        String[] sections = new String[count];
+        String[] snippets = new String[count];
+        for (int index = 0; index < count; ++index) {
+            sections[index] =
+                OctavoNative.searchSection(nativeHandle, index);
+            snippets[index] =
+                OctavoNative.searchSnippet(nativeHandle, index);
+        }
+        OctavoSearch result = OctavoSearch.fromNativePacket(
+            packet,
+            OctavoNative.searchQuery(nativeHandle),
+            sections,
+            snippets);
+        if (result == null) {
+            notifyNavigationRequestFailure(
+                "Search information is invalid.");
+        }
+        return result;
+    }
+
+    int commitSearch(String query) {
+        return commitSearch(query, true);
+    }
+
+    int tryCommitSearch(String query) {
+        return commitSearch(query, false);
+    }
+
+    private int commitSearch(String query, boolean reportBusy) {
+        if (nativeHandle == 0 || query == null) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID, reportBusy);
+        }
+        byte[] utf8 = query.getBytes(StandardCharsets.UTF_8);
+        if (utf8.length == 0
+            || utf8.length > OctavoSearch.MAX_QUERY_UTF8_BYTES) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID, reportBusy);
+        }
+        return finishNavigationRequest(
+            OctavoNative.commitSearch(nativeHandle, utf8), reportBusy);
+    }
+
+    int clearSearch() {
+        return finishNavigationRequest(nativeHandle == 0
+            ? OctavoNative.NAVIGATION_INVALID
+            : OctavoNative.clearSearch(nativeHandle));
+    }
+
+    int requestSearchResult(int resultIndex) {
+        return finishNavigationRequest(
+            nativeHandle == 0 || resultIndex < 0
+                ? OctavoNative.NAVIGATION_INVALID
+                : OctavoNative.navigateToSearchResult(
+                    nativeHandle, resultIndex));
+    }
+
+    int moveSearchResult(boolean forward) {
+        return finishNavigationRequest(nativeHandle == 0
+            ? OctavoNative.NAVIGATION_INVALID
+            : OctavoNative.moveSearchResult(
+                nativeHandle, forward ? 1 : -1));
+    }
+
     int requestContentsNavigation(int navIndex) {
         if (nativeHandle == 0 || navIndex < 0) {
             return finishNavigationRequest(
@@ -851,11 +935,17 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     private int finishNavigationRequest(int result) {
+        return finishNavigationRequest(result, true);
+    }
+
+    private int finishNavigationRequest(int result, boolean reportBusy) {
         refreshNavigationState(true);
         if (result == OctavoNative.NAVIGATION_ACCEPTED) {
             resetPresentationRetries();
             requestNativePresentation();
-        } else if (result < 0) {
+        } else if (result < 0
+                   && (reportBusy
+                       || result != OctavoNative.NAVIGATION_BUSY)) {
             notifyNavigationRequestFailure(
                 navigationFailureMessage(result));
         }
@@ -1017,8 +1107,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                     NAVIGATION_STATE_PROGRESS_GENERATION]
                     != navigation[
                         NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
+        boolean searchMutationStillAwaiting = nativeHandle != 0
+            && OctavoNative.searchMutationPending(nativeHandle);
         int navigationCancellation = 0;
-        if (navigationStillAwaiting) {
+        if (navigationStillAwaiting || searchMutationStillAwaiting) {
             navigationCancellation = nativeHandle == 0
                 ? -1
                 : OctavoNative.cancelPendingNavigation(nativeHandle);
@@ -1040,7 +1132,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             forceAppearanceRequest = false;
         }
         boolean navigationOwnsFailure =
-            navigationStillAwaiting && !appearanceStillAwaiting;
+            (navigationStillAwaiting || searchMutationStillAwaiting)
+                && !appearanceStillAwaiting;
         if (listener != null && !navigationOwnsFailure) {
             listener.onPresentationRetriesExhausted(
                 appearanceStillAwaiting);
@@ -1463,6 +1556,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     OctavoNavigation navigationSnapshotForTesting() {
         return navigationSnapshot();
+    }
+
+    long[] searchPacketForTesting() {
+        return nativeHandle == 0
+            ? null : OctavoNative.searchSnapshot(nativeHandle);
+    }
+
+    boolean searchMutationPendingForTesting() {
+        return nativeHandle != 0
+            && OctavoNative.searchMutationPending(nativeHandle);
     }
 
     long[] locationCacheStateForTesting() {

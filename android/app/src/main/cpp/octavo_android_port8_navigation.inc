@@ -223,6 +223,14 @@ octavo_android_abort_structural_navigation(OctavoAndroidApp *app)
   {
     return 1;
   }
+  if (app->semantic_navigation_kind ==
+        OCTAVO_ANDROID_NAVIGATION_KIND_SEARCH)
+  {
+    app->reader.search_active_index =
+      app->search_navigation_previous_active_index;
+    app->reader.search_has_active =
+      app->search_navigation_previous_has_active;
+  }
   B32 restored = octavo_android_restore_presented_reader(app);
   if (app->semantic_navigation_history_traversal)
   {
@@ -254,6 +262,8 @@ octavo_android_abort_structural_navigation(OctavoAndroidApp *app)
   app->semantic_navigation_expected_byte_offset = 0;
   app->semantic_navigation_lifecycle_generation = 0;
   app->semantic_navigation_surface_generation = 0;
+  app->search_navigation_previous_active_index = 0;
+  app->search_navigation_previous_has_active = 0;
   app->host_frame_waiting_for_present = 1;
   return 1;
 }
@@ -280,6 +290,14 @@ octavo_android_cancel_pending_navigation(OctavoAndroidApp *app)
     app->progress_display_mode = app->progress_display_presented_mode;
     app->progress_display_waiting_for_present = 0;
     changed = 1;
+  }
+  if (app->search_mutation_waiting_for_present)
+  {
+    changed = 1;
+    if (!octavo_android_abort_search_mutation(app))
+    {
+      return -1;
+    }
   }
   if (changed)
   {
@@ -358,6 +376,8 @@ octavo_android_commit_structural_navigation(OctavoAndroidApp *app)
   app->semantic_navigation_expected_byte_offset = 0;
   app->semantic_navigation_lifecycle_generation = 0;
   app->semantic_navigation_surface_generation = 0;
+  app->search_navigation_previous_active_index = 0;
+  app->search_navigation_previous_has_active = 0;
   app->presented_history_back_count = app->reader.back_stack_count;
   app->presented_history_forward_count = app->reader.forward_stack_count;
   return 1;

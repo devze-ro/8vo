@@ -528,6 +528,7 @@ public final class OctavoAccessibilityTest {
             assertNull(activity.findViewById(R.id.octavo_reader_next));
             int[] controlIds = {
                 R.id.octavo_reader_library,
+                R.id.octavo_reader_search,
                 R.id.octavo_reader_appearance,
                 R.id.octavo_reader_progress,
             };
@@ -776,6 +777,8 @@ public final class OctavoAccessibilityTest {
         scenario.onActivity(activity -> {
             View library =
                 activity.findViewById(R.id.octavo_reader_library);
+            View search =
+                activity.findViewById(R.id.octavo_reader_search);
             View appearance =
                 activity.findViewById(R.id.octavo_reader_appearance);
             View progress =
@@ -784,6 +787,7 @@ public final class OctavoAccessibilityTest {
                 activity.findViewById(R.id.octavo_reader_previous);
             View next = activity.findViewById(R.id.octavo_reader_next);
             assertNotNull(library);
+            assertNotNull(search);
             assertNotNull(appearance);
             assertNotNull(progress);
             assertNull(previous);
@@ -792,6 +796,9 @@ public final class OctavoAccessibilityTest {
         });
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
 
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_search);
         sendTab(false);
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_appearance);
@@ -807,6 +814,9 @@ public final class OctavoAccessibilityTest {
 
         sendTab(false);
         assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_search);
+        sendTab(false);
+        assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_appearance);
         sendTab(false);
         assertSurfaceKeyboardFocus(
@@ -815,6 +825,9 @@ public final class OctavoAccessibilityTest {
         sendTab(true);
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_appearance);
+        sendTab(true);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_search);
         sendTab(true);
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
     }

@@ -1,8 +1,10 @@
 # 8vo Android
 
 This directory is the Android application root. Ports 0-7 are accepted. Port 8
-is the corrected structural-navigation candidate against Reader0 `0.7.0-dev` /
+is the corrected structural-navigation foundation against Reader0 `0.7.0-dev` /
 public API 7 at `5fe949d88258cd96884c44b69e4f4ab6f27dc394`.
+Port 9 is the API 36 emulator- and API 34 physical-device-validated bounded
+in-book-search candidate on the same exact dependency closure.
 Pre-correction Port 8 automation remains predecessor evidence; the corrected
 8vo source has completed its final API 36 emulator and API 34 iQOO,
 external-restart, and 130%-text/disabled-animation automation. Controlled
@@ -12,9 +14,34 @@ remaining Appearance/chrome/Library polish, and user subjective/manual
 acceptance remain pending. A 2026-08-05 spacing,
 default-size, and Library-gutter refinement has completed its API 36 emulator
 and API 34 physical gates; hands-on review remains pending.
+Port 9 passes the exact dependency/architecture guards, strict Windows build,
+seven public smokes, both real-book desktop search smokes, dual-ABI Android
+build, five focused search tests, the API 36 ordinary matrix 90/90, the selected
+130%-text/reduced-motion matrix 27/27, confirmed-force-stop restart, empty crash
+review, and Paper/Warm dark/High contrast manual visual review. On the iQOO,
+focused search passed 5/5, the ordinary matrix 90/90, restart, and the selected
+matrix 27/27; representative-book search/jump/Next/page-emphasis review also
+passed. Physical TalkBack/touch exploration of the bounded Find surface also
+passes; broader whole-app screen-reader and hands-on review remain pending.
+
+The coordinated Port 9 physical run restored font, window, transition, and
+animator scales explicitly to their original `1.0` values and verified live
+vivo SystemUI animation through 74 rendered frames. Its crash buffer was empty.
+All 26 original app files (4,751,505 bytes) restored byte-exact with archive
+SHA-256 `10E3C2001C569D4CEA6AB692536AD905AD747DACA483BEEA6E0C9B7015A5E0E3`
+and manifest SHA-256
+`C3D0DF15FD831D5BECE7A32F13103429714AA2E20972022AAC28539CCD28DA6E`.
+
+With TalkBack 17.0.1 enabled, Google TTS produced spoken output and the physical
+user explored the Find title, query, controls, status, current/ordinary results,
+activation, Next, Back, open/close announcements, and focus return without
+reporting an issue. Cleanup restored TalkBack off, no enabled accessibility
+service, touch exploration off, the exact original notification-permission
+state, rotation off, original music/TTS volumes, font and animation scales at
+`1.0`, and the same byte-exact 8vo app-data backup.
 The candidate retains Port 7's premium appearance, semantic reflow, borderless
 host-composited chrome, first-frame coverage, and custom-reader accessibility
-bridge while adding a bounded Contents/Go-to/Return model:
+bridge while adding bounded structural navigation and in-book search:
 
 - `OctavoActivity` owns Android lifecycle, the library surface, and the
   `ACTION_OPEN_DOCUMENT` picker. Port 7 also keeps settings surfaces, system
@@ -98,6 +125,12 @@ bridge while adding a bounded Contents/Go-to/Return model:
   `OctavoNavigationPanel` presents Contents and Go-to as an Android hierarchy
   with current-section state, destination progress, input failures, history,
   focus, and 48dp actions; it does not interpret EPUB data.
+- `OctavoSearch` bounded-copies and validates a versioned Reader0 search packet.
+  `OctavoSearchPanel` owns native query/IME behavior, status, retained/total
+  disclosure, result rows, focus, TalkBack wording, and 48dp actions. It never
+  interprets EPUB data or derives destinations. Native query, clear, and result
+  jumps retain their prior result/location/history state unless the exact
+  candidate presentation succeeds.
 - `OctavoProgressStore` owns a separate versioned, checksummed global progress-
   display record. Same-directory synchronization and atomic replacement preserve
   prior bytes on failure. The selected Chapter, Page, Location, or Percentage
@@ -517,10 +550,14 @@ superseded regression evidence. Port 7 intentionally remains a bounded
 appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-search, selection, annotations, and synchronization remain deferred. Port 8
-adds structural navigation only; spatial previews and advanced scrubbing remain
-deferred. See [`../docs/android_port8.md`](../docs/android_port8.md) for the
-current implementation and human acceptance boundary,
+selection, annotations, and synchronization remain deferred. Port 8 adds
+structural navigation; Port 9 adds bounded session-local in-book search while
+durable Unicode-aware indexing remains deferred. Spatial previews and advanced
+scrubbing also remain deferred. See
+[`../docs/android_port9.md`](../docs/android_port9.md) for the current search
+implementation and acceptance boundary,
+[`../docs/android_port8.md`](../docs/android_port8.md) for the navigation
+foundation,
 [`../docs/android_port7.md`](../docs/android_port7.md) for the accepted appearance
 milestone, and
 [`../docs/android_port6.md`](../docs/android_port6.md) for the accepted

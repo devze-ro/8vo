@@ -61,6 +61,10 @@ public final class OctavoProcessRestartTest {
         boolean matches(long[] state);
     }
 
+    private interface SearchCondition {
+        boolean matches(OctavoSearch search);
+    }
+
     private static final class ExpectedState {
         final String bookKey;
         final long originSpineIndex;
@@ -283,6 +287,17 @@ public final class OctavoProcessRestartTest {
             assertAnchorInsidePage(
                 progressFrame, position.get()[1], position.get()[2]);
 
+            scenario.onActivity(activity -> assertEquals(
+                OctavoNative.NAVIGATION_ACCEPTED,
+                surface(activity).commitSearch("paragraph 250")));
+            OctavoSearch seededSearch = awaitSearch(
+                scenario,
+                search -> !search.isPending()
+                    && search.query().equals("paragraph 250")
+                    && search.totalCount() == 4,
+                "8vo did not present the transient restart search");
+            assertEquals(4, seededSearch.rowCount());
+
             writeEvidence(
                 context,
                 new ExpectedState(bookKey.get(),
@@ -345,6 +360,14 @@ public final class OctavoProcessRestartTest {
                 restored, expected.spineIndex, expected.byteOffset);
             assertHealthyAndSettled(restored);
             assertHostAppearance(scenario, expected.appearance);
+            OctavoSearch restoredSearch = searchSnapshot(scenario);
+            assertNotNull(restoredSearch);
+            assertTrue(restoredSearch.isReady());
+            assertTrue(
+                "In-book search must not survive a process restart",
+                restoredSearch.query().isEmpty());
+            assertEquals(0, restoredSearch.rowCount());
+            assertEquals(0, restoredSearch.totalCount());
 
             assertFalse(
                 expected.originSpineIndex == expected.spineIndex
@@ -447,6 +470,29 @@ public final class OctavoProcessRestartTest {
         }
         fail(failureMessage);
         return new long[0];
+    }
+
+    private static OctavoSearch searchSnapshot(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<OctavoSearch> result = new AtomicReference<>();
+        scenario.onActivity(activity ->
+            result.set(surface(activity).searchSnapshot()));
+        return result.get();
+    }
+
+    private static OctavoSearch awaitSearch(
+        ActivityScenario<OctavoActivity> scenario,
+        SearchCondition condition,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 240; ++attempt) {
+            OctavoSearch current = searchSnapshot(scenario);
+            if (current != null && condition.matches(current)) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return null;
     }
 
     private static long[] awaitPresented(

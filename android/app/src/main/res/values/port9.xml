@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_search">Find</string>
+
+    <item name="octavo_reader_search" type="id" />
+    <item name="octavo_search_overlay" type="id" />
+    <item name="octavo_search_panel" type="id" />
+    <item name="octavo_search_title" type="id" />
+    <item name="octavo_search_done" type="id" />
+    <item name="octavo_search_query_controls" type="id" />
+    <item name="octavo_search_query" type="id" />
+    <item name="octavo_search_submit" type="id" />
+    <item name="octavo_search_result_controls" type="id" />
+    <item name="octavo_search_previous" type="id" />
+    <item name="octavo_search_next" type="id" />
+    <item name="octavo_search_clear" type="id" />
+    <item name="octavo_search_status" type="id" />
+    <item name="octavo_search_results_scroll" type="id" />
+    <item name="octavo_search_results" type="id" />
+</resources>

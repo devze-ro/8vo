@@ -44,6 +44,7 @@
 #define OCTAVO_ANDROID_PREPARED_FRAME_STATE_FIELD_COUNT 26
 #define OCTAVO_ANDROID_UI0_SNAPSHOT_MAGIC 0x4F553941
 #define OCTAVO_ANDROID_UI0_SNAPSHOT_VERSION 1
+#define OCTAVO_ANDROID_NAVIGATION_KIND_SEARCH 7
 #if UI0_API_VERSION != 91
 #error Android_Port_8_UI0_snapshot_requires_API_91
 #endif
@@ -242,6 +243,18 @@ typedef struct OctavoAndroidPreparedStaticFrame
   B32 location_cache_valid;
 } OctavoAndroidPreparedStaticFrame;
 
+typedef struct OctavoAndroidSearchState
+{
+  char query[EPUB_READER_SEARCH_QUERY_CAP];
+  U64 query_size;
+  EpubReaderSearchMatch matches[EPUB_READER_SEARCH_MATCH_CAP];
+  U32 match_count;
+  U32 total_count;
+  B32 has_more;
+  U32 active_index;
+  B32 has_active;
+} OctavoAndroidSearchState;
+
 typedef struct OctavoAndroidApp
 {
   ANativeWindow *window;
@@ -306,6 +319,10 @@ typedef struct OctavoAndroidApp
   B32 reflow_waiting_for_present;
   B32 appearance_waiting_for_present;
   B32 host_frame_waiting_for_present;
+  OctavoAndroidSearchState search_mutation_previous;
+  UI0U64 search_mutation_generation;
+  UI0U64 search_mutation_presented_generation;
+  B32 search_mutation_waiting_for_present;
   UI0U64 appearance_generation;
   UI0U64 appearance_presented_generation;
   uint64_t appearance_apply_count;
@@ -377,6 +394,8 @@ typedef struct OctavoAndroidApp
   int semantic_navigation_waiting_for_present;
   int semantic_navigation_history_traversal;
   int semantic_navigation_history_forward;
+  uint32_t search_navigation_previous_active_index;
+  int search_navigation_previous_has_active;
   uint64_t progress_display_generation;
   uint64_t progress_display_presented_generation;
   int progress_display_mode;
@@ -397,6 +416,7 @@ static S32 octavo_android_cancel_pending_navigation(
 static B32 octavo_android_commit_structural_navigation(
   OctavoAndroidApp *app);
 static void octavo_android_format_progress_label(OctavoAndroidApp *app);
+static B32 octavo_android_abort_search_mutation(OctavoAndroidApp *app);
 
 static OctavoAndroidApp *
 octavo_android_from_handle(jlong handle)
@@ -1041,6 +1061,7 @@ octavo_android_presentation_pending(const OctavoAndroidApp *app)
      app->progress_display_waiting_for_present ||
      app->reflow_waiting_for_present ||
      app->appearance_waiting_for_present ||
+     app->search_mutation_waiting_for_present ||
      app->host_frame_waiting_for_present);
 }
 
@@ -2368,6 +2389,37 @@ octavo_android_record_justification_evidence(
 }
 
 static B32
+octavo_android_search_highlight_for_range(
+  const OctavoAndroidApp *app,
+  U64 start,
+  U64 end,
+  B32 *out_active)
+{
+  if (out_active) { *out_active = 0; }
+  if (!app || !out_active || end <= start ||
+      !app->reader_frame.ready ||
+      app->reader_frame.search_highlight_count >
+        EPUB_READER_FRAME_HIGHLIGHT_CAP)
+  {
+    return 0;
+  }
+  B32 found = 0;
+  for (U32 index = 0;
+       index < app->reader_frame.search_highlight_count;
+       ++index)
+  {
+    const EpubReaderFrameSearchHighlightRange *range =
+      app->reader_frame.search_highlights + index;
+    if (end > range->start && start < range->end)
+    {
+      found = 1;
+      if (range->active) { *out_active = 1; }
+    }
+  }
+  return found;
+}
+
+static B32
 octavo_android_draw_reader_row(OctavoAndroidApp *app,
                                OctavoAndroidPixels pixels,
                                const EpubReaderFrameStyleRow *row,
@@ -2417,16 +2469,42 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
       U32 row_byte_index = segment_start + (U32)at;
       U32 codepoint = octavo_android_next_codepoint(
         segment.str, segment.size, &at);
-      octavo_android_draw_typography_glyph(
-        app, pixels, codepoint, pen_x, glyph_top, flags, scale, color, clip);
-      pen_x += octavo_android_typography_advance(
+      S32 advance = octavo_android_typography_advance(
         &app->typography, codepoint, flags, scale);
+      S32 space_extra = 0;
       if (codepoint == ' ' && row_byte_index > 0 &&
           row_byte_index + 1u < row_size &&
           space_index < justification->space_count)
       {
-        pen_x += octavo_reader_justification_space_extra_px(
+        space_extra = octavo_reader_justification_space_extra_px(
           justification, space_index);
+      }
+      B32 active_search = 0;
+      if (octavo_android_search_highlight_for_range(
+            app,
+            (U64)start + row_byte_index,
+            (U64)start + segment_start + at,
+            &active_search))
+      {
+        UI0Color search_color = app->reader_view_theme.colors[
+          active_search ? UI0ColorRole_Selection : UI0ColorRole_Badge];
+        octavo_android_fill_rect(
+          pixels,
+          ui0_rect(pen_x,
+                   glyph_top,
+                   MAX(advance + space_extra, 1),
+                   glyph_height),
+          clip,
+          search_color);
+      }
+      octavo_android_draw_typography_glyph(
+        app, pixels, codepoint, pen_x, glyph_top, flags, scale, color, clip);
+      pen_x += advance;
+      if (codepoint == ' ' && row_byte_index > 0 &&
+          row_byte_index + 1u < row_size &&
+          space_index < justification->space_count)
+      {
+        pen_x += space_extra;
         space_index += 1u;
       }
     }
@@ -3392,6 +3470,14 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   app->justification_evidence = justification_evidence;
   app->frame_count += 1u;
   app->host_frame_waiting_for_present = 0;
+  if (app->search_mutation_waiting_for_present)
+  {
+    app->search_mutation_waiting_for_present = 0;
+    app->search_mutation_presented_generation =
+      app->search_mutation_generation;
+    app->search_mutation_previous =
+      (OctavoAndroidSearchState){0};
+  }
   if (app->page_move_waiting_for_present)
   {
     app->presented_anchor_spine_index =
@@ -5474,3 +5560,4 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
 
 #include "octavo_android_port8_navigation.inc"
 #include "octavo_android_port8_navigation_state.inc"
+#include "octavo_android_port9_search.inc"

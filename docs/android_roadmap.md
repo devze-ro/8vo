@@ -14,7 +14,7 @@ The first bounded Navigation-polish slice passes its API 26 and API 36 emulator
 guards/build, 26/26 focused, 85/85 ordinary, restart, and 22/22 large-text/
 reduced-animation gates. The API 26 framework cursor/handle compatibility gate
 also passes. Desktop light/dark versus Android light/dark/High Contrast portrait
-Navigation visual review passes. Audible TalkBack, full-app visual parity,
+Navigation visual review passes. Whole-app audible TalkBack, full-app visual parity,
 remaining bounded polish, and user subjective/manual acceptance remain pending.
 boundaries may change as evidence is collected.
 
@@ -341,6 +341,29 @@ behavior as well as stored values. The crash buffer remained empty, and all 26
 original app files restored byte-exact with manifest SHA-256
 `9EAF4BC7754F53F1FD546C8447E9D474F41BF5988B6071430CB3D1163AE5B0CC`.
 
+The Port 9 bounded in-book-search candidate keeps matching, snippets,
+locations, hit ranges, and navigation in Reader0 while Android owns the native
+sheet, IME, accessibility, and UI0-derived presentation. On API 36 it passes
+5/5 focused search tests, the complete ordinary matrix 90/90, and the selected
+130%-text/reduced-motion matrix 27/27. Confirmed force stop clears transient
+search without losing durable reading state; Paper, Warm dark, and High
+contrast visual review passes. On the API 34 ARM64 iQOO, focused search passed
+5/5 in 7.787 seconds, the ordinary matrix 90/90 in 194.467 seconds of
+instrumentation time, external restart passed, and the coordinated large-text/
+reduced-motion matrix passed 27/27 in 27.219 seconds. The four original `1.0`
+font/animation settings were restored explicitly, live vivo SystemUI animation was
+verified through 74 rendered frames, the crash buffer was empty, and 26 app
+files totaling 4,751,505 bytes restored byte-exact. A representative *Gardens
+of the Moon* `Paran` query returned 630 matches with the first 64 disclosed;
+direct and Next jumps reached the expected 3% Chapter One text with distinct
+active/inactive emphasis. The physical user also completed TalkBack 17.0.1
+touch exploration of the search title, query, controls, status, current and
+ordinary results, activation, Next, Back, open/close announcements, and focus
+return without reporting an issue. All captured accessibility, permission,
+rotation, audio, font, animation, and 8vo data state restored afterward.
+Broader-book, whole-app screen-reader, and remaining subjective hands-on gates
+are still pending.
+
 - hierarchical table of contents with current-section state;
 - go-to page/location/percentage and chapter navigation;
 - a reversible navigation history shared by TOC, links, footnotes, search, and
@@ -358,10 +381,15 @@ original app files restored byte-exact with manifest SHA-256
 
 ### In-book search
 
-- bounded local indexing and Unicode-aware matching;
-- grouped results with chapter context and useful snippets;
-- active-hit emphasis, next/previous, jump, and return history; and
-- index invalidation/migration without blocking ordinary reading.
+- the first bounded Reader0-backed synchronous query slice is implemented with
+  chapter context, useful snippets, active/inactive emphasis, next/previous,
+  direct jump, and presentation-gated return history;
+- results expose total count while retaining at most 64 rows, and query state is
+  deliberately session-transient;
+- Unicode-aware matching and language-aware tokenization remain to be added;
+  and
+- a durable local index still requires invalidation/migration that cannot block
+  ordinary reading.
 
 ### Selection, bookmarks, highlights, and notes
 

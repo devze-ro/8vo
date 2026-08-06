@@ -110,6 +110,15 @@ final class OctavoNative {
     static native int moveHistory(long handle, boolean forward);
     static native int setProgressDisplayMode(long handle, int mode);
     static native int cancelPendingNavigation(long handle);
+    static native int commitSearch(long handle, byte[] queryUtf8);
+    static native int clearSearch(long handle);
+    static native long[] searchSnapshot(long handle);
+    static native String searchQuery(long handle);
+    static native boolean searchMutationPending(long handle);
+    static native String searchSection(long handle, int rowIndex);
+    static native String searchSnippet(long handle, int rowIndex);
+    static native int navigateToSearchResult(long handle, int resultIndex);
+    static native int moveSearchResult(long handle, int direction);
     static native long[] state(long handle);
     static native long[] accessibilitySemanticSnapshot(long handle);
     static native String accessibilitySemanticName(long handle,

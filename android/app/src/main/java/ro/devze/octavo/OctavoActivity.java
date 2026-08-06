@@ -32,6 +32,8 @@ public final class OctavoActivity extends Activity {
         "octavo.port6.active_book_key";
     private static final String STATE_CHROME_VISIBLE =
         "octavo.port7.chrome_visible";
+    private static final int SEARCH_BUSY_RETRY_LIMIT = 96;
+    private static final long SEARCH_BUSY_RETRY_DELAY_MILLIS = 32;
 
     private OctavoLibraryStore libraryStore;
     private OctavoAppearanceStore appearanceStore;
@@ -46,6 +48,7 @@ public final class OctavoActivity extends Activity {
     private LinearLayout readerTopChrome;
     private LinearLayout readerBottomChrome;
     private Button readerLibrary;
+    private Button readerSearch;
     private Button readerSettings;
     private Button readerReturn;
     private Button readerProgress;
@@ -53,6 +56,8 @@ public final class OctavoActivity extends Activity {
     private OctavoAppearancePanel appearancePanel;
     private FrameLayout navigationOverlay;
     private OctavoNavigationPanel navigationPanel;
+    private FrameLayout searchOverlay;
+    private OctavoSearchPanel searchPanel;
     private TextView failureBanner;
     private View readerEntryCover;
     private int readerEntryCoverGeneration;
@@ -71,6 +76,7 @@ public final class OctavoActivity extends Activity {
     private OctavoProgressDisplay pendingProgressPersistence;
     private boolean progressPersistencePosted;
     private boolean navigationSnapshotRefreshPosted;
+    private boolean searchSnapshotRefreshPosted;
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
@@ -85,6 +91,13 @@ public final class OctavoActivity extends Activity {
             return;
         }
         navigationPanel.updateSnapshot(surfaceView.navigationSnapshot());
+    };
+    private final Runnable refreshSearchSnapshot = () -> {
+        searchSnapshotRefreshPosted = false;
+        if (searchPanel == null || surfaceView == null) {
+            return;
+        }
+        searchPanel.updateSnapshot(surfaceView.searchSnapshot());
     };
 
     @Override
@@ -138,8 +151,12 @@ public final class OctavoActivity extends Activity {
         applyWindowAppearance();
         updateAppearancePanelWidth();
         updateNavigationPanelWidth();
+        updateSearchPanelWidth();
         if (navigationPanel != null) {
             navigationPanel.applyAppearance(appearance);
+        }
+        if (searchPanel != null) {
+            searchPanel.applyAppearance(appearance);
         }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
@@ -150,6 +167,8 @@ public final class OctavoActivity extends Activity {
     public void onBackPressed() {
         if (appearancePanel != null) {
             closeAppearancePanel();
+        } else if (searchPanel != null) {
+            closeSearchPanel();
         } else if (navigationPanel != null) {
             closeNavigationPanel();
         } else if (surfaceView != null
@@ -344,6 +363,15 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         top.addView(title, weightedLayout());
 
+        Button search = createThemedButton(
+            getString(R.string.reader_search),
+            tokens.buttonSurface,
+            tokens.chromeText);
+        search.setId(R.id.octavo_reader_search);
+        search.setContentDescription("Find in book");
+        search.setOnClickListener(view -> openSearchPanel());
+        top.addView(search, chromeButtonLayout());
+
         Button settings = createThemedButton(
             "Aa", tokens.buttonSurface, tokens.chromeText);
         settings.setId(R.id.octavo_reader_appearance);
@@ -409,22 +437,27 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         bottom.setImportantForAccessibility(
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        library.setAccessibilityTraversalBefore(settings.getId());
+        library.setAccessibilityTraversalBefore(search.getId());
+        search.setAccessibilityTraversalBefore(settings.getId());
         settings.setAccessibilityTraversalBefore(replacement.getId());
         replacement.setAccessibilityTraversalBefore(returnControl.getId());
         returnControl.setAccessibilityTraversalBefore(progress.getId());
         progress.setAccessibilityTraversalBefore(library.getId());
-        library.setNextFocusForwardId(settings.getId());
+        library.setNextFocusForwardId(search.getId());
+        search.setNextFocusForwardId(settings.getId());
         settings.setNextFocusForwardId(replacement.getId());
         replacement.setNextFocusForwardId(returnControl.getId());
         returnControl.setNextFocusForwardId(progress.getId());
         progress.setNextFocusForwardId(library.getId());
         library.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
-                keyCode, event, null, settings));
+                keyCode, event, null, search));
+        search.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, library, settings));
         settings.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
-                keyCode, event, library, replacement));
+                keyCode, event, search, replacement));
         returnControl.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, replacement, progress));
@@ -436,6 +469,7 @@ public final class OctavoActivity extends Activity {
         readerTopChrome = top;
         readerBottomChrome = bottom;
         readerLibrary = library;
+        readerSearch = search;
         readerSettings = settings;
         readerReturn = returnControl;
         readerProgress = progress;
@@ -593,12 +627,14 @@ public final class OctavoActivity extends Activity {
                 }
                 updateReaderNavigationAvailability(surfaceView);
                 scheduleNavigationSnapshotRefresh();
+                scheduleSearchSnapshotRefresh();
             }
 
             @Override
             public void onNavigationStateChanged() {
                 updateReaderNavigationAvailability(surfaceView);
                 scheduleNavigationSnapshotRefresh();
+                scheduleSearchSnapshotRefresh();
             }
 
             @Override
@@ -607,6 +643,7 @@ public final class OctavoActivity extends Activity {
                 if (navigationPanel != null) {
                     closeNavigationPanel();
                 }
+                scheduleSearchSnapshotRefresh();
             }
 
             @Override
@@ -661,6 +698,9 @@ public final class OctavoActivity extends Activity {
         }
         if (readerProgress != null) {
             readerProgress.setEnabled(!pending);
+        }
+        if (readerSearch != null) {
+            readerSearch.setEnabled(!pending);
         }
         int libraryId = readerLibrary == null
             ? View.NO_ID : readerLibrary.getId();
@@ -725,6 +765,22 @@ public final class OctavoActivity extends Activity {
         navigationSnapshotRefreshPosted = false;
     }
 
+    private void scheduleSearchSnapshotRefresh() {
+        if (searchSnapshotRefreshPosted || searchPanel == null
+            || surfaceView == null || readerRoot == null) {
+            return;
+        }
+        searchSnapshotRefreshPosted = true;
+        readerRoot.postOnAnimation(refreshSearchSnapshot);
+    }
+
+    private void cancelSearchSnapshotRefresh() {
+        if (readerRoot != null) {
+            readerRoot.removeCallbacks(refreshSearchSnapshot);
+        }
+        searchSnapshotRefreshPosted = false;
+    }
+
     private void reportNavigationRequestFailure(String message) {
         String visible = message == null || message.trim().isEmpty()
             ? "Unable to complete reader navigation" : message.trim();
@@ -735,9 +791,18 @@ public final class OctavoActivity extends Activity {
                     target.showError(visible);
                 }
             });
-        } else {
-            showOpenFailure(visible);
+            return;
         }
+        OctavoSearchPanel searchTarget = searchPanel;
+        if (searchTarget != null) {
+            searchTarget.post(() -> {
+                if (searchPanel == searchTarget) {
+                    searchTarget.showError(visible);
+                }
+            });
+            return;
+        }
+        showOpenFailure(visible);
     }
 
     private static boolean moveReaderKeyboardFocus(
@@ -1098,6 +1163,12 @@ public final class OctavoActivity extends Activity {
             navigationOverlay.setBackgroundColor(
                 navigationPanel.overlayColor());
         }
+        if (searchPanel != null) {
+            searchPanel.applyAppearance(appearance);
+        }
+        if (searchOverlay != null && searchPanel != null) {
+            searchOverlay.setBackgroundColor(searchPanel.overlayColor());
+        }
         if (failureBanner != null) {
             failureBanner.setTextColor(tokens.error);
             failureBanner.setBackgroundColor(tokens.dialogSurface);
@@ -1133,6 +1204,9 @@ public final class OctavoActivity extends Activity {
         }
         if (appearancePanel != null) {
             closeAppearancePanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -1303,6 +1377,188 @@ public final class OctavoActivity extends Activity {
         updateReaderNavigationAvailability(surfaceView);
     }
 
+    private void openSearchPanel() {
+        if (readerRoot == null || surfaceView == null
+            || searchPanel != null) {
+            return;
+        }
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
+        }
+        OctavoDesignTokens tokens =
+            OctavoDesignTokens.forAppearance(appearance);
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setId(R.id.octavo_search_overlay);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(4));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overlay.setOnClickListener(view -> closeSearchPanel());
+
+        OctavoSearchPanel panel;
+        try {
+            panel = new OctavoSearchPanel(
+                this,
+                appearance,
+                new OctavoSearchPanel.Listener() {
+                    @Override
+                    public void onDismiss() {
+                        closeSearchPanel();
+                    }
+
+                    @Override
+                    public void onSubmit(String query) {
+                        OctavoSearchPanel target = searchPanel;
+                        if (target == null) {
+                            return;
+                        }
+                        android.view.inputmethod.InputMethodManager keyboard =
+                            (android.view.inputmethod.InputMethodManager)
+                                getSystemService(INPUT_METHOD_SERVICE);
+                        if (keyboard != null) {
+                            keyboard.hideSoftInputFromWindow(
+                                target.getWindowToken(), 0);
+                        }
+                        target.postOnAnimation(() ->
+                            submitSearchWhenReaderReady(
+                                target, query, 0));
+                    }
+
+                    @Override
+                    public void onClear() {
+                        requestSearch(
+                            surfaceView == null
+                                ? OctavoNative.NAVIGATION_UNAVAILABLE
+                                : surfaceView.clearSearch(),
+                            "Clearing search results.");
+                    }
+
+                    @Override
+                    public void onStep(boolean forward) {
+                        requestSearch(
+                            surfaceView == null
+                                ? OctavoNative.NAVIGATION_UNAVAILABLE
+                                : surfaceView.moveSearchResult(forward),
+                            forward
+                                ? "Opening the next result."
+                                : "Opening the previous result.");
+                    }
+
+                    @Override
+                    public void onActivate(int resultIndex) {
+                        requestSearch(
+                            surfaceView == null
+                                ? OctavoNative.NAVIGATION_UNAVAILABLE
+                                : surfaceView.requestSearchResult(resultIndex),
+                            "Opening search result " + (resultIndex + 1)
+                                + ".");
+                    }
+                });
+        } catch (IllegalStateException failure) {
+            showOpenFailure(
+                "Find in book styling is unavailable. Reopen the reader to retry.");
+            return;
+        }
+        panel.updateSnapshot(surfaceView.searchSnapshot());
+        overlay.setBackgroundColor(panel.overlayColor());
+        panel.setClickable(true);
+        panel.setOnClickListener(view -> {
+        });
+        FrameLayout.LayoutParams panelLayout =
+            new FrameLayout.LayoutParams(
+                appearancePanelWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.END);
+        overlay.addView(panel, panelLayout);
+        resolveSideSheetLayoutDirection(panel, readerRoot);
+        overlay.addOnLayoutChangeListener(
+            (view, left, top, right, bottom,
+             oldLeft, oldTop, oldRight, oldBottom) ->
+                updateSideSheetWidth(panel, overlay));
+        readerRoot.addView(overlay, matchParentLayout());
+
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerTopChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerBottomChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        searchOverlay = overlay;
+        searchPanel = panel;
+        scheduleSearchSnapshotRefresh();
+
+        int duration = tokens.standardMotionMs(appearance);
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            panel.setTranslationX(navigationPanelStartTranslationX(
+                panel, dp(24)));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            panel.animate().translationX(0.0f)
+                .setDuration(duration).start();
+        }
+        panel.post(() -> {
+            if (searchPanel != panel) {
+                return;
+            }
+            View initialFocus = panel.preferredInitialFocus();
+            initialFocus.requestFocus();
+            initialFocus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            android.view.inputmethod.InputMethodManager keyboard =
+                (android.view.inputmethod.InputMethodManager)
+                    getSystemService(INPUT_METHOD_SERVICE);
+            if (keyboard != null) {
+                keyboard.showSoftInput(
+                    initialFocus,
+                    android.view.inputmethod.InputMethodManager
+                        .SHOW_IMPLICIT);
+            }
+            panel.announceForAccessibility("Find in book opened");
+        });
+    }
+
+    private void requestSearch(int result, String acceptedStatus) {
+        if (searchPanel != null && surfaceView != null
+            && navigationRequestIsPending(result)) {
+            searchPanel.showAcceptedNavigation(acceptedStatus);
+            searchPanel.updateSnapshot(surfaceView.searchSnapshot());
+        } else if (searchPanel != null && surfaceView != null
+                   && result == OctavoNative.NAVIGATION_ALREADY_PRESENTED) {
+            searchPanel.updateSnapshot(surfaceView.searchSnapshot());
+        }
+        updateReaderNavigationAvailability(surfaceView);
+        scheduleSearchSnapshotRefresh();
+    }
+
+    private void submitSearchWhenReaderReady(OctavoSearchPanel target,
+                                             String query,
+                                             int busyAttempts) {
+        if (searchPanel != target || surfaceView == null) {
+            return;
+        }
+        int result = surfaceView.tryCommitSearch(query);
+        if (result == OctavoNative.NAVIGATION_BUSY) {
+            if (busyAttempts >= SEARCH_BUSY_RETRY_LIMIT) {
+                target.showError(
+                    "The reader is still updating. Try the search again.");
+                return;
+            }
+            target.showAcceptedNavigation(
+                "Waiting for the reader to finish updating.");
+            target.postDelayed(
+                () -> submitSearchWhenReaderReady(
+                    target, query, busyAttempts + 1),
+                SEARCH_BUSY_RETRY_DELAY_MILLIS);
+            return;
+        }
+        requestSearch(result, "Searching this book.");
+    }
+
     private void openAppearancePanel() {
         if (readerRoot == null || surfaceView == null
             || appearancePanel != null) {
@@ -1310,6 +1566,9 @@ public final class OctavoActivity extends Activity {
         }
         if (navigationPanel != null) {
             closeNavigationPanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -1492,6 +1751,65 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private void closeSearchPanel() {
+        closeSearchPanel(true);
+    }
+
+    private void closeSearchPanel(boolean restoreFocus) {
+        if (searchOverlay == null) {
+            return;
+        }
+        View focusReturn = readerSearch != null
+            && readerSearch.isShown() && readerSearch.isEnabled()
+                ? readerSearch : surfaceView;
+        cancelSearchSnapshotRefresh();
+        searchOverlay.animate().cancel();
+        if (searchPanel != null) {
+            searchPanel.animate().cancel();
+        }
+        android.view.inputmethod.InputMethodManager keyboard =
+            (android.view.inputmethod.InputMethodManager)
+                getSystemService(INPUT_METHOD_SERVICE);
+        if (keyboard != null && searchPanel != null) {
+            keyboard.hideSoftInputFromWindow(
+                searchPanel.getWindowToken(), 0);
+        }
+        if (searchOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)searchOverlay.getParent())
+                .removeView(searchOverlay);
+        }
+        searchOverlay = null;
+        searchPanel = null;
+        if (surfaceView != null) {
+            surfaceView.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        }
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+            focusReturn.requestFocus();
+            focusReturn.post(() -> {
+                if (searchPanel != null || !focusReturn.isShown()) {
+                    return;
+                }
+                if (!focusReturn.hasFocus()) {
+                    focusReturn.requestFocusFromTouch();
+                }
+                focusReturn.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+                focusReturn.announceForAccessibility(
+                    "Find in book closed");
+            });
+        }
+    }
+
     private void showLibrary() {
         releaseReader();
         chromeVisible = false;
@@ -1657,6 +1975,10 @@ public final class OctavoActivity extends Activity {
         updateSideSheetWidth(navigationPanel, navigationOverlay);
     }
 
+    private void updateSearchPanelWidth() {
+        updateSideSheetWidth(searchPanel, searchOverlay);
+    }
+
     private void updateSideSheetWidth(View panel, FrameLayout overlay) {
         if (panel == null) {
             return;
@@ -1729,6 +2051,7 @@ public final class OctavoActivity extends Activity {
     private void releaseReader() {
         flushProgressPersistence();
         cancelNavigationSnapshotRefresh();
+        cancelSearchSnapshotRefresh();
         if (navigationOverlay != null
             && navigationOverlay.getParent() instanceof ViewGroup) {
             ((ViewGroup)navigationOverlay.getParent())
@@ -1736,6 +2059,13 @@ public final class OctavoActivity extends Activity {
         }
         navigationOverlay = null;
         navigationPanel = null;
+        if (searchOverlay != null
+            && searchOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)searchOverlay.getParent())
+                .removeView(searchOverlay);
+        }
+        searchOverlay = null;
+        searchPanel = null;
         cancelAppearanceTransition();
         cancelReaderEntryCover();
         if (surfaceView != null) {
@@ -1753,6 +2083,7 @@ public final class OctavoActivity extends Activity {
         readerTopChrome = null;
         readerBottomChrome = null;
         readerLibrary = null;
+        readerSearch = null;
         readerSettings = null;
         readerReturn = null;
         readerProgress = null;
@@ -1949,6 +2280,22 @@ public final class OctavoActivity extends Activity {
 
     void closeNavigationPanelForTesting() {
         closeNavigationPanel();
+    }
+
+    OctavoSearchPanel searchPanelForTesting() {
+        return searchPanel;
+    }
+
+    void openSearchPanelForTesting() {
+        openSearchPanel();
+    }
+
+    void closeSearchPanelForTesting() {
+        closeSearchPanel();
+    }
+
+    Button readerSearchForTesting() {
+        return readerSearch;
     }
 
     Button readerProgressForTesting() {

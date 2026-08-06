@@ -1,8 +1,9 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and frozen first-release scope for the Android Port 8
-candidate. Policy links were checked on 2026-08-06 and must be rechecked before
-submission. This document authorizes no push, merge, signing-key operation,
+Status: launch-gap audit and frozen first-release scope through the Android
+Port 9 search candidate. Policy links were checked on 2026-08-06 and must be
+rechecked before submission. This document authorizes no push, merge,
+signing-key operation,
 Play Console mutation, or publication.
 
 ## First-release scope
@@ -14,6 +15,8 @@ user-owned books. It includes only:
   duplicate detection, removal, and per-book resume already owned by 8vo;
 - Reader0-authoritative EPUB interpretation, pagination, locations, Contents,
   Chapter/Location/Page/Percentage Go-to, and presentation-gated Return/Forward;
+- bounded session-local in-book search with contextual snippets, retained/total
+  disclosure, direct/previous/next navigation, and page-hit emphasis;
 - the accepted appearance choices, native reader chrome, progress-display
   choices, lifecycle/surface recovery, and successful-presentation durability;
 - the current bounded text and image presentation contract, including explicit
@@ -33,8 +36,8 @@ product content.
 
 The first release does not add:
 
-- full-text search, selection, bookmarks, highlights, notes, or an annotations
-  workspace;
+- Unicode-aware durable indexing, selection, bookmarks, highlights, notes, or
+  an annotations workspace;
 - collections, library search, cover/thumbnail expansion, or spatial previews;
 - accounts, analytics, advertising, cloud services, synchronization, or Google
   Drive integration;
@@ -65,9 +68,10 @@ used in the listing.
   assets in [Add preview assets](https://support.google.com/googleplay/android-developer/answer/9866151?hl=en).
 - Replace or remove the engineering sample from first-run Library state and move
   Alpha/Beta fixture books used only by instrumentation out of production assets.
-- Complete audible TalkBack/touch-exploration and hands-on transition, touch,
-  keyboard/switch, compact/large viewport, and first-run review after the bounded
-  polish candidate passes on the emulator.
+- Complete whole-app audible TalkBack/touch-exploration and hands-on transition,
+  touch, keyboard/switch, compact/large viewport, and first-run review after the
+  bounded polish candidate passes on the emulator. The Port 9 search-sheet
+  audible/touch gate is complete but does not substitute for that broader pass.
 
 ### Release artifact and signing
 
@@ -151,6 +155,33 @@ used in the listing.
   22/22 reduced-motion matrix in 22.543 seconds. Both crash buffers are empty;
   the API 36 exit history contains only expected user-requested force stops.
   Bounded portrait-phone Navigation visual parity also passes in light, dark,
+  and High Contrast.
+- The Port 9 in-book-search candidate passes five focused tests, the complete
+  API 36 ordinary matrix 90/90 in 4 minutes 2 seconds wall time, and the selected
+  130%-text/reduced-motion matrix 27/27 in 30.401 seconds of instrumentation
+  time. Confirmed force stop preserves durable state and clears transient
+  search; crash review is empty.
+  The strict Windows build, seven public smokes, six-theme real-book active-hit
+  contrast smoke, and real-book snippet-context smoke also pass.
+  Manual Paper, Warm dark, and High contrast review passes for the search sheet
+  and active/inactive page emphasis.
+- On the API 34 ARM64 iQOO, Port 9 passes focused search 5/5 in 7.787 seconds,
+  the correctly selected ordinary matrix 90/90 in 194.467 seconds of
+  instrumentation time, external confirmed-force-stop restart, and the
+  130%-text/reduced-motion matrix 27/27 in 27.219 seconds. Font and all three
+  animation scales were restored explicitly to their original `1.0` values;
+  74 rendered vivo SystemUI frames then verified live animation behavior. The
+  crash buffer is empty, and all 26 original app files (4,751,505 bytes) were
+  restored byte-exact.
+- Representative-book physical review searched *Gardens of the Moon* for
+  `Paran`, reported 630 matches with the first 64 disclosed, jumped from 0% to
+  3%, advanced to the next result, and kept active/inactive page emphasis
+  distinct. TalkBack 17.0.1 physical touch exploration then passed for Find
+  controls, status, current/ordinary results, activation, Next, Back, spoken
+  open/close state, and focus return. Accessibility, notification-permission,
+  rotation, audio, font, animation, and 8vo data state restored to the captured
+  baseline. Broader-book coverage and the remaining whole-app hands-on launch
+  review remain gates.
 
 ## Release qualification plan
 
