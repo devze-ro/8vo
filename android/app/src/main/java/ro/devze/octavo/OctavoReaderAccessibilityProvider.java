@@ -60,6 +60,16 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
     private static final AccessibilityNodeInfo.AccessibilityAction
         ACTION_CLEAR_SELECTION = new AccessibilityNodeInfo.AccessibilityAction(
             R.id.octavo_action_clear_selection, "Clear text selection");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_EXTEND_SELECTION_PREVIOUS =
+            new AccessibilityNodeInfo.AccessibilityAction(
+                R.id.octavo_action_extend_selection_previous,
+                "Extend selection to previous page");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_EXTEND_SELECTION_NEXT =
+            new AccessibilityNodeInfo.AccessibilityAction(
+                R.id.octavo_action_extend_selection_next,
+                "Extend selection to next page");
 
     private static final int INVALID_VIRTUAL_ID = Integer.MIN_VALUE;
     private static final int MAX_PAGE_TEXT_CHARACTERS = 4096;
@@ -183,6 +193,12 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             }
             if (action == R.id.octavo_action_clear_selection) {
                 return owner.clearSelectionForAccessibility();
+            }
+            if (action == R.id.octavo_action_extend_selection_previous) {
+                return owner.extendSelectionForAccessibility(-1);
+            }
+            if (action == R.id.octavo_action_extend_selection_next) {
+                return owner.extendSelectionForAccessibility(1);
             }
             if (action == AccessibilityNodeInfo.ACTION_CLICK) {
                 if (!owner.isEnabled()) {
@@ -445,6 +461,8 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
         }
         if (virtualViewId == VIRTUAL_PAGE_CONTENT && spec.enabled) {
             if (owner.hasSelectionForAccessibility()) {
+                info.addAction(ACTION_EXTEND_SELECTION_PREVIOUS);
+                info.addAction(ACTION_EXTEND_SELECTION_NEXT);
                 info.addAction(ACTION_COPY_SELECTED_TEXT);
                 info.addAction(ACTION_CLEAR_SELECTION);
             } else {

@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-06. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-07. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -17,12 +17,13 @@ also passes. Desktop light/dark versus Android light/dark/High Contrast portrait
 Navigation visual review passes. Whole-app audible TalkBack, full-app visual parity,
 remaining bounded polish, and user subjective/manual acceptance remain pending.
 Port 9 is the merged, API 36/API 34-validated bounded in-book-search slice.
-Port 10 is an API 36/API 34-validated bounded single-page selection-and-Copy
-candidate: focused, ordinary, restart, actual 130%-system-text/reduced-motion,
+Port 10 is the merged API 36/API 34-validated bounded selection-and-Copy
+baseline: focused, ordinary, restart, actual 130%-system-text/reduced-motion,
 empty-crash, visual, physical touch, and audible TalkBack gates pass. Its exact
 26-file baseline restored byte-for-byte and vivo motion was behaviorally
-verified after an explicit Launcher restart. Hands-on review confirmed that
-selection cannot continue across pages; that is now a launch blocker.
+  verified after an explicit Launcher restart. The same-spine cross-page follow-
+  up now passes complete API 36 emulator and API 34 physical qualification,
+  including loupe-quality touch review and bounded audible TalkBack actions.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -48,8 +49,8 @@ visual parity.
 Port 7 is the accepted appearance foundation. It adds the appearance,
 semantic-location reflow, borderless host-composited chrome,
 reader-entry-performance, and accessibility-bridge foundation described
-below. Ports 0-9 form the current merged Android baseline while Port 10 remains
-a local bounded candidate pending the cross-page launch decision.
+below. Ports 0-10 form the current merged Android baseline. The cross-page
+follow-up is a local bounded candidate pending physical acceptance.
 
 ## Delivery method
 
@@ -403,9 +404,18 @@ are still pending.
 - Port 10 now provides Reader0-authoritative session-local word selection,
   styled rendered-row geometry, Android contextual Copy, compact handles with
   48dp hit regions, selection-first system Back, and bounded TalkBack actions;
-  its emulator and physical gates pass for the single visible page;
-- cross-page auto-turn/continuation is the next launch-blocking selection slice;
-  define same-spine versus cross-spine anchor ownership before annotations;
+  its merged emulator and physical gates pass for a single visible page;
+- the follow-up continues either handle across successfully presented pages in
+  one Reader0 spine, repeats after edge dwell, retains the off-page endpoint,
+  rolls back page plus range atomically, stops at a chapter boundary, and uses a
+  successfully-presented native loupe that continuously tracks the handle while
+  centering the active text row;
+- API 36 passes 10/10 focused selection, 100/100 ordinary, restart, 37/37
+  scaled/reduced, empty crash, and representative visual gates; API 34 passes
+  10/10 focused, 100/100 ordinary, restart, 37/37 large-text/normal-motion,
+  touch/loupe review, audible extension actions, crash, and exact restoration;
+- the bounded same-spine selection launch gate is closed; cross-spine selection
+  remains deferred until Reader0 owns that anchor;
 - paragraph expansion, fuller Unicode segmentation,
   and durable anchors remain separate follow-up work;
 - bookmarks, theme-tuned multi-color highlights, and notes; and

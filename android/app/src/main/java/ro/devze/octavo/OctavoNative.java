@@ -25,6 +25,8 @@ final class OctavoNative {
     static final int SELECTION_UNAVAILABLE = -2;
     static final int SELECTION_BUSY = -3;
     static final int SELECTION_FAILED = -4;
+    static final int SELECTION_BOUNDARY = -5;
+    static final int SELECTION_LIMIT = -6;
     static final int SELECTION_HANDLE_START = 1;
     static final int SELECTION_HANDLE_END = 2;
     static final int SELECTION_HANDLE_SHIFT = 8;
@@ -134,6 +136,10 @@ final class OctavoNative {
                                       int handleKind,
                                       float x,
                                       float y);
+    static native int extendSelectionAcrossPage(long handle,
+                                                int handleKind,
+                                                int direction,
+                                                float x);
     static native int clearSelection(long handle);
     static native long[] selectionSnapshot(long handle);
     static native byte[] selectedTextUtf8(long handle);

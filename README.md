@@ -60,15 +60,19 @@ reported defects without a visible bright/black transition. Audible TalkBack,
 UI polish, and user subjective/manual acceptance remain pending. Earlier Port
 8 results remain predecessor evidence rather than proof for the current source.
 
-Port 9 adds the merged Reader0-backed bounded in-book search slice. Port 10 is
-the current local single-page selection-and-Copy candidate on the same exact
-dependency closure. API 36 and API 34 focused, ordinary, restart, actual
-130%-system-text/reduced-motion, empty-crash, visual, physical touch, and
+Port 9 adds the merged Reader0-backed bounded in-book search slice. Port 10's
+merged baseline adds Reader0-authoritative word selection and Copy on the same
+exact dependency closure. Its API 36 and API 34 focused, ordinary, restart,
+actual 130%-system-text/reduced-motion, empty-crash, visual, physical touch, and
 audible TalkBack gates pass. The iQOO's 26 files and 4,751,505 bytes restored
 byte-for-byte, and live Launcher/SystemUI motion was verified after explicit
-restoration. Hands-on review confirmed that selection cannot continue across
-pages; that limitation is now a launch blocker before annotations build on the
-anchor model. Nothing has been pushed or merged for Port 10.
+  restoration. The Port 10 follow-up now continues either handle across presented
+  pages inside one Reader0 spine, repeats only after successful presentation,
+  stops explicitly at chapter boundaries, keeps Copy bounded, and supplies a
+  native row-centered drag loupe. Its complete API 36 emulator and API 34 iQOO
+  automation, restart, large-text, crash, exact-restore, touch, and bounded
+  audible TalkBack gates pass. Cross-spine selection remains an explicit
+  non-goal rather than a launch claim.
 
 The long-term Android direction is a premium, local-first reader for
 user-owned books with Kindle-class capability and interaction quality, a

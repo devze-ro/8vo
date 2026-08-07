@@ -1,16 +1,18 @@
 # Android Port 10: bounded text selection and Copy
 
-Status: API 36 emulator- and API 34 physical-device-validated bounded
-implementation candidate. Single-page touch, Copy, Back, and audible TalkBack
-pass, but physical review confirmed that selection cannot continue across a
-page boundary. That remains a launch blocker before durable annotations or
-synchronization.
+Status: merged Port 10 baseline plus an API 36 emulator- and API 34 physical-
+device-qualified same-spine cross-page follow-up. Touch continuation, native
+loupe quality, Copy/Back, and bounded audible TalkBack actions pass. The Google
+Play same-spine selection gate is closed; cross-spine selection remains an
+explicit non-goal.
 
 ## Outcome
 
 Android readers can long-press selectable page text, extend or contract the
 selection with native touch handling, inspect a persistent visual selection,
-and copy the exact selected text through Android's contextual action mode.
+continue either handle across successfully presented pages in one Reader0
+spine, and copy the exact bounded selected text through Android's contextual
+action mode.
 
 ## Cross-platform invariants
 
@@ -21,14 +23,16 @@ and copy the exact selected text through Android's contextual action mode.
   row order, margins, inline styles, font advances, alignment, justification,
   and UTF-8 traversal used by Android page drawing.
 - Selection endpoints are valid UTF-8 codepoint boundaries and a committed
-  selection is non-empty, within the active Reader0 spine, and visible in the
-  accepted frame.
+  selection is non-empty and within the active Reader0 spine. An off-page
+  endpoint remains canonical without publishing a clipped-edge phantom handle.
 - Copy obtains the bytes covered by Reader0's validated selection from the
   active canonical spine and publishes them only through Android's clipboard
   service. Clipboard ownership and user feedback remain platform policy.
-- Page movement, structural/search navigation, reflow, document replacement,
-  surface replacement, lifecycle teardown, and reader teardown clear the
-  transient selection. Nothing in this slice is durable or synchronized.
+- Ordinary page movement, structural/search navigation, reflow, document
+  replacement, surface replacement, lifecycle teardown, and reader teardown
+  clear the transient selection. The cross-page gesture is the only page move
+  that uses Reader0's `preserve_selection` and `same_spine_only` options.
+  Nothing in this slice is durable or synchronized.
 - Selection mutations cannot bypass an outstanding page, appearance, reflow,
   structural-navigation, progress, or search presentation transaction.
   Failure leaves the last successfully presented page authoritative and makes
@@ -39,6 +43,16 @@ and copy the exact selected text through Android's contextual action mode.
 - A long press selects the bounded word containing the pressed glyph. Dragging
   before release extends that range; after release, the start and end handles
   retain at least 48dp touch targets while their visible markers stay compact.
+- Dragging a visible handle outside the content edge for 350ms requests the
+  adjacent same-spine page. Continued holding repeats no faster than 450ms and
+  only after the previous page/selection transaction is successfully shown.
+  Moving inside, lifting, cancellation, multi-touch, recomposition, or lifecycle
+  replacement cancels the dwell.
+- An API 28+ native magnifier follows only successfully presented selection
+  frames during handle drag. It keeps the active rendered row centered, stays
+  clear of the finger, refreshes without flicker or continuous-drag starvation,
+  and dismisses on release, lifecycle/surface loss, page-turn ownership change,
+  or selection clear.
 - The Android contextual action mode exposes `Copy` and no speculative
   annotation actions. Copy success clears the selection and announces a short
   confirmation; clipboard failure preserves the selection for retry.
@@ -63,14 +77,10 @@ and copy the exact selected text through Android's contextual action mode.
 
 - Bookmarks, stored highlights, highlight colors, notes, annotation editing,
   annotation search, workspace/export, or Google Drive synchronization.
-- Cross-page or cross-spine selection, automatic page turning while dragging,
-  image/alt-text selection, tables with non-linear visual reading order, or
-  full publication accessibility.
-  This was an intentional Port 10 boundary, not an accidental omission, but the
-  physical user could not extend a selection across pages and identified it as
-  a real usability issue. The bounded slice may pass while launch-quality text
-  selection remains incomplete; resolve that gap before building durable
-  bookmarks, highlights, or notes on this anchor model.
+- Cross-spine selection, image/alt-text selection, tables with non-linear visual
+  reading order, or full publication accessibility. Reader0's public
+  `DocSelection` owns one spine and one byte range, so this slice stops explicitly
+  at the chapter boundary instead of inventing a Java anchor model.
 - Unicode word breaking, language-specific segmentation, grapheme editing, or
   replacing Reader0's byte anchors with Java character offsets. The first
   slice uses bounded UTF-8 codepoint boundaries and conservative whitespace /
@@ -78,7 +88,51 @@ and copy the exact selected text through Android's contextual action mode.
 - Pixel-for-pixel desktop popup parity. Android uses its contextual action
   mode and touch conventions while sharing theme identity and selection state.
 
-## Candidate evidence
+## Cross-page follow-up evidence
+
+The exact dependency guard, architecture audit, strict Windows `/W4 /WX` build,
+all seven public smokes, `git diff --check`, and dual-ABI Android debug/test
+build pass without changing the Ground0, Reader0, UI0, or Readerview0 pins.
+
+On the API 36 x86_64 emulator, the expanded selection class passes 10/10 in
+73.180 seconds. It covers actual 350ms edge dwell, repeat after two
+independently presented pages,
+forward/backward contraction, handle reversal, independent endpoint visibility,
+busy gating, bounded Copy, exact rollback after presentation failure, chapter
+boundary retention, TalkBack actions, Back, recreation, outside dismissal, and
+presented-frame loupe tracking/centering/lifecycle behavior. The correctly
+filtered ordinary matrix passes 100/100 in 490.402 seconds. The
+external seed/confirmed-force-stop/verification probe passes 1/1 plus 1/1. The
+selected 130%-system-text/reduced-motion matrix passes 37/37 in 101.257 seconds.
+Font and animation settings restored byte-for-byte to system font `1.0`, window
+and transition `1.0`, and an absent animator key. The crash buffer is empty.
+An unfiltered 102-test diagnostic that incorrectly included the external
+restart verifier without a seed is excluded; the explicitly filtered 100/100
+run is authoritative.
+
+Manual Paper, Warm dark, and High Contrast captures confirm readable selection,
+one visible handle for an off-page anchor, no false clipped-edge handle, and a
+visible bounded-length stop.
+
+On the API 34 ARM64 iQOO, the final follow-up passes 10/10 focused selection in
+16.799 seconds, 100/100 correctly filtered ordinary tests in 178.812 seconds,
+the external restart seed/confirmed-force-stop/verify gate, and 37/37 selected
+tests in 39.059 seconds at 130% system text with normal motion retained. Touch
+review accepts multi-page handle continuation and a continuously updating,
+flicker-free loupe with the active row centered. With TalkBack enabled, the user
+confirmed that Select text, Extend selection to next page, Extend selection to
+previous page, and Copy selected text were all available, with no issue
+reported.
+
+Cleanup restored every captured phone setting, including TalkBack off, no
+enabled or bound service, touch exploration off, font `1.0`, rotation off, and
+all animation scales explicitly `1.0`. The crash buffer is empty. All 26 files
+and 4,751,505 bytes restored byte-exact with archive SHA-256
+`1EF189A765D02321E1A9DC2203CF69B4F90111A9369D0AA6D585D0592DB46DBE`
+and manifest SHA-256
+`94A15EE1CCAAC59833EB0647887A55F3FF441FBD8DF4958B24537E8E6EB59B74`.
+
+## Merged Port 10 baseline evidence
 
 The exact Ground0, Reader0, UI0, and Readerview0 dependency pins are unchanged.
 The dependency guard, architecture audit, strict Windows build, all seven public
@@ -148,9 +202,12 @@ the exact manifest SHA-256 is
   compact/large viewport, reduced-motion, and high-contrast checks.
 - API 36 emulator functional and visual review in representative light, dark,
   and High Contrast themes before requesting the physical device.
-- A coordinated API 34 physical run, live bounded selection/Copy/TalkBack
+- The original coordinated API 34 physical run, live bounded
+  selection/Copy/TalkBack
   exploration, crash review, explicit device-setting restoration with behavioral
-  verification,
-  and byte-exact app-data restoration. This gate passes.
-- Cross-page selection behavior must be defined and implemented before the
-  Google Play selection feature is considered launch-complete.
+  verification, and byte-exact app-data restoration pass for the merged
+  same-page baseline.
+- The same-spine cross-page implementation passes its complete coordinated API
+  34 continuation, loupe, chapter-boundary, Copy, Back, and bounded TalkBack
+  acceptance. The Google Play selection claim is closed; cross-spine selection
+  stays an explicit non-goal.

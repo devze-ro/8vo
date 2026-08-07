@@ -336,6 +336,11 @@ typedef struct OctavoAndroidApp
   DocSelection selection_mutation_previous;
   B32 selection_mutation_previous_valid;
   B32 selection_mutation_waiting_for_present;
+  SourceReaderPageRange selection_page_turn_previous_page;
+  U32 selection_page_turn_previous_spine_index;
+  U64 selection_page_turn_previous_byte_offset;
+  S32 selection_page_turn_direction;
+  B32 selection_page_turn_waiting_for_present;
   UI0U64 selection_generation;
   UI0U64 selection_presented_generation;
   U64 selection_failure_count;
@@ -438,7 +443,11 @@ static B32 octavo_android_commit_structural_navigation(
   OctavoAndroidApp *app);
 static void octavo_android_format_progress_label(OctavoAndroidApp *app);
 static B32 octavo_android_abort_search_mutation(OctavoAndroidApp *app);
+static B32 octavo_android_abort_selection_page_turn(
+  OctavoAndroidApp *app);
 static B32 octavo_android_abort_selection_mutation(OctavoAndroidApp *app);
+static void octavo_android_selection_page_turn_state_clear(
+  OctavoAndroidApp *app);
 static void octavo_android_discard_selection(OctavoAndroidApp *app);
 static B32 octavo_android_selection_highlight_for_range(
   const OctavoAndroidApp *app, U64 start, U64 end);
@@ -3531,6 +3540,10 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     app->page_move_expected_byte_offset = 0;
     app->page_move_presented_count += 1u;
   }
+  if (app->selection_page_turn_waiting_for_present)
+  {
+    octavo_android_selection_page_turn_state_clear(app);
+  }
   if (app->semantic_navigation_waiting_for_present)
   {
     if (!octavo_android_commit_structural_navigation(app))
@@ -4325,7 +4338,18 @@ Java_ro_devze_octavo_OctavoNative_surfaceChanged(JNIEnv *environment,
       app->height != (int32_t)height)
   {
     octavo_android_invalidate_prepared_static_frame(app);
-    octavo_android_discard_selection(app);
+    S32 cancellation = octavo_android_cancel_pending_navigation(app);
+    if (cancellation < 0)
+    {
+      __android_log_print(
+        ANDROID_LOG_ERROR,
+        "8vo",
+        "Unable to restore the presented reader before a surface resize");
+    }
+    else
+    {
+      octavo_android_discard_selection(app);
+    }
   }
   app->format = (int32_t)format;
   app->width = (int32_t)width;

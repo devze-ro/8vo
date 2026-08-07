@@ -40,27 +40,51 @@ service, touch exploration off, the exact original notification-permission
 state, rotation off, original music/TTS volumes, font and animation scales at
 `1.0`, and the same byte-exact 8vo app-data backup.
 
-Port 10 is the current local Reader0-authoritative text-selection and Copy
-candidate on the same dependency closure. The exact guards, architecture audit,
-strict Windows build, seven public smokes, and dual-ABI Android build pass. On
-API 36 and API 34 focused selection, ordinary, restart, actual
+Port 10 is the merged Reader0-authoritative text-selection and Copy baseline on
+the same dependency closure. The exact guards, architecture audit, strict
+Windows build, seven public smokes, and dual-ABI Android build pass. On API 36
+and API 34 focused selection, ordinary, restart, actual
 130%-system-text/reduced-motion, empty-crash, and physical/visual gates pass.
 The iQOO final measurements are 5/5 focused in 9.667 seconds, 95/95 ordinary in
 204.316 seconds, and 32/32 correctly configured large-text/reduced-motion in
 34.958 seconds. Same-page long press, handles, Copy, Back, and TalkBack 17.0.1
-Select/Copy/Clear actions pass hands-on review. Cross-page selection does not
-work and is a launch blocker before annotations build on the anchor contract.
+Select/Copy/Clear actions pass hands-on review. The follow-up now continues
+either handle across successfully presented pages inside the active Reader0
+spine, repeats after edge dwell, exposes TalkBack Previous/Next extension, and
+stops visibly at a chapter boundary. It also supplies a native drag loupe whose
+successfully presented content updates continuously without flicker and centers
+the active text row. Its API 36 emulator and API 34 physical gates pass, closing
+the bounded same-spine selection launch blocker.
+
+For the follow-up, API 36 passes 10/10 focused selection in 73.180 seconds,
+100/100 ordinary in 490.402 seconds, external restart seed/confirmed-force-stop/
+verify, and 37/37 at actual 130% system text with animations disabled in
+101.257 seconds. Paper,
+Warm dark, and High Contrast cross-page captures, strict/public smokes, dual-ABI
+builds, and empty-crash review pass. Emulator font/animation settings restored
+exactly. One unfiltered 102-test diagnostic incorrectly included the external
+restart verifier without its seed and is excluded; the explicitly filtered
+100/100 matrix is authoritative.
+
+On the iQOO, the follow-up passes 10/10 focused selection in 16.799 seconds,
+100/100 ordinary in 178.812 seconds, external confirmed-force-stop restart, and
+37/37 selected tests in 39.059 seconds at 130% system text with normal motion
+retained. Coordinated touch accepts multi-page handles plus the continuously
+updating, flicker-free, row-centered loupe. The user confirmed that TalkBack
+exposed Select text, both Previous/Next page-extension actions, and Copy selected
+text without a reported issue.
 
 The iQOO began with stored animation scales at `1.0` while Recents motion was
 still absent. Republishing the values did not help; restarting Launcher did.
 Every cleanup restored the scales explicitly, restarted Launcher, and the final
 probe rendered 47 Launcher and 74 SystemUI frames. TalkBack is off, secure
 settings match baseline exactly, audio/font/rotation/notification state is
-restored, and the crash buffer is empty. All 26 original files (4,751,505
-bytes) restored byte-exact with archive SHA-256
-`4D97EA76087B7CF57CA5647A591FE517A2674EEA65B1239CA89B2785FA5B3688`
+restored, and the crash buffer is empty. After the follow-up and TalkBack
+review, all 26 original files (4,751,505 bytes) restored byte-exact with archive
+SHA-256
+`1EF189A765D02321E1A9DC2203CF69B4F90111A9369D0AA6D585D0592DB46DBE`
 and manifest SHA-256
-`B8AD189D8DF58419BF89C799B26E28EB3095EF9D490C9EBE0472AE5C5155A9DF`.
+`94A15EE1CCAAC59833EB0647887A55F3FF441FBD8DF4958B24537E8E6EB59B74`.
 
 The candidate retains Port 7's premium appearance, semantic reflow, borderless
 host-composited chrome, first-frame coverage, and custom-reader accessibility
@@ -586,9 +610,9 @@ appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
 durable annotations, and synchronization remain deferred.
 Port 8 adds structural navigation; Port 9 adds bounded session-local in-book
-search; Port 10 adds bounded single-page word selection and Copy. Physical review
-made cross-page continuation the next launch-blocking selection slice, while
-durable Unicode-aware indexing and annotation storage remain deferred. Spatial
+search; Port 10 adds bounded word selection and Copy. Its local follow-up adds
+same-spine cross-page continuation and closes that bounded selection launch
+gate, while durable Unicode-aware indexing and annotation storage remain deferred. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port10.md`](../docs/android_port10.md) for the current
 selection implementation and acceptance boundary,

@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -181,6 +182,433 @@ public final class OctavoTextSelectionTest {
     }
 
     @Test
+    public void selectionContinuesForwardAndBackwardAcrossPresentedPages() {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitReaderReady(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection origin = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startVisible && value.endVisible,
+                "Baseline selection did not expose both page-local handles");
+            long[] originState = state(scenario);
+
+            AtomicInteger forward = new AtomicInteger();
+            AtomicInteger gated = new AtomicInteger();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                forward.set(view.extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_END, 1, origin.endX));
+                gated.set(view.extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_END, 1, origin.endX));
+            });
+            assertEquals(
+                OctavoNative.SELECTION_ACCEPTED,
+                forward.get() & 0xff);
+            assertEquals(OctavoNative.SELECTION_BUSY, gated.get());
+
+            OctavoSelection forwardSelection = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startByte == origin.startByte
+                    && value.endByte > origin.endByte
+                    && !value.startVisible && value.endVisible,
+                "Forward page continuation did not retain the off-page anchor");
+            long[] forwardState = state(scenario);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_SPINE_INDEX],
+                forwardState[OctavoSurfaceView.STATE_SPINE_INDEX]);
+            assertTrue(
+                forwardState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]
+                    > originState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]);
+
+            AtomicReference<String> crossPageText = new AtomicReference<>();
+            scenario.onActivity(activity -> crossPageText.set(
+                surface(activity).selectedTextForTesting()));
+            assertNotNull(crossPageText.get());
+            assertTrue(crossPageText.get().getBytes(
+                java.nio.charset.StandardCharsets.UTF_8).length
+                > origin.endByte - origin.startByte);
+
+            AtomicInteger backward = new AtomicInteger();
+            scenario.onActivity(activity -> backward.set(
+                surface(activity).extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_END,
+                    -1,
+                    forwardSelection.endX)));
+            assertEquals(
+                OctavoNative.SELECTION_ACCEPTED,
+                backward.get() & 0xff);
+            OctavoSelection contracted = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startByte == origin.startByte
+                    && value.endByte < forwardSelection.endByte
+                    && value.startVisible && value.endVisible,
+                "Backward page continuation did not restore visible endpoints");
+            assertTrue(contracted.endByte > contracted.startByte);
+            long[] restoredState = state(scenario);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE],
+                restoredState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE],
+                restoredState[
+                    OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE]);
+
+            AtomicInteger reversed = new AtomicInteger();
+            scenario.onActivity(activity -> reversed.set(
+                surface(activity).extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_START,
+                    1,
+                    contracted.startX)));
+            assertEquals(
+                OctavoNative.SELECTION_ACCEPTED,
+                reversed.get() & 0xff);
+            assertEquals(
+                OctavoNative.SELECTION_HANDLE_END,
+                (reversed.get() >>> OctavoNative.SELECTION_HANDLE_SHIFT)
+                    & 0xff);
+            awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startByte == contracted.endByte
+                    && value.endByte > contracted.endByte
+                    && !value.startVisible && value.endVisible,
+                "Cross-page handle crossing did not reverse the active handle");
+        }
+    }
+
+    @Test
+    public void failedCrossPagePresentationRestoresExactPageAndSelection() {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitReaderReady(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection origin = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending,
+                "Rollback selection seed was not presented");
+            long[] originState = state(scenario);
+
+            AtomicInteger extension = new AtomicInteger();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.forcePresentFailuresForTesting(8));
+                extension.set(view.extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_END, 1, origin.endX));
+            });
+            assertEquals(
+                OctavoNative.SELECTION_ACCEPTED,
+                extension.get() & 0xff);
+            OctavoSelection restored = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startByte == origin.startByte
+                    && value.endByte == origin.endByte,
+                "Failed cross-page presentation did not restore its range");
+            assertTrue(restored.failureCount > origin.failureCount);
+            long[] restoredState = state(scenario);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_SPINE_INDEX],
+                restoredState[OctavoSurfaceView.STATE_SPINE_INDEX]);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE],
+                restoredState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE],
+                restoredState[
+                    OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE]);
+            assertEquals(
+                0,
+                restoredState[
+                    OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.forcePresentFailuresForTesting(0));
+                assertTrue(view.presentPreparedFrameForTesting());
+            });
+            awaitReaderReady(scenario);
+        }
+    }
+
+    @Test
+    public void heldHandleBeyondContentEdgeTurnsThePage() {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitReaderReady(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection origin = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.endVisible,
+                "Edge-dwell selection seed was not presented");
+            long[] originState = state(scenario);
+            float outsideY = originState[OctavoSurfaceView.STATE_CONTENT_Y]
+                + originState[OctavoSurfaceView.STATE_CONTENT_HEIGHT] + 1.0f;
+            AtomicLong downTime = new AtomicLong();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long now = SystemClock.uptimeMillis();
+                downTime.set(now);
+                MotionEvent down = MotionEvent.obtain(
+                    now,
+                    now,
+                    MotionEvent.ACTION_DOWN,
+                    origin.endX,
+                    origin.endY,
+                    0);
+                assertTrue(view.dispatchTouchEvent(down));
+                down.recycle();
+                MotionEvent move = MotionEvent.obtain(
+                    now,
+                    now + 1,
+                    MotionEvent.ACTION_MOVE,
+                    origin.endX,
+                    outsideY,
+                    0);
+                assertTrue(view.dispatchTouchEvent(move));
+                move.recycle();
+            });
+
+            OctavoSelection extended = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.startByte == origin.startByte
+                    && value.endByte > origin.endByte
+                    && !value.startVisible && value.endVisible,
+                "The held selection handle did not continue to the next page");
+            long[] extendedState = state(scenario);
+            assertEquals(
+                originState[OctavoSurfaceView.STATE_SPINE_INDEX],
+                extendedState[OctavoSurfaceView.STATE_SPINE_INDEX]);
+            assertTrue(
+                extendedState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]
+                    > originState[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]);
+
+            OctavoSelection repeated = awaitSelection(
+                scenario,
+                value -> {
+                    long[] current = state(scenario);
+                    return value.active && !value.pending
+                        && value.startByte == origin.startByte
+                        && value.endByte > extended.endByte
+                        && current[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]
+                            > extendedState[
+                                OctavoSurfaceView.STATE_PAGE_FIRST_BYTE];
+                },
+                "The held selection handle did not repeat after presentation");
+            assertFalse(repeated.startVisible);
+            assertTrue(repeated.endVisible);
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long now = SystemClock.uptimeMillis();
+                MotionEvent up = MotionEvent.obtain(
+                    downTime.get(),
+                    now,
+                    MotionEvent.ACTION_UP,
+                    repeated.endX,
+                    repeated.endY,
+                    0);
+                assertTrue(view.dispatchTouchEvent(up));
+                up.recycle();
+            });
+        }
+    }
+
+    @Test
+    public void handleDragMagnifierTracksAndDismissesAtLifecycleBoundaries() {
+        assumeTrue(android.os.Build.VERSION.SDK_INT
+            >= android.os.Build.VERSION_CODES.P);
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitReaderReady(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection selection = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending && value.endVisible,
+                "Magnifier selection seed was not presented");
+
+            AtomicLong downTime = new AtomicLong();
+            AtomicInteger showsBeforeBurst = new AtomicInteger();
+            AtomicInteger updatesBeforeBurst = new AtomicInteger();
+            AtomicReference<float[]> sourceBeforeBurst =
+                new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long now = SystemClock.uptimeMillis();
+                downTime.set(now);
+                MotionEvent down = MotionEvent.obtain(
+                    now, now, MotionEvent.ACTION_DOWN,
+                    selection.endX, selection.endY, 0);
+                assertTrue(view.dispatchTouchEvent(down));
+                down.recycle();
+                assertTrue(view.selectionMagnifierVisibleForTesting());
+                assertTrue(view.selectionMagnifierShowCountForTesting() >= 1);
+                assertEquals(
+                    selection.endY - selection.endRowHeight / 2.0f,
+                    view.selectionMagnifierSourceYForTesting(),
+                    0.5f);
+                showsBeforeBurst.set(
+                    view.selectionMagnifierShowCountForTesting());
+                updatesBeforeBurst.set(
+                    view.selectionMagnifierUpdateCountForTesting());
+                sourceBeforeBurst.set(new float[] {
+                    view.selectionMagnifierSourceXForTesting(),
+                    view.selectionMagnifierSourceYForTesting()
+                });
+                if (android.os.Build.VERSION.SDK_INT
+                    >= android.os.Build.VERSION_CODES.Q) {
+                    assertTrue(Math.abs(
+                        view.selectionMagnifierDisplayYForTesting()
+                            - selection.endY)
+                        >= view.selectionMagnifierClearanceForTesting());
+                }
+
+                long[] readerState = view.nativeStateForTesting();
+                assertNotNull(readerState);
+                float targetX = readerState[
+                    OctavoSurfaceView.STATE_CONTENT_X]
+                    + readerState[OctavoSurfaceView.STATE_CONTENT_WIDTH]
+                        / 2.0f;
+                float targetY = readerState[
+                    OctavoSurfaceView.STATE_CONTENT_Y]
+                    + readerState[OctavoSurfaceView.STATE_CONTENT_HEIGHT]
+                        / 2.0f;
+                for (int index = 0; index < 24; index += 1) {
+                    MotionEvent move = MotionEvent.obtain(
+                        now,
+                        now + index + 1,
+                        MotionEvent.ACTION_MOVE,
+                        targetX,
+                        targetY,
+                        0);
+                    assertTrue(view.dispatchTouchEvent(move));
+                    move.recycle();
+                }
+                assertTrue(view.selectionMagnifierVisibleForTesting());
+                assertEquals(
+                    showsBeforeBurst.get(),
+                    view.selectionMagnifierShowCountForTesting());
+            });
+            awaitSelection(
+                scenario,
+                value -> value.active && !value.pending,
+                "Burst drag selection was not presented");
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                assertTrue(view.selectionMagnifierVisibleForTesting());
+                int refreshes =
+                    view.selectionMagnifierShowCountForTesting()
+                        - showsBeforeBurst.get()
+                    + view.selectionMagnifierUpdateCountForTesting()
+                        - updatesBeforeBurst.get();
+                assertEquals(1, refreshes);
+                float[] beforeSource = sourceBeforeBurst.get();
+                assertNotNull(beforeSource);
+                assertTrue(
+                    Math.abs(view.selectionMagnifierSourceXForTesting()
+                        - beforeSource[0]) >= 0.5f
+                    || Math.abs(view.selectionMagnifierSourceYForTesting()
+                        - beforeSource[1]) >= 0.5f);
+                OctavoSelection presented = OctavoSelection.fromNative(
+                    view.selectionPacketForTesting());
+                assertNotNull(presented);
+                assertTrue(presented.endVisible);
+                assertEquals(
+                    presented.endX,
+                    view.selectionMagnifierSourceXForTesting(),
+                    0.5f);
+                assertEquals(
+                    presented.endY - presented.endRowHeight / 2.0f,
+                    view.selectionMagnifierSourceYForTesting(),
+                    0.5f);
+
+                long now = SystemClock.uptimeMillis();
+                MotionEvent cancel = MotionEvent.obtain(
+                    downTime.get(), now, MotionEvent.ACTION_CANCEL,
+                    selection.endX, selection.endY, 0);
+                assertTrue(view.dispatchTouchEvent(cancel));
+                cancel.recycle();
+                assertFalse(view.selectionMagnifierVisibleForTesting());
+            });
+
+            OctavoSelection retained = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending && value.endVisible,
+                "Cancelled magnifier drag did not retain the selection");
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long now = SystemClock.uptimeMillis();
+                MotionEvent down = MotionEvent.obtain(
+                    now, now, MotionEvent.ACTION_DOWN,
+                    retained.endX, retained.endY, 0);
+                assertTrue(view.dispatchTouchEvent(down));
+                down.recycle();
+                assertTrue(view.selectionMagnifierVisibleForTesting());
+                view.replaceNativeSurfaceForTesting();
+                assertFalse(view.selectionMagnifierVisibleForTesting());
+            });
+            awaitReaderReady(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).clearSelectionForTesting()));
+            awaitSelection(
+                scenario,
+                value -> !value.active && !value.pending,
+                "Magnifier lifecycle test did not clear its selection");
+        }
+    }
+
+    @Test
+    public void chapterBoundaryKeepsTheLastPresentedSelection() {
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            openFixture(scenario);
+            awaitReaderReady(scenario);
+            long[] lastPage = moveToLastPageOfCurrentSpine(scenario);
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection origin = awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && value.endVisible,
+                "Chapter-boundary selection seed was not presented");
+
+            AtomicInteger boundary = new AtomicInteger();
+            scenario.onActivity(activity -> boundary.set(
+                surface(activity).extendSelectionAcrossPageForTesting(
+                    OctavoNative.SELECTION_HANDLE_END, 1, origin.endX)));
+            assertEquals(OctavoNative.SELECTION_BOUNDARY, boundary.get());
+            OctavoSelection retained = selection(scenario);
+            assertTrue(retained.active);
+            assertFalse(retained.pending);
+            assertEquals(origin.startByte, retained.startByte);
+            assertEquals(origin.endByte, retained.endByte);
+            long[] after = state(scenario);
+            assertEquals(
+                lastPage[OctavoSurfaceView.STATE_SPINE_INDEX],
+                after[OctavoSurfaceView.STATE_SPINE_INDEX]);
+            assertEquals(
+                lastPage[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE],
+                after[OctavoSurfaceView.STATE_PAGE_FIRST_BYTE]);
+            assertEquals(
+                0,
+                after[OctavoSurfaceView.STATE_PAGE_MOVE_PRESENTATION_PENDING]);
+        }
+    }
+
+    @Test
     public void virtualPagePublishesSelectCopyAndClearActions() {
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
@@ -217,6 +645,29 @@ public final class OctavoTextSelectionTest {
                 assertTrue(hasAction(
                     page, R.id.octavo_action_copy_selected_text));
                 assertTrue(hasAction(page, R.id.octavo_action_clear_selection));
+                assertTrue(hasAction(
+                    page, R.id.octavo_action_extend_selection_previous));
+                assertTrue(hasAction(
+                    page, R.id.octavo_action_extend_selection_next));
+                assertTrue(provider.performAction(
+                    OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
+                    R.id.octavo_action_extend_selection_next,
+                    null));
+                page.recycle();
+            });
+            awaitSelection(
+                scenario,
+                value -> value.active && !value.pending
+                    && !value.startVisible && value.endVisible,
+                "Virtual-page extension did not continue onto the next page");
+
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                AccessibilityNodeProvider provider =
+                    view.getAccessibilityNodeProvider();
+                AccessibilityNodeInfo page = provider.createAccessibilityNodeInfo(
+                    OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT);
+                assertNotNull(page);
                 assertTrue(provider.performAction(
                     OctavoReaderAccessibilityProvider.VIRTUAL_PAGE_CONTENT,
                     R.id.octavo_action_clear_selection,
@@ -410,5 +861,50 @@ public final class OctavoTextSelectionTest {
         OctavoSelection result = OctavoSelection.fromNative(packet.get());
         assertNotNull(result);
         return result;
+    }
+
+    private static long[] moveToLastPageOfCurrentSpine(
+        ActivityScenario<OctavoActivity> scenario) {
+        long[] initial = state(scenario);
+        long spine = initial[OctavoSurfaceView.STATE_SPINE_INDEX];
+        long[] previous = initial;
+        long declaredPageCount =
+            initial[OctavoSurfaceView.STATE_PAGE_COUNT];
+        assertTrue(declaredPageCount > 0 && declaredPageCount <= 512);
+        for (int attempt = 0; attempt <= declaredPageCount; ++attempt) {
+            AtomicBoolean moved = new AtomicBoolean();
+            scenario.onActivity(activity -> moved.set(
+                surface(activity).movePageForAccessibility(1)));
+            if (!moved.get()) {
+                return previous;
+            }
+            awaitReaderReady(scenario);
+            long[] current = state(scenario);
+            if (current[OctavoSurfaceView.STATE_SPINE_INDEX] != spine) {
+                AtomicBoolean restored = new AtomicBoolean();
+                scenario.onActivity(activity -> restored.set(
+                    surface(activity).movePageForAccessibility(-1)));
+                assertTrue(restored.get());
+                awaitReaderReady(scenario);
+                long[] result = state(scenario);
+                assertEquals(
+                    spine,
+                    result[OctavoSurfaceView.STATE_SPINE_INDEX]);
+                return result;
+            }
+            previous = current;
+        }
+        fail("Fixture spine exceeded its Reader0-reported page bound");
+        return null;
+    }
+
+    private static long[] state(
+        ActivityScenario<OctavoActivity> scenario) {
+        AtomicReference<long[]> result = new AtomicReference<>();
+        scenario.onActivity(activity -> result.set(
+            surface(activity).nativeStateForTesting()));
+        assertNotNull(result.get());
+        assertEquals(OctavoSurfaceView.STATE_FIELD_COUNT, result.get().length);
+        return result.get();
     }
 }

@@ -1,9 +1,11 @@
 package ro.devze.octavo;
 
+import android.annotation.TargetApi;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Rect;
+import android.os.Build;
 import android.util.Log;
 import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
@@ -16,11 +18,88 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeProvider;
+import android.widget.Magnifier;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
+    private interface SelectionMagnifier {
+        void show(float sourceX,
+                  float sourceY,
+                  float windowCenterX,
+                  float windowCenterY);
+        void update();
+        void dismiss();
+    }
+
+    @TargetApi(Build.VERSION_CODES.P)
+    private static final class Api28SelectionMagnifier
+            implements SelectionMagnifier {
+        private final Magnifier magnifier;
+
+        Api28SelectionMagnifier(View view) {
+            magnifier = new Magnifier(view);
+        }
+
+        @Override
+        public void show(float sourceX,
+                         float sourceY,
+                         float windowCenterX,
+                         float windowCenterY) {
+            magnifier.show(sourceX, sourceY);
+        }
+
+        @Override
+        public void update() {
+            magnifier.update();
+        }
+
+        @Override
+        public void dismiss() {
+            magnifier.dismiss();
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    private static final class Api29SelectionMagnifier
+            implements SelectionMagnifier {
+        private final Magnifier magnifier;
+
+        Api29SelectionMagnifier(View view,
+                                int width,
+                                int height,
+                                float cornerRadius,
+                                float elevation) {
+            magnifier = new Magnifier.Builder(view)
+                .setSize(width, height)
+                .setInitialZoom(1.8f)
+                .setCornerRadius(cornerRadius)
+                .setElevation(elevation)
+                .setClippingEnabled(true)
+                .build();
+        }
+
+        @Override
+        public void show(float sourceX,
+                         float sourceY,
+                         float windowCenterX,
+                         float windowCenterY) {
+            magnifier.show(
+                sourceX, sourceY, windowCenterX, windowCenterY);
+        }
+
+        @Override
+        public void update() {
+            magnifier.update();
+        }
+
+        @Override
+        public void dismiss() {
+            magnifier.dismiss();
+        }
+    }
+
     interface Listener {
         void onChromeVisibilityChanged(boolean visible);
         void onAppearancePresented(OctavoAppearance appearance);
@@ -43,6 +122,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private static final long PRESENTATION_RETRY_MILLIS = 32;
     private static final long LOCATION_WARM_INITIAL_DELAY_MILLIS = 120;
     private static final long LOCATION_WARM_STEP_DELAY_MILLIS = 32;
+    private static final long SELECTION_EDGE_DWELL_MILLIS = 350;
+    private static final long SELECTION_EDGE_REPEAT_MILLIS = 450;
     private static final int LOCATION_WARM_MORE = 1;
     private static final int LOCATION_WARM_DEFERRED = 2;
     private static final int LOCATION_WARM_COMPLETED_REFRESH = 3;
@@ -169,6 +250,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private final int swipeMinimumDistancePx;
     private final int touchSlopPx;
     private final int selectionHandleHitRadiusPx;
+    private final int selectionMagnifierWidthPx;
+    private final int selectionMagnifierHeightPx;
+    private final int selectionMagnifierClearancePx;
+    private final int selectionMagnifierMarginPx;
     private OctavoAppearance presentedAppearance;
     private OctavoAppearance requestedAppearance;
     private OctavoAppearance nativeAppearanceAwaitingPresentation;
@@ -190,6 +275,21 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean selectionLongPressPosted;
     private boolean selectionGestureActive;
     private int selectionHandleKind;
+    private float selectionPointerX;
+    private float selectionPointerY;
+    private int selectionPageTurnDirection;
+    private boolean selectionPageTurnPosted;
+    private boolean selectionPageBoundaryNotified;
+    private int selectionExtensionAnnouncementDirection;
+    private SelectionMagnifier selectionMagnifier;
+    private boolean selectionMagnifierVisible;
+    private boolean selectionMagnifierUnavailable;
+    private int selectionMagnifierShowCount;
+    private int selectionMagnifierUpdateCount;
+    private float selectionMagnifierSourceX;
+    private float selectionMagnifierSourceY;
+    private float selectionMagnifierDisplayX;
+    private float selectionMagnifierDisplayY;
     private ActionMode selectionActionMode;
     private boolean selectionActionModeSuppressClear;
     private boolean selectionClearAfterPresentation;
@@ -223,7 +323,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     };
     private final Runnable beginSelectionLongPress =
         this::runSelectionLongPress;
-
+    private final Runnable turnSelectionPage =
+        this::runSelectionPageTurn;
     private int runLocationWarmStep() {
         locationWarmPosted = false;
         if (nativeHandle == 0 || !hostResumed || locationWarmComplete
@@ -317,6 +418,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             48.0f * context.getResources().getDisplayMetrics().density);
         swipeMinimumDistancePx = Math.max(touchSlop * 4, minimumDp);
         selectionHandleHitRadiusPx = Math.max(minimumDp / 2, touchSlop * 2);
+        float density = context.getResources().getDisplayMetrics().density;
+        selectionMagnifierWidthPx = Math.max(
+            Math.round(112.0f * density), 1);
+        selectionMagnifierHeightPx = Math.max(
+            Math.round(64.0f * density), 1);
+        selectionMagnifierClearancePx = Math.max(
+            Math.round(96.0f * density),
+            selectionMagnifierHeightPx / 2 + minimumDp / 2);
+        selectionMagnifierMarginPx = Math.max(
+            Math.round(8.0f * density), 1);
         this.libraryStore = libraryStore;
         this.listener = listener;
         book = session.book;
@@ -454,7 +565,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                     gestureCancelled = false;
                     selectionGestureActive = true;
                     selectionHandleKind = handle;
+                    selectionPointerX = gestureDownX;
+                    selectionPointerY = gestureDownY;
                     touchCompositionGeneration = chromeCompositionGeneration;
+                    showSelectionMagnifier(gestureDownX, gestureDownY);
                     return true;
                 }
                 requestSelectionClear(true);
@@ -480,6 +594,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
             cancelNativeTouch(event);
             cancelSelectionLongPress();
+            cancelSelectionPageTurn();
+            dismissSelectionMagnifier();
             selectionGestureActive = false;
             gestureCancelled = true;
             return true;
@@ -499,6 +615,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
         if (action == MotionEvent.ACTION_MOVE) {
             if (selectionGestureActive) {
+                selectionPointerX = x;
+                selectionPointerY = y;
                 int result = OctavoNative.updateSelection(
                     nativeHandle, selectionHandleKind, x, y);
                 if (result > 0
@@ -514,6 +632,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 } else if (result == OctavoNative.SELECTION_FAILED) {
                     notifySelectionFailure("Unable to adjust the text selection.");
                 }
+                updateSelectionPageTurnIntent(x, y);
                 return true;
             }
             if (gestureCancelled || gestureCommitted) {
@@ -599,6 +718,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 android.os.SystemClock.uptimeMillis());
             selectionGestureActive = true;
             selectionHandleKind = OctavoNative.SELECTION_HANDLE_END;
+            selectionPointerX = gestureDownX;
+            selectionPointerY = gestureDownY;
             gestureCommitted = true;
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             resetPresentationRetries();
@@ -628,10 +749,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             || !Float.isFinite(x) || !Float.isFinite(y)) {
             return 0;
         }
-        long startDistance = squaredDistance(
-            x, y, selection.startX, selection.startY);
-        long endDistance = squaredDistance(
-            x, y, selection.endX, selection.endY);
+        long startDistance = selection.startVisible
+            ? squaredDistance(x, y, selection.startX, selection.startY)
+            : Long.MAX_VALUE;
+        long endDistance = selection.endVisible
+            ? squaredDistance(x, y, selection.endX, selection.endY)
+            : Long.MAX_VALUE;
         long radius = selectionHandleHitRadiusPx;
         long maximum = radius * radius;
         if (startDistance <= maximum && startDistance <= endDistance) {
@@ -653,6 +776,288 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         deltaX = Math.max(-limit, Math.min(limit, deltaX));
         deltaY = Math.max(-limit, Math.min(limit, deltaY));
         return deltaX * deltaX + deltaY * deltaY;
+    }
+
+    private void showSelectionMagnifier(float pointerX, float pointerY) {
+        if (!selectionGestureActive || selectionHandleKind == 0
+            || !hostResumed || selectionMagnifierUnavailable
+            || Build.VERSION.SDK_INT < Build.VERSION_CODES.P
+            || getWidth() <= 0 || getHeight() <= 0
+            || !getHolder().getSurface().isValid()) {
+            dismissSelectionMagnifier();
+            return;
+        }
+
+        float sourceX = pointerX;
+        float sourceY = pointerY;
+        float windowAnchorX = pointerX;
+        float windowAnchorY = pointerY;
+        OctavoSelection selection = selectionSnapshot();
+        if (selection != null && selection.pending) {
+            /*
+             * Keep the last successfully copied loupe visible until the
+             * matching Surface frame is presented. Copying an in-flight
+             * SurfaceView on every raw MOVE can make the platform magnifier
+             * blink between asynchronous PixelCopy completions.
+             */
+            return;
+        }
+        if (selection != null && selection.active && !selection.pending) {
+            if (selectionHandleKind == OctavoNative.SELECTION_HANDLE_START
+                && selection.startVisible) {
+                sourceX = selection.startX;
+                sourceY = selection.startY
+                    - selection.startRowHeight / 2.0f;
+                windowAnchorX = selection.startX;
+                windowAnchorY = selection.startY;
+            } else if (selectionHandleKind
+                       == OctavoNative.SELECTION_HANDLE_END
+                       && selection.endVisible) {
+                sourceX = selection.endX;
+                sourceY = selection.endY
+                    - selection.endRowHeight / 2.0f;
+                windowAnchorX = selection.endX;
+                windowAnchorY = selection.endY;
+            }
+        }
+        if (!Float.isFinite(sourceX) || !Float.isFinite(sourceY)) {
+            dismissSelectionMagnifier();
+            return;
+        }
+        sourceX = Math.max(0.0f, Math.min(sourceX, getWidth() - 1.0f));
+        sourceY = Math.max(0.0f, Math.min(sourceY, getHeight() - 1.0f));
+
+        float halfWidth = selectionMagnifierWidthPx / 2.0f;
+        float halfHeight = selectionMagnifierHeightPx / 2.0f;
+        float minimumX = halfWidth + selectionMagnifierMarginPx;
+        float maximumX = getWidth() - halfWidth
+            - selectionMagnifierMarginPx;
+        float minimumY = halfHeight + selectionMagnifierMarginPx;
+        float maximumY = getHeight() - halfHeight
+            - selectionMagnifierMarginPx;
+        float windowCenterX = clampMagnifierCoordinate(
+            windowAnchorX, minimumX, maximumX, getWidth() / 2.0f);
+        float aboveY = windowAnchorY - selectionMagnifierClearancePx;
+        float belowY = windowAnchorY + selectionMagnifierClearancePx;
+        float windowCenterY;
+        if (aboveY >= minimumY) {
+            windowCenterY = aboveY;
+        } else if (belowY <= maximumY) {
+            windowCenterY = belowY;
+        } else {
+            windowCenterY = clampMagnifierCoordinate(
+                aboveY, minimumY, maximumY, getHeight() / 2.0f);
+        }
+
+        try {
+            if (selectionMagnifier == null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    selectionMagnifier = new Api29SelectionMagnifier(
+                        this,
+                        selectionMagnifierWidthPx,
+                        selectionMagnifierHeightPx,
+                        selectionMagnifierHeightPx / 2.0f,
+                        6.0f * getResources().getDisplayMetrics().density);
+                } else {
+                    selectionMagnifier = new Api28SelectionMagnifier(this);
+                }
+            }
+            boolean sameSource = selectionMagnifierVisible
+                && nearlyEqual(sourceX, selectionMagnifierSourceX)
+                && nearlyEqual(sourceY, selectionMagnifierSourceY)
+                && nearlyEqual(windowCenterX, selectionMagnifierDisplayX)
+                && nearlyEqual(windowCenterY, selectionMagnifierDisplayY);
+            if (sameSource) {
+                selectionMagnifier.update();
+                selectionMagnifierUpdateCount += 1;
+            } else {
+                selectionMagnifier.show(
+                    sourceX, sourceY, windowCenterX, windowCenterY);
+                selectionMagnifierShowCount += 1;
+            }
+            selectionMagnifierVisible = true;
+            selectionMagnifierSourceX = sourceX;
+            selectionMagnifierSourceY = sourceY;
+            selectionMagnifierDisplayX = windowCenterX;
+            selectionMagnifierDisplayY = windowCenterY;
+        } catch (RuntimeException exception) {
+            dismissSelectionMagnifier();
+            selectionMagnifierUnavailable = true;
+            Log.w("8vo", "Unable to show the text selection magnifier",
+                exception);
+        }
+    }
+
+    private void dismissSelectionMagnifier() {
+        if (selectionMagnifier != null) {
+            try {
+                selectionMagnifier.dismiss();
+            } catch (RuntimeException exception) {
+                Log.w("8vo", "Unable to dismiss the text selection magnifier",
+                    exception);
+            }
+        }
+        selectionMagnifierVisible = false;
+    }
+
+    private static boolean nearlyEqual(float left, float right) {
+        return Math.abs(left - right) < 0.5f;
+    }
+
+    private static float clampMagnifierCoordinate(float value,
+                                                   float minimum,
+                                                   float maximum,
+                                                   float fallback) {
+        if (!Float.isFinite(value) || minimum > maximum) {
+            return fallback;
+        }
+        return Math.max(minimum, Math.min(value, maximum));
+    }
+
+    private int selectionEdgeDirection(float y) {
+        if (!Float.isFinite(y) || nativeHandle == 0) {
+            return 0;
+        }
+        long[] state = OctavoNative.state(nativeHandle);
+        if (!validState(state)) {
+            return 0;
+        }
+        long top = state[STATE_CONTENT_Y];
+        long height = state[STATE_CONTENT_HEIGHT];
+        if (height <= 0) {
+            return 0;
+        }
+        long bottom = top + height;
+        if (y < top) {
+            return -1;
+        }
+        if (y >= bottom) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private void updateSelectionPageTurnIntent(float x, float y) {
+        int direction = selectionEdgeDirection(y);
+        if (direction == 0) {
+            cancelSelectionPageTurn();
+            selectionPageBoundaryNotified = false;
+            return;
+        }
+        selectionPointerX = x;
+        selectionPointerY = y;
+        if (direction != selectionPageTurnDirection) {
+            cancelSelectionPageTurn();
+            selectionPageTurnDirection = direction;
+            selectionPageBoundaryNotified = false;
+        }
+        if (!selectionPageTurnPosted && !selectionPageBoundaryNotified) {
+            selectionPageTurnPosted = postDelayed(
+                turnSelectionPage, SELECTION_EDGE_DWELL_MILLIS);
+            if (!selectionPageTurnPosted) {
+                runSelectionPageTurn();
+            }
+        }
+    }
+
+    private void scheduleSelectionPageTurnAfterPresentation() {
+        if (!selectionGestureActive || selectionPageTurnPosted
+            || selectionPageBoundaryNotified) {
+            return;
+        }
+        int direction = selectionEdgeDirection(selectionPointerY);
+        if (direction == 0) {
+            cancelSelectionPageTurn();
+            return;
+        }
+        selectionPageTurnDirection = direction;
+        selectionPageTurnPosted = postDelayed(
+            turnSelectionPage, SELECTION_EDGE_REPEAT_MILLIS);
+        if (!selectionPageTurnPosted) {
+            runSelectionPageTurn();
+        }
+    }
+
+    private void runSelectionPageTurn() {
+        selectionPageTurnPosted = false;
+        if (!selectionGestureActive || nativeHandle == 0
+            || selectionHandleKind == 0
+            || touchCompositionGeneration != chromeCompositionGeneration) {
+            return;
+        }
+        int direction = selectionEdgeDirection(selectionPointerY);
+        if (direction == 0 || direction != selectionPageTurnDirection) {
+            cancelSelectionPageTurn();
+            return;
+        }
+        requestSelectionPageTurn(
+            selectionHandleKind, direction, selectionPointerX, false);
+    }
+
+    private int requestSelectionPageTurn(int handle,
+                                         int direction,
+                                         float x,
+                                         boolean accessibilityRequest) {
+        if (nativeHandle == 0 || (direction != -1 && direction != 1)
+            || (handle != OctavoNative.SELECTION_HANDLE_START
+                && handle != OctavoNative.SELECTION_HANDLE_END)) {
+            return OctavoNative.SELECTION_INVALID;
+        }
+        int result = OctavoNative.extendSelectionAcrossPage(
+            nativeHandle, handle, direction, x);
+        if (result > 0
+            && (result & 0xff) == OctavoNative.SELECTION_ACCEPTED) {
+            dismissSelectionMagnifier();
+            int returnedHandle =
+                (result >>> OctavoNative.SELECTION_HANDLE_SHIFT) & 0xff;
+            if (returnedHandle == OctavoNative.SELECTION_HANDLE_START
+                || returnedHandle == OctavoNative.SELECTION_HANDLE_END) {
+                selectionHandleKind = returnedHandle;
+            }
+            selectionPageBoundaryNotified = false;
+            if (accessibilityRequest) {
+                selectionExtensionAnnouncementDirection = direction;
+            }
+            resetPresentationRetries();
+            refreshNavigationState(true);
+            requestNativePresentation();
+            return result;
+        }
+        if (result == OctavoNative.SELECTION_BUSY) {
+            return result;
+        }
+        if (result == OctavoNative.SELECTION_BOUNDARY) {
+            removeCallbacks(turnSelectionPage);
+            selectionPageTurnPosted = false;
+            selectionPageTurnDirection = direction;
+            if (!selectionPageBoundaryNotified || accessibilityRequest) {
+                selectionPageBoundaryNotified = true;
+                announceForAccessibility(
+                    "Selection cannot continue beyond this chapter.");
+            }
+            return result;
+        }
+        cancelSelectionPageTurn();
+        requestPendingNativePresentation();
+        if (result == OctavoNative.SELECTION_LIMIT) {
+            notifySelectionFailure(
+                "The selected text is too long to extend further.");
+        } else if (result == OctavoNative.SELECTION_FAILED) {
+            notifySelectionFailure(
+                "Unable to continue the text selection on that page.");
+        } else if (accessibilityRequest) {
+            notifySelectionFailure(
+                "The text selection cannot move to that page.");
+        }
+        return result;
+    }
+
+    private void cancelSelectionPageTurn() {
+        if (selectionPageTurnPosted) {
+            removeCallbacks(turnSelectionPage);
+        }
+        selectionPageTurnPosted = false;
+        selectionPageTurnDirection = 0;
     }
 
     private void syncSelectionUi() {
@@ -715,6 +1120,13 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (selectionAnnouncementPending) {
             selectionAnnouncementPending = false;
             announceForAccessibility("Text selected. Copy action available.");
+        }
+        if (selectionExtensionAnnouncementDirection != 0) {
+            int direction = selectionExtensionAnnouncementDirection;
+            selectionExtensionAnnouncementDirection = 0;
+            announceForAccessibility(direction > 0
+                ? "Selection extended to the next page."
+                : "Selection extended to the previous page.");
         }
         accessibilityProvider.onSelectionChanged();
     }
@@ -811,11 +1223,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     private void clearGestureTracking() {
         cancelSelectionLongPress();
+        cancelSelectionPageTurn();
+        dismissSelectionMagnifier();
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         gestureCommitted = false;
         gestureCancelled = false;
         selectionGestureActive = false;
         selectionHandleKind = 0;
+        selectionPointerX = 0.0f;
+        selectionPointerY = 0.0f;
+        selectionPageBoundaryNotified = false;
     }
 
     private boolean requestPageMove(int direction) {
@@ -1410,6 +1827,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             navigationCancellation = nativeHandle == 0
                 ? -1
                 : OctavoNative.cancelPendingNavigation(nativeHandle);
+            if (selectionStillAwaiting) {
+                clearGestureTracking();
+                selectionExtensionAnnouncementDirection = 0;
+            }
             refreshNavigationState(true);
             if (navigationCancellation > 0) {
                 /*
@@ -1600,6 +2021,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         resetPresentationRetries();
         capturePresentedPosition();
         syncSelectionUi();
+        if (selectionGestureActive) {
+            /*
+             * Refresh while this successfully presented selection frame is
+             * still current. Deferring to the next display callback lets a
+             * continuous stream of MOVE events make another mutation pending
+             * first, starving the loupe until the finger stops.
+             */
+            showSelectionMagnifier(selectionPointerX, selectionPointerY);
+        }
+        scheduleSelectionPageTurnAfterPresentation();
         accessibilityProvider.onReaderPresentationChanged();
         if (listener != null) {
             listener.onReaderPresentationChanged(
@@ -1890,6 +2321,36 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return copySelectionToClipboard();
     }
 
+    boolean extendSelectionForAccessibility(int direction) {
+        OctavoSelection selection = selectionSnapshot();
+        if (selection == null || !selection.active || selection.pending
+            || (direction != -1 && direction != 1)) {
+            return false;
+        }
+        int handle;
+        float x;
+        if (selection.startVisible && selection.endVisible) {
+            handle = direction < 0
+                ? OctavoNative.SELECTION_HANDLE_START
+                : OctavoNative.SELECTION_HANDLE_END;
+            x = direction < 0 ? selection.startX : selection.endX;
+        } else if (selection.startVisible) {
+            handle = OctavoNative.SELECTION_HANDLE_START;
+            x = selection.startX;
+        } else if (selection.endVisible) {
+            handle = OctavoNative.SELECTION_HANDLE_END;
+            x = selection.endX;
+        } else {
+            return false;
+        }
+        int result = requestSelectionPageTurn(
+            handle, direction, x, true);
+        return (result > 0
+                && (result & 0xff) == OctavoNative.SELECTION_ACCEPTED)
+            || result == OctavoNative.SELECTION_BOUNDARY
+            || result == OctavoNative.SELECTION_LIMIT;
+    }
+
     boolean clearSelectionForAccessibility() {
         return requestSelectionClear(true);
     }
@@ -1935,12 +2396,46 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return result;
     }
 
+    int extendSelectionAcrossPageForTesting(int handle,
+                                            int direction,
+                                            float x) {
+        return requestSelectionPageTurn(handle, direction, x, false);
+    }
+
     boolean clearSelectionForTesting() {
         return requestSelectionClear(true);
     }
 
     boolean copySelectionForTesting() {
         return copySelectionToClipboard();
+    }
+
+    boolean selectionMagnifierVisibleForTesting() {
+        return selectionMagnifierVisible;
+    }
+
+    int selectionMagnifierShowCountForTesting() {
+        return selectionMagnifierShowCount;
+    }
+
+    int selectionMagnifierUpdateCountForTesting() {
+        return selectionMagnifierUpdateCount;
+    }
+
+    float selectionMagnifierSourceXForTesting() {
+        return selectionMagnifierSourceX;
+    }
+
+    float selectionMagnifierSourceYForTesting() {
+        return selectionMagnifierSourceY;
+    }
+
+    float selectionMagnifierDisplayYForTesting() {
+        return selectionMagnifierDisplayY;
+    }
+
+    int selectionMagnifierClearanceForTesting() {
+        return selectionMagnifierClearancePx;
     }
 
     String selectedTextForTesting() {

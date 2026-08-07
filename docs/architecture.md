@@ -406,17 +406,30 @@ font-advance, alignment, and justification geometry used to rasterize the
 accepted frame, then submits only canonical UTF-8 byte ranges to Reader0.
 Java consumes a versioned bounded snapshot for 48dp handle hit regions,
 Android contextual Copy, system-Back priority, and virtual-page accessibility
-actions; it does not store text anchors or interpret EPUB content. Selection
-mutations join the existing successful-presentation transaction, restore the
-prior range on failed presentation, and clear on navigation, reflow, surface,
-lifecycle, or document replacement. Copy reads only Reader0-validated active-
-spine bytes and remains bounded to the visible-frame cap.
+actions; it does not store text anchors or interpret EPUB content. The cross-
+page adapter calls Reader0's public page move with `preserve_selection` and
+`same_spine_only`, then projects the dragged endpoint onto the adjacent
+canonical frame. Page and range form one successful-presentation transaction;
+  failure restores the exact prior page and `DocSelection`. Snapshot v2 exposes
+  the two endpoints independently, so an off-page anchor never becomes a phantom
+  edge handle. Continued dwell repeats only after the prior transaction is shown,
+  and the one-spine Reader0 contract stops explicitly at chapter boundaries.
+  During an active handle drag, the API 28+ platform magnifier consumes only
+  the latest successfully presented selection snapshot. Java refreshes it
+  synchronously at snapshot publication so continuous MOVE traffic cannot
+  starve updates, samples half a rendered-row height above the handle to center
+  the active row, keeps the display window clear of the finger, and dismisses it
+  at all gesture, navigation, surface, and lifecycle ownership boundaries.
+  Ordinary navigation, reflow, surface, lifecycle, or document replacement still
+clears selection. Copy reads only Reader0-validated active-spine bytes and
+remains bounded to the visible-frame cap.
 
 Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
-cross-page selection, durable bookmarks/highlights/notes workspace, per-book
+cross-spine selection, durable bookmarks/highlights/notes workspace, per-book
 appearances, embedded fonts, complete publication accessibility, full Unicode
 shaping, and synchronization remain deferred. The current bounded contracts
-are in [`android_port10.md`](android_port10.md),
+are in [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
+[`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and
 [`android_port8.md`](android_port8.md); accepted Port 7 detail remains in
 [`android_port7.md`](android_port7.md).
