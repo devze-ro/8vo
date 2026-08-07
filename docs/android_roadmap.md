@@ -418,8 +418,19 @@ are still pending.
   remains deferred until Reader0 owns that anchor;
 - paragraph expansion, fuller Unicode segmentation,
   and durable anchors remain separate follow-up work;
-- bookmarks, theme-tuned multi-color highlights, and notes; and
-- atomic local persistence with recovery before synchronization is attempted.
+- Port 11 is the current candidate. It adds digest-keyed current-location
+  bookmarks, strict atomic local persistence, a bounded Bookmarks sheet,
+  presentation-gated navigation, restart/re-import durability, visible recovery,
+  and exact failed-mutation rollback. Its API 36 focused, ordinary, external-
+  restart, 130%-text, reduced-motion, and empty-crash gates pass. API 34 also
+  passes 8/8 focused, 108/108 ordinary, external restart, 26/26 at 130% text
+  with normal motion, touch review, bounded TalkBack review, empty crash, live
+  motion verification, and byte-exact app-data restoration;
+- the provider-neutral envelope already reserves bounded bookmark, highlight,
+  and note records plus stable actors, mutations, tombstones, causal frontiers,
+  and deterministic multi-value merge; and
+- theme-tuned multi-color highlight creation, note editing/conflict resolution,
+  and Google Drive transport follow only after the local record and merge gates.
 
 ### Annotations workspace
 
@@ -447,9 +458,11 @@ are still pending.
   states, retry, metered-network policy, and deterministic conflict tests; and
 - preserve complete offline operation and export without an 8vo service.
 
-Google Drive can use its application-data area for app-owned records, while
-user-visible files may be more appropriate for portable backups or books.
-That allocation is a sync-milestone design decision, not a Port 7 dependency.
+The launch allocation is `drive.appdata` for hidden state/manifests and
+`drive.file` for only the EPUBs a user approves in a visible 8vo Drive folder.
+No broad Drive scope, proprietary 8vo account, or backend is planned. This is a
+Port 11 follow-up, not permission to configure Google Cloud or connect Drive
+before the deterministic offline gates in `android_port11.md` pass.
 The current API distinction is documented at
 <https://developers.google.com/workspace/drive/api/guides/appdata>.
 

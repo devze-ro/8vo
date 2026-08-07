@@ -59,6 +59,7 @@ public final class OctavoLibraryCatalogTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
 
     private interface StateCondition {

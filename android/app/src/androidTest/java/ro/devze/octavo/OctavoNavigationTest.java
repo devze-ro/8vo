@@ -36,6 +36,7 @@ public final class OctavoNavigationTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
 
     private static void openFixture(

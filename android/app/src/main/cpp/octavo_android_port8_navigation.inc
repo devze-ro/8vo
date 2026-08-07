@@ -943,6 +943,54 @@ Java_ro_devze_octavo_OctavoNative_navigateToLocation(
 }
 
 JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_navigateToAnnotation(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong spine_index,
+  jlong byte_offset)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || spine_index < 0 || (uint64_t)spine_index > UINT32_MAX ||
+      byte_offset < 0)
+  {
+    return OCTAVO_ANDROID_NAVIGATION_INVALID;
+  }
+  if (!octavo_android_navigation_can_begin(app))
+  {
+    if (app) { app->semantic_navigation_gate_block_count += 1u; }
+    return OCTAVO_ANDROID_NAVIGATION_BUSY;
+  }
+
+  EpubReaderNavigationEntry origin =
+    octavo_android_presented_navigation_entry(
+      app, EpubReaderNavigationReason_Bookmark);
+  EpubReaderNavigationResult navigation = {0};
+  EpubReaderResult result = epub_reader_navigate_to_location(
+    &app->reader,
+    (U32)spine_index,
+    (U64)byte_offset,
+    EpubReaderNavigationReason_Bookmark,
+    app->layout_key,
+    app->layout_config,
+    (EpubReaderNavigationOptions){.suppress_history = 1},
+    &navigation);
+  if (result != EpubReaderResult_Ok)
+  {
+    app->semantic_navigation_failure_count += 1u;
+    return octavo_android_navigation_failure_after_restore(app, result);
+  }
+  return octavo_android_begin_direct_navigation(
+    app,
+    OCTAVO_ANDROID_NAVIGATION_KIND_ANNOTATION,
+    EpubReaderNavigationReason_Bookmark,
+    origin,
+    navigation);
+}
+
+JNIEXPORT jint JNICALL
 Java_ro_devze_octavo_OctavoNative_navigateToPage(
   JNIEnv *environment,
   jclass type,

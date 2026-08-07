@@ -39,6 +39,7 @@ public final class OctavoStructuralNavigationIntegrationTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
 
     @Test

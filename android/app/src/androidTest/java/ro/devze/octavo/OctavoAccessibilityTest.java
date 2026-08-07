@@ -80,6 +80,7 @@ public final class OctavoAccessibilityTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
 
     @Test
@@ -528,9 +529,11 @@ public final class OctavoAccessibilityTest {
             assertNull(activity.findViewById(R.id.octavo_reader_next));
             int[] controlIds = {
                 R.id.octavo_reader_library,
+                R.id.octavo_reader_bookmark_toggle,
                 R.id.octavo_reader_search,
                 R.id.octavo_reader_appearance,
                 R.id.octavo_reader_progress,
+                R.id.octavo_reader_bookmarks,
             };
             int minimumTouchPixels = Math.round(
                 OctavoDesignTokens.TOUCH_TARGET_DP
@@ -779,23 +782,32 @@ public final class OctavoAccessibilityTest {
                 activity.findViewById(R.id.octavo_reader_library);
             View search =
                 activity.findViewById(R.id.octavo_reader_search);
+            View bookmark = activity.findViewById(
+                R.id.octavo_reader_bookmark_toggle);
             View appearance =
                 activity.findViewById(R.id.octavo_reader_appearance);
             View progress =
                 activity.findViewById(R.id.octavo_reader_progress);
+            View bookmarks =
+                activity.findViewById(R.id.octavo_reader_bookmarks);
             View previous =
                 activity.findViewById(R.id.octavo_reader_previous);
             View next = activity.findViewById(R.id.octavo_reader_next);
             assertNotNull(library);
             assertNotNull(search);
+            assertNotNull(bookmark);
             assertNotNull(appearance);
             assertNotNull(progress);
+            assertNotNull(bookmarks);
             assertNull(previous);
             assertNull(next);
             assertTrue(library.requestFocusFromTouch());
         });
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
 
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_bookmark_toggle);
         sendTab(false);
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_search);
@@ -810,8 +822,14 @@ public final class OctavoAccessibilityTest {
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_progress);
         sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_bookmarks);
+        sendTab(false);
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
 
+        sendTab(false);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_bookmark_toggle);
         sendTab(false);
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_search);
@@ -828,6 +846,9 @@ public final class OctavoAccessibilityTest {
         sendTab(true);
         assertNativeKeyboardFocus(
             scenario, R.id.octavo_reader_search);
+        sendTab(true);
+        assertNativeKeyboardFocus(
+            scenario, R.id.octavo_reader_bookmark_toggle);
         sendTab(true);
         assertNativeKeyboardFocus(scenario, R.id.octavo_reader_library);
     }

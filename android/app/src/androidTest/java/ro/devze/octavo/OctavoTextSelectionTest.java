@@ -45,6 +45,7 @@ public final class OctavoTextSelectionTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
         ClipboardManager clipboard = (ClipboardManager)context
             .getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard != null) {

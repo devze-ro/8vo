@@ -39,6 +39,7 @@ public final class OctavoBootstrapTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
     private static long[] state(ActivityScenario<OctavoActivity> scenario) {
         AtomicReference<long[]> result = new AtomicReference<>();

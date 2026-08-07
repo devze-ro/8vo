@@ -42,6 +42,7 @@ public final class OctavoActivity extends Activity {
     private OctavoAppearance appearance;
     private OctavoProgressStore progressStore;
     private OctavoProgressDisplay progressDisplay;
+    private OctavoAnnotationStore annotationStore;
     private LinearLayout libraryRoot;
     private FrameLayout systemBarRoot;
     private View statusBarScrim;
@@ -52,14 +53,18 @@ public final class OctavoActivity extends Activity {
     private Button readerLibrary;
     private Button readerSearch;
     private Button readerSettings;
+    private Button readerBookmarkToggle;
     private Button readerReturn;
     private Button readerProgress;
+    private Button readerBookmarks;
     private FrameLayout appearanceOverlay;
     private OctavoAppearancePanel appearancePanel;
     private FrameLayout navigationOverlay;
     private OctavoNavigationPanel navigationPanel;
     private FrameLayout searchOverlay;
     private OctavoSearchPanel searchPanel;
+    private FrameLayout bookmarksOverlay;
+    private OctavoBookmarksPanel bookmarksPanel;
     private TextView failureBanner;
     private View readerEntryCover;
     private int readerEntryCoverGeneration;
@@ -79,6 +84,7 @@ public final class OctavoActivity extends Activity {
     private boolean progressPersistencePosted;
     private boolean navigationSnapshotRefreshPosted;
     private boolean searchSnapshotRefreshPosted;
+    private boolean bookmarkNavigationPending;
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
@@ -118,6 +124,9 @@ public final class OctavoActivity extends Activity {
         progressDisplay = progressStore.load();
         boolean progressResetAfterCorruption =
             progressStore.recoveredFromCorruption();
+        annotationStore = new OctavoAnnotationStore(this);
+        OctavoAnnotationStore.LoadStatus annotationLoadStatus =
+            annotationStore.load();
         chromeVisible = savedInstanceState != null
             && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
@@ -141,6 +150,7 @@ public final class OctavoActivity extends Activity {
             showOpenFailure(
                 "Reader progress display was reset because its saved setting was invalid");
         }
+        reportAnnotationLoadStatus(annotationLoadStatus);
     }
 
     @Override
@@ -159,11 +169,15 @@ public final class OctavoActivity extends Activity {
         updateAppearancePanelWidth();
         updateNavigationPanelWidth();
         updateSearchPanelWidth();
+        updateBookmarksPanelWidth();
         if (navigationPanel != null) {
             navigationPanel.applyAppearance(appearance);
         }
         if (searchPanel != null) {
             searchPanel.applyAppearance(appearance);
+        }
+        if (bookmarksPanel != null) {
+            bookmarksPanel.applyAppearance(appearance);
         }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
@@ -174,6 +188,8 @@ public final class OctavoActivity extends Activity {
     public void onBackPressed() {
         if (appearancePanel != null) {
             closeAppearancePanel();
+        } else if (bookmarksPanel != null) {
+            closeBookmarksPanel();
         } else if (searchPanel != null) {
             closeSearchPanel();
         } else if (navigationPanel != null) {
@@ -327,6 +343,7 @@ public final class OctavoActivity extends Activity {
         installReaderEntryCover();
         setContentView(windowRoot, matchParentLayout());
         windowRoot.requestApplyInsets();
+        updateBookmarkToggle();
         if (activityResumed) {
             replacement.hostResumed();
         }
@@ -372,6 +389,14 @@ public final class OctavoActivity extends Activity {
         title.setImportantForAccessibility(
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         top.addView(title, weightedLayout());
+
+        Button bookmarkToggle = createThemedButton(
+            "☆", tokens.buttonSurface, tokens.chromeText);
+        bookmarkToggle.setId(R.id.octavo_reader_bookmark_toggle);
+        bookmarkToggle.setContentDescription(
+            getString(R.string.bookmark_add));
+        bookmarkToggle.setOnClickListener(view -> toggleCurrentBookmark());
+        top.addView(bookmarkToggle, chromeButtonLayout());
 
         Button search = createThemedButton(
             getString(R.string.reader_search),
@@ -436,6 +461,15 @@ public final class OctavoActivity extends Activity {
         progress.setOnClickListener(view -> openNavigationPanel());
         bottom.addView(progress, weightedLayout());
 
+        Button bookmarks = createThemedButton(
+            getString(R.string.reader_bookmarks),
+            tokens.buttonSurface,
+            tokens.chromeText);
+        bookmarks.setId(R.id.octavo_reader_bookmarks);
+        bookmarks.setContentDescription("Open bookmarks in this book");
+        bookmarks.setOnClickListener(view -> openBookmarksPanel());
+        bottom.addView(bookmarks, chromeButtonLayout());
+
         FrameLayout.LayoutParams bottomLayout =
             new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -447,24 +481,31 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         bottom.setImportantForAccessibility(
             View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        library.setAccessibilityTraversalBefore(search.getId());
+        library.setAccessibilityTraversalBefore(bookmarkToggle.getId());
+        bookmarkToggle.setAccessibilityTraversalBefore(search.getId());
         search.setAccessibilityTraversalBefore(settings.getId());
         settings.setAccessibilityTraversalBefore(replacement.getId());
         replacement.setAccessibilityTraversalBefore(returnControl.getId());
         returnControl.setAccessibilityTraversalBefore(progress.getId());
-        progress.setAccessibilityTraversalBefore(library.getId());
-        library.setNextFocusForwardId(search.getId());
+        progress.setAccessibilityTraversalBefore(bookmarks.getId());
+        bookmarks.setAccessibilityTraversalBefore(library.getId());
+        library.setNextFocusForwardId(bookmarkToggle.getId());
+        bookmarkToggle.setNextFocusForwardId(search.getId());
         search.setNextFocusForwardId(settings.getId());
         settings.setNextFocusForwardId(replacement.getId());
         replacement.setNextFocusForwardId(returnControl.getId());
         returnControl.setNextFocusForwardId(progress.getId());
-        progress.setNextFocusForwardId(library.getId());
+        progress.setNextFocusForwardId(bookmarks.getId());
+        bookmarks.setNextFocusForwardId(library.getId());
         library.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
-                keyCode, event, null, search));
+                keyCode, event, null, bookmarkToggle));
+        bookmarkToggle.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, library, search));
         search.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
-                keyCode, event, library, settings));
+                keyCode, event, bookmarkToggle, settings));
         settings.setOnKeyListener((view, keyCode, event) ->
             moveReaderKeyboardFocus(
                 keyCode, event, search, replacement));
@@ -475,14 +516,19 @@ public final class OctavoActivity extends Activity {
             moveReaderKeyboardFocus(
                 keyCode, event,
                 returnControl.isShown() ? returnControl : replacement,
-                library));
+                bookmarks));
+        bookmarks.setOnKeyListener((view, keyCode, event) ->
+            moveReaderKeyboardFocus(
+                keyCode, event, progress, library));
         readerTopChrome = top;
         readerBottomChrome = bottom;
         readerLibrary = library;
         readerSearch = search;
         readerSettings = settings;
+        readerBookmarkToggle = bookmarkToggle;
         readerReturn = returnControl;
         readerProgress = progress;
+        readerBookmarks = bookmarks;
         updateReaderNavigationAvailability(replacement);
         setChromeViewsVisible(chromeVisible, false);
 
@@ -638,6 +684,7 @@ public final class OctavoActivity extends Activity {
                 updateReaderNavigationAvailability(surfaceView);
                 scheduleNavigationSnapshotRefresh();
                 scheduleSearchSnapshotRefresh();
+                updateBookmarkToggle();
             }
 
             @Override
@@ -653,7 +700,12 @@ public final class OctavoActivity extends Activity {
                 if (navigationPanel != null) {
                     closeNavigationPanel();
                 }
+                if (bookmarkNavigationPending) {
+                    bookmarkNavigationPending = false;
+                    closeBookmarksPanel();
+                }
                 scheduleSearchSnapshotRefresh();
+                updateBookmarkToggle();
             }
 
             @Override
@@ -678,6 +730,7 @@ public final class OctavoActivity extends Activity {
 
             @Override
             public void onNavigationRequestFailure(String message) {
+                bookmarkNavigationPending = false;
                 reportNavigationRequestFailure(message);
             }
         };
@@ -712,10 +765,18 @@ public final class OctavoActivity extends Activity {
         if (readerSearch != null) {
             readerSearch.setEnabled(!pending);
         }
+        if (readerBookmarkToggle != null) {
+            readerBookmarkToggle.setEnabled(!pending);
+        }
+        if (readerBookmarks != null) {
+            readerBookmarks.setEnabled(!pending);
+        }
         int libraryId = readerLibrary == null
             ? View.NO_ID : readerLibrary.getId();
+        int bookmarksId = readerBookmarks == null
+            ? libraryId : readerBookmarks.getId();
         int progressId = readerProgress == null
-            ? libraryId : readerProgress.getId();
+            ? bookmarksId : readerProgress.getId();
         int afterReaderId = canReturn && readerReturn != null
             ? readerReturn.getId() : progressId;
         view.setAccessibilityTraversalBefore(afterReaderId);
@@ -728,8 +789,12 @@ public final class OctavoActivity extends Activity {
             readerReturn.setNextFocusForwardId(progressId);
         }
         if (readerProgress != null) {
-            readerProgress.setAccessibilityTraversalBefore(libraryId);
-            readerProgress.setNextFocusForwardId(libraryId);
+            readerProgress.setAccessibilityTraversalBefore(bookmarksId);
+            readerProgress.setNextFocusForwardId(bookmarksId);
+        }
+        if (readerBookmarks != null) {
+            readerBookmarks.setAccessibilityTraversalBefore(libraryId);
+            readerBookmarks.setNextFocusForwardId(libraryId);
         }
     }
 
@@ -757,6 +822,130 @@ public final class OctavoActivity extends Activity {
         control.setText(visible);
         control.setContentDescription(
             "Open reader navigation. " + visible);
+    }
+
+    private void toggleCurrentBookmark() {
+        if (annotationStore == null || activeBook == null
+            || surfaceView == null) {
+            showOpenFailure("The current reading position is unavailable");
+            return;
+        }
+        long[] anchor = surfaceView.presentedAnchorForAnnotations();
+        if (anchor == null) {
+            showOpenFailure(
+                "Wait for the current page before changing its bookmark");
+            return;
+        }
+        String progress = readerProgressLabel(surfaceView);
+        String label = boundedUtf8(
+            "Bookmark at " + progress, 256);
+        String excerpt = annotationExcerpt(
+            surfaceView.visibleTextForTesting());
+        OctavoAnnotationStore.MutationResult result =
+            annotationStore.toggleBookmark(
+                activeBook.key, anchor[1], anchor[2], label, excerpt);
+        if (!result.succeeded()) {
+            showOpenFailure(annotationMutationFailure(result));
+            return;
+        }
+        updateBookmarkToggle();
+        refreshBookmarksPanel();
+        String announcement = result == OctavoAnnotationStore
+            .MutationResult.ADDED
+                ? "Bookmark added" : "Bookmark removed";
+        if (readerBookmarkToggle != null) {
+            readerBookmarkToggle.announceForAccessibility(announcement);
+        }
+    }
+
+    private void updateBookmarkToggle() {
+        if (readerBookmarkToggle == null) {
+            return;
+        }
+        long[] anchor = surfaceView == null
+            ? null : surfaceView.presentedAnchorForAnnotations();
+        boolean ready = activeBook != null && anchor != null;
+        boolean bookmarked = ready && annotationStore != null
+            && annotationStore.isBookmarked(
+                activeBook.key, anchor[1], anchor[2]);
+        readerBookmarkToggle.setText(bookmarked ? "★" : "☆");
+        readerBookmarkToggle.setSelected(bookmarked);
+        readerBookmarkToggle.setContentDescription(bookmarked
+            ? getString(R.string.bookmark_remove_current)
+            : getString(R.string.bookmark_add));
+        readerBookmarkToggle.setEnabled(
+            ready && surfaceView != null
+                && !surfaceView.hasNavigationPending());
+    }
+
+    private void refreshBookmarksPanel() {
+        if (bookmarksPanel != null && activeBook != null
+            && annotationStore != null) {
+            bookmarksPanel.updateBookmarks(
+                annotationStore.bookmarks(activeBook.key));
+        }
+    }
+
+    private static String annotationExcerpt(String visibleText) {
+        String normalized = visibleText == null
+            ? "" : visibleText.replaceAll("\\s+", " ").trim();
+        if (normalized.isEmpty()) {
+            normalized = "Saved reading position";
+        }
+        return boundedUtf8(normalized, 512);
+    }
+
+    private static String boundedUtf8(String value, int maximumBytes) {
+        if (value == null || maximumBytes < 0) {
+            throw new IllegalArgumentException();
+        }
+        if (value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+            <= maximumBytes) {
+            return value;
+        }
+        StringBuilder result = new StringBuilder();
+        int offset = 0;
+        while (offset < value.length()) {
+            int codePoint = value.codePointAt(offset);
+            String candidate = result.toString()
+                + new String(Character.toChars(codePoint));
+            if (candidate.getBytes(
+                    java.nio.charset.StandardCharsets.UTF_8).length
+                > maximumBytes) {
+                break;
+            }
+            result.appendCodePoint(codePoint);
+            offset += Character.charCount(codePoint);
+        }
+        return result.toString();
+    }
+
+    private static String annotationMutationFailure(
+        OctavoAnnotationStore.MutationResult result) {
+        if (result == OctavoAnnotationStore.MutationResult.BLOCKED) {
+            return "Annotations are read-only until their saved state is recovered";
+        }
+        if (result == OctavoAnnotationStore.MutationResult.LIMIT) {
+            return "The bounded annotation store is full; remove an annotation and retry";
+        }
+        return "Unable to save the bookmark; the previous state was preserved";
+    }
+
+    private void reportAnnotationLoadStatus(
+        OctavoAnnotationStore.LoadStatus status) {
+        if (status == OctavoAnnotationStore.LoadStatus
+                .CORRUPT_QUARANTINED) {
+            showOpenFailure(
+                "Invalid annotation state was isolated; annotations were reset");
+        } else if (status == OctavoAnnotationStore.LoadStatus
+                       .FUTURE_VERSION_BLOCKED) {
+            showOpenFailure(
+                "Annotations were created by a newer 8vo and are read-only here");
+        } else if (status == OctavoAnnotationStore.LoadStatus
+                       .CORRUPT_BLOCKED) {
+            showOpenFailure(
+                "Invalid annotation state could not be isolated; annotations are read-only");
+        }
     }
 
     private void scheduleNavigationSnapshotRefresh() {
@@ -808,6 +997,15 @@ public final class OctavoActivity extends Activity {
             searchTarget.post(() -> {
                 if (searchPanel == searchTarget) {
                     searchTarget.showError(visible);
+                }
+            });
+            return;
+        }
+        OctavoBookmarksPanel bookmarksTarget = bookmarksPanel;
+        if (bookmarksTarget != null) {
+            bookmarksTarget.post(() -> {
+                if (bookmarksPanel == bookmarksTarget) {
+                    bookmarksTarget.showError(visible);
                 }
             });
             return;
@@ -1072,6 +1270,8 @@ public final class OctavoActivity extends Activity {
         view.setImportantForAccessibility(
             visible && appearancePanel == null
                 && navigationPanel == null
+                && searchPanel == null
+                && bookmarksPanel == null
                 ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         int duration = readerChromeMotionDuration(animate);
@@ -1105,6 +1305,16 @@ public final class OctavoActivity extends Activity {
         }
         return OctavoDesignTokens.forAppearance(appearance)
             .fastMotionMs(appearance);
+    }
+
+    private int sideSheetMotionDuration(OctavoDesignTokens tokens) {
+        AccessibilityManager manager = (AccessibilityManager)
+            getSystemService(ACCESSIBILITY_SERVICE);
+        if (manager != null && manager.isEnabled()
+            && manager.isTouchExplorationEnabled()) {
+            return 0;
+        }
+        return tokens.standardMotionMs(appearance);
     }
 
     static int navigationPanelStartTranslationX(View panel,
@@ -1179,6 +1389,13 @@ public final class OctavoActivity extends Activity {
         if (searchOverlay != null && searchPanel != null) {
             searchOverlay.setBackgroundColor(searchPanel.overlayColor());
         }
+        if (bookmarksPanel != null) {
+            bookmarksPanel.applyAppearance(appearance);
+        }
+        if (bookmarksOverlay != null && bookmarksPanel != null) {
+            bookmarksOverlay.setBackgroundColor(
+                bookmarksPanel.overlayColor());
+        }
         if (failureBanner != null) {
             failureBanner.setTextColor(tokens.error);
             failureBanner.setBackgroundColor(tokens.dialogSurface);
@@ -1207,6 +1424,140 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private void openBookmarksPanel() {
+        if (readerRoot == null || surfaceView == null
+            || activeBook == null || annotationStore == null
+            || bookmarksPanel != null) {
+            return;
+        }
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
+        }
+        OctavoDesignTokens tokens =
+            OctavoDesignTokens.forAppearance(appearance);
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setId(R.id.octavo_bookmarks_overlay);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(4));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overlay.setOnClickListener(view -> closeBookmarksPanel());
+
+        OctavoBookmarksPanel panel;
+        try {
+            panel = new OctavoBookmarksPanel(
+                this,
+                appearance,
+                new OctavoBookmarksPanel.Listener() {
+                    @Override
+                    public void onDismiss() {
+                        closeBookmarksPanel();
+                    }
+
+                    @Override
+                    public void onNavigate(
+                        OctavoAnnotationStore.Bookmark bookmark) {
+                        if (surfaceView == null) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    "The reader is unavailable.");
+                            }
+                            return;
+                        }
+                        int result = surfaceView.requestAnnotationNavigation(
+                            bookmark.spineIndex, bookmark.byteOffset);
+                        if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+                            bookmarkNavigationPending = true;
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showNavigationPending();
+                            }
+                        } else if (result == OctavoNative
+                                       .NAVIGATION_ALREADY_PRESENTED) {
+                            closeBookmarksPanel();
+                        }
+                        updateReaderNavigationAvailability(surfaceView);
+                    }
+
+                    @Override
+                    public void onRemove(
+                        OctavoAnnotationStore.Bookmark bookmark) {
+                        OctavoAnnotationStore.MutationResult result =
+                            annotationStore.removeBookmark(
+                                bookmark.recordId);
+                        if (result.succeeded()) {
+                            refreshBookmarksPanel();
+                            updateBookmarkToggle();
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.announceForAccessibility(
+                                    "Bookmark removed");
+                            }
+                        } else if (bookmarksPanel != null) {
+                            bookmarksPanel.showError(
+                                annotationMutationFailure(result));
+                        }
+                    }
+                });
+        } catch (IllegalStateException failure) {
+            showOpenFailure(
+                "Bookmark styling is unavailable. Reopen the reader to retry.");
+            return;
+        }
+        panel.updateBookmarks(annotationStore.bookmarks(activeBook.key));
+        overlay.setBackgroundColor(panel.overlayColor());
+        panel.setClickable(true);
+        panel.setOnClickListener(view -> {
+        });
+        FrameLayout.LayoutParams panelLayout =
+            new FrameLayout.LayoutParams(
+                appearancePanelWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.END);
+        overlay.addView(panel, panelLayout);
+        resolveSideSheetLayoutDirection(panel, readerRoot);
+        overlay.addOnLayoutChangeListener(
+            (view, left, top, right, bottom,
+             oldLeft, oldTop, oldRight, oldBottom) ->
+                updateSideSheetWidth(panel, overlay));
+        readerRoot.addView(overlay, matchParentLayout());
+
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerTopChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerBottomChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        bookmarksOverlay = overlay;
+        bookmarksPanel = panel;
+
+        int duration = sideSheetMotionDuration(tokens);
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            panel.setTranslationX(navigationPanelStartTranslationX(
+                panel, dp(24)));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            panel.animate().translationX(0.0f)
+                .setDuration(duration).start();
+        }
+        panel.post(() -> {
+            if (bookmarksPanel != panel) {
+                return;
+            }
+            View initialFocus = panel.preferredInitialFocus();
+            initialFocus.requestFocus();
+            initialFocus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            panel.announceForAccessibility("Bookmarks opened");
+        });
+    }
+
     private void openNavigationPanel() {
         if (readerRoot == null || surfaceView == null
             || navigationPanel != null) {
@@ -1217,6 +1568,9 @@ public final class OctavoActivity extends Activity {
         }
         if (searchPanel != null) {
             closeSearchPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -1397,6 +1751,9 @@ public final class OctavoActivity extends Activity {
         }
         if (navigationPanel != null) {
             closeNavigationPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -1579,6 +1936,9 @@ public final class OctavoActivity extends Activity {
         }
         if (searchPanel != null) {
             closeSearchPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
         }
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -1790,6 +2150,14 @@ public final class OctavoActivity extends Activity {
         }
         searchOverlay = null;
         searchPanel = null;
+        if (bookmarksOverlay != null
+            && bookmarksOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)bookmarksOverlay.getParent())
+                .removeView(bookmarksOverlay);
+        }
+        bookmarksOverlay = null;
+        bookmarksPanel = null;
+        bookmarkNavigationPending = false;
         if (surfaceView != null) {
             surfaceView.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -1816,6 +2184,53 @@ public final class OctavoActivity extends Activity {
                     null);
                 focusReturn.announceForAccessibility(
                     "Find in book closed");
+            });
+        }
+    }
+
+    private void closeBookmarksPanel() {
+        closeBookmarksPanel(true);
+    }
+
+    private void closeBookmarksPanel(boolean restoreFocus) {
+        if (bookmarksOverlay == null) {
+            return;
+        }
+        View focusReturn = readerBookmarks != null
+            && readerBookmarks.isShown() && readerBookmarks.isEnabled()
+                ? readerBookmarks : surfaceView;
+        bookmarksOverlay.animate().cancel();
+        if (bookmarksPanel != null) {
+            bookmarksPanel.animate().cancel();
+        }
+        if (bookmarksOverlay.getParent() instanceof ViewGroup) {
+            ((ViewGroup)bookmarksOverlay.getParent())
+                .removeView(bookmarksOverlay);
+        }
+        bookmarksOverlay = null;
+        bookmarksPanel = null;
+        if (surfaceView != null) {
+            surfaceView.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        }
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+            focusReturn.requestFocus();
+            focusReturn.post(() -> {
+                if (bookmarksPanel != null || !focusReturn.isShown()) {
+                    return;
+                }
+                focusReturn.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+                focusReturn.announceForAccessibility("Bookmarks closed");
             });
         }
     }
@@ -1989,6 +2404,10 @@ public final class OctavoActivity extends Activity {
         updateSideSheetWidth(searchPanel, searchOverlay);
     }
 
+    private void updateBookmarksPanelWidth() {
+        updateSideSheetWidth(bookmarksPanel, bookmarksOverlay);
+    }
+
     private void updateSideSheetWidth(View panel, FrameLayout overlay) {
         if (panel == null) {
             return;
@@ -2095,8 +2514,10 @@ public final class OctavoActivity extends Activity {
         readerLibrary = null;
         readerSearch = null;
         readerSettings = null;
+        readerBookmarkToggle = null;
         readerReturn = null;
         readerProgress = null;
+        readerBookmarks = null;
         systemBarRoot = null;
         statusBarScrim = null;
         navigationBarScrim = null;
@@ -2296,6 +2717,14 @@ public final class OctavoActivity extends Activity {
         return searchPanel;
     }
 
+    OctavoBookmarksPanel bookmarksPanelForTesting() {
+        return bookmarksPanel;
+    }
+
+    OctavoAnnotationStore annotationStoreForTesting() {
+        return annotationStore;
+    }
+
     void openSearchPanelForTesting() {
         openSearchPanel();
     }
@@ -2304,8 +2733,28 @@ public final class OctavoActivity extends Activity {
         closeSearchPanel();
     }
 
+    void openBookmarksPanelForTesting() {
+        openBookmarksPanel();
+    }
+
+    void closeBookmarksPanelForTesting() {
+        closeBookmarksPanel();
+    }
+
+    void toggleCurrentBookmarkForTesting() {
+        toggleCurrentBookmark();
+    }
+
     Button readerSearchForTesting() {
         return readerSearch;
+    }
+
+    Button readerBookmarkToggleForTesting() {
+        return readerBookmarkToggle;
+    }
+
+    Button readerBookmarksForTesting() {
+        return readerBookmarks;
     }
 
     Button readerProgressForTesting() {

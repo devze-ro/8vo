@@ -193,10 +193,24 @@ as a completed mutation.
 Persistent records are versioned and atomically replaced through the concrete
 host: the Windows host uses Ground0's atomic-file mechanism, while Android
 uses app-private same-directory temporary files, descriptor synchronization,
-and atomic replacement where supported. Each file is replaced independently;
+and mandatory atomic replacement. Each file is replaced independently;
 the application does not claim a cross-file transaction. Failed annotation
 mutations restore the in-memory state and leave editable drafts available for
 retry.
+
+Port 11 stores provider-neutral Android annotation state at
+`<files>/port11/annotations.v1`. The EPUB SHA-256 digest is book identity, and
+Reader0 spine plus canonical UTF-8 byte point/range is the only anchor. Stable
+record, actor, mutation, and tombstone identities form a bounded causal
+multi-value register. Merge unions identities, removes only causally dominated
+heads, retains concurrent note bodies and put/delete conflicts, sorts canonical
+bytes, and never consults device time. The complete versioned file is bounded,
+CRC32-protected, descriptor-synchronized, and replaced with a same-directory
+`ATOMIC_MOVE`; publication failure preserves both prior bytes and prior
+in-memory state. Malformed bytes must be quarantined atomically before an empty
+store becomes writable, while an unsupported future version remains preserved
+and blocks mutation. Managed-book removal does not imply local annotation
+deletion, so byte-identical re-import reconnects the same digest.
 
 Android stores exactly one global appearance in
 `<files>/port7/appearance.v1`, separately from the Port 6 catalog and per-book
@@ -425,10 +439,12 @@ clears selection. Copy reads only Reader0-validated active-spine bytes and
 remains bounded to the visible-frame cap.
 
 Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
-cross-spine selection, durable bookmarks/highlights/notes workspace, per-book
+cross-spine selection, highlight/note editing and conflict UI, per-book
 appearances, embedded fonts, complete publication accessibility, full Unicode
-shaping, and synchronization remain deferred. The current bounded contracts
-are in [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
+shaping, and synchronization transport remain deferred. Port 11 begins the
+local bookmark/storage/merge implementation without connecting Drive. The
+current bounded contracts are in [`android_port11.md`](android_port11.md),
+[`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and
 [`android_port8.md`](android_port8.md); accepted Port 7 detail remains in

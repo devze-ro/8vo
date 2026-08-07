@@ -41,6 +41,7 @@ public final class OctavoInBookSearchTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
     }
 
     @Test

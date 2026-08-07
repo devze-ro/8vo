@@ -97,6 +97,7 @@ public final class OctavoProcessRestartTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
         clearEvidence(context);
 
         OctavoAppearance expectedAppearance = extremeAppearance();
@@ -245,6 +246,10 @@ public final class OctavoProcessRestartTest {
                 activity.flushProgressPersistenceForTesting();
                 bookKey.set(view.documentKeyForTesting());
                 position.set(view.readingPositionForTesting());
+                activity.toggleCurrentBookmarkForTesting();
+                assertTrue(activity.annotationStoreForTesting()
+                    .isBookmarked(
+                        bookKey.get(), position.get()[1], position.get()[2]));
 
                 OctavoLibraryStore.Book persisted =
                     activity.libraryStoreForTesting().findBook(bookKey.get());
@@ -358,6 +363,11 @@ public final class OctavoProcessRestartTest {
                                  .STATE_PRESENTED_BYTE_OFFSET]);
             assertAnchorInsidePage(
                 restored, expected.spineIndex, expected.byteOffset);
+            scenario.onActivity(activity -> assertTrue(
+                activity.annotationStoreForTesting().isBookmarked(
+                    expected.bookKey,
+                    expected.spineIndex,
+                    expected.byteOffset)));
             assertHealthyAndSettled(restored);
             assertHostAppearance(scenario, expected.appearance);
             OctavoSearch restoredSearch = searchSnapshot(scenario);

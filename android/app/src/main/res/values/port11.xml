@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reader_bookmarks">Bookmarks</string>
+    <string name="bookmark_add">Add bookmark</string>
+    <string name="bookmark_remove_current">Remove bookmark</string>
+
+    <item name="octavo_reader_bookmark_toggle" type="id" />
+    <item name="octavo_reader_bookmarks" type="id" />
+    <item name="octavo_bookmarks_overlay" type="id" />
+    <item name="octavo_bookmarks_panel" type="id" />
+    <item name="octavo_bookmarks_title" type="id" />
+    <item name="octavo_bookmarks_done" type="id" />
+    <item name="octavo_bookmarks_status" type="id" />
+    <item name="octavo_bookmarks_scroll" type="id" />
+    <item name="octavo_bookmarks_list" type="id" />
+</resources>

@@ -1,8 +1,9 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and frozen first-release scope through the merged API
-36/API 34 Port 10 baseline and the API 36/API 34-qualified same-spine cross-page
-follow-up. The bounded selection claim is physically accepted.
+Status: launch-gap audit and revised first-release scope as of 2026-08-07. The
+merged API 36/API 34 Port 10 selection baseline is accepted. Durable bookmarks,
+highlights, notes, Google Drive synchronization, and the remaining bounded UI
+polish are now required launch gates and are not yet implemented.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.
@@ -22,14 +23,32 @@ user-owned books. It includes only:
   handles, same-spine continuation across successfully presented pages, Android
   contextual Copy, selection-first system Back, and virtual-page Select/Copy/
   Clear/Extend accessibility actions;
+- durable per-book bookmarks, multi-color highlights created from Reader0-
+  authoritative selections, attached or point-anchored notes, and a bounded
+  annotations workspace for review, edit, delete, filter, and direct navigation;
+- atomic local annotation persistence with stable record identity, exact EPUB-
+  digest plus Reader0 anchor ownership, visible capacity/failure states,
+  corruption recovery, forward migration, and deterministic offline merging;
+- explicit opt-in Google Drive synchronization for managed EPUB copies, Library
+  identity, last successfully presented reading positions, global appearance/
+  progress preferences, and annotations. Core reading and every local mutation
+  must remain available offline;
+- least-privilege Drive storage: hidden `appDataFolder` records for portable
+  state and sync manifests, plus an app-created user-visible 8vo folder for EPUB
+  files. Request only `drive.appdata` and `drive.file`; do not request broad
+  whole-Drive access;
+- user-visible Sync now, pending/progress/failure/conflict state, retry and
+  metered-network policy, explicit disconnect, separate local/cloud deletion,
+  and no proprietary 8vo account or server;
 - the accepted appearance choices, native reader chrome, progress-display
   choices, lifecycle/surface recovery, and successful-presentation durability;
 - the current bounded text and image presentation contract, including explicit
   failure states and existing cache/resource limits;
 - native Android layout, input, system Back/insets, 48dp actions, system text
   scaling, keyboard/switch paths, and the existing accessibility bridge;
-- bounded UI polish of Navigation first, then Appearance, reader chrome, and
-  Library, using the agreed UI0-derived native-Android pattern; and
+- bounded UI polish of the already-qualified Navigation surface followed by
+  annotations, synchronization, Appearance, reader chrome, and Library, using
+  the agreed UI0-derived native-Android pattern; and
 - an English-first store listing and application surface.
 
 The launch must use either a polished empty Library or a launch-quality original,
@@ -41,11 +60,11 @@ product content.
 
 The first release does not add:
 
-- Unicode-aware durable indexing, paragraph expansion, bookmarks,
-  highlights, notes, or an annotations workspace;
+- Unicode-aware durable indexing, paragraph selection expansion, annotation
+  full-text search, broad citation/export workflows, or cross-spine highlights;
 - collections, library search, cover/thumbnail expansion, or spatial previews;
-- accounts, analytics, advertising, cloud services, synchronization, or Google
-  Drive integration;
+- a proprietary 8vo account/backend, analytics, advertising, or a second cloud
+  provider beyond the required Google Drive transport;
 - embedded publication fonts, full complex-script shaping, or complete EPUB
   publication semantics for headings, links, tables, notes, and language;
 - fixed-layout EPUB, comics, audio/video books, or broad publisher-fidelity work;
@@ -78,6 +97,80 @@ used in the listing.
   bounded polish candidate passes on the emulator. The Port 9 search-sheet
   audible/touch gate is complete but does not substitute for that broader pass.
 
+### Annotations and local durability
+
+- Freeze a concise, versioned annotation record before UI implementation. It
+  must use the managed EPUB digest for book identity and Reader0-owned spine/
+  byte anchors for point bookmarks and same-spine ranges; Android must not
+  reinterpret EPUB text or store Java character offsets as canonical anchors.
+- Give every bookmark, highlight, note, mutation, and tombstone stable portable
+  identity. Merge ordering must not depend on wall-clock agreement. Concurrent
+  note edits must remain recoverable and visible rather than silently losing one
+  device's text.
+- Keep storage caller-owned, bounded, checksummed, versioned, and atomically
+  replaced. A failed create/edit/delete must leave the previous durable file and
+  visible reader state authoritative, retain the user's unsaved note draft when
+  applicable, and provide an explicit retry path.
+- Implement and qualify current-location bookmark toggle; selection-to-
+  highlight with accessible theme-tuned colors; highlight removal; note create,
+  edit, delete, and cancel; annotation-list filtering and navigation; stable
+  rendering across page turns and reflow; and lifecycle/process restart.
+- Define migration, corruption quarantine/recovery, import/export validation,
+  capacity disclosure, book removal/re-import behavior, and exact rollback tests
+  before any cloud transport consumes the records.
+
+### Google Drive and synchronization
+
+- Build and qualify a provider-neutral deterministic merge engine locally before
+  adding Google APIs. It must merge portable snapshots/operations, positions,
+  preferences, annotations, tombstones, and managed-book identities while
+  remaining device-clock-independent, idempotent, bounded, and safe to retry.
+- Keep local state authoritative while offline. Queue local changes durably;
+  never block reading, annotation editing, or app startup on authorization or
+  network access. A remote failure must be visible without rolling back a
+  successful local mutation.
+- Use Google Identity Services authorization only after the user explicitly
+  enables Drive sync. Keep authentication and Drive authorization distinct,
+  support cancellation and revoked/expired access, and request only
+  `drive.appdata` plus `drive.file` when the corresponding feature is used.
+- Store state/annotation manifests in `appDataFolder`. Store only user-approved
+  managed EPUB copies in an app-created, user-visible 8vo Drive folder, keyed by
+  content digest with duplicate suppression and resumable transfer. Never upload
+  an external provider original implicitly.
+- Provide initial-merge review, manual Sync now, last-success/last-error status,
+  pending item counts, Wi-Fi/metered controls, quota and partial-transfer
+  handling, deterministic conflict presentation, and safe retry after process
+  death or network replacement.
+- Provide separate actions to stop syncing, revoke Drive authorization, remove
+  only this device's local copies, or delete 8vo-created cloud data with clear
+  consequences. Disconnecting must not silently delete either local or remote
+  user data.
+- Decide and document the launch encryption claim before implementation freezes:
+  either add user-controlled client-side encryption with a tested cross-device
+  recovery model, or state accurately that Google Drive protects the stored
+  data and make no end-to-end-encryption claim.
+- Qualify clean first sync, two-device convergence, offline concurrent edits,
+  note conflicts, delete/update races, tombstones, interrupted upload/download,
+  duplicate EPUBs, low quota, authorization revocation, account switching,
+  reinstall/reconnect, schema migration, and exact local recovery.
+
+The current Google contracts are [application-specific Drive data](https://developers.google.com/workspace/drive/api/guides/appdata),
+[Drive scope selection](https://developers.google.com/workspace/drive/api/guides/api-specific-auth),
+and [Android user-data authorization](https://developer.android.com/identity/authorization).
+They were checked on 2026-08-07 and must be rechecked before the Drive adapter
+freezes and before Play submission.
+
+### Bounded UI polish
+
+- Apply the proven UI0-derived native-Android pattern to annotations and sync as
+  they are built, then finish Appearance, reader chrome, and Library. Retain
+  native Android composition, 48dp targets, system text scaling, IME/autofill,
+  Back, insets, lifecycle, focus, TalkBack, and reduced-motion behavior.
+- Complete light, dark, Warm dark, and High Contrast visual review across
+  compact and large viewports. Validate empty, loading, pending, success,
+  conflict, capacity, offline, authorization-denied, and failure states; no
+  essential action may exist only as a gesture, color, or transient message.
+
 ### Release artifact and signing
 
 - Define a reproducible release build and produce a signed Android App Bundle;
@@ -102,12 +195,18 @@ used in the listing.
 ### Privacy and Play policy
 
 - Publish an active, app-specific privacy policy. Complete the Data safety form
-  even if the final declaration is that no data is collected or shared; Google
-  explicitly requires the form and privacy-policy link for such apps in
+  for the final Drive-enabled behavior; Google explicitly requires the form and
+  privacy-policy link in
   [Data safety](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en).
-- Keep the current local-only boundary: no Internet permission, runtime data SDK,
-  analytics, ads, accounts, or off-device book/progress transmission unless the
-  scope and declarations are reopened explicitly.
+- Add Internet access only for the bounded Google Drive feature. Do not add a
+  proprietary account, analytics, ads, unrelated runtime data SDK, or any other
+  off-device transmission. Disclose exactly which book files, reading state,
+  preferences, and annotations are transferred to the user's Drive.
+- Publish in-app privacy/sync explanations covering opt-in, scopes, storage
+  locations, retention, conflict handling, security/encryption claims,
+  disconnect, authorization revocation, and deletion of 8vo-created Drive data.
+  Keep the privacy policy, OAuth consent screen, and Data safety declarations
+  consistent with the shipping behavior.
 - Remove or debug-gate production diagnostics that record the full app-private
   document path, EPUB title, or reading anchor. In particular, the state-created
   log in `octavo_android_jni.c` currently publishes document and title values.
@@ -137,9 +236,11 @@ used in the listing.
   cursor plus center/left/right handles and finds the exact color. The binding
   is guarded by the architecture audit and survives live product-theme changes
   without reflection or private APIs.
-- The app has no Internet permission or production runtime SDK dependency. EPUB
-  selection uses `ACTION_OPEN_DOCUMENT`; selected bytes, catalog state,
-  appearance, progress choice, and reading positions stay app-private.
+- The merged Port 10 baseline has no Internet permission or production runtime
+  SDK dependency. EPUB selection uses `ACTION_OPEN_DOCUMENT`; selected bytes,
+  catalog state, appearance, progress choice, and reading positions stay app-
+  private. This becomes predecessor evidence once the bounded Drive adapter adds
+  network access; the final manifest, SDK, and data-flow audit must be repeated.
 - `allowBackup` is false, imports and catalogs are bounded, failures remain
   visible, and managed-copy removal does not delete the provider-owned original.
 - Both packaged ABIs are 64-bit: `arm64-v8a` and `x86_64`.
@@ -247,13 +348,23 @@ Qualification is ordered and stops on the first failed gate:
 1. Freeze the reviewed commit and exact Ground0, Reader0, UI0, and Readerview0
    pins. Require clean participating worktrees and pass dependency and
    architecture guards without using `LECTERN0_ZERO_FOUNDATION_DIR`.
-2. Run source/license review, Android lint and release-vital lint, and verify the
+2. Qualify the local annotation store and provider-neutral sync merge engine
+   before network integration: atomic failure/rollback, bounds, migration,
+   corruption recovery, lifecycle/restart, reflow anchors, concurrent-device
+   fixtures, tombstones, idempotence, export/restore, and deterministic hashes.
+3. Qualify Google Drive against test accounts and at least two devices: explicit
+   authorization, least-privilege scopes, first sync, offline convergence,
+   conflicts, interruption/retry, quota, revocation, account switching,
+   reinstall/reconnect, cloud deletion, no duplicate EPUBs, and no blocked local
+   reading. No private book content may enter retained evidence.
+4. Run source/license review, Android lint and release-vital lint, and verify the
    final merged manifest, permissions, exported components, package ID, version,
-   launcher assets, notices, privacy copy, and absence of signing secrets.
-3. Build the signed release AAB through the documented release path. Verify its
+   launcher assets, OAuth scopes/client identity, notices, privacy/Data safety
+   copy, Drive data flows, and absence of signing or OAuth secrets.
+5. Build the signed release AAB through the documented release path. Verify its
    signature, validate it with the matching bundle tool, retain hashes and native
    symbols, and prove 64-bit plus 16-KB ELF/package alignment on generated APKs.
-4. Generate Play-equivalent split APKs. On a clean API 26 emulator, first pass a
+6. Generate Play-equivalent split APKs. On a clean API 26 emulator, first pass a
    bounded install/launch, Library-to-reader-to-Navigation, system Back,
    rotation/recreation, process-restart, and accessibility-node smoke. If that
    declared minimum cannot be qualified, raise `minSdk` deliberately before
@@ -262,20 +373,20 @@ Qualification is ordered and stops on the first failed gate:
    restart, large-text/reduced-motion, accessibility (including attached live-
    region event delivery), explicit UI0 role-to-face metric comparison,
    transition, crash/ANR, and clean-install/upgrade-state checks.
-5. Upload the exact signed AAB to internal testing only after the local release
+7. Upload the exact signed AAB to internal testing only after the local release
    gates pass. Inspect App Bundle Explorer output, device compatibility, policy
    warnings, native-symbol association, and the Play pre-launch report. Install
    Play-generated artifacts rather than treating the locally assembled debug APK
    as release evidence.
-6. Request the physical device only after emulator and Play-generated-artifact
+8. Request the physical device only after emulator and Play-generated-artifact
    gates pass. Coordinate any device-wide animation changes. Restore window,
    transition, and animator duration scales explicitly to `1.0`, then verify
    visible vivo SystemUI behavior as well as stored values.
-7. Run the physical focused and ordinary matrices, confirmed-force-stop restart,
+9. Run the physical focused and ordinary matrices, confirmed-force-stop restart,
    hands-on TalkBack/touch/transition review, crash/ANR review, and byte-exact
    app-data restoration. Record the final AAB, symbol, manifest, dependency, and
    validation hashes.
-8. Complete a bounded internal/closed-track soak, triage Play Vitals and tester
+10. Complete a bounded internal/closed-track soak, triage Play Vitals and tester
    feedback, confirm rollback and support procedures, then request explicit user
    approval for any production submission or rollout.
 
@@ -285,6 +396,10 @@ The repository cannot establish whether the following are complete:
 
 - Play developer identity verification, account ownership, required agreements,
   payments/profile setup, and permission to manage Play App Signing;
+- a Google Cloud project with the Drive API enabled; completed OAuth branding,
+  homepage, privacy-policy and terms URLs; Android OAuth clients for debug and
+  Play app-signing SHA-1 identities; required consent-screen test users or
+  publication/verification; and owner approval for those external mutations;
 - availability and registration of `ro.devze.octavo`. Play package registration
   becomes mandatory on 2026-09-30 under the current
   [package-registration requirement](https://support.google.com/googleplay/android-developer/answer/16984799?hl=en-EN);
@@ -294,9 +409,10 @@ The repository cannot establish whether the following are complete:
   [Testing requirements for new personal accounts](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en-EN);
 - production-access eligibility, test-track availability, app-signing enrollment,
   upload-certificate registration, and managed-publishing configuration;
-- the privacy-policy/support URLs, contact email, listing assets and translations,
-  category/tags, target audience, content rating, Data safety, ads/app-access
-  answers, pricing, countries/regions, and release notes; and
+- the privacy-policy/support/terms URLs, contact email, listing and OAuth assets,
+  translations, category/tags, target audience, content rating, Drive-enabled
+  Data safety, ads/app-access answers, pricing, countries/regions, and release
+  notes; and
 - Play Console policy, device-catalog, pre-launch-report, and App Bundle Explorer
   findings for the exact release AAB.
 

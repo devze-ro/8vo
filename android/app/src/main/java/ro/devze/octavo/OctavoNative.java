@@ -116,6 +116,9 @@ final class OctavoNative {
     static native int navigateToContents(long handle, int navIndex);
     static native int navigateToChapter(long handle, long oneBasedChapter);
     static native int navigateToLocation(long handle, long oneBasedLocation);
+    static native int navigateToAnnotation(long handle,
+                                           long spineIndex,
+                                           long byteOffset);
     static native int navigateToPage(long handle, long oneBasedPage);
     static native int navigateToPercent(long handle, int percent);
     static native int moveHistory(long handle, boolean forward);

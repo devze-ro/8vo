@@ -86,10 +86,33 @@ SHA-256
 and manifest SHA-256
 `94A15EE1CCAAC59833EB0647887A55F3FF441FBD8DF4958B24537E8E6EB59B74`.
 
-The candidate retains Port 7's premium appearance, semantic reflow, borderless
-host-composited chrome, first-frame coverage, and custom-reader accessibility
-bridge while adding bounded structural navigation, in-book search, and
-session-local text selection with Copy:
+The Port 11 candidate retains Port 7's premium appearance, semantic reflow,
+borderless host-composited chrome, first-frame coverage, and custom-reader
+accessibility bridge plus Ports 8-10 navigation, search, and selection. It now
+begins provider-neutral durable annotations with a local bookmark slice; Google
+Drive remains disconnected:
+
+The exact dependency guard, architecture audit, and dual-ABI Android build
+pass. On API 36, the annotation/store focus is 8/8, the ordinary matrix is
+108/108, and the separate seed/confirmed-force-stop/fresh-process restart
+driver passes with exact bookmark recovery. The configuration-compatible matrix
+passes 26/26 at actual 130% system text with animations disabled, and the five
+fixed-pagination tests pass separately at 100% text with animations disabled.
+The crash buffer is empty; font plus window, transition, and animator scales
+were restored explicitly to `1.0`.
+
+On the API 34 iQOO, Port 11 passes 8/8 focused tests in 5.429 seconds,
+108/108 ordinary tests in 204.294 seconds, external seed/confirmed-force-stop/
+fresh-process restart in 1.762 and 1.064 seconds, and 26/26 selected tests in
+57.182 seconds at 130% system text with normal motion retained. The user accepts
+bookmark touch behavior and TalkBack 17.0.1 exposes the toggle, state change,
+workspace count/context, Go to, Remove, and Done without a reported issue.
+Cleanup restored every captured phone setting, verified 75 live Launcher/
+Recents frames, left the crash buffer empty, and restored all 26 original app
+files (4,751,505 bytes) byte-exact. Pre/post archive SHA-256 is
+`9118B960B212FC67EDC70152314341D8EDEDE0851045335D4B11CF23D79D3699`;
+the canonical manifest SHA-256 is
+`35368BF22698B1C9AA64FB940512C414AA83EFA50B6934B7248DABC71233719B`.
 
 - `OctavoActivity` owns Android lifecycle, the library surface, and the
   `ACTION_OPEN_DOCUMENT` picker. Port 7 also keeps settings surfaces, system
@@ -190,6 +213,15 @@ session-local text selection with Copy:
   display record. Same-directory synchronization and atomic replacement preserve
   prior bytes on failure. The selected Chapter, Page, Location, or Percentage
   mode becomes durable only after its matching frame is presented.
+- `OctavoAnnotationStore` owns the bounded, digest-keyed, versioned annotation
+  envelope at `<files>/port11/annotations.v1`. Reader0 spine/UTF-8 byte anchors,
+  stable record/mutation/tombstone identities, strict atomic publication,
+  corruption/future-version recovery, and deterministic causal merge remain
+  product state. Managed-book removal does not erase annotations.
+- `OctavoBookmarksPanel` is the first native Android annotation workspace. It
+  lists current-book bookmarks and returns Go to/Remove requests; persistence
+  and Reader0 presentation success remain authoritative before rows or panels
+  claim completion.
 - `OctavoNative` is the explicit Java/JNI boundary.
 - `octavo_android_port7_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once. The current Reader0 boundary is
@@ -275,7 +307,9 @@ living capability inventory in
 [`../docs/android_feature_parity.md`](../docs/android_feature_parity.md), and
 the bounded delivery sequence in
 [`../docs/android_roadmap.md`](../docs/android_roadmap.md). The current milestone
-contract is [`../docs/android_port10.md`](../docs/android_port10.md). Search and
+contract is [`../docs/android_port11.md`](../docs/android_port11.md). The
+selection predecessor is
+[`../docs/android_port10.md`](../docs/android_port10.md). Search and
 structural-navigation predecessor contracts are in
 [`../docs/android_port9.md`](../docs/android_port9.md) and
 [`../docs/android_port8.md`](../docs/android_port8.md).
@@ -608,14 +642,18 @@ superseded regression evidence. Port 7 intentionally remains a bounded
 appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-durable annotations, and synchronization remain deferred.
+highlight/note workflows and synchronization transport remain deferred.
 Port 8 adds structural navigation; Port 9 adds bounded session-local in-book
 search; Port 10 adds bounded word selection and Copy. Its local follow-up adds
 same-spine cross-page continuation and closes that bounded selection launch
-gate, while durable Unicode-aware indexing and annotation storage remain deferred. Spatial
+gate. Port 11 begins durable provider-neutral annotation storage and local
+bookmarks while Drive remains disconnected. Durable Unicode-aware indexing,
+highlight/note editing, and synchronization transport remain deferred. Spatial
 previews and advanced scrubbing also remain deferred. See
-[`../docs/android_port10.md`](../docs/android_port10.md) for the current
-selection implementation and acceptance boundary,
+[`../docs/android_port11.md`](../docs/android_port11.md) for the current
+annotation/storage/merge boundary,
+[`../docs/android_port10.md`](../docs/android_port10.md) for the selection
+implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,
 [`../docs/android_port8.md`](../docs/android_port8.md) for the navigation
 foundation,

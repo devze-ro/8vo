@@ -1585,6 +1585,25 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 nativeHandle, oneBasedLocation));
     }
 
+    int requestAnnotationNavigation(long spineIndex, long byteOffset) {
+        if (nativeHandle == 0 || spineIndex < 0 || byteOffset < 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        return finishNavigationRequest(
+            OctavoNative.navigateToAnnotation(
+                nativeHandle, spineIndex, byteOffset));
+    }
+
+    long[] presentedAnchorForAnnotations() {
+        if (nativeHandle == 0) {
+            return null;
+        }
+        long[] position = OctavoNative.readingPosition(nativeHandle);
+        return position != null && position.length == 3
+            && position[0] == 1 ? position : null;
+    }
+
     int requestPageNavigation(long oneBasedPage) {
         if (nativeHandle == 0 || oneBasedPage <= 0) {
             return finishNavigationRequest(
