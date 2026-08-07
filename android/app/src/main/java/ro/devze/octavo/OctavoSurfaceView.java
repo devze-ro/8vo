@@ -1,9 +1,15 @@
 package ro.devze.octavo;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Rect;
 import android.util.Log;
+import android.view.ActionMode;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.ViewConfiguration;
 import android.view.SurfaceHolder;
@@ -161,6 +167,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private final Listener listener;
     private final OctavoReaderAccessibilityProvider accessibilityProvider;
     private final int swipeMinimumDistancePx;
+    private final int touchSlopPx;
+    private final int selectionHandleHitRadiusPx;
     private OctavoAppearance presentedAppearance;
     private OctavoAppearance requestedAppearance;
     private OctavoAppearance nativeAppearanceAwaitingPresentation;
@@ -179,6 +187,14 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private float gestureDownY;
     private boolean gestureCommitted;
     private boolean gestureCancelled;
+    private boolean selectionLongPressPosted;
+    private boolean selectionGestureActive;
+    private int selectionHandleKind;
+    private ActionMode selectionActionMode;
+    private boolean selectionActionModeSuppressClear;
+    private boolean selectionClearAfterPresentation;
+    private boolean selectionAnnouncementPending;
+    private boolean forceClipboardFailureForTesting;
     private boolean chromeVisible;
     private long lastNotifiedFrameCount;
     private long[] cachedNavigationState;
@@ -205,6 +221,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private final Runnable warmLocationCache = () -> {
         runLocationWarmStep();
     };
+    private final Runnable beginSelectionLongPress =
+        this::runSelectionLongPress;
 
     private int runLocationWarmStep() {
         locationWarmPosted = false;
@@ -294,9 +312,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                       Listener listener) {
         super(context);
         int touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        touchSlopPx = touchSlop;
         int minimumDp = Math.round(
             48.0f * context.getResources().getDisplayMetrics().density);
         swipeMinimumDistancePx = Math.max(touchSlop * 4, minimumDp);
+        selectionHandleHitRadiusPx = Math.max(minimumDp / 2, touchSlop * 2);
         this.libraryStore = libraryStore;
         this.listener = listener;
         book = session.book;
@@ -380,6 +400,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                                int format,
                                int width,
                                int height) {
+        finishSelectionActionMode(true);
         clearGestureTracking();
         if (nativeHandle != 0) {
             resetPresentationRetries();
@@ -392,6 +413,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        finishSelectionActionMode(true);
         clearGestureTracking();
         if (nativeHandle != 0) {
             capturePresentedPosition();
@@ -420,20 +442,45 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             return true;
         }
         if (action == MotionEvent.ACTION_DOWN) {
+            OctavoSelection selection = selectionSnapshot();
+            if (selection != null && selection.active && !selection.pending) {
+                int handle = selectionHandleAt(
+                    event.getX(0), event.getY(0), selection);
+                if (handle != 0) {
+                    activePointerId = event.getPointerId(0);
+                    gestureDownX = event.getX(0);
+                    gestureDownY = event.getY(0);
+                    gestureCommitted = true;
+                    gestureCancelled = false;
+                    selectionGestureActive = true;
+                    selectionHandleKind = handle;
+                    touchCompositionGeneration = chromeCompositionGeneration;
+                    return true;
+                }
+                requestSelectionClear(true);
+                clearGestureTracking();
+                return true;
+            }
             activePointerId = event.getPointerId(0);
             gestureDownX = event.getX(0);
             gestureDownY = event.getY(0);
             gestureCommitted = false;
             gestureCancelled = false;
             touchCompositionGeneration = chromeCompositionGeneration;
-            return dispatchNativeTouch(
+            boolean handled = dispatchNativeTouch(
                 MotionEvent.ACTION_DOWN,
                 gestureDownX,
                 gestureDownY,
                 event.getEventTime());
+            selectionLongPressPosted = handled && postDelayed(
+                beginSelectionLongPress,
+                ViewConfiguration.getLongPressTimeout());
+            return handled;
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
             cancelNativeTouch(event);
+            cancelSelectionLongPress();
+            selectionGestureActive = false;
             gestureCancelled = true;
             return true;
         }
@@ -451,6 +498,24 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             return true;
         }
         if (action == MotionEvent.ACTION_MOVE) {
+            if (selectionGestureActive) {
+                int result = OctavoNative.updateSelection(
+                    nativeHandle, selectionHandleKind, x, y);
+                if (result > 0
+                    && (result & 0xff) == OctavoNative.SELECTION_ACCEPTED) {
+                    int returnedHandle =
+                        (result >>> OctavoNative.SELECTION_HANDLE_SHIFT) & 0xff;
+                    if (returnedHandle == OctavoNative.SELECTION_HANDLE_START
+                        || returnedHandle == OctavoNative.SELECTION_HANDLE_END) {
+                        selectionHandleKind = returnedHandle;
+                    }
+                    resetPresentationRetries();
+                    requestNativePresentation();
+                } else if (result == OctavoNative.SELECTION_FAILED) {
+                    notifySelectionFailure("Unable to adjust the text selection.");
+                }
+                return true;
+            }
             if (gestureCancelled || gestureCommitted) {
                 return true;
             }
@@ -458,6 +523,9 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             float deltaY = y - gestureDownY;
             float absoluteX = Math.abs(deltaX);
             float absoluteY = Math.abs(deltaY);
+            if (absoluteX > touchSlopPx || absoluteY > touchSlopPx) {
+                cancelSelectionLongPress();
+            }
             if (absoluteX >= swipeMinimumDistancePx
                 && absoluteX > absoluteY * 1.25f) {
                 cancelNativeTouch(event);
@@ -473,6 +541,13 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             return true;
         }
         if (action == MotionEvent.ACTION_UP) {
+            cancelSelectionLongPress();
+            if (selectionGestureActive) {
+                selectionGestureActive = false;
+                clearGestureTracking();
+                syncSelectionUi();
+                return true;
+            }
             if (gestureCancelled || gestureCommitted) {
                 clearGestureTracking();
                 return true;
@@ -506,6 +581,220 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return (result & OctavoNative.TOUCH_HANDLED) != 0;
     }
 
+    private void runSelectionLongPress() {
+        selectionLongPressPosted = false;
+        if (nativeHandle == 0 || activePointerId == MotionEvent.INVALID_POINTER_ID
+            || gestureCancelled || gestureCommitted
+            || touchCompositionGeneration != chromeCompositionGeneration) {
+            return;
+        }
+        int result = OctavoNative.beginSelection(
+            nativeHandle, gestureDownX, gestureDownY);
+        if (result == OctavoNative.SELECTION_ACCEPTED) {
+            OctavoNative.touch(
+                nativeHandle,
+                MotionEvent.ACTION_CANCEL,
+                gestureDownX,
+                gestureDownY,
+                android.os.SystemClock.uptimeMillis());
+            selectionGestureActive = true;
+            selectionHandleKind = OctavoNative.SELECTION_HANDLE_END;
+            gestureCommitted = true;
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            resetPresentationRetries();
+            requestNativePresentation();
+        } else if (result == OctavoNative.SELECTION_FAILED) {
+            notifySelectionFailure("Unable to select this text.");
+        }
+    }
+
+    private void cancelSelectionLongPress() {
+        if (selectionLongPressPosted) {
+            removeCallbacks(beginSelectionLongPress);
+            selectionLongPressPosted = false;
+        }
+    }
+
+    private OctavoSelection selectionSnapshot() {
+        return nativeHandle == 0 ? null
+            : OctavoSelection.fromNative(
+                OctavoNative.selectionSnapshot(nativeHandle));
+    }
+
+    private int selectionHandleAt(float x,
+                                  float y,
+                                  OctavoSelection selection) {
+        if (selection == null || !selection.active
+            || !Float.isFinite(x) || !Float.isFinite(y)) {
+            return 0;
+        }
+        long startDistance = squaredDistance(
+            x, y, selection.startX, selection.startY);
+        long endDistance = squaredDistance(
+            x, y, selection.endX, selection.endY);
+        long radius = selectionHandleHitRadiusPx;
+        long maximum = radius * radius;
+        if (startDistance <= maximum && startDistance <= endDistance) {
+            return OctavoNative.SELECTION_HANDLE_START;
+        }
+        if (endDistance <= maximum) {
+            return OctavoNative.SELECTION_HANDLE_END;
+        }
+        return 0;
+    }
+
+    private static long squaredDistance(float x,
+                                        float y,
+                                        int targetX,
+                                        int targetY) {
+        long deltaX = Math.round(x) - (long)targetX;
+        long deltaY = Math.round(y) - (long)targetY;
+        long limit = 1L << 30;
+        deltaX = Math.max(-limit, Math.min(limit, deltaX));
+        deltaY = Math.max(-limit, Math.min(limit, deltaY));
+        return deltaX * deltaX + deltaY * deltaY;
+    }
+
+    private void syncSelectionUi() {
+        OctavoSelection selection = selectionSnapshot();
+        if (selection == null || !selection.active) {
+            selectionClearAfterPresentation = false;
+            finishSelectionActionMode(true);
+            accessibilityProvider.onSelectionChanged();
+            return;
+        }
+        if (selection.pending || selectionGestureActive) {
+            return;
+        }
+        if (selectionClearAfterPresentation) {
+            selectionClearAfterPresentation = false;
+            if (requestSelectionClear(false)) {
+                return;
+            }
+        }
+        if (selectionActionMode == null) {
+            selectionActionMode = startActionMode(
+                new ActionMode.Callback() {
+                    @Override
+                    public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                        mode.setTitle("Text selected");
+                        menu.add(Menu.NONE, android.R.id.copy, Menu.NONE, "Copy")
+                            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean onActionItemClicked(ActionMode mode,
+                                                       MenuItem item) {
+                        return item.getItemId() == android.R.id.copy
+                            && copySelectionToClipboard();
+                    }
+
+                    @Override
+                    public void onDestroyActionMode(ActionMode mode) {
+                        if (selectionActionMode == mode) {
+                            selectionActionMode = null;
+                        }
+                        if (!selectionActionModeSuppressClear) {
+                            boolean cleared = requestSelectionClear(false);
+                            OctavoSelection current = selectionSnapshot();
+                            selectionClearAfterPresentation = !cleared
+                                && current != null
+                                && current.active
+                                && current.pending;
+                        }
+                    }
+                },
+                ActionMode.TYPE_FLOATING);
+        }
+        if (selectionAnnouncementPending) {
+            selectionAnnouncementPending = false;
+            announceForAccessibility("Text selected. Copy action available.");
+        }
+        accessibilityProvider.onSelectionChanged();
+    }
+
+    private void finishSelectionActionMode(boolean suppressClear) {
+        ActionMode mode = selectionActionMode;
+        if (mode == null) {
+            return;
+        }
+        selectionActionModeSuppressClear = suppressClear;
+        mode.finish();
+        selectionActionModeSuppressClear = false;
+        selectionActionMode = null;
+    }
+
+    private boolean requestSelectionClear(boolean finishActionMode) {
+        if (nativeHandle == 0) {
+            finishSelectionActionMode(true);
+            return false;
+        }
+        int result = OctavoNative.clearSelection(nativeHandle);
+        if (result == OctavoNative.SELECTION_ACCEPTED) {
+            if (finishActionMode) {
+                finishSelectionActionMode(true);
+            }
+            resetPresentationRetries();
+            requestNativePresentation();
+            return true;
+        }
+        if (result == OctavoNative.SELECTION_ALREADY_PRESENTED) {
+            if (finishActionMode) {
+                finishSelectionActionMode(true);
+            }
+            return true;
+        }
+        if (result == OctavoNative.SELECTION_FAILED) {
+            notifySelectionFailure("Unable to clear the text selection.");
+        }
+        return false;
+    }
+
+    private boolean copySelectionToClipboard() {
+        if (nativeHandle == 0) {
+            return false;
+        }
+        byte[] utf8 = OctavoNative.selectedTextUtf8(nativeHandle);
+        if (utf8 == null || utf8.length == 0) {
+            notifySelectionFailure("Selected text is unavailable for copying.");
+            return false;
+        }
+        String text = new String(utf8, StandardCharsets.UTF_8);
+        try {
+            if (forceClipboardFailureForTesting) {
+                throw new IllegalStateException("Forced clipboard failure");
+            }
+            ClipboardManager clipboard = (ClipboardManager)getContext()
+                .getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard == null) {
+                throw new IllegalStateException("Clipboard unavailable");
+            }
+            clipboard.setPrimaryClip(
+                ClipData.newPlainText("8vo selected text", text));
+        } catch (RuntimeException exception) {
+            notifySelectionFailure("Unable to copy the selected text.");
+            return false;
+        }
+        if (!requestSelectionClear(true)) {
+            return false;
+        }
+        announceForAccessibility("Selected text copied.");
+        return true;
+    }
+
+    private void notifySelectionFailure(String message) {
+        announceForAccessibility(message);
+        if (listener != null) {
+            listener.onNavigationRequestFailure(message);
+        }
+    }
+
     private void cancelNativeTouch(MotionEvent event) {
         if (nativeHandle == 0) {
             return;
@@ -521,9 +810,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     private void clearGestureTracking() {
+        cancelSelectionLongPress();
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         gestureCommitted = false;
         gestureCancelled = false;
+        selectionGestureActive = false;
+        selectionHandleKind = 0;
     }
 
     private boolean requestPageMove(int direction) {
@@ -1109,8 +1401,12 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                         NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
         boolean searchMutationStillAwaiting = nativeHandle != 0
             && OctavoNative.searchMutationPending(nativeHandle);
+        OctavoSelection selection = selectionSnapshot();
+        boolean selectionStillAwaiting =
+            selection != null && selection.pending;
         int navigationCancellation = 0;
-        if (navigationStillAwaiting || searchMutationStillAwaiting) {
+        if (navigationStillAwaiting || searchMutationStillAwaiting
+            || selectionStillAwaiting) {
             navigationCancellation = nativeHandle == 0
                 ? -1
                 : OctavoNative.cancelPendingNavigation(nativeHandle);
@@ -1132,7 +1428,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             forceAppearanceRequest = false;
         }
         boolean navigationOwnsFailure =
-            (navigationStillAwaiting || searchMutationStillAwaiting)
+            (navigationStillAwaiting || searchMutationStillAwaiting
+                || selectionStillAwaiting)
                 && !appearanceStillAwaiting;
         if (listener != null && !navigationOwnsFailure) {
             listener.onPresentationRetriesExhausted(
@@ -1158,6 +1455,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (nativeHandle == 0 || appearance == null) {
             return;
         }
+        requestSelectionClear(true);
         resetPresentationRetries();
         requestPendingNativePresentation();
         requestedAppearance = appearance;
@@ -1301,6 +1599,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         lastNotifiedFrameCount = frameCount;
         resetPresentationRetries();
         capturePresentedPosition();
+        syncSelectionUi();
         accessibilityProvider.onReaderPresentationChanged();
         if (listener != null) {
             listener.onReaderPresentationChanged(
@@ -1526,6 +1825,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     }
 
     void hostPaused() {
+        finishSelectionActionMode(true);
         clearGestureTracking();
         if (nativeHandle != 0 && hostResumed) {
             capturePresentedPosition();
@@ -1568,6 +1868,93 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             && OctavoNative.searchMutationPending(nativeHandle);
     }
 
+
+    boolean selectTextForAccessibility() {
+        if (nativeHandle == 0) {
+            return false;
+        }
+        int result = OctavoNative.beginSelectionForAccessibility(nativeHandle);
+        if (result != OctavoNative.SELECTION_ACCEPTED) {
+            if (result == OctavoNative.SELECTION_FAILED) {
+                notifySelectionFailure("Unable to select text on this page.");
+            }
+            return false;
+        }
+        selectionAnnouncementPending = true;
+        resetPresentationRetries();
+        requestNativePresentation();
+        return true;
+    }
+
+    boolean copySelectionForAccessibility() {
+        return copySelectionToClipboard();
+    }
+
+    boolean clearSelectionForAccessibility() {
+        return requestSelectionClear(true);
+    }
+
+    boolean dismissSelectionForBack() {
+        OctavoSelection selection = selectionSnapshot();
+        if (selection == null || !selection.active) {
+            return false;
+        }
+        finishSelectionActionMode(true);
+        if (!requestSelectionClear(false)) {
+            /* The current frame may still be posting; clear after it settles. */
+            selectionClearAfterPresentation = true;
+        }
+        return true;
+    }
+
+    boolean hasSelectionForAccessibility() {
+        OctavoSelection selection = selectionSnapshot();
+        return selection != null && selection.active && !selection.pending;
+    }
+
+    long[] selectionPacketForTesting() {
+        return nativeHandle == 0
+            ? null : OctavoNative.selectionSnapshot(nativeHandle);
+    }
+
+    int beginSelectionForTesting(float x, float y) {
+        return nativeHandle == 0
+            ? OctavoNative.SELECTION_INVALID
+            : OctavoNative.beginSelection(nativeHandle, x, y);
+    }
+
+    int updateSelectionForTesting(int handle, float x, float y) {
+        int result = nativeHandle == 0
+            ? OctavoNative.SELECTION_INVALID
+            : OctavoNative.updateSelection(nativeHandle, handle, x, y);
+        if (result > 0
+            && (result & 0xff) == OctavoNative.SELECTION_ACCEPTED) {
+            resetPresentationRetries();
+            requestNativePresentation();
+        }
+        return result;
+    }
+
+    boolean clearSelectionForTesting() {
+        return requestSelectionClear(true);
+    }
+
+    boolean copySelectionForTesting() {
+        return copySelectionToClipboard();
+    }
+
+    String selectedTextForTesting() {
+        if (nativeHandle == 0) {
+            return null;
+        }
+        byte[] utf8 = OctavoNative.selectedTextUtf8(nativeHandle);
+        return utf8 == null ? null
+            : new String(utf8, StandardCharsets.UTF_8);
+    }
+
+    void forceClipboardFailureForTesting(boolean forced) {
+        forceClipboardFailureForTesting = forced;
+    }
     long[] locationCacheStateForTesting() {
         return nativeHandle == 0
             ? null : OctavoNative.locationCacheState(nativeHandle);
@@ -1722,6 +2109,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
 
     void release() {
         if (nativeHandle != 0) {
+            finishSelectionActionMode(true);
             hostPaused();
             flushPresentedPosition();
             removeCallbacks(presentPage);
@@ -1729,6 +2117,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             removeCallbacks(applyRequestedAppearance);
             removeCallbacks(warmLocationCache);
             removeCallbacks(finishChromeCompositionTask);
+            removeCallbacks(beginSelectionLongPress);
             presentationPosted = false;
             persistencePosted = false;
             appearanceApplyPosted = false;

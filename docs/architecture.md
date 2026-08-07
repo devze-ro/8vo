@@ -400,11 +400,24 @@ the existing successful-presentation transaction for direct and next/previous
 jumps. Query/clear failure restores the last successful result set, and search
 state is deliberately cleared across Activity recreation and process death.
 
+Port 10 keeps canonical selected ranges in Reader0's existing `DocSelection`.
+The Android native layer projects touch points through the same styled-row,
+font-advance, alignment, and justification geometry used to rasterize the
+accepted frame, then submits only canonical UTF-8 byte ranges to Reader0.
+Java consumes a versioned bounded snapshot for 48dp handle hit regions,
+Android contextual Copy, system-Back priority, and virtual-page accessibility
+actions; it does not store text anchors or interpret EPUB content. Selection
+mutations join the existing successful-presentation transaction, restore the
+prior range on failed presentation, and clear on navigation, reflow, surface,
+lifecycle, or document replacement. Copy reads only Reader0-validated active-
+spine bytes and remains bounded to the visible-frame cap.
+
 Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
-text selection, bookmarks/highlights/notes workspace, per-book appearances,
-embedded fonts, complete publication accessibility, full Unicode shaping, and
-synchronization remain deferred. The current bounded contracts are in
-[`android_port9.md`](android_port9.md) and
+cross-page selection, durable bookmarks/highlights/notes workspace, per-book
+appearances, embedded fonts, complete publication accessibility, full Unicode
+shaping, and synchronization remain deferred. The current bounded contracts
+are in [`android_port10.md`](android_port10.md),
+[`android_port9.md`](android_port9.md), and
 [`android_port8.md`](android_port8.md); accepted Port 7 detail remains in
 [`android_port7.md`](android_port7.md).
 

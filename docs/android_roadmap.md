@@ -16,7 +16,13 @@ reduced-animation gates. The API 26 framework cursor/handle compatibility gate
 also passes. Desktop light/dark versus Android light/dark/High Contrast portrait
 Navigation visual review passes. Whole-app audible TalkBack, full-app visual parity,
 remaining bounded polish, and user subjective/manual acceptance remain pending.
-boundaries may change as evidence is collected.
+Port 9 is the merged, API 36/API 34-validated bounded in-book-search slice.
+Port 10 is an API 36/API 34-validated bounded single-page selection-and-Copy
+candidate: focused, ordinary, restart, actual 130%-system-text/reduced-motion,
+empty-crash, visual, physical touch, and audible TalkBack gates pass. Its exact
+26-file baseline restored byte-for-byte and vivo motion was behaviorally
+verified after an explicit Launcher restart. Hands-on review confirmed that
+selection cannot continue across pages; that is now a launch blocker.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -42,7 +48,8 @@ visual parity.
 Port 7 is the accepted appearance foundation. It adds the appearance,
 semantic-location reflow, borderless host-composited chrome,
 reader-entry-performance, and accessibility-bridge foundation described
-below. Ports 0-7 are the accepted Android baseline while Port 8 remains local.
+below. Ports 0-9 form the current merged Android baseline while Port 10 remains
+a local bounded candidate pending the cross-page launch decision.
 
 ## Delivery method
 
@@ -393,8 +400,14 @@ are still pending.
 
 ### Selection, bookmarks, highlights, and notes
 
-- platform-neutral durable text anchors and styled selection geometry;
-- Android handles, contextual actions, scrolling, and accessible alternatives;
+- Port 10 now provides Reader0-authoritative session-local word selection,
+  styled rendered-row geometry, Android contextual Copy, compact handles with
+  48dp hit regions, selection-first system Back, and bounded TalkBack actions;
+  its emulator and physical gates pass for the single visible page;
+- cross-page auto-turn/continuation is the next launch-blocking selection slice;
+  define same-spine versus cross-spine anchor ownership before annotations;
+- paragraph expansion, fuller Unicode segmentation,
+  and durable anchors remain separate follow-up work;
 - bookmarks, theme-tuned multi-color highlights, and notes; and
 - atomic local persistence with recovery before synchronization is attempted.
 

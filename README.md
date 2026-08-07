@@ -60,6 +60,16 @@ reported defects without a visible bright/black transition. Audible TalkBack,
 UI polish, and user subjective/manual acceptance remain pending. Earlier Port
 8 results remain predecessor evidence rather than proof for the current source.
 
+Port 9 adds the merged Reader0-backed bounded in-book search slice. Port 10 is
+the current local single-page selection-and-Copy candidate on the same exact
+dependency closure. API 36 and API 34 focused, ordinary, restart, actual
+130%-system-text/reduced-motion, empty-crash, visual, physical touch, and
+audible TalkBack gates pass. The iQOO's 26 files and 4,751,505 bytes restored
+byte-for-byte, and live Launcher/SystemUI motion was verified after explicit
+restoration. Hands-on review confirmed that selection cannot continue across
+pages; that limitation is now a launch blocker before annotations build on the
+anchor model. Nothing has been pushed or merged for Port 10.
+
 The long-term Android direction is a premium, local-first reader for
 user-owned books with Kindle-class capability and interaction quality, a
 distinct 8vo design, user-controlled storage, and a better night-reading
@@ -78,7 +88,10 @@ cd android
 ```
 
 The current candidate scope and validation boundary are documented in
-[docs/android_port8.md](docs/android_port8.md); the accepted appearance
+[docs/android_port10.md](docs/android_port10.md); the bounded search and
+structural-navigation predecessors are documented in
+[docs/android_port9.md](docs/android_port9.md) and
+[docs/android_port8.md](docs/android_port8.md). The accepted appearance
 foundation is documented in [docs/android_port7.md](docs/android_port7.md),
 and the accepted library milestone in
 [docs/android_port6.md](docs/android_port6.md). The document-open/resume

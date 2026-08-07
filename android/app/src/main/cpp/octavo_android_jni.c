@@ -10,6 +10,7 @@
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <jni.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -255,6 +256,19 @@ typedef struct OctavoAndroidSearchState
   B32 has_active;
 } OctavoAndroidSearchState;
 
+typedef struct OctavoAndroidSelectionRowGeometry
+{
+  const EpubReaderFrameStyleRow *row;
+  U32 start;
+  U32 end;
+  S32 x;
+  S32 y;
+  S32 height;
+  S32 next_y;
+  OctavoReaderJustificationPlan justification;
+  B32 valid;
+} OctavoAndroidSelectionRowGeometry;
+
 typedef struct OctavoAndroidApp
 {
   ANativeWindow *window;
@@ -319,6 +333,13 @@ typedef struct OctavoAndroidApp
   B32 reflow_waiting_for_present;
   B32 appearance_waiting_for_present;
   B32 host_frame_waiting_for_present;
+  DocSelection selection_mutation_previous;
+  B32 selection_mutation_previous_valid;
+  B32 selection_mutation_waiting_for_present;
+  UI0U64 selection_generation;
+  UI0U64 selection_presented_generation;
+  U64 selection_failure_count;
+  S32 selection_handle_radius_px;
   OctavoAndroidSearchState search_mutation_previous;
   UI0U64 search_mutation_generation;
   UI0U64 search_mutation_presented_generation;
@@ -417,6 +438,12 @@ static B32 octavo_android_commit_structural_navigation(
   OctavoAndroidApp *app);
 static void octavo_android_format_progress_label(OctavoAndroidApp *app);
 static B32 octavo_android_abort_search_mutation(OctavoAndroidApp *app);
+static B32 octavo_android_abort_selection_mutation(OctavoAndroidApp *app);
+static void octavo_android_discard_selection(OctavoAndroidApp *app);
+static B32 octavo_android_selection_highlight_for_range(
+  const OctavoAndroidApp *app, U64 start, U64 end);
+static void octavo_android_draw_selection_handles(
+  OctavoAndroidApp *app, OctavoAndroidPixels pixels);
 
 static OctavoAndroidApp *
 octavo_android_from_handle(jlong handle)
@@ -1061,6 +1088,7 @@ octavo_android_presentation_pending(const OctavoAndroidApp *app)
      app->progress_display_waiting_for_present ||
      app->reflow_waiting_for_present ||
      app->appearance_waiting_for_present ||
+     app->selection_mutation_waiting_for_present ||
      app->search_mutation_waiting_for_present ||
      app->host_frame_waiting_for_present);
 }
@@ -2479,15 +2507,19 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
         space_extra = octavo_reader_justification_space_extra_px(
           justification, space_index);
       }
+      B32 selected = octavo_android_selection_highlight_for_range(
+        app,
+        (U64)start + row_byte_index,
+        (U64)start + segment_start + at);
       B32 active_search = 0;
-      if (octavo_android_search_highlight_for_range(
-            app,
-            (U64)start + row_byte_index,
-            (U64)start + segment_start + at,
-            &active_search))
+      if (selected ||
+          octavo_android_search_highlight_for_range(
+            app, (U64)start + row_byte_index,
+            (U64)start + segment_start + at, &active_search))
       {
         UI0Color search_color = app->reader_view_theme.colors[
-          active_search ? UI0ColorRole_Selection : UI0ColorRole_Badge];
+          selected || active_search ?
+            UI0ColorRole_Selection : UI0ColorRole_Badge];
         octavo_android_fill_rect(
           pixels,
           ui0_rect(pen_x,
@@ -2665,6 +2697,7 @@ octavo_android_initialize_reader(OctavoAndroidApp *app)
     return 0;
   }
   app->reader_initialized = 1;
+  app->selection_handle_radius_px = MAX(app->typography.text_px / 6, 2);
 
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result = epub_reader_open(
@@ -3434,6 +3467,7 @@ octavo_android_present_frame(OctavoAndroidApp *app)
       "Unable to resolve the bounded Android reader justification plan");
     return 0;
   }
+  octavo_android_draw_selection_handles(app, pixels);
   if (first_frame_timing)
   {
     text_drawn_millis = octavo_android_uptime_millis();
@@ -3470,6 +3504,13 @@ octavo_android_present_frame(OctavoAndroidApp *app)
   app->justification_evidence = justification_evidence;
   app->frame_count += 1u;
   app->host_frame_waiting_for_present = 0;
+  if (app->selection_mutation_waiting_for_present)
+  {
+    app->selection_mutation_waiting_for_present = 0;
+    app->selection_presented_generation = app->selection_generation;
+    app->selection_mutation_previous = (DocSelection){0};
+    app->selection_mutation_previous_valid = 0;
+  }
   if (app->search_mutation_waiting_for_present)
   {
     app->search_mutation_waiting_for_present = 0;
@@ -4075,6 +4116,7 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
   OctavoAndroidTypography old_typography = app->typography;
   octavo_android_invalidate_prepared_static_frame(app);
   app->typography = next_typography;
+  app->selection_handle_radius_px = MAX(app->typography.text_px / 6, 2);
   app->appearance = next_appearance;
   octavo_android_resolve_appearance_theme(app);
   app->appearance_generation += 1u;
@@ -4188,6 +4230,7 @@ Java_ro_devze_octavo_OctavoNative_hostPaused(JNIEnv *environment,
       "8vo",
       "Unable to restore the presented reader before host pause");
   }
+  octavo_android_discard_selection(app);
   app->resumed = 0;
   app->pause_count += 1u;
   app->lifecycle_generation += 1u;
@@ -4282,6 +4325,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceChanged(JNIEnv *environment,
       app->height != (int32_t)height)
   {
     octavo_android_invalidate_prepared_static_frame(app);
+    octavo_android_discard_selection(app);
   }
   app->format = (int32_t)format;
   app->width = (int32_t)width;
@@ -4312,6 +4356,7 @@ Java_ro_devze_octavo_OctavoNative_surfaceDestroyed(JNIEnv *environment,
       "8vo",
       "Unable to restore the presented reader before surface destruction");
   }
+  octavo_android_discard_selection(app);
   if (app->window)
   {
     ANativeWindow_release(app->window);
@@ -5558,6 +5603,7 @@ Java_ro_devze_octavo_OctavoNative_touch(JNIEnv *environment,
   return touch_result;
 }
 
+#include "octavo_android_port10_selection.inc"
 #include "octavo_android_port8_navigation.inc"
 #include "octavo_android_port8_navigation_state.inc"
 #include "octavo_android_port9_search.inc"

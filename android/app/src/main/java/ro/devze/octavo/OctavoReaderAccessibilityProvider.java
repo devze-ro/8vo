@@ -51,6 +51,15 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
     private static final long SEMANTIC_FLAG_FOCUSABLE = 1L << 1;
     private static final long SEMANTIC_FLAG_OFFSCREEN = 1L << 8;
     private static final int MAX_SEMANTIC_RECORDS = 384;
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_SELECT_TEXT = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_select_text, "Select text");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_COPY_SELECTED_TEXT = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_copy_selected_text, "Copy selected text");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_CLEAR_SELECTION = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_clear_selection, "Clear text selection");
 
     private static final int INVALID_VIRTUAL_ID = Integer.MIN_VALUE;
     private static final int MAX_PAGE_TEXT_CHARACTERS = 4096;
@@ -166,6 +175,15 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             return true;
         }
         if (virtualViewId == VIRTUAL_PAGE_CONTENT) {
+            if (action == R.id.octavo_action_select_text) {
+                return owner.selectTextForAccessibility();
+            }
+            if (action == R.id.octavo_action_copy_selected_text) {
+                return owner.copySelectionForAccessibility();
+            }
+            if (action == R.id.octavo_action_clear_selection) {
+                return owner.clearSelectionForAccessibility();
+            }
             if (action == AccessibilityNodeInfo.ACTION_CLICK) {
                 if (!owner.isEnabled()) {
                     return false;
@@ -229,6 +247,11 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
                              AccessibilityEvent.TYPE_VIEW_SCROLLED);
         }
         reconcileKeyboardFocus(false, INVALID_VIRTUAL_ID);
+        sendSubtreeChanged();
+    }
+
+    void onSelectionChanged() {
+        owner.invalidate();
         sendSubtreeChanged();
     }
 
@@ -419,6 +442,14 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
         if (spec.canScrollForward) {
             info.addAction(
                 AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+        }
+        if (virtualViewId == VIRTUAL_PAGE_CONTENT && spec.enabled) {
+            if (owner.hasSelectionForAccessibility()) {
+                info.addAction(ACTION_COPY_SELECTED_TEXT);
+                info.addAction(ACTION_CLEAR_SELECTION);
+            } else {
+                info.addAction(ACTION_SELECT_TEXT);
+            }
         }
         addTraversalOrder(info, virtualViewId);
         return info;

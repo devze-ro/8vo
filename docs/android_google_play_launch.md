@@ -1,10 +1,11 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and frozen first-release scope through the Android
-Port 9 search candidate. Policy links were checked on 2026-08-06 and must be
-rechecked before submission. This document authorizes no push, merge,
-signing-key operation,
-Play Console mutation, or publication.
+Status: launch-gap audit and frozen first-release scope through the API 36/API
+34-validated bounded Android Port 10 selection candidate. Its physical gate
+passes, but hands-on review makes cross-page selection a launch blocker. Policy
+links were checked on 2026-08-06 and must be rechecked before submission. This
+document authorizes no push, merge, signing-key operation, Play Console
+mutation, or publication.
 
 ## First-release scope
 
@@ -17,6 +18,9 @@ user-owned books. It includes only:
   Chapter/Location/Page/Percentage Go-to, and presentation-gated Return/Forward;
 - bounded session-local in-book search with contextual snippets, retained/total
   disclosure, direct/previous/next navigation, and page-hit emphasis;
+- Reader0-authoritative session-local single-page word selection with long press,
+  bounded handles, Android contextual Copy, selection-first system Back, and
+  virtual-page Select/Copy/Clear accessibility actions;
 - the accepted appearance choices, native reader chrome, progress-display
   choices, lifecycle/surface recovery, and successful-presentation durability;
 - the current bounded text and image presentation contract, including explicit
@@ -36,8 +40,8 @@ product content.
 
 The first release does not add:
 
-- Unicode-aware durable indexing, selection, bookmarks, highlights, notes, or
-  an annotations workspace;
+- Unicode-aware durable indexing, paragraph expansion, bookmarks,
+  highlights, notes, or an annotations workspace;
 - collections, library search, cover/thumbnail expansion, or spatial previews;
 - accounts, analytics, advertising, cloud services, synchronization, or Google
   Drive integration;
@@ -68,6 +72,11 @@ used in the listing.
   assets in [Add preview assets](https://support.google.com/googleplay/android-developer/answer/9866151?hl=en).
 - Replace or remove the engineering sample from first-run Library state and move
   Alpha/Beta fixture books used only by instrumentation out of production assets.
+- Resolve the selection boundary exposed by physical acceptance: users cannot
+  extend a selection onto another page. Implement and qualify the intended
+  same-spine and cross-spine behavior before bookmarks/highlights/notes depend on
+  the anchor contract, or remove text selection from first-release claims. The
+  current single-page wording must not imply complete platform selection parity.
 - Complete whole-app audible TalkBack/touch-exploration and hands-on transition,
   touch, keyboard/switch, compact/large viewport, and first-run review after the
   bounded polish candidate passes on the emulator. The Port 9 search-sheet
@@ -165,6 +174,36 @@ used in the listing.
   contrast smoke, and real-book snippet-context smoke also pass.
   Manual Paper, Warm dark, and High contrast review passes for the search sheet
   and active/inactive page emphasis.
+- The Port 10 bounded text-selection candidate keeps canonical ranges in
+  Reader0 and uses Android's native contextual Copy surface. The exact guards,
+  architecture audit, strict Windows build, seven public smokes, and dual-ABI
+  Android build pass. API 36 passes 5/5 focused selection tests in 25.544
+  seconds, the final ordinary matrix 95/95 in 247.619 seconds, the final
+  130%-text/reduced-motion matrix 32/32 in 43.913 seconds, and confirmed-force-
+  stop restart. Paper, Warm dark, and High Contrast selection review passes.
+  A real system-Back defect found during that review is fixed through the API
+  33+ dispatcher and covered by an actual-key regression. The crash buffer is
+  empty, and emulator font/animation settings restored exactly.
+- On the API 34 ARM64 iQOO, Port 10 passes focused selection 5/5 in 9.667
+  seconds, the correctly filtered ordinary matrix 95/95 in 204.316 seconds,
+  external confirmed-force-stop restart, and the final correctly configured
+  130%-system-text/reduced-motion matrix 32/32 in 34.958 seconds. An earlier
+  attempt used an unused global font key and is not large-text evidence; only
+  the final system-namespace run counts. Single-page long press, handles, Copy,
+  Back, and audible TalkBack Select/Copy/Clear actions pass hands-on review.
+  Cross-page selection does not work and remains a launch blocker.
+- The Port 10 device began with stored animation scales at `1.0` while vivo
+  Recents animations were still behaviorally absent. Republishing `1.0` did not
+  repair the stale runtime; restarting Launcher did. Reduced-motion cleanup
+  restored all three scales explicitly to `1.0`, restarted Launcher, and the
+  final probes rendered 47 Launcher and 74 SystemUI frames. TalkBack,
+  accessibility, notification permission, rotation, audio, system/global font,
+  animation, and secure-setting state were restored to the captured baseline;
+  the crash buffer is empty. All 26 original app files (4,751,505 bytes)
+  restored byte-exact with archive SHA-256
+  `4D97EA76087B7CF57CA5647A591FE517A2674EEA65B1239CA89B2785FA5B3688`
+  and manifest SHA-256
+  `B8AD189D8DF58419BF89C799B26E28EB3095EF9D490C9EBE0472AE5C5155A9DF`.
 - On the API 34 ARM64 iQOO, Port 9 passes focused search 5/5 in 7.787 seconds,
   the correctly selected ordinary matrix 90/90 in 194.467 seconds of
   instrumentation time, external confirmed-force-stop restart, and the

@@ -7,6 +7,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -21,6 +22,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import java.io.File;
 import java.io.IOException;
@@ -103,6 +105,11 @@ public final class OctavoActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                this::onBackPressed);
+        }
         appearanceStore = new OctavoAppearanceStore(this);
         appearance = appearanceStore.load();
         boolean appearanceResetAfterCorruption =
@@ -171,6 +178,9 @@ public final class OctavoActivity extends Activity {
             closeSearchPanel();
         } else if (navigationPanel != null) {
             closeNavigationPanel();
+        } else if (surfaceView != null
+                   && surfaceView.dismissSelectionForBack()) {
+            // Text selection is a transient reader mode and owns this Back.
         } else if (surfaceView != null
                    && surfaceView.hasNavigationPending()) {
             // A destination remains provisional until its frame is posted.

@@ -39,9 +39,33 @@ reporting an issue. Cleanup restored TalkBack off, no enabled accessibility
 service, touch exploration off, the exact original notification-permission
 state, rotation off, original music/TTS volumes, font and animation scales at
 `1.0`, and the same byte-exact 8vo app-data backup.
+
+Port 10 is the current local Reader0-authoritative text-selection and Copy
+candidate on the same dependency closure. The exact guards, architecture audit,
+strict Windows build, seven public smokes, and dual-ABI Android build pass. On
+API 36 and API 34 focused selection, ordinary, restart, actual
+130%-system-text/reduced-motion, empty-crash, and physical/visual gates pass.
+The iQOO final measurements are 5/5 focused in 9.667 seconds, 95/95 ordinary in
+204.316 seconds, and 32/32 correctly configured large-text/reduced-motion in
+34.958 seconds. Same-page long press, handles, Copy, Back, and TalkBack 17.0.1
+Select/Copy/Clear actions pass hands-on review. Cross-page selection does not
+work and is a launch blocker before annotations build on the anchor contract.
+
+The iQOO began with stored animation scales at `1.0` while Recents motion was
+still absent. Republishing the values did not help; restarting Launcher did.
+Every cleanup restored the scales explicitly, restarted Launcher, and the final
+probe rendered 47 Launcher and 74 SystemUI frames. TalkBack is off, secure
+settings match baseline exactly, audio/font/rotation/notification state is
+restored, and the crash buffer is empty. All 26 original files (4,751,505
+bytes) restored byte-exact with archive SHA-256
+`4D97EA76087B7CF57CA5647A591FE517A2674EEA65B1239CA89B2785FA5B3688`
+and manifest SHA-256
+`B8AD189D8DF58419BF89C799B26E28EB3095EF9D490C9EBE0472AE5C5155A9DF`.
+
 The candidate retains Port 7's premium appearance, semantic reflow, borderless
 host-composited chrome, first-frame coverage, and custom-reader accessibility
-bridge while adding bounded structural navigation and in-book search:
+bridge while adding bounded structural navigation, in-book search, and
+session-local text selection with Copy:
 
 - `OctavoActivity` owns Android lifecycle, the library surface, and the
   `ACTION_OPEN_DOCUMENT` picker. Port 7 also keeps settings surfaces, system
@@ -131,6 +155,13 @@ bridge while adding bounded structural navigation and in-book search:
   interprets EPUB data or derives destinations. Native query, clear, and result
   jumps retain their prior result/location/history state unless the exact
   candidate presentation succeeds.
+- `OctavoSelection` validates a versioned bounded snapshot of Reader0's active
+  `DocSelection`. Native hit testing reuses the rendered styled-row, font-
+  advance, alignment, and justification geometry, and selection mutation joins
+  the successful-presentation gate. Android owns long press, 48dp handle hit
+  regions, contextual Copy, clipboard failure, selection-first system Back,
+  and virtual-page Select/Copy/Clear actions. Java never stores EPUB offsets or
+  interprets publication text.
 - `OctavoProgressStore` owns a separate versioned, checksummed global progress-
   display record. Same-directory synchronization and atomic replacement preserve
   prior bytes on failure. The selected Chapter, Page, Location, or Percentage
@@ -220,7 +251,10 @@ living capability inventory in
 [`../docs/android_feature_parity.md`](../docs/android_feature_parity.md), and
 the bounded delivery sequence in
 [`../docs/android_roadmap.md`](../docs/android_roadmap.md). The current milestone
-contract is [`../docs/android_port8.md`](../docs/android_port8.md).
+contract is [`../docs/android_port10.md`](../docs/android_port10.md). Search and
+structural-navigation predecessor contracts are in
+[`../docs/android_port9.md`](../docs/android_port9.md) and
+[`../docs/android_port8.md`](../docs/android_port8.md).
 
 The accepted Port 7 boundary, objective closure, historical evidence, and
 remaining broader product-review items are recorded in
@@ -550,12 +584,15 @@ superseded regression evidence. Port 7 intentionally remains a bounded
 appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-selection, annotations, and synchronization remain deferred. Port 8 adds
-structural navigation; Port 9 adds bounded session-local in-book search while
-durable Unicode-aware indexing remains deferred. Spatial previews and advanced
-scrubbing also remain deferred. See
-[`../docs/android_port9.md`](../docs/android_port9.md) for the current search
-implementation and acceptance boundary,
+durable annotations, and synchronization remain deferred.
+Port 8 adds structural navigation; Port 9 adds bounded session-local in-book
+search; Port 10 adds bounded single-page word selection and Copy. Physical review
+made cross-page continuation the next launch-blocking selection slice, while
+durable Unicode-aware indexing and annotation storage remain deferred. Spatial
+previews and advanced scrubbing also remain deferred. See
+[`../docs/android_port10.md`](../docs/android_port10.md) for the current
+selection implementation and acceptance boundary,
+[`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,
 [`../docs/android_port8.md`](../docs/android_port8.md) for the navigation
 foundation,
 [`../docs/android_port7.md`](../docs/android_port7.md) for the accepted appearance

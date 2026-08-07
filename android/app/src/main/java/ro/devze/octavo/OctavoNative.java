@@ -19,6 +19,15 @@ final class OctavoNative {
     static final int NAVIGATION_UNAVAILABLE = -2;
     static final int NAVIGATION_BUSY = -3;
     static final int NAVIGATION_FAILED = -4;
+    static final int SELECTION_ACCEPTED = 1;
+    static final int SELECTION_ALREADY_PRESENTED = 2;
+    static final int SELECTION_INVALID = -1;
+    static final int SELECTION_UNAVAILABLE = -2;
+    static final int SELECTION_BUSY = -3;
+    static final int SELECTION_FAILED = -4;
+    static final int SELECTION_HANDLE_START = 1;
+    static final int SELECTION_HANDLE_END = 2;
+    static final int SELECTION_HANDLE_SHIFT = 8;
 
     private OctavoNative() {
     }
@@ -119,6 +128,15 @@ final class OctavoNative {
     static native String searchSnippet(long handle, int rowIndex);
     static native int navigateToSearchResult(long handle, int resultIndex);
     static native int moveSearchResult(long handle, int direction);
+    static native int beginSelection(long handle, float x, float y);
+    static native int beginSelectionForAccessibility(long handle);
+    static native int updateSelection(long handle,
+                                      int handleKind,
+                                      float x,
+                                      float y);
+    static native int clearSelection(long handle);
+    static native long[] selectionSnapshot(long handle);
+    static native byte[] selectedTextUtf8(long handle);
     static native long[] state(long handle);
     static native long[] accessibilitySemanticSnapshot(long handle);
     static native String accessibilitySemanticName(long handle,

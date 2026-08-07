@@ -291,6 +291,14 @@ octavo_android_cancel_pending_navigation(OctavoAndroidApp *app)
     app->progress_display_waiting_for_present = 0;
     changed = 1;
   }
+  if (app->selection_mutation_waiting_for_present)
+  {
+    changed = 1;
+    if (!octavo_android_abort_selection_mutation(app))
+    {
+      return -1;
+    }
+  }
   if (app->search_mutation_waiting_for_present)
   {
     changed = 1;
