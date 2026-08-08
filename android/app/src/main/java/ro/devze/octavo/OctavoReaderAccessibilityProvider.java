@@ -70,6 +70,21 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             new AccessibilityNodeInfo.AccessibilityAction(
                 R.id.octavo_action_extend_selection_next,
                 "Extend selection to next page");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_HIGHLIGHT_YELLOW = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_highlight_yellow, "Highlight yellow");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_HIGHLIGHT_PINK = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_highlight_pink, "Highlight pink");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_HIGHLIGHT_BLUE = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_highlight_blue, "Highlight blue");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_HIGHLIGHT_ORANGE = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_highlight_orange, "Highlight orange");
+    private static final AccessibilityNodeInfo.AccessibilityAction
+        ACTION_ADD_NOTE = new AccessibilityNodeInfo.AccessibilityAction(
+            R.id.octavo_action_add_note, "Add note");
 
     private static final int INVALID_VIRTUAL_ID = Integer.MIN_VALUE;
     private static final int MAX_PAGE_TEXT_CHARACTERS = 4096;
@@ -199,6 +214,25 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
             }
             if (action == R.id.octavo_action_extend_selection_next) {
                 return owner.extendSelectionForAccessibility(1);
+            }
+            if (action == R.id.octavo_action_highlight_yellow) {
+                return owner.highlightSelectionForAccessibility(
+                    OctavoAnnotationStore.HighlightColor.YELLOW);
+            }
+            if (action == R.id.octavo_action_highlight_pink) {
+                return owner.highlightSelectionForAccessibility(
+                    OctavoAnnotationStore.HighlightColor.PINK);
+            }
+            if (action == R.id.octavo_action_highlight_blue) {
+                return owner.highlightSelectionForAccessibility(
+                    OctavoAnnotationStore.HighlightColor.BLUE);
+            }
+            if (action == R.id.octavo_action_highlight_orange) {
+                return owner.highlightSelectionForAccessibility(
+                    OctavoAnnotationStore.HighlightColor.ORANGE);
+            }
+            if (action == R.id.octavo_action_add_note) {
+                return owner.noteSelectionForAccessibility();
             }
             if (action == AccessibilityNodeInfo.ACTION_CLICK) {
                 if (!owner.isEnabled()) {
@@ -464,6 +498,11 @@ final class OctavoReaderAccessibilityProvider extends AccessibilityNodeProvider 
                 info.addAction(ACTION_EXTEND_SELECTION_PREVIOUS);
                 info.addAction(ACTION_EXTEND_SELECTION_NEXT);
                 info.addAction(ACTION_COPY_SELECTED_TEXT);
+                info.addAction(ACTION_HIGHLIGHT_YELLOW);
+                info.addAction(ACTION_HIGHLIGHT_PINK);
+                info.addAction(ACTION_HIGHLIGHT_BLUE);
+                info.addAction(ACTION_HIGHLIGHT_ORANGE);
+                info.addAction(ACTION_ADD_NOTE);
                 info.addAction(ACTION_CLEAR_SELECTION);
             } else {
                 info.addAction(ACTION_SELECT_TEXT);

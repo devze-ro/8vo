@@ -1,8 +1,10 @@
 # Android Port 11: durable annotations and synchronization contract
 
-Status: implementation contract adopted 2026-08-07. The first slice is local
-bookmarks only. Google Drive remains disconnected until the portable record,
-persistence, and deterministic merge tests pass offline.
+Status: implementation contract adopted 2026-08-07. The accepted first slice
+is local bookmarks; the second local slice adds durable multi-color highlights;
+the third local slice adds note editing, recoverable drafts, and conflict UI.
+Google Drive remains disconnected until the portable record, persistence, and
+deterministic merge tests pass offline.
 
 ## Boundary
 
@@ -121,15 +123,16 @@ independent atomic files. 8vo does not claim a cross-file transaction.
 ## Android interaction and accessibility
 
 The reader chrome provides an explicit current-location bookmark toggle and an
-explicit Bookmarks entry point; neither workflow is gesture-only. The toggle
+explicit Annotations entry point; neither workflow is gesture-only. The toggle
 uses the last successfully presented Reader0 point. Its label, state,
 description, TalkBack announcement, and list update change only after atomic
 publication. Failure leaves the prior visual and accessible state exact.
 
-The first workspace is a bounded native Android side sheet with a heading,
-polite status/error live region, current-book bookmark count, stable ordered
-rows, Go to, Remove, and Done. Rows expose a useful section/location label and
-excerpt without making either the anchor. All controls have at least 48dp
+The workspace is a bounded native Android side sheet with a heading, polite
+status/error live region, current-book bookmark/highlight/note counts, stable
+ordered rows, Go to, Edit, Remove, and Done. Rows expose a useful section/location label,
+excerpt, and non-color-only highlight name without making any of them the
+anchor. All controls have at least 48dp
 targets, deterministic keyboard and accessibility traversal, large-text
 scrolling, focus restoration, RTL-aware placement, and a non-animated path
 under reduced motion or touch exploration. Opening and closing the sheet do not
@@ -138,8 +141,9 @@ repaginate. Back closes it before selection/history/Library behavior.
 Go to disables stale mutation/navigation controls while a Reader0 destination
 is provisional. The sheet closes only after successful presentation; failure
 keeps it open and exposes retry. Remove is durable before the row disappears.
-Lifecycle teardown flushes no optimistic state because every annotation action
-is synchronously published or rejected.
+Lifecycle teardown flushes no optimistic annotation state because every record
+action is synchronously published or rejected. Incomplete note text is instead
+synchronously autosaved to the separate local draft envelope described below.
 
 ## First local vertical slice
 
@@ -155,10 +159,94 @@ Port 11 begins with:
   failure; and
 - TalkBack, keyboard, 130% text, rotation, reduced-motion, and lifecycle tests.
 
-Highlights, note editing, conflict resolution UI, annotation search/export, and
-Drive transport follow on the same envelope; they are not simulated in this
-slice. No Google account, OAuth client, Drive scope, cloud resource, signing
-key, Play Console setting, or provider library is introduced.
+## Second local vertical slice: multi-color highlights
+
+The next slice reuses the version-1 envelope without migration:
+
+- selection creation copies the active Reader0 `DocSelection` spine/start/end
+  values and a bounded excerpt only after the selection frame is presented;
+- each new highlight receives a cryptographically random stable record ID and
+  one semantic color: `yellow` (0), `pink` (1), `blue` (2), or `orange` (3);
+- recolor preserves the record ID and exact anchor while publishing a causal
+  update; remove publishes a tombstone before the row or reader projection
+  changes;
+- the native product renderer receives a bounded, copied projection sorted by
+  record ID. For overlapping persistent highlights the lowest canonical record
+  ID wins per glyph. Transient selection wins over active search, active search
+  wins over persistent highlights, and persistent highlights win over inactive
+  search;
+- theme-specific ARGB values remain 8vo design tokens. Only semantic color IDs
+  persist; Reader0 and UI0 gain no annotation color or persistence API;
+- a store failure leaves the exact selection, floating actions, rendered page,
+  and workspace unchanged and exposes a retryable error;
+- after durable publication, the selected range is cleared and success is
+  announced only after the persistent highlight projection is successfully
+  presented. Exhausted frame retries retain the durable record, keep the
+  selection available, and report that display will retry or recover on reopen;
+  and
+- the four named color actions are available in the floating selection toolbar
+  and on the TalkBack page-content node. The workspace exposes named swatches,
+  excerpts, conflict status, navigation, recolor, and removal with large-text,
+  keyboard, RTL, reduced-motion, and lifecycle behavior matching bookmarks.
+
+Annotation search/export and Drive transport follow on the same envelope; they
+are not simulated in this slice.
+No Google account, OAuth client, Drive scope, cloud resource, signing key, Play
+Console setting, or provider library is introduced.
+
+## Third local vertical slice: notes and recoverable drafts
+
+The note slice reuses the version-1 portable envelope without migration:
+
+- Add note is a fifth named action on the floating selection toolbar and the
+  TalkBack page-content node. It copies only the successfully presented
+  Reader0 same-spine range and bounded selected-text excerpt, allocates a
+  cryptographically random stable record ID, and opens the native editor;
+- note text is nonempty when committed and is capped at 4,096 UTF-8 bytes.
+  The editor rejects only the suffix beyond that byte bound and retains exact
+  accepted Unicode text. Its multiline field uses UI0's horizontal and
+  vertical text-input inset metrics rather than platform-default padding;
+- incomplete text is local-only crash-recovery state at
+  `<files>/port11/note-draft.v1`. This 8 KiB checksummed version-1 envelope
+  contains one record ID, source-head token, book digest, exact anchor,
+  optional attachment, excerpt, and body. Every edit attempts a synchronous
+  same-directory descriptor-synchronized `ATOMIC_MOVE`; a failed autosave
+  keeps the in-memory text exact, shows Retry, and never changes the portable
+  annotation record;
+- Save first compares the draft's deterministic source-head token with the
+  record's current canonical heads. A stale editor is rejected visibly. A
+  successful put observes every current head, so explicit conflict resolution
+  collapses all displayed versions without consulting device time. Retrying a
+  put already published immediately before process death is idempotent;
+- the draft is cleared only after the portable mutation publishes. Failure
+  leaves the editor, recovered draft, prior durable record, and selection
+  available. Cancel explicitly discards the draft without mutating a record;
+- the workspace shows ordered note rows, excerpt, exact body, Go to, Edit, and
+  Remove. Every concurrent live body is separately visible with a numbered
+  `Use version` action; put/delete state is disclosed as a retained conflict;
+- removal publishes a causal tombstone before the row disappears. Note
+  navigation uses the exact Reader0 spine/start byte and the same
+  presentation-gated rollback path as bookmarks/highlights;
+- each current-book note has a bounded product-owned visual projection. Native
+  rendering places a small theme-accent page glyph immediately after the exact
+  Reader0 range end. For a range spanning the current page, the end is clamped
+  to the visible Reader0 byte boundary, matching the desktop convention. The
+  glyph neither changes text layout nor becomes an alternate anchor. Add and
+  Remove publish the durable record first, then gate selection clearing and
+  success announcement on the matching marker generation being presented;
+  exhausted presentation retries name the note-marker failure and retain the
+  durable record for reopen recovery. A marker becomes touchable only when its
+  native generation and immutable Java record projection are both presented.
+  Its centered target is at least 48dp, a completed tap opens that exact durable
+  note in the existing editor, and a different unsaved draft is retained with a
+  visible instruction instead of being overwritten; and
+- Back/Done may close the editor while retaining its durable local draft for
+  recovery. Activity recreation and process restart never manufacture a note
+  from a draft, and a draft is not portable or eligible for future Drive sync.
+
+The draft file has the same missing/future-version/quarantine rules as the
+annotation file and three bounded quarantine slots. It is deliberately a
+separate independently atomic file; 8vo claims no cross-file transaction.
 
 ## Offline gates before Drive
 
@@ -180,7 +268,119 @@ claim decision before launch.
 
 ## Current local-slice validation
 
-On 2026-08-07, the provider-neutral store and bookmark slice passed the exact
+On 2026-08-08, hands-on review of the initial third-slice candidate found two
+presentation omissions: the note field lacked internal padding and the reader
+did not show the note's attachment point. The revised candidate uses UI0's
+text-input inset metrics and a theme-safe, exact-anchor page glyph. The
+unchanged dependency and architecture guards pass, and the dual-ABI debug/test
+build is green. The user accepts the revised editor inset and exact-anchor
+marker appearance. The marker-tap follow-up passes 13/13 focused API 36 tests
+in 19.071 seconds, including discovery of the newly rendered accent pixels, a
+real down/up tap opening the exact durable note, draft rollback, marker
+add/remove evidence, restart durability, and forced frame-failure/reopen
+recovery. Its clean ordinary run passes 119/119 in 317.113 seconds. The current
+external seed/confirmed-force-stop/fresh-process driver passes in
+6.409 and 3.811 seconds and verifies the note marker's exact spine/start/end
+range. The 130% text/reduced-motion matrix passes 32/32 in 80.645 seconds, and
+fixed pagination passes 5/5 in 26.582 seconds. The emulator crash buffer is
+empty and font plus all three animation scales were restored/read back as
+`1.0`.
+
+The marker-tap candidate passes the API 34 iQOO focused gate 13/13 in 9.223
+seconds with normal motion. One ordinary diagnostic missed top chrome in its
+first window capture; that unchanged timing check passed 1/1 in isolation and
+the authoritative clean rerun passed 119/119 in 235.657 seconds. The current
+candidate also passes external restart in 1.948/1.115 seconds; the prior
+candidate passed 32/32 at 130%
+text in 75.601 seconds, and 5/5 fixed pagination in 17.714 seconds. The physical
+crash buffer is empty;
+TalkBack is off, touch exploration is `0`, rotation is `0`, and font plus every
+animation scale are `1.0`. The user accepts the marker tap opening the exact
+note in the editor. Cleanup restored the saved app APK
+`A1EE566962B3DB5C8B4CDC4564D632FEFD9C058A173F5E644B2469CBA70C2EBD`,
+test APK
+`EBBDBE0CC8E6EC487A6556826DBF29476A6C6009280034C4BCC58174BC0E354B`,
+and all 32 private files totaling 4,996,158 bytes byte-for-byte against manifest
+`91B72D0059C80C6368D3C957BE2FC63660CC155FE3B72437DDFB7A0E5264E540`.
+The protected archive remains available at SHA-256
+`4C71715451BA6C0BA68DDC9FC2C1C308E3941899858F033195F68C80EE638D94`.
+
+Earlier on 2026-08-08, the second local slice passed the unchanged exact dependency
+guard and architecture audit and compiled the final debug/test candidate for
+Android x86_64 and arm64-v8a. Its API 36 emulator gates are:
+
+- 7/7 annotation-store tests, including atomic highlight round-trip, rollback,
+  restart, and deterministic concurrent-color recovery;
+- 3/3 highlight integration tests, including named TalkBack actions, real
+  rendered Pink pixels, recolor/removal/recreation, store and frame failure
+  recovery, and a forced queued-projection drain;
+- 24/24 combined store/highlight/bookmark/selection/accessibility regression;
+- 113/113 ordinary tests in 193.044 seconds, with only the externally driven
+  process-restart probe excluded by its annotation;
+- the separate seed, confirmed force-stop/no-surviving-process, and fresh-
+  process verifier in 3.448 and 1.918 seconds, including exact Orange highlight
+  spine, UTF-8 byte range, and semantic color recovery;
+- 29/29 configuration-compatible tests in 44.325 seconds at actual 130% system
+  text with window, transition, and animator scales set to `0.0`; and
+- 5/5 fixed-pagination navigation tests in 14.909 seconds at 100% text with the
+  same reduced-motion configuration.
+
+An initial 113-test diagnostic on a degraded saved AVD runtime passed 112 tests
+and missed only the existing 1500 ms first-frame debug bound at 1721 ms. The
+unchanged accepted bookmark APK also missed that bound on the same runtime. The
+guest showed load above 30, severe swap pressure, a spinning sensor HAL, and a
+background Phone ANR. That run is rejected. A no-snapshot cold boot, ordinary
+Android background-process cleanup, and an idle 400%-CPU sample restored the
+environment; the unchanged final candidate then passed the complete 113-test
+matrix above. No production threshold was relaxed.
+
+The emulator crash buffer is empty, no 8vo or test process remains, and system
+text plus all three animation scales were explicitly restored to `1.0` and read
+back exact. No physical device was visible to `adb` or touched for this slice,
+and no Google account, Drive API, OAuth configuration, cloud resource, signing
+key, Play Console setting, commit, push, or merge was touched.
+
+The coordinated API 34 iQOO second-slice gate then passed 10/10 focused store/
+highlight tests in 7.088 seconds and a clean 113/113 ordinary matrix in 234.374
+seconds. An earlier diagnostic completed 109/113: four existing keyboard-focus,
+window-capture, clipboard, and Back timing assertions then passed 4/4 in 14.194
+seconds in isolation and in the complete clean rerun; the diagnostic is not
+acceptance evidence. The separate seed/confirmed-force-stop/fresh-process
+driver passed in 2.092 and 1.172 seconds with exact Orange highlight spine,
+UTF-8 byte range, and color recovery. At actual 130% system text, 29/29
+configuration-compatible tests passed in 66.954 seconds with normal motion
+retained. After explicit font restoration to `1.0`, 5/5 fixed-pagination tests
+passed in 17.865 seconds, again with every animation scale at `1.0`.
+
+The user accepted long-press selection, Yellow highlight creation and native
+rendering, workspace excerpt/named color, Pink recolor, Go to, removal, and
+restart behavior without a reported issue. With TalkBack 17.0.1 enabled, the
+user also accepted Select text; Yellow, Pink, Blue, and Orange highlight
+actions; the success announcement; Annotations heading/count/color/excerpt;
+all four recolor controls; Go to; Remove; and Done without a focus, wording, or
+navigation issue.
+
+Cleanup restored TalkBack off, touch exploration off, no enabled accessibility
+service, rotation off, audio baseline, font `1.0`, and all three animation
+scales explicitly `1.0`. Live transitions rendered 123 Launcher and 107
+SystemUI frames. The restored app APK SHA-256 is
+`A1EE566962B3DB5C8B4CDC4564D632FEFD9C058A173F5E644B2469CBA70C2EBD`, and
+the restored test APK SHA-256 is
+`EBBDBE0CC8E6EC487A6556826DBF29476A6C6009280034C4BCC58174BC0E354B`;
+both match pretest. All 32 captured private files totaling 4,996,158 bytes
+match pretest path, length, and content; the 26 persistent files totaling
+4,751,505 bytes reproduce archive SHA-256
+`9118B960B212FC67EDC70152314341D8EDEDE0851045335D4B11CF23D79D3699`
+and the existing canonical manifest SHA-256
+`35368BF22698B1C9AA64FB940512C414AA83EFA50B6934B7248DABC71233719B`.
+No app/test process remains. One later crash-buffer entry was attributed by UID
+to `com.myairtelapp` invoking `dmesg`, not 8vo; after it was cleared the buffer
+remained empty, and 8vo exit history contained only expected force stops. No
+Google, Drive, OAuth, cloud, signing, Play Console, commit, push, or merge
+operation was performed.
+
+For the accepted first-slice baseline on 2026-08-07, the provider-neutral store
+and bookmark slice passed the exact
 dependency guard and architecture audit, compiled for Android x86_64 and
 arm64-v8a, and passed these API 36 emulator gates:
 

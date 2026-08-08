@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-07. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-08. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -418,19 +418,43 @@ are still pending.
   remains deferred until Reader0 owns that anchor;
 - paragraph expansion, fuller Unicode segmentation,
   and durable anchors remain separate follow-up work;
-- Port 11 is the current candidate. It adds digest-keyed current-location
-  bookmarks, strict atomic local persistence, a bounded Bookmarks sheet,
+- Port 11 is the current candidate. Its accepted first slice adds digest-keyed
+  current-location bookmarks, strict atomic local persistence, and direct
+  navigation. Its second local slice adds exact same-spine selection-to-
+  highlight, Yellow/Pink/Blue/Orange semantic colors, product-owned native
+  rendering, deterministic overlap precedence, atomic recolor/removal, and a
+  bounded combined Annotations sheet. The accepted bookmark slice retains
   presentation-gated navigation, restart/re-import durability, visible recovery,
-  and exact failed-mutation rollback. Its API 36 focused, ordinary, external-
-  restart, 130%-text, reduced-motion, and empty-crash gates pass. API 34 also
+  and exact failed-mutation rollback. The second slice's API 36 gates pass 10/10
+  highlight/store focus, 24/24 combined regression, 113/113 ordinary, exact
+  Orange-highlight external restart, 29/29 at 130% text/reduced motion, 5/5
+  fixed-pagination reduced motion, empty crash, and exact settings restoration.
+  Its API 34 gate passes 10/10 focus, a clean 113/113 ordinary rerun, exact
+  Orange-highlight external restart, 29/29 at 130% text plus 5/5 at 100% text
+  with normal motion, touch review, bounded TalkBack 17.0.1 review, empty final
+  crash state, live-motion verification, and exact APK/private-data restore.
+  The accepted bookmark slice's API 34 gate also
   passes 8/8 focused, 108/108 ordinary, external restart, 26/26 at 130% text
   with normal motion, touch review, bounded TalkBack review, empty crash, live
   motion verification, and byte-exact app-data restoration;
-- the provider-neutral envelope already reserves bounded bookmark, highlight,
-  and note records plus stable actors, mutations, tombstones, causal frontiers,
-  and deterministic multi-value merge; and
-- theme-tuned multi-color highlight creation, note editing/conflict resolution,
-  and Google Drive transport follow only after the local record and merge gates.
+- the third local candidate adds exact selection-to-note, 4,096-byte native
+  editing, one independently atomic local recovery draft, create/edit/delete/
+  cancel, ordered note navigation, stale-edit rejection, and explicit recovery
+  of every concurrent causal body. The revised candidate adds UI0 text-input
+  insets and a presentation-gated, exact-Reader0-range note glyph on the reader
+  page. A generation-matched 48dp-class marker target now opens the exact
+  durable note while preserving any different draft. API 36 passes 13/13
+  focused tests with real marker-tap evidence, all 119 ordinary tests, exact
+  external-process note/range/marker recovery, 32/32 at 130% text/reduced
+  motion, 5/5 fixed-pagination reduced motion, empty crash, and exact settings
+  restoration. API 34 passes the corresponding 13/13 marker-tap focus and clean
+  119/119 ordinary rerun; prior restart, 32/32, and 5/5 gates remain green with
+  normal motion. The inset, marker appearance, and marker-tap behavior are
+  physically accepted and device cleanup is byte-exact; bounded note-workflow
+  TalkBack acceptance remains pending;
+  and
+- Google Drive transport remains blocked until the full provider-neutral
+  local annotation and merge model, including notes, passes its offline gates.
 
 ### Annotations workspace
 

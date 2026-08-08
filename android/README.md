@@ -88,31 +88,69 @@ and manifest SHA-256
 
 The Port 11 candidate retains Port 7's premium appearance, semantic reflow,
 borderless host-composited chrome, first-frame coverage, and custom-reader
-accessibility bridge plus Ports 8-10 navigation, search, and selection. It now
-begins provider-neutral durable annotations with a local bookmark slice; Google
-Drive remains disconnected:
+accessibility bridge plus Ports 8-10 navigation, search, and selection. Port 11
+now includes the accepted local bookmark slice and an emulator- and physical-
+qualified local multi-color highlight slice. The local note/draft/conflict
+slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
+34 automation. The inset, marker appearance, and marker-tap-to-editor behavior
+are physically accepted. Google Drive remains disconnected:
+
+For notes, the exact dependency and architecture guards plus the dual-ABI build
+pass. The marker-tap follow-up passes the revised API 36 13/13 focused
+annotation/draft/note tests in 19.071 seconds and all 119 ordinary tests in
+317.113 seconds. The focused flow discovers the newly rendered marker pixels,
+taps them through the real reader touch path, and verifies the exact durable
+note opens without weakening draft recovery. The separate seed/
+confirmed-force-stop/fresh-process driver recovers the exact note body,
+Reader0 range, and marker projection in 6.409 and 3.811 seconds. At actual 130%
+system text with reduced motion, 32/32 configuration-compatible tests pass in
+80.645 seconds; at 100% text, the five fixed-pagination tests pass in 26.582
+seconds. API 34 passes the marker-tap focus 13/13 in 9.223 seconds and the clean
+ordinary rerun 119/119 in 235.657 seconds; one preceding diagnostic window
+capture failure passed 1/1 in isolation. The current candidate passes external
+restart in 1.948/1.115 seconds; the prior candidate passed 32/32 at 130% text in
+75.601 seconds, and 5/5 fixed pagination in 17.714 seconds with normal motion.
+Both crash buffers are empty. Font and every animation scale are restored to
+`1.0`; the UI0 editor padding, exact-anchor marker appearance, and
+marker-tap-to-editor behavior are physically accepted. The protected baseline
+was then restored exactly: both saved APK hashes match and all 32 private files
+(4,996,158 bytes) match the pretest manifest byte-for-byte.
 
 The exact dependency guard, architecture audit, and dual-ABI Android build
-pass. On API 36, the annotation/store focus is 8/8, the ordinary matrix is
-108/108, and the separate seed/confirmed-force-stop/fresh-process restart
-driver passes with exact bookmark recovery. The configuration-compatible matrix
-passes 26/26 at actual 130% system text with animations disabled, and the five
-fixed-pagination tests pass separately at 100% text with animations disabled.
-The crash buffer is empty; font plus window, transition, and animator scales
-were restored explicitly to `1.0`.
+pass. On API 36, the highlight/store focus is 10/10, the combined annotation,
+selection, and accessibility regression is 24/24, and the clean-runtime ordinary
+matrix is 113/113 in 193.044 seconds. The separate seed/confirmed-force-stop/
+fresh-process driver recovers the exact bookmark plus Orange highlight spine,
+UTF-8 byte range, and color. The configuration-compatible matrix passes 29/29
+in 44.325 seconds at actual 130% system text with animations disabled, and the
+five fixed-pagination tests pass separately in 14.909 seconds at 100% text with
+animations disabled. The crash buffer is empty; font plus window, transition,
+and animator scales were restored explicitly to `1.0`.
 
-On the API 34 iQOO, Port 11 passes 8/8 focused tests in 5.429 seconds,
-108/108 ordinary tests in 204.294 seconds, external seed/confirmed-force-stop/
-fresh-process restart in 1.762 and 1.064 seconds, and 26/26 selected tests in
-57.182 seconds at 130% system text with normal motion retained. The user accepts
-bookmark touch behavior and TalkBack 17.0.1 exposes the toggle, state change,
-workspace count/context, Go to, Remove, and Done without a reported issue.
-Cleanup restored every captured phone setting, verified 75 live Launcher/
-Recents frames, left the crash buffer empty, and restored all 26 original app
-files (4,751,505 bytes) byte-exact. Pre/post archive SHA-256 is
+On the API 34 iQOO, the second slice passes 10/10 focused tests in 7.088
+seconds, the clean ordinary rerun 113/113 in 234.374 seconds, external seed/
+confirmed-force-stop/fresh-process restart in 2.092 and 1.172 seconds, 29/29 at
+130% system text in 66.954 seconds, and 5/5 fixed-pagination tests at 100% text
+in 17.865 seconds. Normal motion remained `1.0`/`1.0`/`1.0`. Four existing UI
+timing checks from an earlier diagnostic passed 4/4 in isolation and in the
+clean complete rerun above.
+
+The user accepts Yellow highlight creation/rendering, the combined workspace
+excerpt and named color, Pink recolor, Go to, removal, and restart behavior.
+With TalkBack 17.0.1, the user also accepts all four named selection actions,
+the success announcement, heading/count/color/excerpt, four recolor controls,
+Go to, Remove, and Done without a reported issue. Cleanup restored TalkBack
+off, normal text/motion/rotation/audio, verified 123 Launcher and 107 SystemUI
+frames, and left no app/test process. All 32 captured private files match path,
+length, and content; the 26 persistent files (4,751,505 bytes) reproduce the
+pretest archive SHA-256
 `9118B960B212FC67EDC70152314341D8EDEDE0851045335D4B11CF23D79D3699`;
 the canonical manifest SHA-256 is
 `35368BF22698B1C9AA64FB940512C414AA83EFA50B6934B7248DABC71233719B`.
+Both original APKs also match their pretest SHA-256 values. One final unrelated
+crash entry was attributed to UID 10220 (`com.myairtelapp`) invoking `dmesg`,
+not 8vo; after clearing it the buffer remained empty, while 8vo exit history
+contained only expected force stops.
 
 - `OctavoActivity` owns Android lifecycle, the library surface, and the
   `ACTION_OPEN_DOCUMENT` picker. Port 7 also keeps settings surfaces, system
@@ -218,10 +256,27 @@ the canonical manifest SHA-256 is
   stable record/mutation/tombstone identities, strict atomic publication,
   corruption/future-version recovery, and deterministic causal merge remain
   product state. Managed-book removal does not erase annotations.
+- `OctavoNoteDraftStore` owns one local-only, 8 KiB, checksummed incomplete-note
+  envelope at `<files>/port11/note-draft.v1`. It atomically autosaves exact
+  editor text for crash recovery but never becomes a portable mutation or
+  future sync input; Save/Cancel remain product actions.
 - `OctavoBookmarksPanel` is the first native Android annotation workspace. It
-  lists current-book bookmarks and returns Go to/Remove requests; persistence
-  and Reader0 presentation success remain authoritative before rows or panels
-  claim completion.
+  now presents current-book bookmark, highlight, and candidate note sections,
+  named color swatches, bounded note editing and every retained conflict body,
+  Go to/Edit/recolor/Remove requests, and bounded status/conflict context;
+  persistence and Reader0 presentation success remain authoritative before
+  rows, selections, or panels claim completion. The note field uses UI0's
+  text-input inset metrics on all appearances.
+- The native host owns a bounded copied highlight projection. It compares only
+  Reader0 spine/UTF-8 byte ranges, resolves semantic colors from product tokens,
+  and publishes projection generations through the existing frame gate.
+- The native host separately owns a bounded copied note-marker projection.
+  It positions a theme-accent page glyph after the exact Reader0 range end,
+  clamps spanning ranges to the visible page boundary, changes no text layout,
+  and presentation-gates add/remove success and selection clearing. Its
+  48dp-class native hit target is enabled only for the matching presented Java
+  record projection; a completed tap opens that durable note in the existing
+  editor without overwriting a different unsaved draft.
 - `OctavoNative` is the explicit Java/JNI boundary.
 - `octavo_android_port7_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once. The current Reader0 boundary is
@@ -642,13 +697,14 @@ superseded regression evidence. Port 7 intentionally remains a bounded
 appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-highlight/note workflows and synchronization transport remain deferred.
+annotation search/export and synchronization transport remain deferred.
 Port 8 adds structural navigation; Port 9 adds bounded session-local in-book
 search; Port 10 adds bounded word selection and Copy. Its local follow-up adds
 same-spine cross-page continuation and closes that bounded selection launch
-gate. Port 11 begins durable provider-neutral annotation storage and local
-bookmarks while Drive remains disconnected. Durable Unicode-aware indexing,
-highlight/note editing, and synchronization transport remain deferred. Spatial
+gate. Port 11 adds durable provider-neutral annotation storage, local bookmarks,
+the local multi-color highlight workflow, and the local note/recovery candidate
+while Drive remains disconnected. Durable Unicode-aware indexing, annotation
+search/export, and synchronization transport remain deferred. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port11.md`](../docs/android_port11.md) for the current
 annotation/storage/merge boundary,

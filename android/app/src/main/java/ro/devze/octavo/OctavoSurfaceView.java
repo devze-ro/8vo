@@ -21,7 +21,11 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import android.widget.Magnifier;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Collections;
+import java.util.List;
 
 final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
     private interface SelectionMagnifier {
@@ -107,7 +111,9 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         void onReaderSurfaceFailure();
         void onReaderLocationSummaryFailure();
         void onPresentationRetriesExhausted(
-            boolean appearanceStillAwaiting);
+            boolean appearanceStillAwaiting,
+            boolean highlightStillAwaiting,
+            boolean noteMarkerStillAwaiting);
         void onAppearanceRequestsSettled(OctavoAppearance appearance);
         void onReaderPresentationChanged(String progressLabel);
         void onNavigationStateChanged();
@@ -115,6 +121,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         void onProgressDisplayPresented(OctavoProgressDisplay display,
                                         long generation);
         void onNavigationRequestFailure(String message);
+        boolean onHighlightRequested(long spineIndex,
+                                     long byteStart,
+                                     long byteEnd,
+                                     OctavoAnnotationStore.HighlightColor color,
+                                     String selectedText);
+        boolean onNoteRequested(long spineIndex,
+                                long byteStart,
+                                long byteEnd,
+                                String selectedText);
+        boolean onNoteMarkerRequested(OctavoAnnotationStore.Note note);
     }
 
     private static final long APPEARANCE_COALESCE_MILLIS = 90;
@@ -127,6 +143,21 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private static final int LOCATION_WARM_MORE = 1;
     private static final int LOCATION_WARM_DEFERRED = 2;
     private static final int LOCATION_WARM_COMPLETED_REFRESH = 3;
+    private static final int MENU_HIGHLIGHT_YELLOW = 0x1101;
+    private static final int MENU_HIGHLIGHT_PINK = 0x1102;
+    private static final int MENU_HIGHLIGHT_BLUE = 0x1103;
+    private static final int MENU_HIGHLIGHT_ORANGE = 0x1104;
+    private static final int MENU_ADD_NOTE = 0x1105;
+    private static final int HIGHLIGHT_PACKET_VERSION = 1;
+    private static final int HIGHLIGHT_PACKET_HEADER_COUNT = 2;
+    private static final int HIGHLIGHT_PACKET_STRIDE = 4;
+    private static final int HIGHLIGHT_SNAPSHOT_HEADER_COUNT = 7;
+    private static final int HIGHLIGHT_CAP = 2048;
+    private static final int NOTE_MARKER_PACKET_VERSION = 1;
+    private static final int NOTE_MARKER_PACKET_HEADER_COUNT = 2;
+    private static final int NOTE_MARKER_PACKET_STRIDE = 3;
+    private static final int NOTE_MARKER_SNAPSHOT_HEADER_COUNT = 7;
+    private static final int NOTE_MARKER_CAP = 2048;
     static final int STATE_RESUMED = 0;
     static final int STATE_HAS_SURFACE = 1;
     static final int STATE_WIDTH = 2;
@@ -294,7 +325,25 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private boolean selectionActionModeSuppressClear;
     private boolean selectionClearAfterPresentation;
     private boolean selectionAnnouncementPending;
+    private long highlightGenerationAwaitingPresentation;
+    private boolean highlightClearSelectionAfterPresentation;
+    private String highlightAnnouncementAwaitingPresentation;
+    private List<OctavoAnnotationStore.Highlight> queuedHighlightProjection;
+    private boolean queuedHighlightClearSelection;
+    private String queuedHighlightAnnouncement;
+    private long noteMarkerGenerationAwaitingPresentation;
+    private boolean noteMarkerClearSelectionAfterPresentation;
+    private String noteMarkerAnnouncementAwaitingPresentation;
+    private List<OctavoAnnotationStore.Note> presentedNoteMarkerProjection =
+        Collections.emptyList();
+    private List<OctavoAnnotationStore.Note>
+        noteMarkerProjectionAwaitingPresentation;
+    private List<OctavoAnnotationStore.Note> queuedNoteMarkerProjection;
+    private boolean queuedNoteMarkerClearSelection;
+    private String queuedNoteMarkerAnnouncement;
     private boolean forceClipboardFailureForTesting;
+    private boolean noteMarkerGestureActive;
+    private int noteMarkerGestureIndex = -1;
     private boolean chromeVisible;
     private long lastNotifiedFrameCount;
     private long[] cachedNavigationState;
@@ -408,6 +457,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                       OctavoLibraryStore.Session session,
                       OctavoAppearance appearance,
                       OctavoProgressDisplay progressDisplay,
+                      List<OctavoAnnotationStore.Highlight> highlights,
+                      List<OctavoAnnotationStore.Note> notes,
                       boolean chromeVisible,
                       long readerEntryStartedMillis,
                       Listener listener) {
@@ -450,12 +501,25 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             chromeVisible,
             presentedAppearance.nativeConfig(),
             tokens.nativeUi0Colors(),
+            tokens.annotationHighlightColors(),
             typography.metrics,
             typography.alpha,
             readerEntryStartedMillis);
         if (nativeHandle == 0) {
             throw new IllegalStateException(
                 "Unable to create the 8vo native application state");
+        }
+        if (!replaceHighlights(highlights, false, null)) {
+            OctavoNative.destroy(nativeHandle);
+            nativeHandle = 0;
+            throw new IllegalStateException(
+                "Unable to install the initial highlight projection");
+        }
+        if (!replaceNoteMarkers(notes, false, null)) {
+            OctavoNative.destroy(nativeHandle);
+            nativeHandle = 0;
+            throw new IllegalStateException(
+                "Unable to install the initial note-marker projection");
         }
         initializeProgressDisplay();
 
@@ -575,6 +639,23 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 clearGestureTracking();
                 return true;
             }
+            int noteMarkerIndex = OctavoNative.noteMarkerHitTest(
+                nativeHandle,
+                event.getX(0),
+                event.getY(0),
+                selectionHandleHitRadiusPx);
+            if (noteMarkerIndex >= 0
+                && noteMarkerIndex < presentedNoteMarkerProjection.size()) {
+                activePointerId = event.getPointerId(0);
+                gestureDownX = event.getX(0);
+                gestureDownY = event.getY(0);
+                gestureCommitted = false;
+                gestureCancelled = false;
+                noteMarkerGestureActive = true;
+                noteMarkerGestureIndex = noteMarkerIndex;
+                touchCompositionGeneration = chromeCompositionGeneration;
+                return true;
+            }
             activePointerId = event.getPointerId(0);
             gestureDownX = event.getX(0);
             gestureDownY = event.getY(0);
@@ -614,6 +695,13 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             return true;
         }
         if (action == MotionEvent.ACTION_MOVE) {
+            if (noteMarkerGestureActive) {
+                if (Math.abs(x - gestureDownX) > touchSlopPx
+                    || Math.abs(y - gestureDownY) > touchSlopPx) {
+                    gestureCancelled = true;
+                }
+                return true;
+            }
             if (selectionGestureActive) {
                 selectionPointerX = x;
                 selectionPointerY = y;
@@ -661,6 +749,22 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
         if (action == MotionEvent.ACTION_UP) {
             cancelSelectionLongPress();
+            if (noteMarkerGestureActive) {
+                int markerIndex = noteMarkerGestureIndex;
+                boolean activate = !gestureCancelled
+                    && markerIndex >= 0
+                    && markerIndex == OctavoNative.noteMarkerHitTest(
+                        nativeHandle,
+                        x,
+                        y,
+                        selectionHandleHitRadiusPx)
+                    && markerIndex < presentedNoteMarkerProjection.size();
+                OctavoAnnotationStore.Note note = activate
+                    ? presentedNoteMarkerProjection.get(markerIndex) : null;
+                clearGestureTracking();
+                return note != null && listener != null
+                    && listener.onNoteMarkerRequested(note);
+            }
             if (selectionGestureActive) {
                 selectionGestureActive = false;
                 clearGestureTracking();
@@ -1085,6 +1189,16 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                         mode.setTitle("Text selected");
                         menu.add(Menu.NONE, android.R.id.copy, Menu.NONE, "Copy")
                             .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+                        addHighlightAction(
+                            menu, MENU_HIGHLIGHT_YELLOW, "Highlight yellow");
+                        addHighlightAction(
+                            menu, MENU_HIGHLIGHT_PINK, "Highlight pink");
+                        addHighlightAction(
+                            menu, MENU_HIGHLIGHT_BLUE, "Highlight blue");
+                        addHighlightAction(
+                            menu, MENU_HIGHLIGHT_ORANGE, "Highlight orange");
+                        menu.add(Menu.NONE, MENU_ADD_NOTE, Menu.NONE, "Add note")
+                            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
                         return true;
                     }
 
@@ -1096,8 +1210,19 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                     @Override
                     public boolean onActionItemClicked(ActionMode mode,
                                                        MenuItem item) {
-                        return item.getItemId() == android.R.id.copy
-                            && copySelectionToClipboard();
+                        if (item.getItemId() == android.R.id.copy) {
+                            return copySelectionToClipboard();
+                        }
+                        if (item.getItemId() == MENU_ADD_NOTE) {
+                            boolean opened = requestNote();
+                            if (opened) {
+                                finishSelectionActionMode(true);
+                            }
+                            return opened;
+                        }
+                        OctavoAnnotationStore.HighlightColor color =
+                            highlightColorForMenuItem(item.getItemId());
+                        return color != null && requestHighlight(color);
                     }
 
                     @Override
@@ -1119,7 +1244,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
         if (selectionAnnouncementPending) {
             selectionAnnouncementPending = false;
-            announceForAccessibility("Text selected. Copy action available.");
+            announceForAccessibility(
+                "Text selected. Copy, highlight, and add note actions available.");
         }
         if (selectionExtensionAnnouncementDirection != 0) {
             int direction = selectionExtensionAnnouncementDirection;
@@ -1129,6 +1255,420 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 : "Selection extended to the previous page.");
         }
         accessibilityProvider.onSelectionChanged();
+    }
+
+    private static void addHighlightAction(Menu menu,
+                                           int itemId,
+                                           String label) {
+        menu.add(Menu.NONE, itemId, Menu.NONE, label)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
+    }
+
+    private static OctavoAnnotationStore.HighlightColor
+        highlightColorForMenuItem(int itemId) {
+        if (itemId == MENU_HIGHLIGHT_YELLOW) {
+            return OctavoAnnotationStore.HighlightColor.YELLOW;
+        }
+        if (itemId == MENU_HIGHLIGHT_PINK) {
+            return OctavoAnnotationStore.HighlightColor.PINK;
+        }
+        if (itemId == MENU_HIGHLIGHT_BLUE) {
+            return OctavoAnnotationStore.HighlightColor.BLUE;
+        }
+        if (itemId == MENU_HIGHLIGHT_ORANGE) {
+            return OctavoAnnotationStore.HighlightColor.ORANGE;
+        }
+        return null;
+    }
+
+    private boolean requestHighlight(
+        OctavoAnnotationStore.HighlightColor color) {
+        if (nativeHandle == 0 || color == null || listener == null) {
+            return false;
+        }
+        if (highlightGenerationAwaitingPresentation != 0
+            || queuedHighlightProjection != null) {
+            notifySelectionFailure(
+                "Wait for the current highlight to appear before adding another.");
+            return false;
+        }
+        OctavoSelection selection = selectionSnapshot();
+        long[] range = OctavoNative.selectedRange(nativeHandle);
+        byte[] utf8 = OctavoNative.selectedTextUtf8(nativeHandle);
+        if (selection == null || !selection.active || selection.pending
+            || range == null || range.length != 5
+            || range[0] != 1 || range[1] != 5
+            || range[2] < 0 || range[2] > 0xffffffffL
+            || range[3] < 0 || range[4] <= range[3]
+            || range[3] != selection.startByte
+            || range[4] != selection.endByte
+            || utf8 == null || utf8.length == 0) {
+            notifySelectionFailure(
+                "The selected range is unavailable for highlighting.");
+            return false;
+        }
+        String selectedText = new String(utf8, StandardCharsets.UTF_8);
+        return listener.onHighlightRequested(
+            range[2], range[3], range[4], color, selectedText);
+    }
+
+    private boolean requestNote() {
+        if (nativeHandle == 0 || listener == null) {
+            return false;
+        }
+        if (noteMarkerGenerationAwaitingPresentation != 0
+            || queuedNoteMarkerProjection != null) {
+            notifySelectionFailure(
+                "Wait for the current note marker to appear before adding another.");
+            return false;
+        }
+        OctavoSelection selection = selectionSnapshot();
+        long[] range = OctavoNative.selectedRange(nativeHandle);
+        byte[] utf8 = OctavoNative.selectedTextUtf8(nativeHandle);
+        if (selection == null || !selection.active || selection.pending
+            || range == null || range.length != 5
+            || range[0] != 1 || range[1] != 5
+            || range[2] < 0 || range[2] > 0xffffffffL
+            || range[3] < 0 || range[4] <= range[3]
+            || range[3] != selection.startByte
+            || range[4] != selection.endByte
+            || utf8 == null || utf8.length == 0) {
+            notifySelectionFailure(
+                "The selected range is unavailable for a note.");
+            return false;
+        }
+        return listener.onNoteRequested(
+            range[2], range[3], range[4],
+            new String(utf8, StandardCharsets.UTF_8));
+    }
+
+    boolean replaceHighlights(
+        List<OctavoAnnotationStore.Highlight> highlights,
+        boolean clearSelectionAfterPresentation,
+        String announcementAfterPresentation) {
+        List<OctavoAnnotationStore.Highlight> projection =
+            copiedHighlightProjection(highlights);
+        if (projection == null || nativeHandle == 0) {
+            return false;
+        }
+        int result = OctavoNative.replaceHighlights(
+            nativeHandle, highlightPacket(projection));
+        if (result == OctavoNative.HIGHLIGHT_BUSY) {
+            queuedHighlightProjection = projection;
+            queuedHighlightClearSelection = clearSelectionAfterPresentation;
+            queuedHighlightAnnouncement = announcementAfterPresentation;
+            requestPendingNativePresentation();
+            return true;
+        }
+        return finishHighlightProjectionRequest(
+            result,
+            clearSelectionAfterPresentation,
+            announcementAfterPresentation);
+    }
+
+    boolean replaceNoteMarkers(
+        List<OctavoAnnotationStore.Note> notes,
+        boolean clearSelectionAfterPresentation,
+        String announcementAfterPresentation) {
+        List<OctavoAnnotationStore.Note> projection =
+            copiedNoteMarkerProjection(notes);
+        if (projection == null || nativeHandle == 0) {
+            return false;
+        }
+        int result = OctavoNative.replaceNoteMarkers(
+            nativeHandle, noteMarkerPacket(projection));
+        if (result == OctavoNative.NOTE_MARKER_BUSY) {
+            queuedNoteMarkerProjection = projection;
+            queuedNoteMarkerClearSelection =
+                clearSelectionAfterPresentation;
+            queuedNoteMarkerAnnouncement = announcementAfterPresentation;
+            requestPendingNativePresentation();
+            return true;
+        }
+        return finishNoteMarkerProjectionRequest(
+            result,
+            projection,
+            clearSelectionAfterPresentation,
+            announcementAfterPresentation);
+    }
+
+    private boolean finishNoteMarkerProjectionRequest(
+        int result,
+        List<OctavoAnnotationStore.Note> projection,
+        boolean clearSelectionAfterPresentation,
+        String announcementAfterPresentation) {
+        if (result == OctavoNative.NOTE_MARKER_ALREADY_PRESENTED) {
+            presentedNoteMarkerProjection = projection;
+            if (clearSelectionAfterPresentation) {
+                requestSelectionClear(true);
+            }
+            if (announcementAfterPresentation != null) {
+                announceForAccessibility(announcementAfterPresentation);
+            }
+            return true;
+        }
+        if (result != OctavoNative.NOTE_MARKER_ACCEPTED) {
+            return false;
+        }
+        long[] snapshot = OctavoNative.noteMarkerSnapshot(nativeHandle);
+        if (!validNoteMarkerSnapshot(snapshot)
+            || snapshot[3] <= snapshot[4]) {
+            return false;
+        }
+        noteMarkerGenerationAwaitingPresentation = snapshot[3];
+        noteMarkerProjectionAwaitingPresentation = projection;
+        noteMarkerClearSelectionAfterPresentation =
+            clearSelectionAfterPresentation;
+        noteMarkerAnnouncementAwaitingPresentation =
+            announcementAfterPresentation;
+        resetPresentationRetries();
+        requestNativePresentation();
+        return true;
+    }
+
+    private void drainQueuedNoteMarkerProjection() {
+        List<OctavoAnnotationStore.Note> projection =
+            queuedNoteMarkerProjection;
+        if (projection == null || nativeHandle == 0
+            || noteMarkerGenerationAwaitingPresentation != 0) {
+            return;
+        }
+        int result = OctavoNative.replaceNoteMarkers(
+            nativeHandle, noteMarkerPacket(projection));
+        if (result == OctavoNative.NOTE_MARKER_BUSY) {
+            requestPendingNativePresentation();
+            return;
+        }
+        boolean clear = queuedNoteMarkerClearSelection;
+        String announcement = queuedNoteMarkerAnnouncement;
+        queuedNoteMarkerProjection = null;
+        queuedNoteMarkerClearSelection = false;
+        queuedNoteMarkerAnnouncement = null;
+        if (!finishNoteMarkerProjectionRequest(
+                result, projection, clear, announcement)
+            && listener != null) {
+            listener.onNavigationRequestFailure(
+                "Note saved, but its marker is unavailable. "
+                + "Reopen the book to retry.");
+        }
+    }
+
+    private void reconcileNoteMarkerPresentation() {
+        if (nativeHandle == 0
+            || noteMarkerGenerationAwaitingPresentation == 0) {
+            return;
+        }
+        long[] snapshot = OctavoNative.noteMarkerSnapshot(nativeHandle);
+        if (!validNoteMarkerSnapshot(snapshot)
+            || snapshot[4] < noteMarkerGenerationAwaitingPresentation) {
+            return;
+        }
+        boolean clear = noteMarkerClearSelectionAfterPresentation;
+        String announcement = noteMarkerAnnouncementAwaitingPresentation;
+        if (noteMarkerProjectionAwaitingPresentation != null) {
+            presentedNoteMarkerProjection =
+                noteMarkerProjectionAwaitingPresentation;
+        }
+        noteMarkerGenerationAwaitingPresentation = 0;
+        noteMarkerProjectionAwaitingPresentation = null;
+        noteMarkerClearSelectionAfterPresentation = false;
+        noteMarkerAnnouncementAwaitingPresentation = null;
+        if (clear) {
+            requestSelectionClear(true);
+        }
+        if (announcement != null) {
+            announceForAccessibility(announcement);
+        }
+    }
+
+    private boolean finishHighlightProjectionRequest(
+        int result,
+        boolean clearSelectionAfterPresentation,
+        String announcementAfterPresentation) {
+        if (result == OctavoNative.HIGHLIGHT_ALREADY_PRESENTED) {
+            if (clearSelectionAfterPresentation) {
+                requestSelectionClear(true);
+            }
+            if (announcementAfterPresentation != null) {
+                announceForAccessibility(announcementAfterPresentation);
+            }
+            return true;
+        }
+        if (result != OctavoNative.HIGHLIGHT_ACCEPTED) {
+            return false;
+        }
+        long[] snapshot = OctavoNative.highlightSnapshot(nativeHandle);
+        if (!validHighlightSnapshot(snapshot)
+            || snapshot[3] <= snapshot[4]) {
+            return false;
+        }
+        highlightGenerationAwaitingPresentation = snapshot[3];
+        highlightClearSelectionAfterPresentation =
+            clearSelectionAfterPresentation;
+        highlightAnnouncementAwaitingPresentation =
+            announcementAfterPresentation;
+        resetPresentationRetries();
+        requestNativePresentation();
+        return true;
+    }
+
+    private void drainQueuedHighlightProjection() {
+        List<OctavoAnnotationStore.Highlight> projection =
+            queuedHighlightProjection;
+        if (projection == null || nativeHandle == 0
+            || highlightGenerationAwaitingPresentation != 0) {
+            return;
+        }
+        int result = OctavoNative.replaceHighlights(
+            nativeHandle, highlightPacket(projection));
+        if (result == OctavoNative.HIGHLIGHT_BUSY) {
+            requestPendingNativePresentation();
+            return;
+        }
+        boolean clear = queuedHighlightClearSelection;
+        String announcement = queuedHighlightAnnouncement;
+        queuedHighlightProjection = null;
+        queuedHighlightClearSelection = false;
+        queuedHighlightAnnouncement = null;
+        if (!finishHighlightProjectionRequest(result, clear, announcement)) {
+            if (listener != null) {
+                listener.onNavigationRequestFailure(
+                    "Highlight saved, but its display is unavailable. "
+                    + "Reopen the book to retry.");
+            }
+        }
+    }
+
+    private void reconcileHighlightPresentation() {
+        if (nativeHandle == 0
+            || highlightGenerationAwaitingPresentation == 0) {
+            return;
+        }
+        long[] snapshot = OctavoNative.highlightSnapshot(nativeHandle);
+        if (!validHighlightSnapshot(snapshot)
+            || snapshot[4] < highlightGenerationAwaitingPresentation) {
+            return;
+        }
+        boolean clear = highlightClearSelectionAfterPresentation;
+        String announcement = highlightAnnouncementAwaitingPresentation;
+        highlightGenerationAwaitingPresentation = 0;
+        highlightClearSelectionAfterPresentation = false;
+        highlightAnnouncementAwaitingPresentation = null;
+        if (clear) {
+            requestSelectionClear(true);
+        }
+        if (announcement != null) {
+            announceForAccessibility(announcement);
+        }
+    }
+
+    private static List<OctavoAnnotationStore.Highlight>
+        copiedHighlightProjection(
+            List<OctavoAnnotationStore.Highlight> highlights) {
+        ArrayList<OctavoAnnotationStore.Highlight> copy =
+            new ArrayList<>();
+        if (highlights != null) {
+            if (highlights.size() > HIGHLIGHT_CAP) {
+                return null;
+            }
+            for (OctavoAnnotationStore.Highlight highlight : highlights) {
+                if (highlight == null || highlight.recordId == null
+                    || highlight.color == null || highlight.spineIndex < 0
+                    || highlight.spineIndex > 0xffffffffL
+                    || highlight.byteStart < 0
+                    || highlight.byteEnd <= highlight.byteStart) {
+                    return null;
+                }
+                copy.add(highlight);
+            }
+        }
+        copy.sort(Comparator.comparing(highlight -> highlight.recordId));
+        return Collections.unmodifiableList(copy);
+    }
+
+    private static long[] highlightPacket(
+        List<OctavoAnnotationStore.Highlight> highlights) {
+        long[] packet = new long[HIGHLIGHT_PACKET_HEADER_COUNT
+            + highlights.size() * HIGHLIGHT_PACKET_STRIDE];
+        packet[0] = HIGHLIGHT_PACKET_VERSION;
+        packet[1] = highlights.size();
+        for (int index = 0; index < highlights.size(); ++index) {
+            OctavoAnnotationStore.Highlight highlight = highlights.get(index);
+            int at = HIGHLIGHT_PACKET_HEADER_COUNT
+                + index * HIGHLIGHT_PACKET_STRIDE;
+            packet[at] = highlight.spineIndex;
+            packet[at + 1] = highlight.byteStart;
+            packet[at + 2] = highlight.byteEnd;
+            packet[at + 3] = highlight.color.wireId;
+        }
+        return packet;
+    }
+
+    private static boolean validHighlightSnapshot(long[] snapshot) {
+        return snapshot != null
+            && snapshot.length >= HIGHLIGHT_SNAPSHOT_HEADER_COUNT
+            && snapshot[0] == HIGHLIGHT_PACKET_VERSION
+            && snapshot[1] == snapshot.length
+            && snapshot[2] >= 0 && snapshot[2] <= HIGHLIGHT_CAP
+            && snapshot[3] >= 0 && snapshot[4] >= 0
+            && snapshot[4] <= snapshot[3]
+            && (snapshot[5] == 0 || snapshot[5] == 1)
+            && snapshot[6] == HIGHLIGHT_PACKET_STRIDE
+            && snapshot.length == HIGHLIGHT_SNAPSHOT_HEADER_COUNT
+                + snapshot[2] * HIGHLIGHT_PACKET_STRIDE;
+    }
+
+    private static List<OctavoAnnotationStore.Note>
+        copiedNoteMarkerProjection(List<OctavoAnnotationStore.Note> notes) {
+        ArrayList<OctavoAnnotationStore.Note> copy = new ArrayList<>();
+        if (notes != null) {
+            if (notes.size() > NOTE_MARKER_CAP) {
+                return null;
+            }
+            for (OctavoAnnotationStore.Note note : notes) {
+                if (note == null || note.recordId == null
+                    || note.spineIndex < 0
+                    || note.spineIndex > 0xffffffffL
+                    || note.byteStart < 0
+                    || note.byteEnd < note.byteStart) {
+                    return null;
+                }
+                copy.add(note);
+            }
+        }
+        copy.sort(Comparator.comparing(note -> note.recordId));
+        return Collections.unmodifiableList(copy);
+    }
+
+    private static long[] noteMarkerPacket(
+        List<OctavoAnnotationStore.Note> notes) {
+        long[] packet = new long[NOTE_MARKER_PACKET_HEADER_COUNT
+            + notes.size() * NOTE_MARKER_PACKET_STRIDE];
+        packet[0] = NOTE_MARKER_PACKET_VERSION;
+        packet[1] = notes.size();
+        for (int index = 0; index < notes.size(); ++index) {
+            OctavoAnnotationStore.Note note = notes.get(index);
+            int at = NOTE_MARKER_PACKET_HEADER_COUNT
+                + index * NOTE_MARKER_PACKET_STRIDE;
+            packet[at] = note.spineIndex;
+            packet[at + 1] = note.byteStart;
+            packet[at + 2] = note.byteEnd;
+        }
+        return packet;
+    }
+
+    private static boolean validNoteMarkerSnapshot(long[] snapshot) {
+        return snapshot != null
+            && snapshot.length >= NOTE_MARKER_SNAPSHOT_HEADER_COUNT
+            && snapshot[0] == NOTE_MARKER_PACKET_VERSION
+            && snapshot[1] == snapshot.length
+            && snapshot[2] >= 0 && snapshot[2] <= NOTE_MARKER_CAP
+            && snapshot[3] >= 0 && snapshot[4] >= 0
+            && snapshot[4] <= snapshot[3]
+            && (snapshot[5] == 0 || snapshot[5] == 1)
+            && snapshot[6] == NOTE_MARKER_PACKET_STRIDE
+            && snapshot.length == NOTE_MARKER_SNAPSHOT_HEADER_COUNT
+                + snapshot[2] * NOTE_MARKER_PACKET_STRIDE;
     }
 
     private void finishSelectionActionMode(boolean suppressClear) {
@@ -1228,6 +1768,8 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         activePointerId = MotionEvent.INVALID_POINTER_ID;
         gestureCommitted = false;
         gestureCancelled = false;
+        noteMarkerGestureActive = false;
+        noteMarkerGestureIndex = -1;
         selectionGestureActive = false;
         selectionHandleKind = 0;
         selectionPointerX = 0.0f;
@@ -1840,6 +2382,20 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         OctavoSelection selection = selectionSnapshot();
         boolean selectionStillAwaiting =
             selection != null && selection.pending;
+        long[] highlight = nativeHandle == 0
+            ? null : OctavoNative.highlightSnapshot(nativeHandle);
+        boolean highlightStillAwaiting =
+            queuedHighlightProjection != null
+            || (validHighlightSnapshot(highlight)
+                && highlight[5] != 0
+                && highlight[3] != highlight[4]);
+        long[] noteMarkers = nativeHandle == 0
+            ? null : OctavoNative.noteMarkerSnapshot(nativeHandle);
+        boolean noteMarkerStillAwaiting =
+            queuedNoteMarkerProjection != null
+            || (validNoteMarkerSnapshot(noteMarkers)
+                && noteMarkers[5] != 0
+                && noteMarkers[3] != noteMarkers[4]);
         int navigationCancellation = 0;
         if (navigationStillAwaiting || searchMutationStillAwaiting
             || selectionStillAwaiting) {
@@ -1873,7 +2429,9 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 && !appearanceStillAwaiting;
         if (listener != null && !navigationOwnsFailure) {
             listener.onPresentationRetriesExhausted(
-                appearanceStillAwaiting);
+                appearanceStillAwaiting,
+                highlightStillAwaiting,
+                noteMarkerStillAwaiting);
         }
         if (navigationOwnsFailure) {
             notifyNavigationRequestFailure(
@@ -1951,6 +2509,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 nativeHandle,
                 candidate.nativeConfig(),
                 tokens.nativeUi0Colors(),
+                tokens.annotationHighlightColors(),
                 typography.metrics,
                 typography.alpha);
         } catch (RuntimeException exception) {
@@ -2039,6 +2598,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         lastNotifiedFrameCount = frameCount;
         resetPresentationRetries();
         capturePresentedPosition();
+        reconcileHighlightPresentation();
+        drainQueuedHighlightProjection();
+        reconcileNoteMarkerPresentation();
+        drainQueuedNoteMarkerProjection();
         syncSelectionUi();
         if (selectionGestureActive) {
             /*
@@ -2340,6 +2903,35 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return copySelectionToClipboard();
     }
 
+    boolean highlightSelectionForAccessibility(
+        OctavoAnnotationStore.HighlightColor color) {
+        return requestHighlight(color);
+    }
+
+    boolean noteSelectionForAccessibility() {
+        boolean opened = requestNote();
+        if (opened) {
+            finishSelectionActionMode(true);
+        }
+        return opened;
+    }
+
+    boolean clearSelectionAfterDurableNote() {
+        OctavoSelection selection = selectionSnapshot();
+        if (selection == null || !selection.active) {
+            return true;
+        }
+        finishSelectionActionMode(true);
+        if (!requestSelectionClear(false)) {
+            selectionClearAfterPresentation = selection.pending;
+            if (!selection.pending) {
+                syncSelectionUi();
+            }
+            return selection.pending;
+        }
+        return true;
+    }
+
     boolean extendSelectionForAccessibility(int direction) {
         OctavoSelection selection = selectionSnapshot();
         if (selection == null || !selection.active || selection.pending
@@ -2464,6 +3056,21 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         byte[] utf8 = OctavoNative.selectedTextUtf8(nativeHandle);
         return utf8 == null ? null
             : new String(utf8, StandardCharsets.UTF_8);
+    }
+
+    long[] selectedRangeForTesting() {
+        return nativeHandle == 0
+            ? null : OctavoNative.selectedRange(nativeHandle);
+    }
+
+    long[] highlightSnapshotForTesting() {
+        return nativeHandle == 0
+            ? null : OctavoNative.highlightSnapshot(nativeHandle);
+    }
+
+    long[] noteMarkerSnapshotForTesting() {
+        return nativeHandle == 0
+            ? null : OctavoNative.noteMarkerSnapshot(nativeHandle);
     }
 
     void forceClipboardFailureForTesting(boolean forced) {
@@ -2642,6 +3249,10 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             resetPresentationRetries();
             requestedAppearance = null;
             nativeAppearanceAwaitingPresentation = null;
+            queuedHighlightProjection = null;
+            queuedHighlightAnnouncement = null;
+            highlightAnnouncementAwaitingPresentation = null;
+            highlightGenerationAwaitingPresentation = 0;
             accessibilityProvider.clearAccessibilityState();
             getHolder().removeCallback(this);
             setOnApplyWindowInsetsListener(null);

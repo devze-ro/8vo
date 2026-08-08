@@ -209,8 +209,52 @@ CRC32-protected, descriptor-synchronized, and replaced with a same-directory
 `ATOMIC_MOVE`; publication failure preserves both prior bytes and prior
 in-memory state. Malformed bytes must be quarantined atomically before an empty
 store becomes writable, while an unsupported future version remains preserved
-and blocks mutation. Managed-book removal does not imply local annotation
-deletion, so byte-identical re-import reconnects the same digest.
+ and blocks mutation. Managed-book removal does not imply local annotation
+ deletion, so byte-identical re-import reconnects the same digest.
+
+The Port 11 Android highlight projection remains product-owned. Java copies a
+bounded record-ID-sorted list of Reader0 spine/UTF-8 byte ranges and four
+semantic color IDs across JNI; native code does not reinterpret the anchors.
+Theme-specific ARGB values live in `OctavoDesignTokens`, not the portable file
+or UI0. Per glyph, transient selection precedes active search, which precedes
+the lowest-record-ID persistent highlight, which precedes inactive search.
+Durable publication precedes projection. A selected range clears only after the
+new projection's generation is successfully presented; failed store writes keep
+the prior pixels and selection exact, while exhausted frame retries keep the
+durable record for retry/reopen recovery. If a second durable projection arrives
+while one is pending, Java retains one copied latest projection and drains it
+immediately after the current generation is reconciled, so it cannot depend on
+an unrelated later frame.
+
+The Port 11 note editor remains an 8vo-owned native Android workflow. Portable
+note puts use the same provider-neutral envelope and a deterministic token of
+the current causal heads; stale edits fail rather than silently resolving an
+unseen merge. The workspace exposes every concurrent live body and resolution
+publishes one put that observes all displayed heads. Incomplete editor text is
+not a portable mutation: one bounded checksummed local draft lives at
+`<files>/port11/note-draft.v1`, is atomically replaced after each accepted edit,
+and is cleared only after Save or explicit Cancel. Draft write failure retains
+the exact in-memory text and an explicit Retry action. UI0 supplies native
+Android input/panel roles only; 8vo owns draft persistence, note actions,
+conflict policy, lifecycle, and TalkBack labels.
+
+Reader-page note markers are also 8vo-owned projection state. A separate
+versioned, bounded Java/JNI packet carries only current-book Reader0 spine and
+UTF-8 byte point/ranges; it does not serialize pixels, parse EPUB content, or
+change the portable record. Android computes the visible end-offset with the
+same clamp-to-page convention as Reader0's public frame note-marker contract,
+but keeps the projection product-owned because Android notes may stand alone
+instead of carrying that shared contract's `highlight_id`. Native row
+measurement uses Reader0 styled rows and the existing justification plan, then
+overlays a UI0 Accent/Surface page glyph without changing pagination. Marker
+generation, successful-presentation gating, one-latest queued projection,
+visible failure, and reopen recovery mirror the accepted highlight path. The
+same computed icon geometry supplies a bounded 48dp-class native hit target,
+but hit testing is disabled while any presentation is provisional. Java maps a
+successful hit index only through the immutable note projection paired with the
+presented native generation; 8vo then re-resolves the stable record ID from its
+durable store before opening the product-owned editor. Existing drafts are
+never replaced implicitly.
 
 Android stores exactly one global appearance in
 `<files>/port7/appearance.v1`, separately from the Port 6 catalog and per-book
@@ -439,10 +483,11 @@ clears selection. Copy reads only Reader0-validated active-spine bytes and
 remains bounded to the visible-frame cap.
 
 Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
-cross-spine selection, highlight/note editing and conflict UI, per-book
+cross-spine selection, annotation search/export, per-book
 appearances, embedded fonts, complete publication accessibility, full Unicode
 shaping, and synchronization transport remain deferred. Port 11 begins the
-local bookmark/storage/merge implementation without connecting Drive. The
+local bookmark, multi-color highlight, and note/storage/merge implementation
+without connecting Drive. The
 current bounded contracts are in [`android_port11.md`](android_port11.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),

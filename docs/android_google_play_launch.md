@@ -1,9 +1,12 @@
 # Android Google Play launch contract
 
 Status: launch-gap audit and revised first-release scope as of 2026-08-07. The
-merged API 36/API 34 Port 10 selection baseline is accepted. Durable bookmarks,
-highlights, notes, Google Drive synchronization, and the remaining bounded UI
-polish are now required launch gates and are not yet implemented.
+merged API 36/API 34 Port 10 selection baseline is accepted. Port 11's local
+bookmarks and multi-color highlights are accepted, and the local note/draft/
+conflict slice passes API 36/API 34 automation and physical touch acceptance;
+its bounded TalkBack review remains. Google Drive synchronization and the
+remaining bounded UI polish are still required launch gates and are not yet
+implemented.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.

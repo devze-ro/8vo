@@ -30,6 +30,16 @@ final class OctavoNative {
     static final int SELECTION_HANDLE_START = 1;
     static final int SELECTION_HANDLE_END = 2;
     static final int SELECTION_HANDLE_SHIFT = 8;
+    static final int HIGHLIGHT_ACCEPTED = 1;
+    static final int HIGHLIGHT_ALREADY_PRESENTED = 2;
+    static final int HIGHLIGHT_INVALID = -1;
+    static final int HIGHLIGHT_BUSY = -3;
+    static final int HIGHLIGHT_FAILED = -4;
+    static final int NOTE_MARKER_ACCEPTED = 1;
+    static final int NOTE_MARKER_ALREADY_PRESENTED = 2;
+    static final int NOTE_MARKER_INVALID = -1;
+    static final int NOTE_MARKER_BUSY = -3;
+    static final int NOTE_MARKER_FAILED = -4;
 
     private OctavoNative() {
     }
@@ -51,12 +61,14 @@ final class OctavoNative {
                               boolean chromeVisible,
                               int[] appearanceConfig,
                               int[] appearanceColors,
+                              int[] highlightColors,
                               int[] typographyMetrics,
                               byte[] typographyAlpha,
                               long readerEntryStartedMillis);
     static native int applyAppearance(long handle,
                                       int[] appearanceConfig,
                                       int[] appearanceColors,
+                                      int[] highlightColors,
                                       int[] typographyMetrics,
                                       byte[] typographyAlpha);
     static native void destroy(long handle);
@@ -146,6 +158,15 @@ final class OctavoNative {
     static native int clearSelection(long handle);
     static native long[] selectionSnapshot(long handle);
     static native byte[] selectedTextUtf8(long handle);
+    static native long[] selectedRange(long handle);
+    static native int replaceHighlights(long handle, long[] packet);
+    static native long[] highlightSnapshot(long handle);
+    static native int replaceNoteMarkers(long handle, long[] packet);
+    static native long[] noteMarkerSnapshot(long handle);
+    static native int noteMarkerHitTest(long handle,
+                                        float x,
+                                        float y,
+                                        float minimumTouchRadiusPx);
     static native long[] state(long handle);
     static native long[] accessibilitySemanticSnapshot(long handle);
     static native String accessibilitySemanticName(long handle,

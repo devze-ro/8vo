@@ -1278,3 +1278,34 @@ Java_ro_devze_octavo_OctavoNative_selectedTextUtf8(
                     selection.text_byte_start));
   return result;
 }
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_selectedRange(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || app->selection_mutation_waiting_for_present ||
+      !app->reader.has_active_selection)
+  {
+    return 0;
+  }
+  DocSelection selection = app->reader.active_selection;
+  if (selection.text_byte_end <= selection.text_byte_start)
+  {
+    return 0;
+  }
+  jlong values[5] = {
+    1,
+    5,
+    (jlong)selection.spine_index,
+    (jlong)selection.text_byte_start,
+    (jlong)selection.text_byte_end,
+  };
+  jlongArray result = (*environment)->NewLongArray(environment, 5);
+  if (!result) { return 0; }
+  (*environment)->SetLongArrayRegion(environment, result, 0, 5, values);
+  return result;
+}

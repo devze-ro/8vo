@@ -47,6 +47,15 @@
 #define OCTAVO_ANDROID_UI0_SNAPSHOT_VERSION 1
 #define OCTAVO_ANDROID_NAVIGATION_KIND_SEARCH 7
 #define OCTAVO_ANDROID_NAVIGATION_KIND_ANNOTATION 8
+#define OCTAVO_ANDROID_HIGHLIGHT_PACKET_VERSION 1
+#define OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT 2
+#define OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE 4
+#define OCTAVO_ANDROID_HIGHLIGHT_CAP 2048
+#define OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT 4
+#define OCTAVO_ANDROID_NOTE_MARKER_PACKET_VERSION 1
+#define OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT 2
+#define OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE 3
+#define OCTAVO_ANDROID_NOTE_MARKER_CAP 2048
 #if UI0_API_VERSION != 91
 #error Android_Port_8_UI0_snapshot_requires_API_91
 #endif
@@ -158,6 +167,8 @@ typedef struct OctavoAndroidAppearance
   int32_t publisher_colors;
   int32_t reduced_motion;
   UI0Color colors[UI0ColorRole_Count];
+  UI0Color annotation_highlight_colors[
+    OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT];
   uint64_t color_hash;
 } OctavoAndroidAppearance;
 
@@ -270,6 +281,21 @@ typedef struct OctavoAndroidSelectionRowGeometry
   B32 valid;
 } OctavoAndroidSelectionRowGeometry;
 
+typedef struct OctavoAndroidHighlightRange
+{
+  U32 spine_index;
+  U64 byte_start;
+  U64 byte_end;
+  U32 color;
+} OctavoAndroidHighlightRange;
+
+typedef struct OctavoAndroidNoteRange
+{
+  U32 spine_index;
+  U64 byte_start;
+  U64 byte_end;
+} OctavoAndroidNoteRange;
+
 typedef struct OctavoAndroidApp
 {
   ANativeWindow *window;
@@ -325,6 +351,20 @@ typedef struct OctavoAndroidApp
   S32 pagination_content_width;
   S32 pagination_content_height;
   B32 pagination_dirty;
+
+  OctavoAndroidHighlightRange
+    annotation_highlights[OCTAVO_ANDROID_HIGHLIGHT_CAP];
+  U32 annotation_highlight_count;
+  UI0U64 annotation_highlight_generation;
+  UI0U64 annotation_highlight_presented_generation;
+  B32 annotation_highlight_waiting_for_present;
+
+  OctavoAndroidNoteRange
+    annotation_notes[OCTAVO_ANDROID_NOTE_MARKER_CAP];
+  U32 annotation_note_count;
+  UI0U64 annotation_note_generation;
+  UI0U64 annotation_note_presented_generation;
+  B32 annotation_note_waiting_for_present;
 
   U32 presented_anchor_spine_index;
   U64 presented_anchor_byte_offset;
@@ -452,6 +492,8 @@ static void octavo_android_selection_page_turn_state_clear(
 static void octavo_android_discard_selection(OctavoAndroidApp *app);
 static B32 octavo_android_selection_highlight_for_range(
   const OctavoAndroidApp *app, U64 start, U64 end);
+static B32 octavo_android_annotation_highlight_for_range(
+  const OctavoAndroidApp *app, U64 start, U64 end, UI0Color *out_color);
 static void octavo_android_draw_selection_handles(
   OctavoAndroidApp *app, OctavoAndroidPixels pixels);
 
@@ -997,24 +1039,32 @@ static int
 octavo_android_import_appearance(JNIEnv *environment,
                                  jintArray config_array,
                                  jintArray color_array,
+                                 jintArray highlight_color_array,
                                  OctavoAndroidAppearance *appearance)
 {
-  if (!environment || !config_array || !color_array || !appearance ||
+  if (!environment || !config_array || !color_array ||
+      !highlight_color_array || !appearance ||
       (*environment)->GetArrayLength(environment, config_array) !=
         OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT ||
       (*environment)->GetArrayLength(environment, color_array) !=
-        UI0ColorRole_Count)
+        UI0ColorRole_Count ||
+      (*environment)->GetArrayLength(environment, highlight_color_array) !=
+        OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT)
   {
     return 0;
   }
 
   jint config[OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT] = {0};
   jint colors[UI0ColorRole_Count] = {0};
+  jint highlight_colors[OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT] = {0};
   (*environment)->GetIntArrayRegion(
     environment, config_array, 0,
     OCTAVO_ANDROID_APPEARANCE_CONFIG_COUNT, config);
   (*environment)->GetIntArrayRegion(
     environment, color_array, 0, UI0ColorRole_Count, colors);
+  (*environment)->GetIntArrayRegion(
+    environment, highlight_color_array, 0,
+    OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT, highlight_colors);
   if ((*environment)->ExceptionCheck(environment) ||
       config[0] != OCTAVO_ANDROID_APPEARANCE_MAGIC ||
       config[1] != OCTAVO_ANDROID_APPEARANCE_VERSION ||
@@ -1051,6 +1101,17 @@ octavo_android_import_appearance(JNIEnv *environment,
     appearance->colors[index] = (UI0Color)(uint32_t)colors[index];
     hash = (hash ^ (uint64_t)(uint32_t)colors[index]) *
       1099511628211ULL;
+  }
+  for (int32_t index = 0;
+       index < OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT;
+       ++index)
+  {
+    if (((uint32_t)highlight_colors[index] >> 24) != 0xffu)
+    {
+      return 0;
+    }
+    appearance->annotation_highlight_colors[index] =
+      (UI0Color)(uint32_t)highlight_colors[index];
   }
   appearance->color_hash = hash;
   return 1;
@@ -1100,6 +1161,8 @@ octavo_android_presentation_pending(const OctavoAndroidApp *app)
      app->appearance_waiting_for_present ||
      app->selection_mutation_waiting_for_present ||
      app->search_mutation_waiting_for_present ||
+     app->annotation_highlight_waiting_for_present ||
+     app->annotation_note_waiting_for_present ||
      app->host_frame_waiting_for_present);
 }
 
@@ -2458,6 +2521,40 @@ octavo_android_search_highlight_for_range(
 }
 
 static B32
+octavo_android_annotation_highlight_for_range(
+  const OctavoAndroidApp *app,
+  U64 start,
+  U64 end,
+  UI0Color *out_color)
+{
+  if (out_color) { *out_color = 0; }
+  if (!app || !out_color || end <= start || !app->reader_frame.ready ||
+      app->annotation_highlight_count > OCTAVO_ANDROID_HIGHLIGHT_CAP ||
+      app->reader_frame.view_byte_offset > UINT64_MAX - end)
+  {
+    return 0;
+  }
+  U64 absolute_start = app->reader_frame.view_byte_offset + start;
+  U64 absolute_end = app->reader_frame.view_byte_offset + end;
+  for (U32 index = 0;
+       index < app->annotation_highlight_count;
+       ++index)
+  {
+    const OctavoAndroidHighlightRange *range =
+      app->annotation_highlights + index;
+    if (range->spine_index == app->reader_frame.spine_index &&
+        absolute_end > range->byte_start &&
+        absolute_start < range->byte_end &&
+        range->color < OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT)
+    {
+      *out_color = app->appearance.annotation_highlight_colors[range->color];
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static B32
 octavo_android_draw_reader_row(OctavoAndroidApp *app,
                                OctavoAndroidPixels pixels,
                                const EpubReaderFrameStyleRow *row,
@@ -2522,14 +2619,19 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
         (U64)start + row_byte_index,
         (U64)start + segment_start + at);
       B32 active_search = 0;
-      if (selected ||
-          octavo_android_search_highlight_for_range(
-            app, (U64)start + row_byte_index,
-            (U64)start + segment_start + at, &active_search))
+      B32 searched = octavo_android_search_highlight_for_range(
+        app, (U64)start + row_byte_index,
+        (U64)start + segment_start + at, &active_search);
+      UI0Color annotation_color = 0;
+      B32 annotated = octavo_android_annotation_highlight_for_range(
+        app, (U64)start + row_byte_index,
+        (U64)start + segment_start + at, &annotation_color);
+      if (selected || active_search || annotated || searched)
       {
-        UI0Color search_color = app->reader_view_theme.colors[
-          selected || active_search ?
-            UI0ColorRole_Selection : UI0ColorRole_Badge];
+        UI0Color highlight_color = selected || active_search ?
+          app->reader_view_theme.colors[UI0ColorRole_Selection] :
+          annotated ? annotation_color :
+          app->reader_view_theme.colors[UI0ColorRole_Badge];
         octavo_android_fill_rect(
           pixels,
           ui0_rect(pen_x,
@@ -2537,7 +2639,7 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
                    MAX(advance + space_extra, 1),
                    glyph_height),
           clip,
-          search_color);
+          highlight_color);
       }
       octavo_android_draw_typography_glyph(
         app, pixels, codepoint, pen_x, glyph_top, flags, scale, color, clip);
@@ -2553,6 +2655,393 @@ octavo_android_draw_reader_row(OctavoAndroidApp *app,
     segment_start = segment_end;
   }
   return space_index == justification->space_count;
+}
+
+static B32
+octavo_android_note_marker_for_range(
+  const OctavoAndroidApp *app,
+  const OctavoAndroidNoteRange *note,
+  U32 *out_byte_offset)
+{
+  if (out_byte_offset) { *out_byte_offset = 0; }
+  if (!app || !note || !out_byte_offset || !app->reader_frame.ready ||
+      note->spine_index != app->reader_frame.spine_index ||
+      note->byte_end < note->byte_start ||
+      app->reader_frame.visible_text.size > UINT32_MAX ||
+      app->reader_frame.view_byte_offset >
+        UINT64_MAX - app->reader_frame.visible_text.size)
+  {
+    return 0;
+  }
+  U64 visible_start = app->reader_frame.view_byte_offset;
+  U64 visible_end = visible_start + app->reader_frame.visible_text.size;
+  B32 point = note->byte_start == note->byte_end;
+  B32 visible = point ?
+    note->byte_start >= visible_start && note->byte_start <= visible_end :
+    note->byte_end > visible_start && note->byte_start < visible_end;
+  if (!visible)
+  {
+    return 0;
+  }
+  U64 marker_byte = MAX(note->byte_end, visible_start);
+  marker_byte = MIN(marker_byte, visible_end);
+  *out_byte_offset = (U32)(marker_byte - visible_start);
+  return 1;
+}
+
+static B32
+octavo_android_reader_row_marker_geometry(
+  const OctavoAndroidApp *app,
+  const EpubReaderFrameStyleRow *row,
+  U32 start,
+  U32 end,
+  U32 marker_byte_offset,
+  S32 x,
+  S32 row_top,
+  S32 row_height,
+  const OctavoReaderJustificationPlan *justification,
+  S32 *out_x,
+  S32 *out_glyph_top,
+  S32 *out_glyph_height)
+{
+  if (out_x) { *out_x = 0; }
+  if (out_glyph_top) { *out_glyph_top = 0; }
+  if (out_glyph_height) { *out_glyph_height = 0; }
+  if (!app || !row || !justification || !out_x || !out_glyph_top ||
+      !out_glyph_height || end <= start || marker_byte_offset < start ||
+      marker_byte_offset > end)
+  {
+    return 0;
+  }
+
+  U32 row_size = end - start;
+  U32 segment_start = 0;
+  U32 space_index = 0;
+  S32 pen_x = x;
+  while (segment_start < row_size)
+  {
+    U32 segment_end = row_size;
+    DocTextStyleFlags flags = 0;
+    U32 inline_scale = 1000u;
+    octavo_android_reader_segment_style(
+      app, row, row_size, segment_start, &segment_end, &flags,
+      &inline_scale, 0, 0);
+    U32 scale = octavo_android_combined_scale(
+      row->font_scale_permille, inline_scale);
+    S32 glyph_height = MAX(
+      octavo_android_scaled_px(app->typography.cell_height, scale), 1);
+    S32 glyph_top = row_top + (row_height - glyph_height) / 2;
+    if (marker_byte_offset == start + segment_start)
+    {
+      *out_x = pen_x;
+      *out_glyph_top = glyph_top;
+      *out_glyph_height = glyph_height;
+      return 1;
+    }
+    String8 segment = str8(
+      app->reader_frame.visible_text.str + start + segment_start,
+      segment_end - segment_start);
+    U64 at = 0;
+    while (at < segment.size)
+    {
+      U32 row_byte_index = segment_start + (U32)at;
+      U32 codepoint = octavo_android_next_codepoint(
+        segment.str, segment.size, &at);
+      S32 advance = octavo_android_typography_advance(
+        &app->typography, codepoint, flags, scale);
+      S32 space_extra = 0;
+      if (codepoint == ' ' && row_byte_index > 0 &&
+          row_byte_index + 1u < row_size &&
+          space_index < justification->space_count)
+      {
+        space_extra = octavo_reader_justification_space_extra_px(
+          justification, space_index);
+      }
+      pen_x += advance + space_extra;
+      if (codepoint == ' ' && row_byte_index > 0 &&
+          row_byte_index + 1u < row_size &&
+          space_index < justification->space_count)
+      {
+        space_index += 1u;
+      }
+      if (marker_byte_offset <= start + segment_start + (U32)at)
+      {
+        *out_x = pen_x;
+        *out_glyph_top = glyph_top;
+        *out_glyph_height = glyph_height;
+        return 1;
+      }
+    }
+    segment_start = segment_end;
+  }
+  return 0;
+}
+
+static UI0Rect
+octavo_android_note_marker_icon_rect(
+  S32 anchor_x,
+  S32 glyph_top,
+  S32 glyph_height)
+{
+  S32 icon_height = MAX((glyph_height * 7) / 16, 8);
+  S32 icon_width = MAX((glyph_height * 3) / 8, 7);
+  S32 gap = MAX(glyph_height / 10, 2);
+  return ui0_rect(
+    anchor_x + gap,
+    glyph_top - MAX(glyph_height / 5, 2),
+    icon_width,
+    icon_height);
+}
+
+static B32
+octavo_android_note_marker_rect_for_row(
+  const OctavoAndroidApp *app,
+  const OctavoAndroidNoteRange *note,
+  const EpubReaderFrameStyleRow *row,
+  U32 start,
+  U32 end,
+  S32 x,
+  S32 row_top,
+  S32 row_height,
+  const OctavoReaderJustificationPlan *justification,
+  UI0Rect *out_icon)
+{
+  if (out_icon) { *out_icon = ui0_rect(0, 0, 0, 0); }
+  if (!app || !note || !row || !justification || !out_icon || end <= start)
+  {
+    return 0;
+  }
+  U32 marker_byte_offset = 0;
+  if (!octavo_android_note_marker_for_range(
+        app, note, &marker_byte_offset) ||
+      marker_byte_offset < start || marker_byte_offset > end)
+  {
+    return 0;
+  }
+  S32 marker_x = 0;
+  S32 glyph_top = 0;
+  S32 glyph_height = 0;
+  if (!octavo_android_reader_row_marker_geometry(
+        app, row, start, end, marker_byte_offset, x, row_top,
+        row_height, justification, &marker_x, &glyph_top,
+        &glyph_height))
+  {
+    return 0;
+  }
+  *out_icon = octavo_android_note_marker_icon_rect(
+    marker_x, glyph_top, glyph_height);
+  return 1;
+}
+
+static void
+octavo_android_draw_note_marker_icon(
+  const OctavoAndroidApp *app,
+  OctavoAndroidPixels pixels,
+  UI0Rect icon,
+  UI0Rect clip)
+{
+  if (!app || icon.w <= 0 || icon.h <= 0)
+  {
+    return;
+  }
+  S32 icon_width = icon.w;
+  S32 icon_height = icon.h;
+  UI0Color accent =
+    app->reader_view_theme.colors[UI0ColorRole_Accent];
+  UI0Color page =
+    app->reader_view_theme.colors[UI0ColorRole_Surface];
+  octavo_android_fill_rect(pixels, icon, clip, accent);
+  S32 line_inset = MAX(icon_width / 4, 2);
+  S32 line_width = MAX(icon_width - line_inset * 2, 1);
+  S32 line_height = MAX(icon_height / 8, 1);
+  octavo_android_fill_rect(
+    pixels,
+    ui0_rect(icon.x + line_inset,
+             icon.y + MAX(icon_height / 3, 2),
+             line_width,
+             line_height),
+    clip,
+    page);
+  octavo_android_fill_rect(
+    pixels,
+    ui0_rect(icon.x + line_inset,
+             icon.y + MAX((icon_height * 2) / 3, 4),
+             line_width,
+             line_height),
+    clip,
+    page);
+}
+
+static void
+octavo_android_draw_note_markers_for_row(
+  const OctavoAndroidApp *app,
+  OctavoAndroidPixels pixels,
+  const EpubReaderFrameStyleRow *row,
+  U32 start,
+  U32 end,
+  S32 x,
+  S32 row_top,
+  S32 row_height,
+  UI0Rect clip,
+  const OctavoReaderJustificationPlan *justification)
+{
+  if (!app || !row || !justification || end <= start ||
+      app->annotation_note_count > OCTAVO_ANDROID_NOTE_MARKER_CAP)
+  {
+    return;
+  }
+  for (U32 index = 0; index < app->annotation_note_count; ++index)
+  {
+    UI0Rect icon = {0};
+    if (octavo_android_note_marker_rect_for_row(
+          app, app->annotation_notes + index, row, start, end, x,
+          row_top, row_height, justification, &icon))
+    {
+      octavo_android_draw_note_marker_icon(
+        app, pixels, icon, clip);
+    }
+  }
+}
+
+static S32
+octavo_android_note_marker_hit_test(
+  OctavoAndroidApp *app,
+  float pointer_x,
+  float pointer_y,
+  S32 minimum_touch_radius_px)
+{
+  if (!app || !isfinite(pointer_x) || !isfinite(pointer_y) ||
+      minimum_touch_radius_px <= 0 ||
+      app->annotation_note_count > OCTAVO_ANDROID_NOTE_MARKER_CAP ||
+      app->annotation_note_waiting_for_present ||
+      app->annotation_note_generation !=
+        app->annotation_note_presented_generation ||
+      octavo_android_presentation_pending(app) || !app->resumed ||
+      !app->window || !app->reader_frame.ready ||
+      !app->reader_view_ready || !app->typography.ready ||
+      !app->reader_frame.visible_text.str ||
+      app->reader_frame.visible_text.size == 0)
+  {
+    return -1;
+  }
+
+  UI0Rect content = app->reader_view_layout.content_rect;
+  UI0Rect page = app->reader_view_layout.page_surface_rect;
+  UI0Rect clip = octavo_android_intersect_rect(
+    ui0_rect(page.x, content.y, page.w, content.h),
+    ui0_rect(0, 0, app->width, app->height));
+  S32 base_line_height = MAX(app->typography.line_advance_px, 1);
+  S32 char_advance = MAX(
+    octavo_android_typography_advance(
+      &app->typography, 'n', 0, 1000u),
+    1);
+  S32 y = content.y;
+  S32 bottom = content.y + content.h;
+  S32 best_index = -1;
+  float best_distance_squared = 0.0f;
+  for (U32 row_index = 0;
+       row_index < app->reader_frame.style_row_count;
+       ++row_index)
+  {
+    const EpubReaderFrameStyleRow *row =
+      app->reader_frame.style_rows + row_index;
+    U32 start = MIN(row->byte_start,
+                    (U32)app->reader_frame.visible_text.size);
+    U32 end = MIN(row->byte_end,
+                  (U32)app->reader_frame.visible_text.size);
+    end = octavo_reader_visible_row_end(
+      app->reader_frame.visible_text.str,
+      start,
+      end,
+      row->soft_wrapped);
+    if (row->line_row == 0 && row->margin_top_rows > 0)
+    {
+      y += row->margin_top_rows * base_line_height;
+    }
+    S32 row_height = octavo_android_frame_style_row_height(app, row);
+    if (y + row_height > bottom)
+    {
+      break;
+    }
+    S32 left = MAX(row->margin_left_cols, 0) * char_advance;
+    S32 right = MAX(row->margin_right_cols, 0) * char_advance;
+    if (row->line_row == 0)
+    {
+      left += MAX(row->text_indent_cols, 0) * char_advance;
+    }
+    S32 available = MAX(content.w - left - right, 1);
+    S32 row_width = octavo_android_measure_reader_row(app, row, start, end);
+    OctavoReaderJustificationPlan justification = {0};
+    if (end > start &&
+        !octavo_android_reader_justification_plan_for_row(
+          app, row, start, end, row_width, available, &justification))
+    {
+      return -1;
+    }
+    S32 x = content.x + left;
+    if (app->appearance.alignment == 0 &&
+        row->text_align == DocTextAlign_Center &&
+        row_width < available)
+    {
+      x += (available - row_width) / 2;
+    }
+    else if (app->appearance.alignment == 0 &&
+             row->text_align == DocTextAlign_Right &&
+             row_width < available)
+    {
+      x += available - row_width;
+    }
+    if (end > start)
+    {
+      for (U32 index = 0; index < app->annotation_note_count; ++index)
+      {
+        UI0Rect icon = {0};
+        if (!octavo_android_note_marker_rect_for_row(
+              app, app->annotation_notes + index, row, start, end, x,
+              y, row_height, &justification, &icon))
+        {
+          continue;
+        }
+        UI0Rect visible_icon =
+          octavo_android_intersect_rect(icon, clip);
+        if (visible_icon.w <= 0 || visible_icon.h <= 0)
+        {
+          continue;
+        }
+        S32 target_width = MAX(
+          icon.w, minimum_touch_radius_px * 2);
+        S32 target_height = MAX(
+          icon.h, minimum_touch_radius_px * 2);
+        UI0Rect target = octavo_android_intersect_rect(
+          ui0_rect(icon.x + icon.w / 2 - target_width / 2,
+                   icon.y + icon.h / 2 - target_height / 2,
+                   target_width,
+                   target_height),
+          clip);
+        if (pointer_x < (float)target.x ||
+            pointer_y < (float)target.y ||
+            pointer_x >= (float)(target.x + target.w) ||
+            pointer_y >= (float)(target.y + target.h))
+        {
+          continue;
+        }
+        float delta_x = pointer_x - (float)(icon.x + icon.w / 2);
+        float delta_y = pointer_y - (float)(icon.y + icon.h / 2);
+        float distance_squared = delta_x * delta_x + delta_y * delta_y;
+        if (best_index < 0 || distance_squared < best_distance_squared)
+        {
+          best_index = (S32)index;
+          best_distance_squared = distance_squared;
+        }
+      }
+    }
+    y += row_height;
+    if (row->block_last_row && row->margin_bottom_rows > 0)
+    {
+      y += row->margin_bottom_rows * base_line_height;
+    }
+  }
+  return best_index;
 }
 
 static B32
@@ -2647,6 +3136,9 @@ octavo_android_draw_reader_text(OctavoAndroidApp *app,
       }
       octavo_android_record_justification_evidence(
         out_evidence, row_index, &justification);
+      octavo_android_draw_note_markers_for_row(
+        app, pixels, row, start, end, x, y, row_height, clip,
+        &justification);
     }
     y += row_height;
     if (row->block_last_row && row->margin_bottom_rows > 0)
@@ -3529,6 +4021,18 @@ octavo_android_present_frame(OctavoAndroidApp *app)
     app->search_mutation_previous =
       (OctavoAndroidSearchState){0};
   }
+  if (app->annotation_highlight_waiting_for_present)
+  {
+    app->annotation_highlight_waiting_for_present = 0;
+    app->annotation_highlight_presented_generation =
+      app->annotation_highlight_generation;
+  }
+  if (app->annotation_note_waiting_for_present)
+  {
+    app->annotation_note_waiting_for_present = 0;
+    app->annotation_note_presented_generation =
+      app->annotation_note_generation;
+  }
   if (app->page_move_waiting_for_present)
   {
     app->presented_anchor_spine_index =
@@ -3935,6 +4439,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                          jboolean chrome_visible,
                                          jintArray appearance_config,
                                          jintArray appearance_colors,
+                                         jintArray highlight_colors,
                                          jintArray typography_metrics,
                                          jbyteArray typography_alpha,
                                          jlong reader_entry_started_millis)
@@ -3996,6 +4501,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
       !octavo_android_import_appearance(environment,
                                         appearance_config,
                                         appearance_colors,
+                                        highlight_colors,
                                         &app->appearance) ||
       !octavo_android_import_typography(environment,
                                         typography_metrics,
@@ -4089,6 +4595,7 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
   jlong handle,
   jintArray appearance_config,
   jintArray appearance_colors,
+  jintArray highlight_colors,
   jintArray typography_metrics,
   jbyteArray typography_alpha)
 {
@@ -4106,7 +4613,7 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
   OctavoAndroidAppearance next_appearance = {0};
   OctavoAndroidTypography next_typography = {0};
   if (!octavo_android_import_appearance(
-        environment, appearance_config, appearance_colors,
+        environment, appearance_config, appearance_colors, highlight_colors,
         &next_appearance) ||
       !octavo_android_import_typography(
         environment, typography_metrics, typography_alpha,
@@ -4173,6 +4680,356 @@ Java_ro_devze_octavo_OctavoNative_applyAppearance(
   }
   octavo_android_release_typography(&old_typography);
   return 2;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_replaceHighlights(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlongArray packet_array)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !packet_array)
+  {
+    return -1;
+  }
+  jsize packet_count = (*environment)->GetArrayLength(
+    environment, packet_array);
+  jlong header[OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT] = {0};
+  if (packet_count < OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT)
+  {
+    return -1;
+  }
+  (*environment)->GetLongArrayRegion(
+    environment, packet_array, 0,
+    OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT, header);
+  if ((*environment)->ExceptionCheck(environment) ||
+      header[0] != OCTAVO_ANDROID_HIGHLIGHT_PACKET_VERSION ||
+      header[1] < 0 || header[1] > OCTAVO_ANDROID_HIGHLIGHT_CAP)
+  {
+    return -1;
+  }
+  U32 count = (U32)header[1];
+  jsize expected = OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT +
+    (jsize)count * OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE;
+  if (packet_count != expected)
+  {
+    return -1;
+  }
+
+  OctavoAndroidHighlightRange *candidate = count == 0 ? 0 :
+    (OctavoAndroidHighlightRange *)calloc(count, sizeof(*candidate));
+  jlong *packet = (jlong *)calloc((size_t)packet_count, sizeof(*packet));
+  if ((count > 0 && !candidate) || !packet)
+  {
+    free(candidate);
+    free(packet);
+    return -4;
+  }
+  (*environment)->GetLongArrayRegion(
+    environment, packet_array, 0, packet_count, packet);
+  if ((*environment)->ExceptionCheck(environment))
+  {
+    free(candidate);
+    free(packet);
+    return -4;
+  }
+  B32 valid = 1;
+  for (U32 index = 0; index < count; ++index)
+  {
+    jsize at = OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT +
+      (jsize)index * OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE;
+    jlong spine = packet[at];
+    jlong start = packet[at + 1];
+    jlong end = packet[at + 2];
+    jlong color = packet[at + 3];
+    if (spine < 0 || (uint64_t)spine > UINT32_MAX ||
+        start < 0 || end <= start || color < 0 ||
+        color >= OCTAVO_ANDROID_HIGHLIGHT_COLOR_COUNT)
+    {
+      valid = 0;
+      break;
+    }
+    candidate[index].spine_index = (U32)spine;
+    candidate[index].byte_start = (U64)start;
+    candidate[index].byte_end = (U64)end;
+    candidate[index].color = (U32)color;
+  }
+  free(packet);
+  if (!valid)
+  {
+    free(candidate);
+    return -1;
+  }
+
+  B32 same = count == app->annotation_highlight_count &&
+    (count == 0 || memcmp(candidate,
+                          app->annotation_highlights,
+                          count * sizeof(*candidate)) == 0);
+  if (same)
+  {
+    free(candidate);
+    return app->annotation_highlight_waiting_for_present ? -3 : 2;
+  }
+  B32 initial_load = !app->window && app->frame_count == 0 &&
+    app->annotation_highlight_generation == 0;
+  if (!initial_load && octavo_android_presentation_pending(app))
+  {
+    free(candidate);
+    return -3;
+  }
+
+  octavo_android_invalidate_prepared_static_frame(app);
+  if (count > 0)
+  {
+    memcpy(app->annotation_highlights,
+           candidate,
+           count * sizeof(*candidate));
+  }
+  if (count < app->annotation_highlight_count)
+  {
+    memset(app->annotation_highlights + count,
+           0,
+           (app->annotation_highlight_count - count) *
+             sizeof(*app->annotation_highlights));
+  }
+  free(candidate);
+  app->annotation_highlight_count = count;
+  app->annotation_highlight_generation += 1u;
+  app->annotation_highlight_waiting_for_present = 1;
+  app->host_frame_waiting_for_present = 1;
+  return 1;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_highlightSnapshot(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || app->annotation_highlight_count >
+                OCTAVO_ANDROID_HIGHLIGHT_CAP)
+  {
+    return 0;
+  }
+  U32 count = app->annotation_highlight_count;
+  jsize value_count = 7 +
+    (jsize)count * OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE;
+  jlong *values = (jlong *)calloc((size_t)value_count, sizeof(*values));
+  if (!values) { return 0; }
+  values[0] = OCTAVO_ANDROID_HIGHLIGHT_PACKET_VERSION;
+  values[1] = value_count;
+  values[2] = count;
+  values[3] = (jlong)app->annotation_highlight_generation;
+  values[4] = (jlong)app->annotation_highlight_presented_generation;
+  values[5] = app->annotation_highlight_waiting_for_present ? 1 : 0;
+  values[6] = OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE;
+  for (U32 index = 0; index < count; ++index)
+  {
+    jsize at = 7 + (jsize)index * OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE;
+    const OctavoAndroidHighlightRange *range =
+      app->annotation_highlights + index;
+    values[at] = (jlong)range->spine_index;
+    values[at + 1] = (jlong)range->byte_start;
+    values[at + 2] = (jlong)range->byte_end;
+    values[at + 3] = (jlong)range->color;
+  }
+  jlongArray result = (*environment)->NewLongArray(environment, value_count);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment, result, 0, value_count, values);
+  }
+  free(values);
+  return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_replaceNoteMarkers(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlongArray packet_array)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !packet_array)
+  {
+    return -1;
+  }
+  jsize packet_count = (*environment)->GetArrayLength(
+    environment, packet_array);
+  jlong header[OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT] = {0};
+  if (packet_count < OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT)
+  {
+    return -1;
+  }
+  (*environment)->GetLongArrayRegion(
+    environment, packet_array, 0,
+    OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT, header);
+  if ((*environment)->ExceptionCheck(environment) ||
+      header[0] != OCTAVO_ANDROID_NOTE_MARKER_PACKET_VERSION ||
+      header[1] < 0 || header[1] > OCTAVO_ANDROID_NOTE_MARKER_CAP)
+  {
+    return -1;
+  }
+  U32 count = (U32)header[1];
+  jsize expected = OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT +
+    (jsize)count * OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE;
+  if (packet_count != expected)
+  {
+    return -1;
+  }
+
+  OctavoAndroidNoteRange *candidate = count == 0 ? 0 :
+    (OctavoAndroidNoteRange *)calloc(count, sizeof(*candidate));
+  jlong *packet = (jlong *)calloc((size_t)packet_count, sizeof(*packet));
+  if ((count > 0 && !candidate) || !packet)
+  {
+    free(candidate);
+    free(packet);
+    return -4;
+  }
+  (*environment)->GetLongArrayRegion(
+    environment, packet_array, 0, packet_count, packet);
+  if ((*environment)->ExceptionCheck(environment))
+  {
+    free(candidate);
+    free(packet);
+    return -4;
+  }
+  B32 valid = 1;
+  for (U32 index = 0; index < count; ++index)
+  {
+    jsize at = OCTAVO_ANDROID_NOTE_MARKER_PACKET_HEADER_COUNT +
+      (jsize)index * OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE;
+    jlong spine = packet[at];
+    jlong start = packet[at + 1];
+    jlong end = packet[at + 2];
+    if (spine < 0 || (uint64_t)spine > UINT32_MAX ||
+        start < 0 || end < start)
+    {
+      valid = 0;
+      break;
+    }
+    candidate[index].spine_index = (U32)spine;
+    candidate[index].byte_start = (U64)start;
+    candidate[index].byte_end = (U64)end;
+  }
+  free(packet);
+  if (!valid)
+  {
+    free(candidate);
+    return -1;
+  }
+
+  B32 same = count == app->annotation_note_count &&
+    (count == 0 || memcmp(candidate,
+                          app->annotation_notes,
+                          count * sizeof(*candidate)) == 0);
+  if (same)
+  {
+    free(candidate);
+    return app->annotation_note_waiting_for_present ? -3 : 2;
+  }
+  B32 initial_load = !app->window && app->frame_count == 0 &&
+    app->annotation_note_generation == 0;
+  if (!initial_load && octavo_android_presentation_pending(app))
+  {
+    free(candidate);
+    return -3;
+  }
+
+  octavo_android_invalidate_prepared_static_frame(app);
+  if (count > 0)
+  {
+    memcpy(app->annotation_notes,
+           candidate,
+           count * sizeof(*candidate));
+  }
+  if (count < app->annotation_note_count)
+  {
+    memset(app->annotation_notes + count,
+           0,
+           (app->annotation_note_count - count) *
+             sizeof(*app->annotation_notes));
+  }
+  free(candidate);
+  app->annotation_note_count = count;
+  app->annotation_note_generation += 1u;
+  app->annotation_note_waiting_for_present = 1;
+  app->host_frame_waiting_for_present = 1;
+  return 1;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_noteMarkerSnapshot(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle)
+{
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || app->annotation_note_count >
+                OCTAVO_ANDROID_NOTE_MARKER_CAP)
+  {
+    return 0;
+  }
+  U32 count = app->annotation_note_count;
+  jsize value_count = 7 +
+    (jsize)count * OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE;
+  jlong *values = (jlong *)calloc((size_t)value_count, sizeof(*values));
+  if (!values) { return 0; }
+  values[0] = OCTAVO_ANDROID_NOTE_MARKER_PACKET_VERSION;
+  values[1] = value_count;
+  values[2] = count;
+  values[3] = (jlong)app->annotation_note_generation;
+  values[4] = (jlong)app->annotation_note_presented_generation;
+  values[5] = app->annotation_note_waiting_for_present ? 1 : 0;
+  values[6] = OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE;
+  for (U32 index = 0; index < count; ++index)
+  {
+    jsize at = 7 +
+      (jsize)index * OCTAVO_ANDROID_NOTE_MARKER_PACKET_STRIDE;
+    const OctavoAndroidNoteRange *note = app->annotation_notes + index;
+    values[at] = (jlong)note->spine_index;
+    values[at + 1] = (jlong)note->byte_start;
+    values[at + 2] = (jlong)note->byte_end;
+  }
+  jlongArray result = (*environment)->NewLongArray(environment, value_count);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment, result, 0, value_count, values);
+  }
+  free(values);
+  return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_noteMarkerHitTest(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jfloat x,
+  jfloat y,
+  jfloat minimum_touch_radius_px)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || !isfinite(minimum_touch_radius_px) ||
+      minimum_touch_radius_px <= 0.0f ||
+      minimum_touch_radius_px > 4096.0f)
+  {
+    return -1;
+  }
+  return (jint)octavo_android_note_marker_hit_test(
+    app, x, y, (S32)ceilf(minimum_touch_radius_px));
 }
 
 JNIEXPORT void JNICALL

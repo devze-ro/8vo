@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -49,13 +50,13 @@ import java.util.concurrent.atomic.AtomicReference;
 @ExternalProcessRestartProbe
 public final class OctavoProcessRestartTest {
     private static final int EVIDENCE_MAGIC = 0x4F385052; // "O8PR"
-    private static final int EVIDENCE_VERSION = 2;
+    private static final int EVIDENCE_VERSION = 3;
     private static final int EVIDENCE_FILE_CAP = 512;
     private static final String EVIDENCE_DIRECTORY = "port8";
     private static final String EVIDENCE_FILE =
-        "process_restart_expected.v2";
+        "process_restart_expected.v3";
     private static final String EVIDENCE_TEMPORARY_FILE =
-        "process_restart_expected.v2.tmp";
+        "process_restart_expected.v3.tmp";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -71,6 +72,10 @@ public final class OctavoProcessRestartTest {
         final long originByteOffset;
         final long spineIndex;
         final long byteOffset;
+        final long highlightSpineIndex;
+        final long highlightByteStart;
+        final long highlightByteEnd;
+        final int highlightColor;
         final OctavoAppearance appearance;
         final OctavoProgressDisplay progressDisplay;
 
@@ -79,6 +84,10 @@ public final class OctavoProcessRestartTest {
                       long originByteOffset,
                       long spineIndex,
                       long byteOffset,
+                      long highlightSpineIndex,
+                      long highlightByteStart,
+                      long highlightByteEnd,
+                      int highlightColor,
                       OctavoAppearance appearance,
                       OctavoProgressDisplay progressDisplay) {
             this.bookKey = bookKey;
@@ -86,6 +95,10 @@ public final class OctavoProcessRestartTest {
             this.originByteOffset = originByteOffset;
             this.spineIndex = spineIndex;
             this.byteOffset = byteOffset;
+            this.highlightSpineIndex = highlightSpineIndex;
+            this.highlightByteStart = highlightByteStart;
+            this.highlightByteEnd = highlightByteEnd;
+            this.highlightColor = highlightColor;
             this.appearance = appearance;
             this.progressDisplay = progressDisplay;
         }
@@ -98,6 +111,7 @@ public final class OctavoProcessRestartTest {
         OctavoAppearanceStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
+        OctavoNoteDraftStore.clearForTesting(context);
         clearEvidence(context);
 
         OctavoAppearance expectedAppearance = extremeAppearance();
@@ -292,6 +306,50 @@ public final class OctavoProcessRestartTest {
             assertAnchorInsidePage(
                 progressFrame, position.get()[1], position.get()[2]);
 
+            scenario.onActivity(activity -> assertTrue(
+                surface(activity).selectTextForAccessibility()));
+            OctavoSelection selected = awaitSelection(
+                scenario, true,
+                "8vo did not present the restart highlight selection");
+            assertTrue(selected.endByte > selected.startByte);
+            AtomicReference<long[]> highlightRange = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                highlightRange.set(view.selectedRangeForTesting());
+                assertValidHighlightRange(highlightRange.get());
+                assertTrue(view.highlightSelectionForAccessibility(
+                    OctavoAnnotationStore.HighlightColor.ORANGE));
+            });
+            long[] seededHighlight = awaitHighlightSnapshot(
+                scenario, 1,
+                "8vo did not present the restart highlight");
+            assertEquals(highlightRange.get()[2], seededHighlight[7]);
+            assertEquals(highlightRange.get()[3], seededHighlight[8]);
+            assertEquals(highlightRange.get()[4], seededHighlight[9]);
+            assertEquals(
+                OctavoAnnotationStore.HighlightColor.ORANGE.wireId,
+                seededHighlight[10]);
+            awaitSelection(
+                scenario, false,
+                "The restart highlight did not clear transient selection");
+            scenario.onActivity(activity -> {
+                OctavoAnnotationStore store =
+                    activity.annotationStoreForTesting();
+                String noteId = store.newNoteRecordId();
+                assertNotNull(noteId);
+                assertEquals(OctavoAnnotationStore.MutationResult.ADDED,
+                    store.saveNote(
+                        noteId,
+                        "",
+                        activity.activeBookKeyForTesting(),
+                        highlightRange.get()[2],
+                        highlightRange.get()[3],
+                        highlightRange.get()[4],
+                        "",
+                        "Restart selected text",
+                        "Restart note body"));
+            });
+
             scenario.onActivity(activity -> assertEquals(
                 OctavoNative.NAVIGATION_ACCEPTED,
                 surface(activity).commitSearch("paragraph 250")));
@@ -310,6 +368,11 @@ public final class OctavoProcessRestartTest {
                                   origin[2],
                                   position.get()[1],
                                   position.get()[2],
+                                  highlightRange.get()[2],
+                                  highlightRange.get()[3],
+                                  highlightRange.get()[4],
+                                  OctavoAnnotationStore.HighlightColor
+                                      .ORANGE.wireId,
                                   expectedAppearance,
                                   expectedProgress));
         }
@@ -368,6 +431,54 @@ public final class OctavoProcessRestartTest {
                     expected.bookKey,
                     expected.spineIndex,
                     expected.byteOffset)));
+            scenario.onActivity(activity -> {
+                List<OctavoAnnotationStore.Highlight> highlights =
+                    activity.annotationStoreForTesting().highlights(
+                        expected.bookKey);
+                assertEquals(1, highlights.size());
+                OctavoAnnotationStore.Highlight highlight = highlights.get(0);
+                assertEquals(expected.highlightSpineIndex,
+                             highlight.spineIndex);
+                assertEquals(expected.highlightByteStart,
+                             highlight.byteStart);
+                assertEquals(expected.highlightByteEnd,
+                             highlight.byteEnd);
+                assertEquals(expected.highlightColor,
+                             highlight.color.wireId);
+                List<OctavoAnnotationStore.Note> notes =
+                    activity.annotationStoreForTesting().notes(
+                        expected.bookKey);
+                assertEquals(1, notes.size());
+                OctavoAnnotationStore.Note note = notes.get(0);
+                assertEquals(expected.highlightSpineIndex,
+                             note.spineIndex);
+                assertEquals(expected.highlightByteStart,
+                             note.byteStart);
+                assertEquals(expected.highlightByteEnd,
+                             note.byteEnd);
+                assertEquals("Restart note body", note.preferredBody());
+                assertFalse(note.conflicted);
+            });
+            long[] restoredHighlight = awaitHighlightSnapshot(
+                scenario, 1,
+                "8vo did not present the durable restart highlight");
+            assertEquals(expected.highlightSpineIndex,
+                         restoredHighlight[7]);
+            assertEquals(expected.highlightByteStart,
+                         restoredHighlight[8]);
+            assertEquals(expected.highlightByteEnd,
+                         restoredHighlight[9]);
+            assertEquals(expected.highlightColor,
+                         restoredHighlight[10]);
+            long[] restoredNoteMarkers = awaitNoteMarkerSnapshot(
+                scenario, 1,
+                "8vo did not present the durable restart note marker");
+            assertEquals(expected.highlightSpineIndex,
+                         restoredNoteMarkers[7]);
+            assertEquals(expected.highlightByteStart,
+                         restoredNoteMarkers[8]);
+            assertEquals(expected.highlightByteEnd,
+                         restoredNoteMarkers[9]);
             assertHealthyAndSettled(restored);
             assertHostAppearance(scenario, expected.appearance);
             OctavoSearch restoredSearch = searchSnapshot(scenario);
@@ -569,6 +680,80 @@ public final class OctavoProcessRestartTest {
         return result.get();
     }
 
+    private static OctavoSelection awaitSelection(
+        ActivityScenario<OctavoActivity> scenario,
+        boolean active,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<OctavoSelection> result = new AtomicReference<>();
+            scenario.onActivity(activity -> result.set(
+                OctavoSelection.fromNative(
+                    surface(activity).selectionPacketForTesting())));
+            OctavoSelection current = result.get();
+            if (current != null && current.active == active
+                && !current.pending) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return null;
+    }
+
+    private static long[] awaitHighlightSnapshot(
+        ActivityScenario<OctavoActivity> scenario,
+        int expectedCount,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<long[]> result = new AtomicReference<>();
+            scenario.onActivity(activity -> result.set(
+                surface(activity).highlightSnapshotForTesting()));
+            long[] current = result.get();
+            if (current != null && current.length == 7 + expectedCount * 4
+                && current[0] == 1 && current[1] == current.length
+                && current[2] == expectedCount
+                && current[3] == current[4] && current[5] == 0
+                && current[6] == 4) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return new long[0];
+    }
+
+    private static long[] awaitNoteMarkerSnapshot(
+        ActivityScenario<OctavoActivity> scenario,
+        int expectedCount,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<long[]> result = new AtomicReference<>();
+            scenario.onActivity(activity -> result.set(
+                surface(activity).noteMarkerSnapshotForTesting()));
+            long[] current = result.get();
+            if (current != null && current.length == 7 + expectedCount * 3
+                && current[0] == 1 && current[1] == current.length
+                && current[2] == expectedCount
+                && current[3] == current[4] && current[5] == 0
+                && current[6] == 3) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return new long[0];
+    }
+
+    private static void assertValidHighlightRange(long[] range) {
+        assertNotNull(range);
+        assertEquals(5, range.length);
+        assertEquals(1, range[0]);
+        assertEquals(5, range[1]);
+        assertTrue(range[2] >= 0 && range[2] <= 0xFFFFFFFFL);
+        assertTrue(range[3] >= 0);
+        assertTrue(range[4] > range[3]);
+    }
+
     private static void assertValidPosition(long[] position) {
         assertNotNull(position);
         assertEquals(3, position.length);
@@ -709,6 +894,12 @@ public final class OctavoProcessRestartTest {
             || expected.spineIndex < 0
             || expected.spineIndex > 0xFFFFFFFFL
             || expected.byteOffset < 0
+            || expected.highlightSpineIndex < 0
+            || expected.highlightSpineIndex > 0xFFFFFFFFL
+            || expected.highlightByteStart < 0
+            || expected.highlightByteEnd <= expected.highlightByteStart
+            || OctavoAnnotationStore.HighlightColor.fromWireId(
+                   expected.highlightColor) == null
             || expected.appearance == null
             || expected.progressDisplay == null) {
             throw new IOException("Invalid process-restart evidence");
@@ -731,6 +922,10 @@ public final class OctavoProcessRestartTest {
             output.writeLong(expected.originByteOffset);
             output.writeLong(expected.spineIndex);
             output.writeLong(expected.byteOffset);
+            output.writeLong(expected.highlightSpineIndex);
+            output.writeLong(expected.highlightByteStart);
+            output.writeLong(expected.highlightByteEnd);
+            output.writeInt(expected.highlightColor);
             output.writeInt(expected.progressDisplay.nativeId());
             int[] appearance = expected.appearance.nativeConfig();
             output.writeInt(appearance.length);
@@ -770,6 +965,10 @@ public final class OctavoProcessRestartTest {
             long originByteOffset = input.readLong();
             long spineIndex = input.readLong();
             long byteOffset = input.readLong();
+            long highlightSpineIndex = input.readLong();
+            long highlightByteStart = input.readLong();
+            long highlightByteEnd = input.readLong();
+            int highlightColor = input.readInt();
             int progressDisplayId = input.readInt();
             int fieldCount = input.readInt();
             if (magic != EVIDENCE_MAGIC
@@ -783,7 +982,13 @@ public final class OctavoProcessRestartTest {
                 || originByteOffset < 0
                 || spineIndex < 0
                 || spineIndex > 0xFFFFFFFFL
-                || byteOffset < 0) {
+                || byteOffset < 0
+                || highlightSpineIndex < 0
+                || highlightSpineIndex > 0xFFFFFFFFL
+                || highlightByteStart < 0
+                || highlightByteEnd <= highlightByteStart
+                || OctavoAnnotationStore.HighlightColor.fromWireId(
+                       highlightColor) == null) {
                 throw new IOException("Invalid restart evidence anchor");
             }
             int[] appearance = new int[fieldCount];
@@ -805,6 +1010,10 @@ public final class OctavoProcessRestartTest {
                                      originByteOffset,
                                      spineIndex,
                                      byteOffset,
+                                     highlightSpineIndex,
+                                     highlightByteStart,
+                                     highlightByteEnd,
+                                     highlightColor,
                                      decoded,
                                      progressDisplay);
         } catch (EOFException exception) {

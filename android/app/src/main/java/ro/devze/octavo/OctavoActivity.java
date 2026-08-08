@@ -26,6 +26,7 @@ import android.window.OnBackInvokedDispatcher;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 
 public final class OctavoActivity extends Activity {
@@ -43,6 +44,7 @@ public final class OctavoActivity extends Activity {
     private OctavoProgressStore progressStore;
     private OctavoProgressDisplay progressDisplay;
     private OctavoAnnotationStore annotationStore;
+    private OctavoNoteDraftStore noteDraftStore;
     private LinearLayout libraryRoot;
     private FrameLayout systemBarRoot;
     private View statusBarScrim;
@@ -85,6 +87,7 @@ public final class OctavoActivity extends Activity {
     private boolean navigationSnapshotRefreshPosted;
     private boolean searchSnapshotRefreshPosted;
     private boolean bookmarkNavigationPending;
+    private boolean noteSelectionRetained;
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
@@ -127,6 +130,9 @@ public final class OctavoActivity extends Activity {
         annotationStore = new OctavoAnnotationStore(this);
         OctavoAnnotationStore.LoadStatus annotationLoadStatus =
             annotationStore.load();
+        noteDraftStore = new OctavoNoteDraftStore(this);
+        OctavoNoteDraftStore.LoadStatus noteDraftLoadStatus =
+            noteDraftStore.load();
         chromeVisible = savedInstanceState != null
             && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
@@ -151,6 +157,7 @@ public final class OctavoActivity extends Activity {
                 "Reader progress display was reset because its saved setting was invalid");
         }
         reportAnnotationLoadStatus(annotationLoadStatus);
+        reportNoteDraftLoadStatus(noteDraftLoadStatus);
     }
 
     @Override
@@ -313,6 +320,8 @@ public final class OctavoActivity extends Activity {
                     session,
                     appearance,
                     progressDisplay,
+                    annotationStore.highlights(session.book.key),
+                    annotationStore.notes(session.book.key),
                     chromeVisible,
                     readerEntryStartedMillis,
                     createReaderListener());
@@ -462,11 +471,11 @@ public final class OctavoActivity extends Activity {
         bottom.addView(progress, weightedLayout());
 
         Button bookmarks = createThemedButton(
-            getString(R.string.reader_bookmarks),
+            "Annotations",
             tokens.buttonSurface,
             tokens.chromeText);
         bookmarks.setId(R.id.octavo_reader_bookmarks);
-        bookmarks.setContentDescription("Open bookmarks in this book");
+        bookmarks.setContentDescription("Open annotations in this book");
         bookmarks.setOnClickListener(view -> openBookmarksPanel());
         bottom.addView(bookmarks, chromeButtonLayout());
 
@@ -654,7 +663,9 @@ public final class OctavoActivity extends Activity {
 
             @Override
             public void onPresentationRetriesExhausted(
-                boolean appearanceStillAwaiting) {
+                boolean appearanceStillAwaiting,
+                boolean highlightStillAwaiting,
+                boolean noteMarkerStillAwaiting) {
                 if (!appearanceStillAwaiting) {
                     if (appearancePanel != null) {
                         appearancePanel.updatePresentedAppearance(
@@ -662,8 +673,13 @@ public final class OctavoActivity extends Activity {
                     }
                     cancelAppearanceTransition();
                 }
-                showOpenFailure(
-                    "Unable to present reader changes; try again");
+                showOpenFailure(highlightStillAwaiting
+                    ? "Highlight saved, but it could not be displayed. "
+                        + "Reopen the book to retry."
+                    : noteMarkerStillAwaiting
+                        ? "Note saved, but its marker could not be displayed. "
+                            + "Reopen the book to retry."
+                        : "Unable to present reader changes; try again");
             }
 
             @Override
@@ -733,7 +749,172 @@ public final class OctavoActivity extends Activity {
                 bookmarkNavigationPending = false;
                 reportNavigationRequestFailure(message);
             }
+
+            @Override
+            public boolean onHighlightRequested(
+                long spineIndex,
+                long byteStart,
+                long byteEnd,
+                OctavoAnnotationStore.HighlightColor color,
+                String selectedText) {
+                if (annotationStore == null || activeBook == null
+                    || surfaceView == null) {
+                    showOpenFailure("Highlights are unavailable.");
+                    return false;
+                }
+                OctavoAnnotationStore.MutationResult result =
+                    annotationStore.addHighlight(
+                        activeBook.key,
+                        spineIndex,
+                        byteStart,
+                        byteEnd,
+                        color,
+                        annotationExcerpt(selectedText));
+                if (!result.succeeded()) {
+                    showOpenFailure(annotationMutationFailure(result));
+                    return false;
+                }
+                refreshBookmarksPanel();
+                boolean accepted = surfaceView.replaceHighlights(
+                    annotationStore.highlights(activeBook.key),
+                    true,
+                    color.label + " highlight added.");
+                if (!accepted) {
+                    showOpenFailure(
+                        "Highlight saved, but its display is unavailable. "
+                        + "Reopen the book to retry.");
+                }
+                return accepted;
+            }
+
+            @Override
+            public boolean onNoteRequested(long spineIndex,
+                                           long byteStart,
+                                           long byteEnd,
+                                           String selectedText) {
+                if (annotationStore == null || noteDraftStore == null
+                    || activeBook == null || surfaceView == null) {
+                    showOpenFailure("Notes are unavailable.");
+                    return false;
+                }
+                String recordId = annotationStore.newNoteRecordId();
+                if (recordId == null) {
+                    showOpenFailure(
+                        "The bounded annotation store is full; remove an annotation and retry");
+                    return false;
+                }
+                OctavoNoteDraftStore.Draft draft =
+                    new OctavoNoteDraftStore.Draft(
+                        recordId,
+                        "",
+                        activeBook.key,
+                        spineIndex,
+                        byteStart,
+                        byteEnd,
+                        "",
+                        annotationExcerpt(selectedText),
+                        "");
+                if (!noteDraftStore.save(draft)) {
+                    showOpenFailure(
+                        "Unable to save a recoverable note draft; the selection was preserved");
+                    return false;
+                }
+                noteSelectionRetained = true;
+                openBookmarksPanel();
+                if (bookmarksPanel == null) {
+                    noteSelectionRetained = false;
+                    showOpenFailure("The note editor is unavailable.");
+                    return false;
+                }
+                bookmarksPanel.showNoteEditor(draft, false, false);
+                return true;
+            }
+
+            @Override
+            public boolean onNoteMarkerRequested(
+                OctavoAnnotationStore.Note note) {
+                return openNoteFromMarker(note);
+            }
         };
+    }
+
+    private boolean openNoteFromMarker(
+        OctavoAnnotationStore.Note projectedNote) {
+        if (projectedNote == null || annotationStore == null
+            || noteDraftStore == null || activeBook == null) {
+            showOpenFailure("Notes are unavailable.");
+            return false;
+        }
+        OctavoAnnotationStore.Note durableNote = null;
+        for (OctavoAnnotationStore.Note note
+                : annotationStore.notes(activeBook.key)) {
+            if (projectedNote.recordId.equals(note.recordId)) {
+                durableNote = note;
+                break;
+            }
+        }
+        if (durableNote == null) {
+            showOpenFailure(
+                "This note is no longer available; reopen the book to refresh its marker.");
+            return true;
+        }
+
+        OctavoNoteDraftStore.Draft existing = noteDraftStore.current();
+        if (existing != null) {
+            openBookmarksPanel();
+            if (bookmarksPanel == null) {
+                showOpenFailure("The note editor is unavailable.");
+                return false;
+            }
+            if (!existing.recordId.equals(durableNote.recordId)) {
+                bookmarksPanel.showError(
+                    "Finish or cancel the current note draft before opening another note.");
+            } else {
+                bookmarksPanel.announceForAccessibility("Note opened");
+            }
+            return true;
+        }
+
+        openBookmarksPanel();
+        if (bookmarksPanel == null) {
+            showOpenFailure("The note editor is unavailable.");
+            return false;
+        }
+        return beginNoteEditor(durableNote, durableNote.preferredBody());
+    }
+
+    private boolean beginNoteEditor(OctavoAnnotationStore.Note note,
+                                    String body) {
+        if (note == null || noteDraftStore == null) {
+            return false;
+        }
+        OctavoNoteDraftStore.Draft draft =
+            new OctavoNoteDraftStore.Draft(
+                note.recordId,
+                note.revisionToken,
+                note.bookDigest,
+                note.spineIndex,
+                note.byteStart,
+                note.byteEnd,
+                note.attachedHighlightId,
+                note.excerpt,
+                body == null ? "" : body);
+        if (!noteDraftStore.save(draft)) {
+            if (bookmarksPanel != null) {
+                bookmarksPanel.showError(
+                    "Unable to save a recoverable note draft; the note was not changed");
+            } else {
+                showOpenFailure(
+                    "Unable to save a recoverable note draft; the note was not changed");
+            }
+            return false;
+        }
+        if (bookmarksPanel == null) {
+            showOpenFailure("The note editor is unavailable.");
+            return false;
+        }
+        bookmarksPanel.showNoteEditor(draft, false, note.conflicted);
+        return true;
     }
 
     private void updateReaderNavigationAvailability(OctavoSurfaceView view) {
@@ -881,8 +1062,10 @@ public final class OctavoActivity extends Activity {
     private void refreshBookmarksPanel() {
         if (bookmarksPanel != null && activeBook != null
             && annotationStore != null) {
-            bookmarksPanel.updateBookmarks(
-                annotationStore.bookmarks(activeBook.key));
+            bookmarksPanel.updateAnnotations(
+                annotationStore.bookmarks(activeBook.key),
+                annotationStore.highlights(activeBook.key),
+                annotationStore.notes(activeBook.key));
         }
     }
 
@@ -928,7 +1111,10 @@ public final class OctavoActivity extends Activity {
         if (result == OctavoAnnotationStore.MutationResult.LIMIT) {
             return "The bounded annotation store is full; remove an annotation and retry";
         }
-        return "Unable to save the bookmark; the previous state was preserved";
+        if (result == OctavoAnnotationStore.MutationResult.CONFLICT) {
+            return "The note changed since editing began; reopen it to review every retained version";
+        }
+        return "Unable to save the annotation; the previous state was preserved";
     }
 
     private void reportAnnotationLoadStatus(
@@ -945,6 +1131,23 @@ public final class OctavoActivity extends Activity {
                        .CORRUPT_BLOCKED) {
             showOpenFailure(
                 "Invalid annotation state could not be isolated; annotations are read-only");
+        }
+    }
+
+    private void reportNoteDraftLoadStatus(
+        OctavoNoteDraftStore.LoadStatus status) {
+        if (status == OctavoNoteDraftStore.LoadStatus
+                .CORRUPT_QUARANTINED) {
+            showOpenFailure(
+                "An invalid unsaved note draft was isolated and reset");
+        } else if (status == OctavoNoteDraftStore.LoadStatus
+                       .FUTURE_VERSION_BLOCKED) {
+            showOpenFailure(
+                "An unsaved note draft was created by a newer 8vo and was preserved");
+        } else if (status == OctavoNoteDraftStore.LoadStatus
+                       .CORRUPT_BLOCKED) {
+            showOpenFailure(
+                "An invalid note draft could not be isolated; draft editing is unavailable");
         }
     }
 
@@ -1503,13 +1706,235 @@ public final class OctavoActivity extends Activity {
                                 annotationMutationFailure(result));
                         }
                     }
+
+                    @Override
+                    public void onNavigate(
+                        OctavoAnnotationStore.Highlight highlight) {
+                        if (surfaceView == null) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    "The reader is unavailable.");
+                            }
+                            return;
+                        }
+                        int result = surfaceView.requestAnnotationNavigation(
+                            highlight.spineIndex, highlight.byteStart);
+                        if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+                            bookmarkNavigationPending = true;
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showNavigationPending();
+                            }
+                        } else if (result == OctavoNative
+                                       .NAVIGATION_ALREADY_PRESENTED) {
+                            closeBookmarksPanel();
+                        }
+                        updateReaderNavigationAvailability(surfaceView);
+                    }
+
+                    @Override
+                    public void onRemove(
+                        OctavoAnnotationStore.Highlight highlight) {
+                        OctavoAnnotationStore.MutationResult result =
+                            annotationStore.removeHighlight(highlight.recordId);
+                        if (!result.succeeded()) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    annotationMutationFailure(result));
+                            }
+                            return;
+                        }
+                        List<OctavoAnnotationStore.Highlight> updated =
+                            annotationStore.highlights(activeBook.key);
+                        boolean projected = surfaceView != null
+                            && surfaceView.replaceHighlights(
+                                updated, false, "Highlight removed.");
+                        refreshBookmarksPanel();
+                        if (!projected && bookmarksPanel != null) {
+                            bookmarksPanel.showError(
+                                "Highlight removed, but the page could not "
+                                + "refresh. Reopen the book to retry.");
+                        }
+                    }
+
+                    @Override
+                    public void onRecolor(
+                        OctavoAnnotationStore.Highlight highlight,
+                        OctavoAnnotationStore.HighlightColor color) {
+                        OctavoAnnotationStore.MutationResult result =
+                            annotationStore.updateHighlightColor(
+                                highlight.recordId, color);
+                        if (!result.succeeded()) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    annotationMutationFailure(result));
+                            }
+                            return;
+                        }
+                        boolean projected = surfaceView != null
+                            && surfaceView.replaceHighlights(
+                                annotationStore.highlights(activeBook.key),
+                                false,
+                                "Highlight changed to " + color.label + ".");
+                        refreshBookmarksPanel();
+                        if (!projected && bookmarksPanel != null) {
+                            bookmarksPanel.showError(
+                                "Highlight color saved, but the page could not "
+                                + "refresh. Reopen the book to retry.");
+                        }
+                    }
+
+                    @Override
+                    public void onNavigate(
+                        OctavoAnnotationStore.Note note) {
+                        if (surfaceView == null) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    "The reader is unavailable.");
+                            }
+                            return;
+                        }
+                        int result = surfaceView.requestAnnotationNavigation(
+                            note.spineIndex, note.byteStart);
+                        if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+                            bookmarkNavigationPending = true;
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showNavigationPending();
+                            }
+                        } else if (result == OctavoNative
+                                       .NAVIGATION_ALREADY_PRESENTED) {
+                            closeBookmarksPanel();
+                        }
+                        updateReaderNavigationAvailability(surfaceView);
+                    }
+
+                    @Override
+                    public void onRemove(
+                        OctavoAnnotationStore.Note note) {
+                        OctavoAnnotationStore.MutationResult result =
+                            annotationStore.removeNote(
+                                note.recordId, note.revisionToken);
+                        if (result.succeeded()) {
+                            boolean projected = surfaceView != null
+                                && surfaceView.replaceNoteMarkers(
+                                    annotationStore.notes(activeBook.key),
+                                    false,
+                                    "Note removed.");
+                            refreshBookmarksPanel();
+                            if (!projected && bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    "Note removed, but its marker could not "
+                                    + "refresh. Reopen the book to retry.");
+                            }
+                        } else if (bookmarksPanel != null) {
+                            bookmarksPanel.showError(
+                                annotationMutationFailure(result));
+                        }
+                    }
+
+                    @Override
+                    public void onEdit(OctavoAnnotationStore.Note note,
+                                       String body) {
+                        beginNoteEditor(note, body);
+                    }
+
+                    @Override
+                    public boolean onDraftChanged(
+                        OctavoNoteDraftStore.Draft draft) {
+                        return noteDraftStore != null
+                            && noteDraftStore.save(draft);
+                    }
+
+                    @Override
+                    public void onSaveDraft(
+                        OctavoNoteDraftStore.Draft draft) {
+                        OctavoAnnotationStore.MutationResult result =
+                            annotationStore.saveNote(
+                                draft.recordId,
+                                draft.expectedRevisionToken,
+                                draft.bookDigest,
+                                draft.spineIndex,
+                                draft.byteStart,
+                                draft.byteEnd,
+                                draft.attachedHighlightId,
+                                draft.excerpt,
+                                draft.body);
+                        if (!result.succeeded()) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    annotationMutationFailure(result));
+                            }
+                            return;
+                        }
+                        boolean draftCleared = noteDraftStore.clear();
+                        boolean projected = surfaceView != null
+                            && surfaceView.replaceNoteMarkers(
+                                annotationStore.notes(activeBook.key),
+                                true,
+                                "Note saved.");
+                        boolean selectionCleared = projected;
+                        if (!projected) {
+                            selectionCleared = surfaceView == null
+                                || surfaceView.clearSelectionAfterDurableNote();
+                        }
+                        noteSelectionRetained = surfaceView != null;
+                        refreshBookmarksPanel();
+                        if (bookmarksPanel != null) {
+                            bookmarksPanel.finishNoteEditor(draftCleared
+                                ? projected
+                                    ? "Note saved."
+                                    : selectionCleared
+                                        ? "Note saved, but its marker could not be displayed; reopen the book to retry."
+                                        : "Note saved, but its marker could not be displayed and the text selection could not be cleared; retry by closing Annotations."
+                                : "Note saved, but its recovered draft could not be cleared; retry is safe.");
+                        }
+                    }
+
+                    @Override
+                    public void onCancelDraft(
+                        OctavoNoteDraftStore.Draft draft) {
+                        if (!noteDraftStore.clear()) {
+                            if (bookmarksPanel != null) {
+                                bookmarksPanel.showError(
+                                    "The recovered draft could not be discarded; it remains available");
+                            }
+                            return;
+                        }
+                        boolean selectionCleared = surfaceView == null
+                            || surfaceView.clearSelectionAfterDurableNote();
+                        noteSelectionRetained = !selectionCleared;
+                        if (bookmarksPanel != null) {
+                            bookmarksPanel.finishNoteEditor(
+                                selectionCleared
+                                    ? "Note editing cancelled."
+                                    : "Note editing cancelled, but the text selection could not be cleared; retry by closing Annotations.");
+                            bookmarksPanel.announceForAccessibility(
+                                "Note editing cancelled");
+                        }
+                    }
                 });
         } catch (IllegalStateException failure) {
             showOpenFailure(
-                "Bookmark styling is unavailable. Reopen the reader to retry.");
+                "Annotation styling is unavailable. Reopen the reader to retry.");
             return;
         }
-        panel.updateBookmarks(annotationStore.bookmarks(activeBook.key));
+        panel.updateAnnotations(
+            annotationStore.bookmarks(activeBook.key),
+            annotationStore.highlights(activeBook.key),
+            annotationStore.notes(activeBook.key));
+        OctavoNoteDraftStore.Draft recovered = noteDraftStore == null
+            ? null : noteDraftStore.current();
+        if (recovered != null
+            && activeBook.key.equals(recovered.bookDigest)) {
+            boolean conflicted = false;
+            for (OctavoAnnotationStore.Note note
+                    : annotationStore.notes(activeBook.key)) {
+                if (note.recordId.equals(recovered.recordId)) {
+                    conflicted = note.conflicted;
+                    break;
+                }
+            }
+            panel.showNoteEditor(recovered, true, conflicted);
+        }
         overlay.setBackgroundColor(panel.overlayColor());
         panel.setClickable(true);
         panel.setOnClickListener(view -> {
@@ -1554,7 +1979,7 @@ public final class OctavoActivity extends Activity {
             initialFocus.performAccessibilityAction(
                 AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
                 null);
-            panel.announceForAccessibility("Bookmarks opened");
+            panel.announceForAccessibility("Annotations opened");
         });
     }
 
@@ -2199,6 +2624,10 @@ public final class OctavoActivity extends Activity {
         View focusReturn = readerBookmarks != null
             && readerBookmarks.isShown() && readerBookmarks.isEnabled()
                 ? readerBookmarks : surfaceView;
+        if (noteSelectionRetained && surfaceView != null) {
+            surfaceView.clearSelectionAfterDurableNote();
+            noteSelectionRetained = false;
+        }
         bookmarksOverlay.animate().cancel();
         if (bookmarksPanel != null) {
             bookmarksPanel.animate().cancel();
@@ -2230,7 +2659,7 @@ public final class OctavoActivity extends Activity {
                 focusReturn.performAccessibilityAction(
                     AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
                     null);
-                focusReturn.announceForAccessibility("Bookmarks closed");
+                focusReturn.announceForAccessibility("Annotations closed");
             });
         }
     }
@@ -2481,6 +2910,9 @@ public final class OctavoActivity extends Activity {
         flushProgressPersistence();
         cancelNavigationSnapshotRefresh();
         cancelSearchSnapshotRefresh();
+        noteSelectionRetained = false;
+        bookmarksOverlay = null;
+        bookmarksPanel = null;
         if (navigationOverlay != null
             && navigationOverlay.getParent() instanceof ViewGroup) {
             ((ViewGroup)navigationOverlay.getParent())
@@ -2723,6 +3155,10 @@ public final class OctavoActivity extends Activity {
 
     OctavoAnnotationStore annotationStoreForTesting() {
         return annotationStore;
+    }
+
+    OctavoNoteDraftStore noteDraftStoreForTesting() {
+        return noteDraftStore;
     }
 
     void openSearchPanelForTesting() {

@@ -40,6 +40,7 @@ final class OctavoAnnotationStore {
         UPDATED,
         FAILED,
         BLOCKED,
+        CONFLICT,
         LIMIT;
 
         boolean succeeded() {
@@ -53,6 +54,30 @@ final class OctavoAnnotationStore {
         CORRUPT_QUARANTINED,
         CORRUPT_BLOCKED,
         FUTURE_VERSION_BLOCKED
+    }
+
+    enum HighlightColor {
+        YELLOW(0, "Yellow"),
+        PINK(1, "Pink"),
+        BLUE(2, "Blue"),
+        ORANGE(3, "Orange");
+
+        final int wireId;
+        final String label;
+
+        HighlightColor(int wireId, String label) {
+            this.wireId = wireId;
+            this.label = label;
+        }
+
+        static HighlightColor fromWireId(int wireId) {
+            for (HighlightColor color : values()) {
+                if (color.wireId == wireId) {
+                    return color;
+                }
+            }
+            return null;
+        }
     }
 
     static final class Bookmark {
@@ -78,6 +103,85 @@ final class OctavoAnnotationStore {
             this.label = label;
             this.excerpt = excerpt;
             this.conflicted = conflicted;
+        }
+    }
+
+    static final class Highlight {
+        final String recordId;
+        final String bookDigest;
+        final long spineIndex;
+        final long byteStart;
+        final long byteEnd;
+        final HighlightColor color;
+        final String excerpt;
+        final boolean conflicted;
+
+        Highlight(String recordId,
+                  String bookDigest,
+                  long spineIndex,
+                  long byteStart,
+                  long byteEnd,
+                  HighlightColor color,
+                  String excerpt,
+                  boolean conflicted) {
+            this.recordId = recordId;
+            this.bookDigest = bookDigest;
+            this.spineIndex = spineIndex;
+            this.byteStart = byteStart;
+            this.byteEnd = byteEnd;
+            this.color = color;
+            this.excerpt = excerpt;
+            this.conflicted = conflicted;
+        }
+    }
+
+    static final class NoteVersion {
+        final String mutationId;
+        final String body;
+
+        NoteVersion(String mutationId, String body) {
+            this.mutationId = mutationId;
+            this.body = body;
+        }
+    }
+
+    static final class Note {
+        final String recordId;
+        final String bookDigest;
+        final long spineIndex;
+        final long byteStart;
+        final long byteEnd;
+        final String attachedHighlightId;
+        final String excerpt;
+        final List<NoteVersion> versions;
+        final String revisionToken;
+        final boolean conflicted;
+
+        Note(String recordId,
+             String bookDigest,
+             long spineIndex,
+             long byteStart,
+             long byteEnd,
+             String attachedHighlightId,
+             String excerpt,
+             List<NoteVersion> versions,
+             String revisionToken,
+             boolean conflicted) {
+            this.recordId = recordId;
+            this.bookDigest = bookDigest;
+            this.spineIndex = spineIndex;
+            this.byteStart = byteStart;
+            this.byteEnd = byteEnd;
+            this.attachedHighlightId = attachedHighlightId;
+            this.excerpt = excerpt;
+            this.versions = Collections.unmodifiableList(
+                new ArrayList<>(versions));
+            this.revisionToken = revisionToken;
+            this.conflicted = conflicted;
+        }
+
+        String preferredBody() {
+            return versions.isEmpty() ? "" : versions.get(0).body;
         }
     }
 
@@ -158,6 +262,16 @@ final class OctavoAnnotationStore {
         Comparator.comparingLong((Bookmark bookmark) -> bookmark.spineIndex)
             .thenComparingLong(bookmark -> bookmark.byteOffset)
             .thenComparing(bookmark -> bookmark.recordId);
+    private static final Comparator<Highlight> HIGHLIGHT_ORDER =
+        Comparator.comparingLong((Highlight highlight) -> highlight.spineIndex)
+            .thenComparingLong(highlight -> highlight.byteStart)
+            .thenComparingLong(highlight -> highlight.byteEnd)
+            .thenComparing(highlight -> highlight.recordId);
+    private static final Comparator<Note> NOTE_ORDER =
+        Comparator.comparingLong((Note note) -> note.spineIndex)
+            .thenComparingLong(note -> note.byteStart)
+            .thenComparingLong(note -> note.byteEnd)
+            .thenComparing(note -> note.recordId);
 
     private final File rootDirectory;
     private final File stateFile;
@@ -332,6 +446,272 @@ final class OctavoAnnotationStore {
         return Collections.unmodifiableList(result);
     }
 
+    synchronized MutationResult addHighlight(String bookDigest,
+                                              long spineIndex,
+                                              long byteStart,
+                                              long byteEnd,
+                                              HighlightColor color,
+                                              String excerpt) {
+        if (mutationsBlocked) {
+            return MutationResult.BLOCKED;
+        }
+        if (!validDigest(bookDigest)
+            || !validRange(spineIndex, byteStart, byteEnd)
+            || color == null
+            || !validText(excerpt, MAX_EXCERPT_BYTES)) {
+            return MutationResult.FAILED;
+        }
+        if (current.records.size() >= MAX_RECORDS) {
+            return MutationResult.LIMIT;
+        }
+        String recordId = null;
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            String candidate = randomId(random);
+            if (!current.records.containsKey(candidate)) {
+                recordId = candidate;
+                break;
+            }
+        }
+        if (recordId == null) {
+            return MutationResult.FAILED;
+        }
+        Envelope envelope = new Envelope(recordId,
+                                         Kind.HIGHLIGHT,
+                                         bookDigest,
+                                         new TreeMap<>(),
+                                         new TreeMap<>());
+        Mutation put = putMutation(envelope,
+                                   spineIndex,
+                                   byteStart,
+                                   byteEnd,
+                                   color.wireId,
+                                   0,
+                                   "",
+                                   "",
+                                   excerpt,
+                                   "");
+        return mutate(envelope, put, MutationResult.ADDED);
+    }
+
+    synchronized MutationResult updateHighlightColor(
+        String recordId, HighlightColor color) {
+        if (mutationsBlocked) {
+            return MutationResult.BLOCKED;
+        }
+        Envelope envelope = current.records.get(recordId);
+        Mutation visible = visiblePut(envelope);
+        if (color == null || envelope == null
+            || envelope.kind != Kind.HIGHLIGHT || visible == null) {
+            return MutationResult.FAILED;
+        }
+        if (visible.color == color.wireId) {
+            return MutationResult.UPDATED;
+        }
+        Mutation put = putMutation(envelope,
+                                   visible.spineIndex,
+                                   visible.byteStart,
+                                   visible.byteEnd,
+                                   color.wireId,
+                                   visible.flags,
+                                   visible.attachedId,
+                                   visible.label,
+                                   visible.excerpt,
+                                   "");
+        return mutate(envelope, put, MutationResult.UPDATED);
+    }
+
+    synchronized MutationResult removeHighlight(String recordId) {
+        if (mutationsBlocked) {
+            return MutationResult.BLOCKED;
+        }
+        Envelope envelope = current.records.get(recordId);
+        if (envelope == null || envelope.kind != Kind.HIGHLIGHT
+            || visiblePut(envelope) == null) {
+            return MutationResult.FAILED;
+        }
+        return mutate(envelope,
+                      deleteMutation(envelope),
+                      MutationResult.REMOVED);
+    }
+
+    synchronized List<Highlight> highlights(String bookDigest) {
+        if (!validDigest(bookDigest)) {
+            return Collections.emptyList();
+        }
+        ArrayList<Highlight> result = new ArrayList<>();
+        for (Envelope envelope : current.records.values()) {
+            if (envelope.kind != Kind.HIGHLIGHT
+                || !bookDigest.equals(envelope.bookDigest)) {
+                continue;
+            }
+            Mutation visible = visiblePut(envelope);
+            HighlightColor color = visible == null
+                ? null : HighlightColor.fromWireId(visible.color);
+            if (visible == null || color == null) {
+                continue;
+            }
+            result.add(new Highlight(envelope.recordId,
+                                     envelope.bookDigest,
+                                     visible.spineIndex,
+                                     visible.byteStart,
+                                     visible.byteEnd,
+                                     color,
+                                     visible.excerpt,
+                                     envelope.heads.size() > 1));
+        }
+        result.sort(HIGHLIGHT_ORDER);
+        return Collections.unmodifiableList(result);
+    }
+
+    synchronized String newNoteRecordId() {
+        if (mutationsBlocked || current.records.size() >= MAX_RECORDS) {
+            return null;
+        }
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            String candidate = randomId(random);
+            if (!current.records.containsKey(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    synchronized MutationResult saveNote(String recordId,
+                                         String expectedRevisionToken,
+                                         String bookDigest,
+                                         long spineIndex,
+                                         long byteStart,
+                                         long byteEnd,
+                                         String attachedHighlightId,
+                                         String excerpt,
+                                         String body) {
+        if (mutationsBlocked) {
+            return MutationResult.BLOCKED;
+        }
+        if (!isHex(recordId, HEX_ID_BYTES)
+            || expectedRevisionToken == null
+            || (!expectedRevisionToken.isEmpty()
+                && !isHex(expectedRevisionToken, HEX_ID_BYTES))
+            || !validDigest(bookDigest)
+            || !validPoint(spineIndex, byteStart)
+            || byteEnd < byteStart
+            || !validOptionalHex(attachedHighlightId)
+            || !validText(excerpt, MAX_EXCERPT_BYTES)
+            || body == null || body.isEmpty()
+            || !validText(body, MAX_NOTE_BYTES)) {
+            return MutationResult.FAILED;
+        }
+        Envelope envelope = current.records.get(recordId);
+        if (envelope == null) {
+            if (!expectedRevisionToken.isEmpty()) {
+                return MutationResult.CONFLICT;
+            }
+            if (current.records.size() >= MAX_RECORDS) {
+                return MutationResult.LIMIT;
+            }
+            if (!validNoteAttachment(attachedHighlightId, bookDigest)) {
+                return MutationResult.FAILED;
+            }
+            envelope = new Envelope(recordId,
+                                    Kind.NOTE,
+                                    bookDigest,
+                                    new TreeMap<>(),
+                                    new TreeMap<>());
+        } else {
+            if (envelope.kind != Kind.NOTE
+                || !bookDigest.equals(envelope.bookDigest)) {
+                return MutationResult.CONFLICT;
+            }
+            Mutation visible = visiblePut(envelope);
+            if (visible != null
+                && visible.actorId.equals(current.actorId)
+                && visible.spineIndex == spineIndex
+                && visible.byteStart == byteStart
+                && visible.byteEnd == byteEnd
+                && visible.attachedId.equals(attachedHighlightId)
+                && visible.excerpt.equals(excerpt)
+                && envelope.heads.size() == 1
+                && visible.note.equals(body)) {
+                return MutationResult.UPDATED;
+            }
+            if (!headToken(envelope).equals(expectedRevisionToken)) {
+                return MutationResult.CONFLICT;
+            }
+            if (!validNoteAttachment(attachedHighlightId, bookDigest)) {
+                return MutationResult.FAILED;
+            }
+        }
+        Mutation put = putMutation(envelope,
+                                   spineIndex,
+                                   byteStart,
+                                   byteEnd,
+                                   0,
+                                   0,
+                                   attachedHighlightId,
+                                   "",
+                                   excerpt,
+                                   body);
+        return mutate(envelope, put,
+                      expectedRevisionToken.isEmpty()
+                          ? MutationResult.ADDED
+                          : MutationResult.UPDATED);
+    }
+
+    synchronized MutationResult removeNote(String recordId,
+                                            String expectedRevisionToken) {
+        if (mutationsBlocked) {
+            return MutationResult.BLOCKED;
+        }
+        Envelope envelope = current.records.get(recordId);
+        if (expectedRevisionToken == null
+            || envelope == null || envelope.kind != Kind.NOTE
+            || visiblePut(envelope) == null) {
+            return MutationResult.FAILED;
+        }
+        if (!headToken(envelope).equals(expectedRevisionToken)) {
+            return MutationResult.CONFLICT;
+        }
+        return mutate(envelope,
+                      deleteMutation(envelope),
+                      MutationResult.REMOVED);
+    }
+
+    synchronized List<Note> notes(String bookDigest) {
+        if (!validDigest(bookDigest)) {
+            return Collections.emptyList();
+        }
+        ArrayList<Note> result = new ArrayList<>();
+        for (Envelope envelope : current.records.values()) {
+            if (envelope.kind != Kind.NOTE
+                || !bookDigest.equals(envelope.bookDigest)) {
+                continue;
+            }
+            Mutation visible = visiblePut(envelope);
+            if (visible == null) {
+                continue;
+            }
+            ArrayList<NoteVersion> versions = new ArrayList<>();
+            for (Mutation head : envelope.heads.values()) {
+                if (head.operation == Operation.PUT) {
+                    versions.add(new NoteVersion(
+                        head.mutationId, head.note));
+                }
+            }
+            result.add(new Note(envelope.recordId,
+                                envelope.bookDigest,
+                                visible.spineIndex,
+                                visible.byteStart,
+                                visible.byteEnd,
+                                visible.attachedId,
+                                visible.excerpt,
+                                versions,
+                                headToken(envelope),
+                                envelope.heads.size() > 1));
+        }
+        result.sort(NOTE_ORDER);
+        return Collections.unmodifiableList(result);
+    }
+
     synchronized PortableState exportPortableState() {
         return new PortableState(current.records);
     }
@@ -471,6 +851,48 @@ final class OctavoAnnotationStore {
         return mutate(envelope, put, MutationResult.UPDATED);
     }
 
+    synchronized MutationResult putHighlightForTesting(
+        String recordId,
+        String bookDigest,
+        long spineIndex,
+        long byteStart,
+        long byteEnd,
+        HighlightColor color,
+        String excerpt) {
+        if (!isHex(recordId, HEX_ID_BYTES)
+            || !validDigest(bookDigest)
+            || !validRange(spineIndex, byteStart, byteEnd)
+            || color == null
+            || !validText(excerpt, MAX_EXCERPT_BYTES)) {
+            return MutationResult.FAILED;
+        }
+        Envelope envelope = current.records.get(recordId);
+        if (envelope == null) {
+            if (current.records.size() >= MAX_RECORDS) {
+                return MutationResult.LIMIT;
+            }
+            envelope = new Envelope(recordId,
+                                    Kind.HIGHLIGHT,
+                                    bookDigest,
+                                    new TreeMap<>(),
+                                    new TreeMap<>());
+        } else if (envelope.kind != Kind.HIGHLIGHT
+                   || !bookDigest.equals(envelope.bookDigest)) {
+            return MutationResult.FAILED;
+        }
+        Mutation put = putMutation(envelope,
+                                   spineIndex,
+                                   byteStart,
+                                   byteEnd,
+                                   color.wireId,
+                                   0,
+                                   "",
+                                   "",
+                                   excerpt,
+                                   "");
+        return mutate(envelope, put, MutationResult.UPDATED);
+    }
+
     synchronized List<String> noteBodiesForTesting(String recordId) {
         Envelope envelope = current.records.get(recordId);
         if (envelope == null || envelope.kind != Kind.NOTE) {
@@ -483,6 +905,25 @@ final class OctavoAnnotationStore {
             }
         }
         Collections.sort(result);
+        return Collections.unmodifiableList(result);
+    }
+
+    synchronized List<HighlightColor> highlightColorsForTesting(
+        String recordId) {
+        Envelope envelope = current.records.get(recordId);
+        if (envelope == null || envelope.kind != Kind.HIGHLIGHT) {
+            return Collections.emptyList();
+        }
+        ArrayList<HighlightColor> result = new ArrayList<>();
+        for (Mutation head : envelope.heads.values()) {
+            if (head.operation == Operation.PUT) {
+                HighlightColor color = HighlightColor.fromWireId(head.color);
+                if (color != null) {
+                    result.add(color);
+                }
+            }
+        }
+        result.sort(Comparator.comparingInt(color -> color.wireId));
         return Collections.unmodifiableList(result);
     }
 
@@ -758,6 +1199,35 @@ final class OctavoAnnotationStore {
             }
         }
         return null;
+    }
+
+    private boolean validNoteAttachment(String attachedId,
+                                        String bookDigest) {
+        if (attachedId.isEmpty()) {
+            return true;
+        }
+        Envelope attached = current.records.get(attachedId);
+        return attached != null && attached.kind == Kind.HIGHLIGHT
+            && bookDigest.equals(attached.bookDigest);
+    }
+
+    private static String headToken(Envelope envelope) {
+        if (envelope == null || envelope.heads.isEmpty()) {
+            return "";
+        }
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (DataOutputStream output = new DataOutputStream(bytes)) {
+                for (String mutationId : envelope.heads.keySet()) {
+                    output.write(
+                        mutationId.getBytes(StandardCharsets.US_ASCII));
+                }
+                output.flush();
+            }
+            return first128Hex(sha256(bytes.toByteArray()));
+        } catch (IOException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     private static byte[] encode(State state) throws IOException {
@@ -1043,7 +1513,9 @@ final class OctavoAnnotationStore {
                     throw new IOException("Invalid highlight payload");
                 }
                 if (envelope.kind == Kind.NOTE
-                    && mutation.note.isEmpty()) {
+                    && (mutation.note.isEmpty()
+                        || mutation.color != 0
+                        || !mutation.label.isEmpty())) {
                     throw new IOException("Invalid note payload");
                 }
             } else if (!mutation.attachedId.isEmpty()
@@ -1259,6 +1731,12 @@ final class OctavoAnnotationStore {
     private static boolean validPoint(long spineIndex, long byteOffset) {
         return spineIndex >= 0 && spineIndex <= MAX_SPINE_INDEX
             && byteOffset >= 0;
+    }
+
+    private static boolean validRange(long spineIndex,
+                                      long byteStart,
+                                      long byteEnd) {
+        return validPoint(spineIndex, byteStart) && byteEnd > byteStart;
     }
 
     private static boolean validDigest(String value) {

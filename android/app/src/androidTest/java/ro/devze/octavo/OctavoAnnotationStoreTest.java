@@ -43,6 +43,8 @@ public final class OctavoAnnotationStoreTest {
         "66666666666666666666666666666666";
     private static final String NOTE_ID =
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static final String HIGHLIGHT_ID =
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     private File testRoot;
 
@@ -265,6 +267,12 @@ public final class OctavoAnnotationStoreTest {
         assertEquals(Arrays.asList(
                          "Alpha edit", "Beta edit", "Gamma edit"),
                      merged.noteBodiesForTesting(NOTE_ID));
+        List<OctavoAnnotationStore.Note> visibleNotes =
+            merged.notes(DIGEST);
+        assertEquals(1, visibleNotes.size());
+        assertTrue(visibleNotes.get(0).conflicted);
+        assertEquals(3, visibleNotes.get(0).versions.size());
+        assertEquals(32, visibleNotes.get(0).revisionToken.length());
 
         OctavoAnnotationStore grouped = store("notes-grouped", ACTOR_E);
         assertTrue(grouped.mergePortableState(
@@ -280,6 +288,192 @@ public final class OctavoAnnotationStoreTest {
         assertArrayEquals(
             merged.portableCanonicalBytesForTesting(),
             associated.portableCanonicalBytesForTesting());
+
+        OctavoAnnotationStore.Note conflict = visibleNotes.get(0);
+        assertEquals(OctavoAnnotationStore.MutationResult.UPDATED,
+                     merged.saveNote(
+                         conflict.recordId,
+                         conflict.revisionToken,
+                         conflict.bookDigest,
+                         conflict.spineIndex,
+                         conflict.byteStart,
+                         conflict.byteEnd,
+                         conflict.attachedHighlightId,
+                         conflict.excerpt,
+                         "Resolved body"));
+        assertEquals(1, merged.notes(DIGEST).get(0).versions.size());
+        assertFalse(merged.notes(DIGEST).get(0).conflicted);
+    }
+
+    @Test
+    public void publicNoteCreateEditRollbackDeleteAndRestart()
+        throws IOException {
+        File files = directory("note-round-trip");
+        OctavoAnnotationStore store =
+            new OctavoAnnotationStore(files, ACTOR_A);
+        assertEquals(OctavoAnnotationStore.LoadStatus.MISSING, store.load());
+        String recordId = store.newNoteRecordId();
+        assertNotNull(recordId);
+        assertEquals(OctavoAnnotationStore.MutationResult.FAILED,
+                     store.saveNote(recordId, "", DIGEST,
+                                    2, 80, 117, "",
+                                    "Selected source", ""));
+        assertEquals(OctavoAnnotationStore.MutationResult.ADDED,
+                     store.saveNote(recordId, "", DIGEST,
+                                    2, 80, 117, "",
+                                    "Selected source", "First body"));
+        OctavoAnnotationStore.Note note = store.notes(DIGEST).get(0);
+        assertEquals(recordId, note.recordId);
+        assertEquals(2, note.spineIndex);
+        assertEquals(80, note.byteStart);
+        assertEquals(117, note.byteEnd);
+        assertEquals("Selected source", note.excerpt);
+        assertEquals("First body", note.preferredBody());
+        byte[] published = readFile(store.stateFileForTesting());
+        byte[] canonical = store.canonicalBytesForTesting();
+
+        store.failNextPublishForTesting();
+        assertEquals(OctavoAnnotationStore.MutationResult.FAILED,
+                     store.saveNote(recordId, note.revisionToken, DIGEST,
+                                    2, 80, 117, "",
+                                    "Selected source", "Failed edit"));
+        assertArrayEquals(published, readFile(store.stateFileForTesting()));
+        assertArrayEquals(canonical, store.canonicalBytesForTesting());
+        assertEquals("First body", store.notes(DIGEST).get(0).preferredBody());
+
+        assertEquals(OctavoAnnotationStore.MutationResult.UPDATED,
+                     store.saveNote(recordId, note.revisionToken, DIGEST,
+                                    2, 80, 117, "",
+                                    "Selected source", "Edited body"));
+        assertEquals(OctavoAnnotationStore.MutationResult.CONFLICT,
+                     store.saveNote(recordId, note.revisionToken, DIGEST,
+                                    2, 80, 117, "",
+                                    "Selected source", "Stale edit"));
+
+        OctavoAnnotationStore restarted =
+            new OctavoAnnotationStore(files, ACTOR_B);
+        assertEquals(OctavoAnnotationStore.LoadStatus.LOADED,
+                     restarted.load());
+        OctavoAnnotationStore.Note restored = restarted.notes(DIGEST).get(0);
+        assertEquals("Edited body", restored.preferredBody());
+        assertEquals(OctavoAnnotationStore.MutationResult.REMOVED,
+                     restarted.removeNote(
+                         restored.recordId, restored.revisionToken));
+        OctavoAnnotationStore removed =
+            new OctavoAnnotationStore(files, ACTOR_C);
+        assertEquals(OctavoAnnotationStore.LoadStatus.LOADED,
+                     removed.load());
+        assertTrue(removed.notes(DIGEST).isEmpty());
+        assertEquals(1, removed.recordCountForTesting());
+    }
+
+    @Test
+    public void highlightRangeColorAtomicRoundTripRemovalAndRestart()
+        throws IOException {
+        File files = directory("highlight-round-trip");
+        OctavoAnnotationStore store =
+            new OctavoAnnotationStore(files, ACTOR_A);
+        assertEquals(OctavoAnnotationStore.LoadStatus.MISSING, store.load());
+        assertEquals(OctavoAnnotationStore.MutationResult.FAILED,
+                     store.addHighlight(
+                         DIGEST, 2, 80, 80,
+                         OctavoAnnotationStore.HighlightColor.YELLOW,
+                         "Invalid"));
+        assertEquals(OctavoAnnotationStore.MutationResult.ADDED,
+                     store.addHighlight(
+                         DIGEST, 2, 80, 117,
+                         OctavoAnnotationStore.HighlightColor.YELLOW,
+                         "Selected source text"));
+        List<OctavoAnnotationStore.Highlight> highlights =
+            store.highlights(DIGEST);
+        assertEquals(1, highlights.size());
+        OctavoAnnotationStore.Highlight highlight = highlights.get(0);
+        assertEquals(32, highlight.recordId.length());
+        assertEquals(2, highlight.spineIndex);
+        assertEquals(80, highlight.byteStart);
+        assertEquals(117, highlight.byteEnd);
+        assertEquals(OctavoAnnotationStore.HighlightColor.YELLOW,
+                     highlight.color);
+        assertEquals("Selected source text", highlight.excerpt);
+        byte[] published = readFile(store.stateFileForTesting());
+        byte[] canonical = store.canonicalBytesForTesting();
+
+        store.failNextPublishForTesting();
+        assertEquals(OctavoAnnotationStore.MutationResult.FAILED,
+                     store.updateHighlightColor(
+                         highlight.recordId,
+                         OctavoAnnotationStore.HighlightColor.PINK));
+        assertArrayEquals(published, readFile(store.stateFileForTesting()));
+        assertArrayEquals(canonical, store.canonicalBytesForTesting());
+        assertEquals(OctavoAnnotationStore.HighlightColor.YELLOW,
+                     store.highlights(DIGEST).get(0).color);
+
+        assertEquals(OctavoAnnotationStore.MutationResult.UPDATED,
+                     store.updateHighlightColor(
+                         highlight.recordId,
+                         OctavoAnnotationStore.HighlightColor.ORANGE));
+        OctavoAnnotationStore restarted =
+            new OctavoAnnotationStore(files, ACTOR_B);
+        assertEquals(OctavoAnnotationStore.LoadStatus.LOADED,
+                     restarted.load());
+        OctavoAnnotationStore.Highlight restored =
+            restarted.highlights(DIGEST).get(0);
+        assertEquals(highlight.recordId, restored.recordId);
+        assertEquals(OctavoAnnotationStore.HighlightColor.ORANGE,
+                     restored.color);
+        assertEquals(80, restored.byteStart);
+        assertEquals(117, restored.byteEnd);
+
+        assertEquals(OctavoAnnotationStore.MutationResult.REMOVED,
+                     restarted.removeHighlight(restored.recordId));
+        OctavoAnnotationStore removedRestart =
+            new OctavoAnnotationStore(files, ACTOR_C);
+        assertEquals(OctavoAnnotationStore.LoadStatus.LOADED,
+                     removedRestart.load());
+        assertTrue(removedRestart.highlights(DIGEST).isEmpty());
+        assertEquals(1, removedRestart.recordCountForTesting());
+    }
+
+    @Test
+    public void concurrentHighlightColorsRemainRecoverableAndDeterministic()
+        throws IOException {
+        OctavoAnnotationStore first = store("highlight-first", ACTOR_A);
+        assertTrue(first.putHighlightForTesting(
+            HIGHLIGHT_ID, DIGEST, 5, 210, 260,
+            OctavoAnnotationStore.HighlightColor.YELLOW,
+            "Shared highlight").succeeded());
+        OctavoAnnotationStore second = store("highlight-second", ACTOR_B);
+        assertTrue(second.mergePortableState(
+            first.exportPortableState()).succeeded());
+        assertTrue(first.updateHighlightColor(
+            HIGHLIGHT_ID,
+            OctavoAnnotationStore.HighlightColor.PINK).succeeded());
+        assertTrue(second.updateHighlightColor(
+            HIGHLIGHT_ID,
+            OctavoAnnotationStore.HighlightColor.BLUE).succeeded());
+
+        OctavoAnnotationStore leftThenRight =
+            store("highlight-lr", ACTOR_C);
+        assertTrue(leftThenRight.mergePortableState(
+            first.exportPortableState()).succeeded());
+        assertTrue(leftThenRight.mergePortableState(
+            second.exportPortableState()).succeeded());
+        assertEquals(Arrays.asList(
+                         OctavoAnnotationStore.HighlightColor.PINK,
+                         OctavoAnnotationStore.HighlightColor.BLUE),
+                     leftThenRight.highlightColorsForTesting(HIGHLIGHT_ID));
+        assertEquals(1, leftThenRight.highlights(DIGEST).size());
+        assertTrue(leftThenRight.highlights(DIGEST).get(0).conflicted);
+
+        OctavoAnnotationStore rightThenLeft =
+            store("highlight-rl", ACTOR_D);
+        assertTrue(rightThenLeft.mergePortableState(
+            second.exportPortableState()).succeeded());
+        assertTrue(rightThenLeft.mergePortableState(
+            first.exportPortableState()).succeeded());
+        assertArrayEquals(
+            leftThenRight.portableCanonicalBytesForTesting(),
+            rightThenLeft.portableCanonicalBytesForTesting());
     }
 
     private OctavoAnnotationStore store(String name, String actor) {

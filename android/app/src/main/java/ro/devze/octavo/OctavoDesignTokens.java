@@ -307,6 +307,45 @@ final class OctavoDesignTokens {
         };
     }
 
+    /** Product-owned semantic annotation palette; IDs, never ARGB, persist. */
+    int[] annotationHighlightColors() {
+        switch (themeId) {
+            case OctavoAppearance.THEME_PAPER:
+                return new int[] {
+                    highlight, 0xFFF2C6D5, 0xFFBFDDF2, 0xFFF4C58B
+                };
+            case OctavoAppearance.THEME_SEPIA:
+                return new int[] {
+                    highlight, 0xFFE6B8BE, 0xFFB8CEE1, 0xFFE7B46E
+                };
+            case OctavoAppearance.THEME_DUSK:
+                return new int[] {
+                    highlight, 0xFF67434D, 0xFF3B5268, 0xFF6B4935
+                };
+            case OctavoAppearance.THEME_WARM_DARK:
+                return new int[] {
+                    highlight, 0xFF624147, 0xFF3B4F61, 0xFF68452F
+                };
+            case OctavoAppearance.THEME_OLED:
+                return new int[] {
+                    highlight, 0xFF59383D, 0xFF30485C, 0xFF5E3E2A
+                };
+            case OctavoAppearance.THEME_HIGH_CONTRAST:
+                return new int[] {
+                    highlight, 0xFFFFB6CF, 0xFFA9D2FF, 0xFFFFD08A
+                };
+            default:
+                throw new IllegalStateException("Unknown highlight palette");
+        }
+    }
+
+    int annotationHighlightColor(OctavoAnnotationStore.HighlightColor color) {
+        if (color == null) {
+            throw new IllegalArgumentException("Highlight color is required");
+        }
+        return annotationHighlightColors()[color.wireId];
+    }
+
     private long hashPalette() {
         long hash = mix(FNV_OFFSET_BASIS, themeId);
         hash = mix(hash, darkAppearance ? 1 : 0);
@@ -333,6 +372,9 @@ final class OctavoDesignTokens {
         hash = mix(hash, selection);
         hash = mix(hash, search);
         hash = mix(hash, highlight);
+        for (int color : annotationHighlightColors()) {
+            hash = mix(hash, color);
+        }
         hash = mix(hash, success);
         hash = mix(hash, warning);
         hash = mix(hash, error);
