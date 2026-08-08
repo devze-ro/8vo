@@ -198,19 +198,32 @@ the application does not claim a cross-file transaction. Failed annotation
 mutations restore the in-memory state and leave editable drafts available for
 retry.
 
-Port 11 stores provider-neutral Android annotation state at
-`<files>/port11/annotations.v1`. The EPUB SHA-256 digest is book identity, and
-Reader0 spine plus canonical UTF-8 byte point/range is the only anchor. Stable
-record, actor, mutation, and tombstone identities form a bounded causal
-multi-value register. Merge unions identities, removes only causally dominated
-heads, retains concurrent note bodies and put/delete conflicts, sorts canonical
-bytes, and never consults device time. The complete versioned file is bounded,
-CRC32-protected, descriptor-synchronized, and replaced with a same-directory
-`ATOMIC_MOVE`; publication failure preserves both prior bytes and prior
-in-memory state. Malformed bytes must be quarantined atomically before an empty
-store becomes writable, while an unsupported future version remains preserved
- and blocks mutation. Managed-book removal does not imply local annotation
- deletion, so byte-identical re-import reconnects the same digest.
+Port 11 stores Android's private annotation wrapper at
+`<files>/port11/annotations.v1` (`O1AN`) and exports/imports the distinct
+actor-neutral portable snapshot (`O1AP`). The private wrapper additionally owns
+the installation actor and local counter and is never provider data. The EPUB
+SHA-256 digest is book identity, and Reader0 spine plus canonical UTF-8 byte
+point/range is the only anchor. Stable record, actor, mutation, and tombstone
+identities form a bounded causal multi-value register. The state-based join
+takes the maximum frontier and retains a side-only head only when the opposite
+frontier has not incorporated its dot; it retains concurrent note bodies and
+put/delete conflicts, sorts canonical bytes, and never consults device time.
+Its commutative/associative/idempotent claim applies to non-equivocating causal
+histories whose required intermediate and result fit the declared bounds; a
+capacity rejection is an exact no-op that a coordinator must retain and retry.
+Both inputs and the result must have immutable per-record anchors, justified
+frontiers, maximal non-dominated heads, unique actor dots, canonical kind
+payloads, and valid same-book note attachments. Imported dots ahead of the
+current private actor counter rotate Android to a fresh actor before publish,
+preventing reuse or exhaustion of that dot space. The complete versioned files
+are bounded during serialization and CRC32-protected; private publication is
+descriptor-synchronized and uses a same-directory `ATOMIC_MOVE`, so failure
+preserves prior bytes, counter, and in-memory state. CRC and semantic validation
+are not authentication of a party able to forge valid history. Malformed
+private bytes must be quarantined atomically before an empty store becomes
+writable, while an unsupported future version remains preserved and blocks
+mutation. Managed-book removal does not imply local annotation deletion, so
+byte-identical re-import reconnects the same digest.
 
 The Port 11 Android highlight projection remains product-owned. Java copies a
 bounded record-ID-sorted list of Reader0 spine/UTF-8 byte ranges and four
@@ -488,7 +501,8 @@ appearances, embedded fonts, complete publication accessibility, full Unicode
 shaping, and synchronization transport remain deferred. Port 11 begins the
 local bookmark, multi-color highlight, and note/storage/merge implementation
 without connecting Drive. The
-current bounded contracts are in [`android_port11.md`](android_port11.md),
+ current bounded contracts are in [`android_port11.md`](android_port11.md),
+ [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and

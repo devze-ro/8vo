@@ -21,8 +21,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.zip.CRC32;
 
@@ -54,6 +57,21 @@ final class OctavoAnnotationStore {
         CORRUPT_QUARANTINED,
         CORRUPT_BLOCKED,
         FUTURE_VERSION_BLOCKED
+    }
+
+    /** Result of validating and atomically joining a portable snapshot. */
+    enum PortableMergeResult {
+        MERGED,
+        UNCHANGED,
+        BLOCKED,
+        INVALID,
+        FUTURE_VERSION,
+        LIMIT,
+        PUBLISH_FAILED;
+
+        boolean succeeded() {
+            return this == MERGED || this == UNCHANGED;
+        }
     }
 
     enum HighlightColor {
@@ -238,7 +256,13 @@ final class OctavoAnnotationStore {
     private static final int STORE_MAGIC = 0x4F31414E; // "O1AN"
     private static final int STORE_VERSION = 1;
     private static final int HEADER_FIELD_COUNT = 3;
+    private static final int PORTABLE_MAGIC = 0x4F314150; // "O1AP"
+    private static final int PORTABLE_VERSION = 1;
+    private static final int PORTABLE_HEADER_FIELD_COUNT = 1;
+    private static final int LOCAL_HEADER_OVERHEAD_BYTES = 44;
     private static final int MAX_FILE_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_PORTABLE_FILE_BYTES =
+        MAX_FILE_BYTES - LOCAL_HEADER_OVERHEAD_BYTES;
     private static final int MAX_RECORDS = 2048;
     private static final int MAX_ACTORS_PER_RECORD = 16;
     private static final int MAX_HEADS_PER_RECORD = 8;
@@ -250,6 +274,8 @@ final class OctavoAnnotationStore {
     private static final int HEX_ID_BYTES = 32;
     private static final int DIGEST_BYTES = 64;
     private static final int QUARANTINE_SLOTS = 3;
+    private static final int FLAG_STARRED = 1;
+    private static final int ALLOWED_FLAGS = FLAG_STARRED;
     private static final String ROOT_DIRECTORY = "port11";
     private static final String STATE_FILE = "annotations.v1";
     private static final String TEMPORARY_FILE = "annotations.v1.tmp";
@@ -319,20 +345,12 @@ final class OctavoAnnotationStore {
         }
 
         try {
+            if (hasFutureStoreVersion(stateFile)) {
+                mutationsBlocked = true;
+                loadStatus = LoadStatus.FUTURE_VERSION_BLOCKED;
+                return loadStatus;
+            }
             byte[] bytes = readBounded(stateFile);
-            if (bytes.length < 2 * Integer.BYTES) {
-                throw new IOException("Truncated annotation header");
-            }
-            try (DataInputStream header = new DataInputStream(
-                     new ByteArrayInputStream(bytes))) {
-                int magic = header.readInt();
-                int version = header.readInt();
-                if (magic == STORE_MAGIC && version > STORE_VERSION) {
-                    mutationsBlocked = true;
-                    loadStatus = LoadStatus.FUTURE_VERSION_BLOCKED;
-                    return loadStatus;
-                }
-            }
             State decoded = decode(bytes);
             current = decoded;
             loadStatus = LoadStatus.LOADED;
@@ -619,7 +637,15 @@ final class OctavoAnnotationStore {
                                     new TreeMap<>());
         } else {
             if (envelope.kind != Kind.NOTE
-                || !bookDigest.equals(envelope.bookDigest)) {
+                   || !bookDigest.equals(envelope.bookDigest)) {
+                return MutationResult.CONFLICT;
+            }
+            Mutation fixed = envelope.heads.firstEntry().getValue();
+            String fixedAttachment = noteAttachment(envelope);
+            if (fixed.spineIndex != spineIndex
+                || fixed.byteStart != byteStart
+                || fixed.byteEnd != byteEnd
+                || !fixedAttachment.equals(attachedHighlightId)) {
                 return MutationResult.CONFLICT;
             }
             Mutation visible = visiblePut(envelope);
@@ -716,6 +742,25 @@ final class OctavoAnnotationStore {
         return new PortableState(current.records);
     }
 
+    synchronized byte[] exportPortableBytes() throws IOException {
+        return encodePortable(current.records);
+    }
+
+    synchronized PortableMergeResult mergePortableBytes(byte[] remoteBytes) {
+        if (mutationsBlocked) {
+            return PortableMergeResult.BLOCKED;
+        }
+        final TreeMap<String, Envelope> remote;
+        try {
+            remote = decodePortable(remoteBytes);
+        } catch (PortableFormatException exception) {
+            return exception.result;
+        } catch (IOException | RuntimeException exception) {
+            return PortableMergeResult.INVALID;
+        }
+        return mergeAndPublish(remote);
+    }
+
     synchronized MutationResult mergePortableState(PortableState remote) {
         if (mutationsBlocked) {
             return MutationResult.BLOCKED;
@@ -723,28 +768,18 @@ final class OctavoAnnotationStore {
         if (remote == null) {
             return MutationResult.FAILED;
         }
-        try {
-            TreeMap<String, Envelope> merged = mergeRecords(
-                current.records, remote.records);
-            long mergedCounter = current.counter;
-            for (Envelope envelope : merged.values()) {
-                Long incorporated = envelope.frontier.get(current.actorId);
-                if (incorporated != null) {
-                    mergedCounter = Math.max(
-                        mergedCounter, incorporated);
-                }
-            }
-            State candidate = new State(current.actorId,
-                                        mergedCounter,
-                                        merged);
-            if (!publish(candidate)) {
-                return MutationResult.FAILED;
-            }
-            current = candidate;
-            return MutationResult.UPDATED;
-        } catch (IOException | RuntimeException exception) {
-            return MutationResult.LIMIT;
+        PortableMergeResult result = mergeAndPublish(remote.records);
+        if (result == PortableMergeResult.BLOCKED) {
+            return MutationResult.BLOCKED;
         }
+        if (result == PortableMergeResult.MERGED
+            || result == PortableMergeResult.UNCHANGED) {
+            return MutationResult.UPDATED;
+        }
+        if (result == PortableMergeResult.PUBLISH_FAILED) {
+            return MutationResult.FAILED;
+        }
+        return MutationResult.LIMIT;
     }
 
     synchronized LoadStatus loadStatus() {
@@ -765,13 +800,15 @@ final class OctavoAnnotationStore {
 
     synchronized byte[] portableCanonicalBytesForTesting()
         throws IOException {
-        return encode(new State("00000000000000000000000000000000",
-                                0,
-                                copyRecords(current.records)));
+        return exportPortableBytes();
     }
 
     synchronized int recordCountForTesting() {
         return current.records.size();
+    }
+
+    synchronized String actorIdForTesting() {
+        return current.actorId;
     }
 
     synchronized MutationResult putBookmarkForTesting(
@@ -944,12 +981,20 @@ final class OctavoAnnotationStore {
         return MAX_FILE_BYTES;
     }
 
+    static int maximumPortableFileBytesForTesting() {
+        return MAX_PORTABLE_FILE_BYTES;
+    }
+
     static int maximumRecordsForTesting() {
         return MAX_RECORDS;
     }
 
     static int currentStoreVersionForTesting() {
         return STORE_VERSION;
+    }
+
+    static int currentPortableVersionForTesting() {
+        return PORTABLE_VERSION;
     }
 
     static String bookmarkRecordIdForTesting(String digest,
@@ -983,9 +1028,12 @@ final class OctavoAnnotationStore {
     private MutationResult mutate(Envelope original,
                                   Mutation mutation,
                                   MutationResult success) {
-        if (mutationsBlocked || original == null || mutation == null) {
+        if (mutationsBlocked || original == null) {
             return mutationsBlocked
                 ? MutationResult.BLOCKED : MutationResult.FAILED;
+        }
+        if (mutation == null) {
+            return MutationResult.LIMIT;
         }
         try {
             TreeMap<String, Envelope> records = copyRecords(current.records);
@@ -1060,9 +1108,9 @@ final class OctavoAnnotationStore {
                                  String attachedId,
                                  String label,
                                  String excerpt,
-                                 String note) {
+        String note) {
         if (current.counter == Long.MAX_VALUE) {
-            throw new IllegalStateException("Actor counter exhausted");
+            return null;
         }
         long counter = current.counter + 1;
         TreeMap<String, Long> context = new TreeMap<>(envelope.frontier);
@@ -1082,6 +1130,52 @@ final class OctavoAnnotationStore {
                                          note);
         String mutationId = mutationId(envelope, unsigned);
         return unsigned.withId(mutationId);
+    }
+
+    private PortableMergeResult mergeAndPublish(
+        TreeMap<String, Envelope> remote) {
+        if (mutationsBlocked) {
+            return PortableMergeResult.BLOCKED;
+        }
+        if (remote == null) {
+            return PortableMergeResult.INVALID;
+        }
+        try {
+            validateRecords(remote);
+            TreeMap<String, Envelope> merged = mergeRecords(
+                current.records, remote);
+            if (recordsEqual(current.records, merged)) {
+                return PortableMergeResult.UNCHANGED;
+            }
+            long mergedCounter = current.counter;
+            for (Envelope envelope : merged.values()) {
+                Long incorporated = envelope.frontier.get(current.actorId);
+                if (incorporated != null) {
+                    mergedCounter = Math.max(
+                        mergedCounter, incorporated);
+                }
+            }
+            String mergedActorId = current.actorId;
+            if (mergedCounter > current.counter) {
+                mergedActorId = freshActorId(merged);
+                if (mergedActorId == null) {
+                    return PortableMergeResult.INVALID;
+                }
+                mergedCounter = 0;
+            }
+            State candidate = new State(mergedActorId,
+                                        mergedCounter,
+                                        merged);
+            if (!publish(candidate)) {
+                return PortableMergeResult.PUBLISH_FAILED;
+            }
+            current = candidate;
+            return PortableMergeResult.MERGED;
+        } catch (BoundExceededException exception) {
+            return PortableMergeResult.LIMIT;
+        } catch (IOException | RuntimeException exception) {
+            return PortableMergeResult.INVALID;
+        }
     }
 
     private boolean publish(State candidate) throws IOException {
@@ -1133,43 +1227,60 @@ final class OctavoAnnotationStore {
     private static TreeMap<String, Envelope> mergeRecords(
         TreeMap<String, Envelope> left,
         TreeMap<String, Envelope> right) throws IOException {
-        TreeMap<String, Envelope> result = copyRecords(left);
+        validateRecords(left);
+        validateRecords(right);
+        TreeMap<String, Envelope> result = new TreeMap<>();
+        TreeMap<String, Envelope> all = copyRecords(left);
         for (Map.Entry<String, Envelope> entry : right.entrySet()) {
-            Envelope other = entry.getValue();
-            Envelope existing = result.get(entry.getKey());
+            all.putIfAbsent(entry.getKey(), copyEnvelope(entry.getValue()));
+        }
+        for (String recordId : all.keySet()) {
+            Envelope existing = left.get(recordId);
+            Envelope other = right.get(recordId);
             if (existing == null) {
-                result.put(entry.getKey(), copyEnvelope(other));
+                result.put(recordId, copyEnvelope(other));
+                continue;
+            }
+            if (other == null) {
+                result.put(recordId, copyEnvelope(existing));
                 continue;
             }
             if (existing.kind != other.kind
                 || !existing.bookDigest.equals(other.bookDigest)) {
                 throw new IOException("Record identity collision");
             }
+            Mutation existingAnchor = existing.heads.firstEntry().getValue();
+            Mutation otherAnchor = other.heads.firstEntry().getValue();
+            if (existingAnchor.spineIndex != otherAnchor.spineIndex
+                || existingAnchor.byteStart != otherAnchor.byteStart
+                || existingAnchor.byteEnd != otherAnchor.byteEnd) {
+                throw new IOException("Record anchor identity collision");
+            }
             TreeMap<String, Long> frontier =
                 new TreeMap<>(existing.frontier);
             for (Map.Entry<String, Long> actor : other.frontier.entrySet()) {
                 frontier.merge(actor.getKey(), actor.getValue(), Math::max);
             }
-            TreeMap<String, Mutation> heads =
-                new TreeMap<>(existing.heads);
+            TreeMap<String, Mutation> heads = new TreeMap<>();
+            for (Mutation mutation : existing.heads.values()) {
+                Mutation shared = other.heads.get(mutation.mutationId);
+                if (shared != null) {
+                    if (!shared.equalsMutation(mutation)) {
+                        throw new IOException("Mutation identity collision");
+                    }
+                    heads.put(mutation.mutationId, copyMutation(mutation));
+                } else if (!frontierContains(other.frontier, mutation)) {
+                    heads.put(mutation.mutationId, copyMutation(mutation));
+                }
+            }
             for (Mutation mutation : other.heads.values()) {
-                Mutation duplicate = heads.get(mutation.mutationId);
-                if (duplicate != null && !duplicate.equalsMutation(mutation)) {
+                Mutation shared = existing.heads.get(mutation.mutationId);
+                if (shared != null && !shared.equalsMutation(mutation)) {
                     throw new IOException("Mutation identity collision");
                 }
-                heads.put(mutation.mutationId, copyMutation(mutation));
-            }
-            ArrayList<Mutation> all = new ArrayList<>(heads.values());
-            for (Mutation candidate : all) {
-                for (Mutation observer : all) {
-                    if (candidate == observer) {
-                        continue;
-                    }
-                    Long observed = observer.context.get(candidate.actorId);
-                    if (observed != null && observed >= candidate.counter) {
-                        heads.remove(candidate.mutationId);
-                        break;
-                    }
+                if (shared == null
+                    && !frontierContains(existing.frontier, mutation)) {
+                    heads.put(mutation.mutationId, copyMutation(mutation));
                 }
             }
             Envelope merged = new Envelope(existing.recordId,
@@ -1181,12 +1292,27 @@ final class OctavoAnnotationStore {
             result.put(merged.recordId, merged);
         }
         if (result.size() > MAX_RECORDS) {
-            throw new IOException("Record capacity exceeded");
+            throw new BoundExceededException("Record capacity exceeded");
         }
-        for (Envelope envelope : result.values()) {
-            validateEnvelope(envelope);
-        }
+        validateRecords(result);
         return result;
+    }
+
+    private static boolean frontierContains(TreeMap<String, Long> frontier,
+                                            Mutation mutation) {
+        Long counter = frontier.get(mutation.actorId);
+        return counter != null && counter >= mutation.counter;
+    }
+
+    private static String noteAttachment(Envelope envelope) {
+        if (envelope == null || envelope.kind != Kind.NOTE
+            || envelope.heads.isEmpty()) {
+            return "";
+        }
+        Mutation visible = visiblePut(envelope);
+        return visible == null
+            ? envelope.heads.firstEntry().getValue().attachedId
+            : visible.attachedId;
     }
 
     private static Mutation visiblePut(Envelope envelope) {
@@ -1232,38 +1358,26 @@ final class OctavoAnnotationStore {
 
     private static byte[] encode(State state) throws IOException {
         validateState(state);
-        ByteArrayOutputStream payload = new ByteArrayOutputStream();
-        try (DataOutputStream output = new DataOutputStream(payload)) {
-            output.writeInt(STORE_MAGIC);
-            output.writeInt(STORE_VERSION);
-            output.writeInt(HEADER_FIELD_COUNT);
-            writeString(output, state.actorId, HEX_ID_BYTES);
-            output.writeLong(state.counter);
-            output.writeInt(state.records.size());
-            for (Envelope envelope : state.records.values()) {
-                writeEnvelope(output, envelope);
+        BoundedByteArrayOutputStream payload =
+            new BoundedByteArrayOutputStream(MAX_FILE_BYTES);
+        try {
+            try (DataOutputStream output = new DataOutputStream(payload)) {
+                output.writeInt(STORE_MAGIC);
+                output.writeInt(STORE_VERSION);
+                output.writeInt(HEADER_FIELD_COUNT);
+                writeString(output, state.actorId, HEX_ID_BYTES);
+                output.writeLong(state.counter);
+                output.writeInt(state.records.size());
+                for (Envelope envelope : state.records.values()) {
+                    writeEnvelope(output, envelope);
+                }
+                output.flush();
             }
-            output.flush();
+        } catch (OutputBoundExceededException exception) {
+            throw new BoundExceededException(
+                "Annotation state exceeds its bound");
         }
-        byte[] withoutChecksum = payload.toByteArray();
-        if (withoutChecksum.length <= 0
-            || withoutChecksum.length > MAX_FILE_BYTES - Integer.BYTES) {
-            throw new IOException("Annotation state exceeds its bound");
-        }
-        CRC32 checksum = new CRC32();
-        checksum.update(withoutChecksum);
-        ByteArrayOutputStream complete = new ByteArrayOutputStream(
-            withoutChecksum.length + Integer.BYTES);
-        complete.write(withoutChecksum);
-        try (DataOutputStream output = new DataOutputStream(complete)) {
-            output.writeInt((int)checksum.getValue());
-            output.flush();
-        }
-        byte[] bytes = complete.toByteArray();
-        if (bytes.length > MAX_FILE_BYTES) {
-            throw new IOException("Annotation state exceeds its bound");
-        }
-        return bytes;
+        return payload.toChecksummedByteArray();
     }
 
     private static State decode(byte[] bytes) throws IOException {
@@ -1291,9 +1405,12 @@ final class OctavoAnnotationStore {
             String actorId = readString(input, HEX_ID_BYTES, true);
             long counter = input.readLong();
             int recordCount = input.readInt();
-            if (counter < 0 || recordCount < 0
-                || recordCount > MAX_RECORDS) {
+            if (counter < 0 || recordCount < 0) {
                 throw new IOException("Invalid annotation counts");
+            }
+            if (recordCount > MAX_RECORDS) {
+                throw new BoundExceededException(
+                    "Record capacity exceeded");
             }
             TreeMap<String, Envelope> records = new TreeMap<>();
             String previousRecordId = null;
@@ -1315,6 +1432,121 @@ final class OctavoAnnotationStore {
         } catch (EOFException exception) {
             throw new IOException("Truncated annotation state", exception);
         }
+    }
+
+    private static byte[] encodePortable(
+        TreeMap<String, Envelope> records) throws IOException {
+        validateRecords(records);
+        BoundedByteArrayOutputStream payload =
+            new BoundedByteArrayOutputStream(MAX_PORTABLE_FILE_BYTES);
+        try {
+            try (DataOutputStream output = new DataOutputStream(payload)) {
+                output.writeInt(PORTABLE_MAGIC);
+                output.writeInt(PORTABLE_VERSION);
+                output.writeInt(PORTABLE_HEADER_FIELD_COUNT);
+                output.writeInt(records.size());
+                for (Envelope envelope : records.values()) {
+                    writeEnvelope(output, envelope);
+                }
+                output.flush();
+            }
+        } catch (OutputBoundExceededException exception) {
+            throw new BoundExceededException(
+                "Portable annotation state exceeds its bound");
+        }
+        return payload.toChecksummedByteArray();
+    }
+
+    private static TreeMap<String, Envelope> decodePortable(byte[] bytes)
+        throws IOException {
+        if (bytes == null) {
+            throw new IOException("Invalid portable annotation length");
+        }
+        if (bytes.length >= 2 * Integer.BYTES) {
+            int magic = intAt(bytes, 0);
+            int version = intAt(bytes, Integer.BYTES);
+            if (magic == PORTABLE_MAGIC && version > PORTABLE_VERSION) {
+                throw new PortableFormatException(
+                    PortableMergeResult.FUTURE_VERSION,
+                    "Future portable annotation version");
+            }
+        }
+        if (bytes.length < 5 * Integer.BYTES) {
+            throw new IOException("Invalid portable annotation length");
+        }
+        if (bytes.length > MAX_PORTABLE_FILE_BYTES) {
+            throw new PortableFormatException(
+                PortableMergeResult.LIMIT,
+                "Portable annotation file exceeds its bound");
+        }
+        try {
+            int payloadLength = verifyChecksum(bytes);
+            try (DataInputStream input = new DataInputStream(
+                     new ByteArrayInputStream(bytes, 0, payloadLength))) {
+                if (input.readInt() != PORTABLE_MAGIC
+                    || input.readInt() != PORTABLE_VERSION
+                    || input.readInt() != PORTABLE_HEADER_FIELD_COUNT) {
+                    throw new IOException(
+                        "Invalid portable annotation header");
+                }
+                int recordCount = input.readInt();
+                if (recordCount < 0) {
+                    throw new IOException(
+                        "Invalid portable annotation record count");
+                }
+                if (recordCount > MAX_RECORDS) {
+                    throw new BoundExceededException(
+                        "Portable annotation record capacity exceeded");
+                }
+                TreeMap<String, Envelope> records = new TreeMap<>();
+                String previousRecordId = null;
+                for (int index = 0; index < recordCount; ++index) {
+                    Envelope envelope = readEnvelope(input);
+                    if (previousRecordId != null
+                        && previousRecordId.compareTo(
+                            envelope.recordId) >= 0) {
+                        throw new IOException(
+                            "Noncanonical portable record order");
+                    }
+                    records.put(envelope.recordId, envelope);
+                    previousRecordId = envelope.recordId;
+                }
+                if (input.read() != -1) {
+                    throw new IOException(
+                        "Trailing portable annotation bytes");
+                }
+                validateRecords(records);
+                return records;
+            } catch (EOFException exception) {
+                throw new IOException(
+                    "Truncated portable annotation state", exception);
+            }
+        } catch (BoundExceededException exception) {
+            throw new PortableFormatException(
+                PortableMergeResult.LIMIT,
+                exception.getMessage(),
+                exception);
+        }
+    }
+
+    private static int verifyChecksum(byte[] bytes) throws IOException {
+        if (bytes == null || bytes.length <= Integer.BYTES) {
+            throw new IOException("Invalid annotation checksum length");
+        }
+        int payloadLength = bytes.length - Integer.BYTES;
+        CRC32 checksum = new CRC32();
+        checksum.update(bytes, 0, payloadLength);
+        if (intAt(bytes, payloadLength) != (int)checksum.getValue()) {
+            throw new IOException("Invalid annotation checksum");
+        }
+        return payloadLength;
+    }
+
+    private static int intAt(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xff) << 24)
+            | ((bytes[offset + 1] & 0xff) << 16)
+            | ((bytes[offset + 2] & 0xff) << 8)
+            | (bytes[offset + 3] & 0xff);
     }
 
     private static void writeEnvelope(DataOutputStream output,
@@ -1340,9 +1572,12 @@ final class OctavoAnnotationStore {
         Kind kind = Kind.fromWireId(input.readUnsignedByte());
         String digest = readString(input, DIGEST_BYTES, true);
         int frontierCount = input.readInt();
-        if (kind == null || frontierCount <= 0
-            || frontierCount > MAX_ACTORS_PER_RECORD) {
+        if (kind == null || frontierCount <= 0) {
             throw new IOException("Invalid annotation envelope");
+        }
+        if (frontierCount > MAX_ACTORS_PER_RECORD) {
+            throw new BoundExceededException(
+                "Record frontier capacity exceeded");
         }
         TreeMap<String, Long> frontier = new TreeMap<>();
         String previousActor = null;
@@ -1357,8 +1592,12 @@ final class OctavoAnnotationStore {
             previousActor = actor;
         }
         int headCount = input.readInt();
-        if (headCount <= 0 || headCount > MAX_HEADS_PER_RECORD) {
+        if (headCount <= 0) {
             throw new IOException("Invalid head count");
+        }
+        if (headCount > MAX_HEADS_PER_RECORD) {
+            throw new BoundExceededException(
+                "Record head capacity exceeded");
         }
         TreeMap<String, Mutation> heads = new TreeMap<>();
         String previousHead = null;
@@ -1410,9 +1649,12 @@ final class OctavoAnnotationStore {
         long counter = input.readLong();
         Operation operation = Operation.fromWireId(input.readUnsignedByte());
         int contextCount = input.readInt();
-        if (counter <= 0 || operation == null || contextCount < 0
-            || contextCount > MAX_ACTORS_PER_RECORD) {
+        if (counter <= 0 || operation == null || contextCount < 0) {
             throw new IOException("Invalid mutation header");
+        }
+        if (contextCount > MAX_ACTORS_PER_RECORD) {
+            throw new BoundExceededException(
+                "Mutation context capacity exceeded");
         }
         TreeMap<String, Long> context = new TreeMap<>();
         String previousActor = null;
@@ -1447,18 +1689,55 @@ final class OctavoAnnotationStore {
 
     private static void validateState(State state) throws IOException {
         if (state == null || !isHex(state.actorId, HEX_ID_BYTES)
-            || state.counter < 0 || state.records.size() > MAX_RECORDS) {
+            || state.counter < 0) {
             throw new IOException("Invalid annotation state");
         }
-        for (Map.Entry<String, Envelope> entry : state.records.entrySet()) {
-            if (!entry.getKey().equals(entry.getValue().recordId)) {
-                throw new IOException("Mismatched record key");
-            }
-            validateEnvelope(entry.getValue());
-            Long incorporated =
-                entry.getValue().frontier.get(state.actorId);
+        validateRecords(state.records);
+        for (Envelope envelope : state.records.values()) {
+            Long incorporated = envelope.frontier.get(state.actorId);
             if (incorporated != null && incorporated > state.counter) {
                 throw new IOException("Actor counter trails its frontier");
+            }
+        }
+    }
+
+    private static void validateRecords(TreeMap<String, Envelope> records)
+        throws IOException {
+        if (records == null) {
+            throw new IOException("Missing annotation records");
+        }
+        if (records.size() > MAX_RECORDS) {
+            throw new BoundExceededException("Record capacity exceeded");
+        }
+        HashMap<String, String> dotOwners = new HashMap<>();
+        for (Map.Entry<String, Envelope> entry : records.entrySet()) {
+            Envelope envelope = entry.getValue();
+            if (envelope == null
+                || !entry.getKey().equals(envelope.recordId)) {
+                throw new IOException("Mismatched record key");
+            }
+            validateEnvelope(envelope);
+            for (Mutation mutation : envelope.heads.values()) {
+                String dot = mutation.actorId + ":" + mutation.counter;
+                String owner = dotOwners.putIfAbsent(dot, envelope.recordId);
+                if (owner != null && !owner.equals(envelope.recordId)) {
+                    throw new IOException("Actor dot reused by another record");
+                }
+            }
+        }
+        for (Envelope envelope : records.values()) {
+            if (envelope.kind != Kind.NOTE) {
+                continue;
+            }
+            for (Mutation mutation : envelope.heads.values()) {
+                if (mutation.attachedId.isEmpty()) {
+                    continue;
+                }
+                Envelope attached = records.get(mutation.attachedId);
+                if (attached == null || attached.kind != Kind.HIGHLIGHT
+                    || !envelope.bookDigest.equals(attached.bookDigest)) {
+                    throw new IOException("Invalid note attachment");
+                }
             }
         }
     }
@@ -1469,11 +1748,14 @@ final class OctavoAnnotationStore {
             || !isHex(envelope.recordId, HEX_ID_BYTES)
             || envelope.kind == null
             || !validDigest(envelope.bookDigest)
-            || envelope.frontier.isEmpty()
-            || envelope.frontier.size() > MAX_ACTORS_PER_RECORD
-            || envelope.heads.isEmpty()
-            || envelope.heads.size() > MAX_HEADS_PER_RECORD) {
+            || envelope.frontier == null || envelope.frontier.isEmpty()
+            || envelope.heads == null || envelope.heads.isEmpty()) {
             throw new IOException("Invalid record envelope");
+        }
+        if (envelope.frontier.size() > MAX_ACTORS_PER_RECORD
+            || envelope.heads.size() > MAX_HEADS_PER_RECORD) {
+            throw new BoundExceededException(
+                "Record causal capacity exceeded");
         }
         for (Map.Entry<String, Long> actor : envelope.frontier.entrySet()) {
             if (!isHex(actor.getKey(), HEX_ID_BYTES)
@@ -1481,34 +1763,67 @@ final class OctavoAnnotationStore {
                 throw new IOException("Invalid record frontier");
             }
         }
+        Mutation fixedAnchor = null;
+        Set<String> headActors = new HashSet<>();
         for (Map.Entry<String, Mutation> entry : envelope.heads.entrySet()) {
             Mutation mutation = entry.getValue();
             validateMutation(mutation);
             Long incorporated = envelope.frontier.get(mutation.actorId);
             if (!entry.getKey().equals(mutation.mutationId)
                 || incorporated == null
-                || incorporated < mutation.counter) {
+                || incorporated != mutation.counter) {
                 throw new IOException("Unincorporated mutation head");
             }
             String expectedId = mutationId(envelope, mutation.withId(""));
             if (!expectedId.equals(mutation.mutationId)) {
                 throw new IOException("Invalid mutation identity");
             }
+            if (!headActors.add(mutation.actorId)) {
+                throw new IOException("Actor has multiple live heads");
+            }
+            for (Map.Entry<String, Long> observed
+                     : mutation.context.entrySet()) {
+                Long frontierCounter = envelope.frontier.get(
+                    observed.getKey());
+                if (frontierCounter == null
+                    || observed.getValue() > frontierCounter) {
+                    throw new IOException(
+                        "Mutation context exceeds record frontier");
+                }
+            }
+            Long ownObserved = mutation.context.get(mutation.actorId);
+            if (ownObserved != null && ownObserved >= mutation.counter) {
+                throw new IOException("Mutation observes its own dot");
+            }
+            if (fixedAnchor == null) {
+                fixedAnchor = mutation;
+            } else if (fixedAnchor.spineIndex != mutation.spineIndex
+                       || fixedAnchor.byteStart != mutation.byteStart
+                       || fixedAnchor.byteEnd != mutation.byteEnd) {
+                throw new IOException("Record anchor changed across heads");
+            }
+            if (envelope.kind == Kind.BOOKMARK
+                && (mutation.byteEnd != mutation.byteStart
+                    || !envelope.recordId.equals(bookmarkRecordId(
+                        envelope.bookDigest,
+                        mutation.spineIndex,
+                        mutation.byteStart)))) {
+                throw new IOException("Invalid bookmark anchor");
+            }
+            if (envelope.kind == Kind.HIGHLIGHT
+                && mutation.byteEnd <= mutation.byteStart) {
+                throw new IOException("Invalid highlight anchor");
+            }
             if (mutation.operation == Operation.PUT) {
                 if (envelope.kind == Kind.BOOKMARK
-                    && (mutation.byteEnd != mutation.byteStart
-                        || mutation.color != 0
+                    && (mutation.color != 0
                         || !mutation.attachedId.isEmpty()
-                        || !mutation.note.isEmpty()
-                        || !envelope.recordId.equals(bookmarkRecordId(
-                            envelope.bookDigest,
-                            mutation.spineIndex,
-                            mutation.byteStart)))) {
+                        || !mutation.note.isEmpty())) {
                     throw new IOException("Invalid bookmark payload");
                 }
                 if (envelope.kind == Kind.HIGHLIGHT
-                    && (mutation.byteEnd <= mutation.byteStart
-                        || !mutation.attachedId.isEmpty()
+                    && (!mutation.attachedId.isEmpty()
+                        || !mutation.label.isEmpty()
                         || !mutation.note.isEmpty())) {
                     throw new IOException("Invalid highlight payload");
                 }
@@ -1518,11 +1833,47 @@ final class OctavoAnnotationStore {
                         || !mutation.label.isEmpty())) {
                     throw new IOException("Invalid note payload");
                 }
-            } else if (!mutation.attachedId.isEmpty()
+            } else if (mutation.color != 0 || mutation.flags != 0
+                       || !mutation.attachedId.isEmpty()
                        || !mutation.label.isEmpty()
                        || !mutation.excerpt.isEmpty()
                        || !mutation.note.isEmpty()) {
-                throw new IOException("Delete mutation contains payload");
+                throw new IOException(
+                    "Delete mutation contains noncanonical payload");
+            }
+        }
+        ArrayList<Mutation> heads = new ArrayList<>(
+            envelope.heads.values());
+        for (Mutation candidate : heads) {
+            for (Mutation observer : heads) {
+                if (candidate == observer) {
+                    continue;
+                }
+                Long observed = observer.context.get(candidate.actorId);
+                if (observed != null && observed >= candidate.counter) {
+                    throw new IOException("Dominated mutation retained as head");
+                }
+            }
+        }
+        for (Map.Entry<String, Long> component
+                 : envelope.frontier.entrySet()) {
+            boolean justified = false;
+            for (Mutation head : heads) {
+                if (head.actorId.equals(component.getKey())
+                    && head.counter == component.getValue()) {
+                    justified = true;
+                    break;
+                }
+                Long observed = head.context.get(component.getKey());
+                if (observed != null
+                    && observed.equals(component.getValue())) {
+                    justified = true;
+                    break;
+                }
+            }
+            if (!justified) {
+                throw new IOException(
+                    "Record frontier component is not causally justified");
             }
         }
     }
@@ -1535,17 +1886,22 @@ final class OctavoAnnotationStore {
             || !isHex(mutation.actorId, HEX_ID_BYTES)
             || mutation.counter <= 0
             || mutation.operation == null
-            || mutation.context.size() > MAX_ACTORS_PER_RECORD
+            || mutation.context == null
             || !validPoint(mutation.spineIndex, mutation.byteStart)
             || mutation.byteEnd < mutation.byteStart
             || mutation.color < 0 || mutation.color > 3
             || mutation.flags < 0
-            || !validOptionalHex(mutation.attachedId)
-            || !validText(mutation.label, MAX_LABEL_BYTES)
-            || !validText(mutation.excerpt, MAX_EXCERPT_BYTES)
-            || !validText(mutation.note, MAX_NOTE_BYTES)) {
+            || (mutation.flags & ~ALLOWED_FLAGS) != 0
+            || !validOptionalHex(mutation.attachedId)) {
             throw new IOException("Invalid annotation mutation");
         }
+        if (mutation.context.size() > MAX_ACTORS_PER_RECORD) {
+            throw new BoundExceededException(
+                "Mutation context capacity exceeded");
+        }
+        requireBoundedText(mutation.label, MAX_LABEL_BYTES);
+        requireBoundedText(mutation.excerpt, MAX_EXCERPT_BYTES);
+        requireBoundedText(mutation.note, MAX_NOTE_BYTES);
         for (Map.Entry<String, Long> actor : mutation.context.entrySet()) {
             if (!isHex(actor.getKey(), HEX_ID_BYTES)
                 || actor.getValue() == null || actor.getValue() <= 0) {
@@ -1635,12 +1991,27 @@ final class OctavoAnnotationStore {
         return first128Hex(bytes);
     }
 
+    private String freshActorId(TreeMap<String, Envelope> records) {
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            String candidate = randomId(random);
+            boolean present = false;
+            for (Envelope envelope : records.values()) {
+                if (envelope.frontier.containsKey(candidate)) {
+                    present = true;
+                    break;
+                }
+            }
+            if (!present) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
     private static void writeString(DataOutputStream output,
                                     String value,
                                     int maximumBytes) throws IOException {
-        if (!validText(value, maximumBytes)) {
-            throw new IOException("String exceeds annotation bound");
-        }
+        requireBoundedText(value, maximumBytes);
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         output.writeInt(bytes.length);
         output.write(bytes);
@@ -1650,9 +2021,12 @@ final class OctavoAnnotationStore {
                                      int maximumBytes,
                                      boolean requireMaximum) throws IOException {
         int length = input.readInt();
-        if (length < 0 || length > maximumBytes
-            || (requireMaximum && length != maximumBytes)) {
+        if (length < 0 || (requireMaximum && length != maximumBytes)) {
             throw new IOException("Invalid annotation string length");
+        }
+        if (length > maximumBytes) {
+            throw new BoundExceededException(
+                "Annotation string exceeds its bound");
         }
         byte[] bytes = new byte[length];
         input.readFully(bytes);
@@ -1661,6 +2035,47 @@ final class OctavoAnnotationStore {
             throw new IOException("Invalid UTF-8 annotation string");
         }
         return value;
+    }
+
+    private static void requireBoundedText(String value, int maximumBytes)
+        throws IOException {
+        if (value == null) {
+            throw new IOException("Missing annotation string");
+        }
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > maximumBytes) {
+            throw new BoundExceededException(
+                "Annotation string exceeds its bound");
+        }
+        if (!value.equals(new String(bytes, StandardCharsets.UTF_8))) {
+            throw new IOException("Invalid annotation string");
+        }
+    }
+
+    private static boolean hasFutureStoreVersion(File file)
+        throws IOException {
+        if (!file.isFile() || file.length() < 2L * Integer.BYTES) {
+            return false;
+        }
+        byte[] header = new byte[2 * Integer.BYTES];
+        try (FileInputStream input = new FileInputStream(file)) {
+            int offset = 0;
+            while (offset < header.length) {
+                int count = input.read(
+                    header, offset, header.length - offset);
+                if (count < 0) {
+                    break;
+                }
+                if (count > 0) {
+                    offset += count;
+                }
+            }
+            if (offset != header.length) {
+                throw new IOException("Truncated annotation header");
+            }
+        }
+        return intAt(header, 0) == STORE_MAGIC
+            && intAt(header, Integer.BYTES) > STORE_VERSION;
     }
 
     private static byte[] readBounded(File file) throws IOException {
@@ -1697,6 +2112,44 @@ final class OctavoAnnotationStore {
             copy.put(entry.getKey(), copyEnvelope(entry.getValue()));
         }
         return copy;
+    }
+
+    private static boolean recordsEqual(TreeMap<String, Envelope> left,
+                                        TreeMap<String, Envelope> right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null || left.size() != right.size()) {
+            return false;
+        }
+        for (Map.Entry<String, Envelope> entry : left.entrySet()) {
+            Envelope other = right.get(entry.getKey());
+            if (!envelopesEqual(entry.getValue(), other)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean envelopesEqual(Envelope left, Envelope right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null
+            || !left.recordId.equals(right.recordId)
+            || left.kind != right.kind
+            || !left.bookDigest.equals(right.bookDigest)
+            || !left.frontier.equals(right.frontier)
+            || left.heads.size() != right.heads.size()) {
+            return false;
+        }
+        for (Map.Entry<String, Mutation> entry : left.heads.entrySet()) {
+            if (!entry.getValue().equalsMutation(
+                    right.heads.get(entry.getKey()))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Envelope copyEnvelope(Envelope envelope) {
@@ -1794,6 +2247,96 @@ final class OctavoAnnotationStore {
         }
         Context application = context.getApplicationContext();
         return (application == null ? context : application).getFilesDir();
+    }
+
+    private static class BoundExceededException extends IOException {
+        BoundExceededException(String message) {
+            super(message);
+        }
+    }
+
+    private static final class OutputBoundExceededException
+        extends RuntimeException {
+        OutputBoundExceededException() {
+            super(null, null, false, false);
+        }
+    }
+
+    private static final class BoundedByteArrayOutputStream
+        extends ByteArrayOutputStream {
+        private final int maximumPayloadBytes;
+
+        BoundedByteArrayOutputStream(int maximumCompleteBytes) {
+            super(Math.min(8192,
+                           maximumCompleteBytes - Integer.BYTES));
+            if (maximumCompleteBytes <= Integer.BYTES) {
+                throw new IllegalArgumentException(
+                    "Invalid annotation output bound");
+            }
+            maximumPayloadBytes =
+                maximumCompleteBytes - Integer.BYTES;
+        }
+
+        @Override
+        public synchronized void write(int value) {
+            requireCapacityFor(1);
+            super.write(value);
+        }
+
+        @Override
+        public synchronized void write(byte[] bytes,
+                                       int offset,
+                                       int length) {
+            if (bytes == null) {
+                throw new NullPointerException("bytes");
+            }
+            if (offset < 0 || length < 0 || offset > bytes.length - length) {
+                throw new IndexOutOfBoundsException();
+            }
+            requireCapacityFor(length);
+            super.write(bytes, offset, length);
+        }
+
+        synchronized byte[] toChecksummedByteArray()
+            throws BoundExceededException {
+            if (count <= 0 || count > maximumPayloadBytes) {
+                throw new BoundExceededException(
+                    "Annotation state exceeds its bound");
+            }
+            CRC32 checksum = new CRC32();
+            checksum.update(buf, 0, count);
+            byte[] complete = Arrays.copyOf(buf, count + Integer.BYTES);
+            int value = (int)checksum.getValue();
+            complete[count] = (byte)(value >>> 24);
+            complete[count + 1] = (byte)(value >>> 16);
+            complete[count + 2] = (byte)(value >>> 8);
+            complete[count + 3] = (byte)value;
+            return complete;
+        }
+
+        private void requireCapacityFor(int additionalBytes) {
+            if (additionalBytes < 0
+                || additionalBytes > maximumPayloadBytes - count) {
+                throw new OutputBoundExceededException();
+            }
+        }
+    }
+
+    private static final class PortableFormatException extends IOException {
+        final PortableMergeResult result;
+
+        PortableFormatException(PortableMergeResult result,
+                                String message) {
+            super(message);
+            this.result = result;
+        }
+
+        PortableFormatException(PortableMergeResult result,
+                                String message,
+                                Throwable cause) {
+            super(message, cause);
+            this.result = result;
+        }
     }
 
     private static final class State {

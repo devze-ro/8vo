@@ -1,10 +1,10 @@
 # Android Port 11: durable annotations and synchronization contract
 
-Status: implementation contract adopted 2026-08-07. The accepted first slice
-is local bookmarks; the second local slice adds durable multi-color highlights;
-the third local slice adds note editing, recoverable drafts, and conflict UI.
-Google Drive remains disconnected until the portable record, persistence, and
-deterministic merge tests pass offline.
+Status: implementation contract adopted 2026-08-07. The accepted first three
+local slices are bookmarks, durable multi-color highlights, and note editing/
+recoverable drafts/conflict UI. The fourth local slice freezes and qualifies
+actor-neutral portable bytes plus the deterministic offline join. Google Drive
+remains disconnected until every offline gate passes.
 
 ## Boundary
 
@@ -34,10 +34,10 @@ envelopes. It is suitable for local files, export, and a later provider adapter.
 
 | Field | Contract |
 | --- | --- |
-| `record_id` | Stable lowercase 32-hex identity. A bookmark ID is the first 128 bits of SHA-256 over a fixed namespace, book digest, kind, and point anchor. Highlight and note IDs use 128 bits from a cryptographic random source. |
+| `record_id` | Stable lowercase 32-hex identity. A bookmark ID is the first 128 bits of SHA-256 over a bookmark-specific namespace, book digest, and point anchor. Highlight and note IDs use 128 bits from a cryptographic random source. |
 | `kind` | `bookmark`, `highlight`, or `note`; immutable for an identity. |
 | `book_digest` | Lowercase 64-hex EPUB digest; immutable for an identity. |
-| `anchor` | Validated Reader0 point or same-spine range. Highlight ranges are nonempty. Notes may use a point or a nonempty range and may reference a highlight ID in the same book. |
+| `anchor` | Immutable validated Reader0 point or same-spine range. Highlight ranges are nonempty. Notes may use a point or a nonempty range and may reference a stable highlight ID in the same book. |
 | `payload` | Bookmark label/excerpt/star; highlight color/excerpt/star; or note text/star. Strings are UTF-8, length-bounded, and preserved exactly after validation. |
 | `mutation` | Stable ID, stable actor ID, positive actor counter, causal context, operation (`put` or `delete`), and the complete payload needed to recover that head. |
 | `frontier` | Per-record vector of the greatest incorporated counter for each actor. It compacts causally dominated history without erasing live concurrent heads. |
@@ -46,12 +46,22 @@ Wall-clock time may be retained only as display metadata. It never chooses a
 winner, establishes causality, generates an identity, or orders canonical
 bytes.
 
+The portable container has magic `O1AP` and deliberately excludes the importing
+installation's actor/counter. Android's private `O1AN` wrapper carries those two
+local values and must never be uploaded or treated as an interop format. The
+complete byte layout, hash preimages, canonical payload rules, causal validity,
+and golden fixture are frozen in
+[`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md).
+
 Bounds for version 1 are part of the file contract: 2,048 record envelopes,
-16 actors per record frontier, eight concurrent heads per record, 16 MiB total
-file size, 256 UTF-8 bytes for a label, 512 for an excerpt, and 4,096 for note
-text. Bookmark and highlight colors are a fixed four-value semantic palette,
-not stored ARGB values. Exceeding a bound rejects the whole candidate mutation
-or merge and preserves the prior state.
+16 actors per record frontier, eight concurrent heads per record, a 16 MiB
+private-file bound, 256 UTF-8 bytes for a label, 512 for an excerpt, and 4,096
+for note text. Bookmark and highlight colors are a fixed four-value semantic
+palette, not stored ARGB values. Exceeding a bound rejects the whole candidate
+mutation or merge and preserves the prior state. The actor-neutral portable
+container is bounded to 16 MiB minus its 44-byte private-wrapper difference so
+every accepted portable snapshot remains publishable without advancing the
+adopted private `O1AN` v1 bound.
 
 ## Mutation and merge
 
@@ -65,13 +75,16 @@ local counter stored in the same atomic state. A local mutation:
 5. publishes the complete candidate state atomically before the UI claims
    success.
 
-Merge is pure, commutative, associative, and idempotent:
+For non-equivocating causal histories whose intermediate and result fit every
+bound, merge is pure, commutative, associative, and idempotent:
 
-1. validate both complete inputs and immutable envelope fields;
-2. union exact mutation identities, rejecting an identity with unequal bytes;
+1. validate both complete inputs, immutable envelope fields, justified causal
+   frontiers, maximal heads, unique actor dots, canonical kind payloads, and
+   same-book attachments;
+2. reject an exact mutation identity associated with unequal bytes;
 3. take the component-wise maximum frontier;
-4. discard a head only when another incorporated mutation causally dominates
-   its actor/counter dot;
+4. retain a head shared exactly by both sides; retain a side-only head only when
+   the opposite frontier has not incorporated its actor/counter dot;
 5. retain all non-dominated concurrent heads, sort actors, heads, and records by
    unsigned canonical byte order, and revalidate every bound.
 
@@ -84,6 +97,16 @@ user save a new mutation that causally observes all heads. A resolved delete is
 a durable tombstone, not physical removal. Physical compaction requires proof
 that every participating replica incorporated the tombstone and is outside this
 port.
+
+Capacity makes the binary join deliberately partial. `LIMIT` preserves the
+prior bytes and in-memory state exactly; a future sync coordinator must retain
+and retry that same remote snapshot after any successful merge or resolution
+that can reduce concurrent heads. An imported frontier ahead of Android's
+private counter for its current actor causes a fresh actor rotation before
+publication, preserving the old dots without counter reuse or exhaustion.
+Structural validation and CRC protect against malformed/corrupt bytes, not a
+party able to fabricate schema-valid causal history; provider trust and the
+encryption/authentication decision remain launch gates.
 
 ## Local persistence and recovery
 
@@ -248,15 +271,44 @@ The draft file has the same missing/future-version/quarantine rules as the
 annotation file and three bounded quarantine slots. It is deliberately a
 separate independently atomic file; 8vo claims no cross-file transaction.
 
+## Fourth local vertical slice: portable bytes and offline join
+
+This slice adds no network permission, account, provider library, background
+worker, or UI surface. It:
+
+- exports a canonical `O1AP` record-only snapshot and validates bounded
+  untrusted bytes before considering a merge;
+- reports merged, unchanged, blocked, invalid, future-version, capacity, and
+  atomic-publication outcomes distinctly; an unchanged join performs no write;
+- uses the opposite-frontier state join so stale snapshots cannot resurrect a
+  resolved note body or tombstone;
+- rejects context-ahead/dominated heads, duplicate actor dots, changed anchors,
+  unjustified frontier components, dangling/cross-book attachments, unknown
+  flag bits, and noncanonical delete/kind payloads; optional note attachments
+  remain versioned head payload so concurrent or legacy-empty values converge;
+- treats local counter exhaustion as a visible capacity result rather than an
+  exception, rotates away from imported self-ahead actor history, bounds
+  serialization before allocation can exceed the file limit, and preserves
+  recognizable future private versions even when they exceed the current
+  schema's size bound; and
+- packages the shared Port 6 semantic oracle/golden only in the test APK. re10
+  remains untouched because it first needs EPUB SHA-256 plus stable portable
+  identities; its path/local-ID database export is not sync state.
+
 ## Offline gates before Drive
 
-Drive work may begin only after deterministic tests prove canonical
+Annotation provider work may begin only after deterministic tests prove canonical
 round-trip, mutation rollback, restart, corruption/future-version handling,
 digest re-import, merge order independence, idempotence, associativity,
 concurrent put/delete retention, concurrent-note recovery, and every stated
 capacity bound. Emulator UI tests must then pass toggle/list/go-to/remove,
 presentation failure, accessibility, recreation, process restart, and the
 ordinary Port 7-10 regression matrix before a physical device is requested.
+
+The fourth local slice closes that annotation-specific offline gate on API 36.
+It does not close the separate catalog, preference, position, transfer,
+authorization, or provider threat-model gates and does not authorize a Drive
+connection.
 
 The later Drive adapter will use `drive.appdata` only for hidden manifests and
 portable state and `drive.file` only for EPUBs the user approves in a visible
@@ -267,6 +319,44 @@ backend are excluded. The product must make an explicit encryption/threat-model
 claim decision before launch.
 
 ## Current local-slice validation
+
+On 2026-08-08, the fourth local slice passes the unchanged exact dependency
+guard and architecture audit and builds debug plus instrumentation APKs for
+`x86_64` and `arm64-v8a`. The verified API 36 x86_64/QEMU target has a 192 MiB
+heap growth limit. Its acceptance evidence is:
+
+- all eight portable-state tests pass together in 19.834 seconds, covering both
+  independently generated goldens, exact byte round-trip/restart, actor-neutral
+  import, six-order three-replica convergence, stale replay, versioned note
+  attachments, empty tombstones, explicit note resolution, hostile semantic
+  inputs, bounded-join retry, atomic rollback, and private-actor rotation;
+- the exact 16 MiB private/16 MiB-minus-44 portable file boundary and 2,048-
+  record case also pass alone in 21.441 seconds on that bounded heap, while the
+  smaller inclusive/+1 capacity matrix passes independently;
+- the pre-existing annotation store passes 8/8 and full note integration passes
+  3/3; the clean ordinary matrix, with the external restart probe deliberately
+  excluded, passes 127/127 in 258.130 seconds;
+- the separate seed, confirmed force-stop/no-surviving-process, and fresh-
+  process restart driver passes in 4.191 and 2.487 seconds; and
+- the emulator crash buffer is empty. The production APK contains no golden
+  fixture, while the instrumentation APK contains exactly the seven intended
+  Base64/JSON/hash/README assets.
+
+The serializer stops at its bound before an oversized allocation, and a
+capacity-rejected merge is an exact no-op whose input remains eligible for
+retry after causal resolution. Recognizable future private files remain
+byte-exact/read-only even above the current size ceiling. Schema-valid imported
+dots ahead of Android's private actor counter cause a fresh private-actor
+rotation instead of counter reuse or exhaustion. CRC and causal validation are
+explicitly not authentication against a party able to fabricate valid history;
+provider trust and encryption/authentication claims remain required launch
+decisions.
+
+Only `emulator-5554` was installed, cleared, and exercised for this backend-only
+slice. The connected API 34 iQOO was visible but untouched; no physical setting,
+app data, or animation scale changed. No Google account, Drive API, OAuth or
+Cloud resource, signing key, Play Console state, commit, push, or merge was
+touched.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

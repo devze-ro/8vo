@@ -1,0 +1,133 @@
+{
+  "magic": "O1AP",
+  "version": 1,
+  "header_field_count": 1,
+  "record_count": 3,
+  "records": [
+    {
+      "record_id": "30000000000000000000000000000010",
+      "kind": 2,
+      "book_digest": "5d81c6ba136774cb4addc01dfc88bec355d637456ee6aacb3004983a6f055ed3",
+      "frontier_count": 1,
+      "frontier": [
+        {"actor_id": "33333333333333333333333333333333", "counter": "3"}
+      ],
+      "head_count": 1,
+      "heads": [
+        {
+          "mutation_id": "5985059e5ab371991685852e793dba7d",
+          "actor_id": "33333333333333333333333333333333",
+          "counter": "3",
+          "operation": 2,
+          "context_count": 1,
+          "context": [
+            {"actor_id": "33333333333333333333333333333333", "counter": "2"}
+          ],
+          "spine_index": "1",
+          "byte_start": "12",
+          "byte_end": "26",
+          "color": 0,
+          "flags": 0,
+          "attached_id": "",
+          "label": "",
+          "excerpt": "",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "record_id": "30000000000000000000000000000020",
+      "kind": 3,
+      "book_digest": "5d81c6ba136774cb4addc01dfc88bec355d637456ee6aacb3004983a6f055ed3",
+      "frontier_count": 3,
+      "frontier": [
+        {"actor_id": "11111111111111111111111111111111", "counter": "9007199254740990"},
+        {"actor_id": "22222222222222222222222222222222", "counter": "14"},
+        {"actor_id": "33333333333333333333333333333333", "counter": "5"}
+      ],
+      "head_count": 1,
+      "heads": [
+        {
+          "mutation_id": "ba713d6c926f78d3cadaf33ba000d7f4",
+          "actor_id": "22222222222222222222222222222222",
+          "counter": "14",
+          "operation": 2,
+          "context_count": 3,
+          "context": [
+            {"actor_id": "11111111111111111111111111111111", "counter": "9007199254740990"},
+            {"actor_id": "22222222222222222222222222222222", "counter": "12"},
+            {"actor_id": "33333333333333333333333333333333", "counter": "5"}
+          ],
+          "spine_index": "1",
+          "byte_start": "12",
+          "byte_end": "26",
+          "color": 0,
+          "flags": 0,
+          "attached_id": "",
+          "label": "",
+          "excerpt": "",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "record_id": "30000000000000000000000000000030",
+      "kind": 3,
+      "book_digest": "5d81c6ba136774cb4addc01dfc88bec355d637456ee6aacb3004983a6f055ed3",
+      "frontier_count": 3,
+      "frontier": [
+        {"actor_id": "11111111111111111111111111111111", "counter": "9007199254740993"},
+        {"actor_id": "22222222222222222222222222222222", "counter": "13"},
+        {"actor_id": "33333333333333333333333333333333", "counter": "5"}
+      ],
+      "head_count": 2,
+      "heads": [
+        {
+          "mutation_id": "45659df96d402ad600ed13f3a790e8d2",
+          "actor_id": "22222222222222222222222222222222",
+          "counter": "13",
+          "operation": 1,
+          "context_count": 3,
+          "context": [
+            {"actor_id": "11111111111111111111111111111111", "counter": "9007199254740992"},
+            {"actor_id": "22222222222222222222222222222222", "counter": "12"},
+            {"actor_id": "33333333333333333333333333333333", "counter": "5"}
+          ],
+          "spine_index": "1",
+          "byte_start": "12",
+          "byte_end": "26",
+          "color": 0,
+          "flags": 0,
+          "attached_id": "30000000000000000000000000000010",
+          "label": "",
+          "excerpt": "Second chapter",
+          "note": "Conflict B: Καλημέρα 👋"
+        },
+        {
+          "mutation_id": "f5d1a884d1ffec5fc3b6e4e77f193c6b",
+          "actor_id": "11111111111111111111111111111111",
+          "counter": "9007199254740993",
+          "operation": 1,
+          "context_count": 3,
+          "context": [
+            {"actor_id": "11111111111111111111111111111111", "counter": "9007199254740992"},
+            {"actor_id": "22222222222222222222222222222222", "counter": "12"},
+            {"actor_id": "33333333333333333333333333333333", "counter": "5"}
+          ],
+          "spine_index": "1",
+          "byte_start": "12",
+          "byte_end": "26",
+          "color": 0,
+          "flags": 1,
+          "attached_id": "30000000000000000000000000000010",
+          "label": "",
+          "excerpt": "Second chapter",
+          "note": "Conflict A: cafe\u0301\r\nline two"
+        }
+      ]
+    }
+  ],
+  "crc32_iso_hdlc": "8f2f9462",
+  "decoded_byte_count": "1792",
+  "decoded_sha256": "470f3fa199e00721d04d697a7b60e625473757fa9d9598ddafe322a1bc4c4a49"
+}

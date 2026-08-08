@@ -450,11 +450,19 @@ are still pending.
   restoration. API 34 passes the corresponding 13/13 marker-tap focus and clean
   119/119 ordinary rerun; prior restart, 32/32, and 5/5 gates remain green with
   normal motion. The inset, marker appearance, and marker-tap behavior are
-  physically accepted and device cleanup is byte-exact; bounded note-workflow
-  TalkBack acceptance remains pending;
-  and
-- Google Drive transport remains blocked until the full provider-neutral
-  local annotation and merge model, including notes, passes its offline gates.
+  physically accepted and device cleanup is byte-exact. The user then completed
+  the bounded note-workflow TalkBack review without reporting a focus, wording,
+  editing, marker, or navigation issue;
+- the fourth local slice freezes the distinct actor-neutral `O1AP` container,
+  two independently generated cross-language goldens, strict causal/semantic
+  validation, bounded serialization, atomic merge rollback, stale replay,
+  tombstones, explicit conflict recovery, and safe private-actor rotation. API
+  36 passes the full portable class 8/8, existing annotation store 8/8, note
+  integration 3/3, ordinary matrix 127/127, separate process restart, and an
+  empty crash buffer; and
+- Google Drive remains disconnected. The annotation-specific offline gate is
+  closed, but catalog, preferences, positions, transfer manifests, provider
+  trust/encryption UX, and explicit authorization remain before cloud work.
 
 ### Annotations workspace
 
@@ -474,8 +482,10 @@ are still pending.
 
 ### Google Drive synchronization
 
-- specify portable record formats, identity, revisions, tombstones, migration,
-  merge rules, and a threat model before authentication UI;
+- retain the qualified actor-neutral annotation `O1AP` bytes, stable identities,
+  immutable Reader0 anchors, tombstones, opposite-frontier join, exact bounds,
+  and two golden fixtures as non-regression gates; specify the broader sync
+  threat model before any cloud claim;
 - synchronize settings, positions, annotations, and catalog metadata first;
 - make book-file synchronization explicit and optional;
 - use least-privilege Google authorization, observable queue/progress/error
@@ -484,9 +494,14 @@ are still pending.
 
 The launch allocation is `drive.appdata` for hidden state/manifests and
 `drive.file` for only the EPUBs a user approves in a visible 8vo Drive folder.
-No broad Drive scope, proprietary 8vo account, or backend is planned. This is a
-Port 11 follow-up, not permission to configure Google Cloud or connect Drive
-before the deterministic offline gates in `android_port11.md` pass.
+No broad Drive scope, proprietary 8vo account, or backend is planned. Passing
+the annotation-specific offline gate is not permission to configure Google
+Cloud or connect Drive; that remains an explicitly authorized Port 11 follow-up.
+The byte-level annotation contract is
+[`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md).
+Desktop remains a future peer over those records, not a database-file copy, and
+a second provider may motivate only the minimum proven transport seam after
+Drive works.
 The current API distinction is documented at
 <https://developers.google.com/workspace/drive/api/guides/appdata>.
 

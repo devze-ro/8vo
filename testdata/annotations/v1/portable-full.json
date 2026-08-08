@@ -1,0 +1,125 @@
+{
+  "fixture_format": "8vo-portable-annotations",
+  "fixture_version": 1,
+  "epub": {
+    "sha256": "5d81c6ba136774cb4addc01dfc88bec355d637456ee6aacb3004983a6f055ed3",
+    "byte_count": "242131"
+  },
+  "records": [
+    {
+      "record_id": "10000000000000000000000000000001",
+      "kind": "highlight",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "2"}],
+      "head": {
+        "mutation_id": "f27982fa2fab424b96dd7a620a496cec",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "2",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "0", "start": "0", "end": "11"},
+        "color": "yellow",
+        "flags": 0,
+        "excerpt": "Chapter One"
+      }
+    },
+    {
+      "record_id": "10000000000000000000000000000002",
+      "kind": "highlight",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "3"}],
+      "head": {
+        "mutation_id": "e87354793cdb5404ceaf10158f477886",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "3",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "0", "start": "12", "end": "25"},
+        "color": "pink",
+        "flags": 0,
+        "excerpt": "First chapter"
+      }
+    },
+    {
+      "record_id": "10000000000000000000000000000003",
+      "kind": "highlight",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "4"}],
+      "head": {
+        "mutation_id": "7abb4695c4d3fa20d2185106502bac64",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "4",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "1", "start": "0", "end": "11"},
+        "color": "blue",
+        "flags": 0,
+        "excerpt": "Chapter Two"
+      }
+    },
+    {
+      "record_id": "10000000000000000000000000000004",
+      "kind": "highlight",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "5"}],
+      "head": {
+        "mutation_id": "b71b39884a721eb0323d03bc9023d35e",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "5",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "1", "start": "12", "end": "26"},
+        "color": "orange",
+        "flags": 0,
+        "excerpt": "Second chapter"
+      }
+    },
+    {
+      "record_id": "13d573bdb85c520ead1c079e68803062",
+      "kind": "bookmark",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "1"}],
+      "head": {
+        "mutation_id": "b36773709eacb3dec66ddcd9db3683a6",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "1",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "0", "start": "0", "end": "0"},
+        "flags": 0,
+        "label": "Chapter One",
+        "excerpt": "Chapter One"
+      }
+    },
+    {
+      "record_id": "20000000000000000000000000000001",
+      "kind": "note",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "6"}],
+      "head": {
+        "mutation_id": "5e1c03531074ecc1cb8069f6311cd6c4",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "6",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "0", "start": "12", "end": "25"},
+        "flags": 0,
+        "attached_id": "",
+        "excerpt": "First chapter",
+        "note": "Reader note: café — Καλημέρα 👋"
+      }
+    },
+    {
+      "record_id": "20000000000000000000000000000002",
+      "kind": "note",
+      "frontier": [{"actor_id": "00000000000000000000000000000000", "counter": "7"}],
+      "head": {
+        "mutation_id": "8ef61da2e72925fe3b71606076d2d5c4",
+        "actor_id": "00000000000000000000000000000000",
+        "counter": "7",
+        "operation": "put",
+        "context": [],
+        "anchor": {"spine_index": "0", "start": "0", "end": "11"},
+        "flags": 0,
+        "attached_id": "10000000000000000000000000000001",
+        "excerpt": "Chapter One",
+        "note": "Attached to “Chapter One”."
+      }
+    }
+  ],
+  "decoded_sha256": "e2dba96f2029e9f0d4a989ff12c3ae9b69c6206a9ec26baa9f71acde2545641e"
+}

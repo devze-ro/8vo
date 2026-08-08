@@ -95,6 +95,18 @@ slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
 34 automation. The inset, marker appearance, and marker-tap-to-editor behavior
 are physically accepted. Google Drive remains disconnected:
 
+The fourth local slice adds the distinct actor-neutral `O1AP` annotation
+container and hardened offline join without a provider, account, network
+permission, worker, or UI change. `O1AP` is capped at 16 MiB minus 44 bytes so
+every accepted snapshot fits the adopted 16 MiB private `O1AN` wrapper. Two
+independently generated test-only goldens lock portable IDs, Reader0 byte
+anchors, colors, notes, deletes, multi-actor contexts, concurrent heads,
+Unicode, wide counters, and CRC encoding. On API 36 x86_64, the portable suite
+passes 8/8, existing store 8/8, full note integration 3/3, ordinary regression
+127/127, external restart, exact-limit stress on a 192 MiB heap, and an empty
+crash buffer. The production APK contains no golden assets. The connected iQOO
+was not touched for this backend-only slice, and Drive remains disconnected.
+
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
 annotation/draft/note tests in 19.071 seconds and all 119 ordinary tests in

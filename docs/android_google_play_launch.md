@@ -2,11 +2,12 @@
 
 Status: launch-gap audit and revised first-release scope as of 2026-08-07. The
 merged API 36/API 34 Port 10 selection baseline is accepted. Port 11's local
-bookmarks and multi-color highlights are accepted, and the local note/draft/
-conflict slice passes API 36/API 34 automation and physical touch acceptance;
-its bounded TalkBack review remains. Google Drive synchronization and the
-remaining bounded UI polish are still required launch gates and are not yet
-implemented.
+bookmarks, multi-color highlights, and note/draft/conflict workflow are accepted
+through API 36/API 34 automation, physical touch, and bounded TalkBack review.
+Portable annotation-v1 bytes and the hardened offline join now pass their API
+36 offline qualification; Google Drive synchronization, the other portable
+record families, and the remaining bounded UI polish are still required launch
+gates and are not yet implemented.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.
@@ -355,6 +356,9 @@ Qualification is ordered and stops on the first failed gate:
    before network integration: atomic failure/rollback, bounds, migration,
    corruption recovery, lifecycle/restart, reflow anchors, concurrent-device
    fixtures, tombstones, idempotence, export/restore, and deterministic hashes.
+   Annotation portable v1 uses the actor-neutral `O1AP` contract and shared
+   golden in `android_port11_portable_annotations_v1.md`; the private Android
+   `O1AN` file is never a provider payload.
 3. Qualify Google Drive against test accounts and at least two devices: explicit
    authorization, least-privilege scopes, first sync, offline convergence,
    conflicts, interruption/retry, quota, revocation, account switching,
