@@ -1,13 +1,14 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and revised first-release scope as of 2026-08-07. The
+Status: launch-gap audit and revised first-release scope as of 2026-08-08. The
 merged API 36/API 34 Port 10 selection baseline is accepted. Port 11's local
 bookmarks, multi-color highlights, and note/draft/conflict workflow are accepted
 through API 36/API 34 automation, physical touch, and bounded TalkBack review.
-Portable annotation-v1 bytes and the hardened offline join now pass their API
-36 offline qualification; Google Drive synchronization, the other portable
-record families, and the remaining bounded UI polish are still required launch
-gates and are not yet implemented.
+Portable annotation-v1 bytes, the hardened offline join, and the disconnected
+conditional sync coordinator now pass their API 36 offline qualification;
+Google Drive synchronization, the other portable record families, and the
+remaining bounded UI polish are still required launch gates and are not yet
+implemented.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.
@@ -125,10 +126,13 @@ used in the listing.
 
 ### Google Drive and synchronization
 
-- Build and qualify a provider-neutral deterministic merge engine locally before
-  adding Google APIs. It must merge portable snapshots/operations, positions,
-  preferences, annotations, tombstones, and managed-book identities while
-  remaining device-clock-independent, idempotent, bounded, and safe to retry.
+- Build and qualify provider-neutral product models locally before adding Google
+  APIs. Annotation `O1AP` is the first completed family and has a disconnected
+  conditional coordinator. Positions, preferences, Library identity, managed-
+  book transfer, and cloud-deletion state each require a separate versioned,
+  bounded format and explicit merge policy; no generic operation log is
+  implied. Every family must remain device-clock-independent where causality is
+  required, idempotent, bounded, and safe to retry.
 - Keep local state authoritative while offline. Queue local changes durably;
   never block reading, annotation editing, or app startup on authorization or
   network access. A remote failure must be visible without rolling back a
@@ -163,6 +167,9 @@ The current Google contracts are [application-specific Drive data](https://devel
 and [Android user-data authorization](https://developer.android.com/identity/authorization).
 They were checked on 2026-08-07 and must be rechecked before the Drive adapter
 freezes and before Play submission.
+The provider-neutral annotation command/recovery boundary is
+[`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md); it
+contains no Google implementation or authorization.
 
 ### Bounded UI polish
 
@@ -358,7 +365,10 @@ Qualification is ordered and stops on the first failed gate:
    fixtures, tombstones, idempotence, export/restore, and deterministic hashes.
    Annotation portable v1 uses the actor-neutral `O1AP` contract and shared
    golden in `android_port11_portable_annotations_v1.md`; the private Android
-   `O1AN` file is never a provider payload.
+   `O1AN` file is never a provider payload. The disconnected annotation
+   coordinator and its private `O1AS` recovery state must pass
+   `android_port11_sync_coordinator.md` before any adapter executes its bounded
+   conditional commands.
 3. Qualify Google Drive against test accounts and at least two devices: explicit
    authorization, least-privilege scopes, first sync, offline convergence,
    conflicts, interruption/retry, quota, revocation, account switching,

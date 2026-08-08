@@ -74,6 +74,80 @@ final class OctavoAnnotationStore {
         }
     }
 
+    enum PortableExportStatus {
+        EXPORTED,
+        NOT_LOADED,
+        BLOCKED,
+        LIMIT,
+        LOCAL_FAILURE
+    }
+
+    static final class PortableExport {
+        final PortableExportStatus status;
+        private final byte[] bytes;
+
+        private PortableExport(PortableExportStatus status, byte[] bytes) {
+            this.status = status;
+            this.bytes = bytes;
+        }
+
+        byte[] bytes() {
+            return bytes == null ? null : bytes.clone();
+        }
+    }
+
+    enum PortableInspectionStatus {
+        READY,
+        UNCHANGED,
+        NOT_LOADED,
+        BLOCKED,
+        INVALID,
+        FUTURE_VERSION,
+        INPUT_LIMIT,
+        JOIN_LIMIT
+    }
+
+    static final class PortableInspection {
+        final PortableInspectionStatus status;
+        final String contentDigest;
+        final int byteLength;
+        final int bookmarkCount;
+        final int highlightCount;
+        final int noteCount;
+        final int visibleCount;
+        final int tombstoneCount;
+        final int conflictCount;
+        final int noteVersionCount;
+
+        private PortableInspection(PortableInspectionStatus status,
+                                   String contentDigest,
+                                   int byteLength,
+                                   int bookmarkCount,
+                                   int highlightCount,
+                                   int noteCount,
+                                   int visibleCount,
+                                   int tombstoneCount,
+                                   int conflictCount,
+                                   int noteVersionCount) {
+            this.status = status;
+            this.contentDigest = contentDigest;
+            this.byteLength = byteLength;
+            this.bookmarkCount = bookmarkCount;
+            this.highlightCount = highlightCount;
+            this.noteCount = noteCount;
+            this.visibleCount = visibleCount;
+            this.tombstoneCount = tombstoneCount;
+            this.conflictCount = conflictCount;
+            this.noteVersionCount = noteVersionCount;
+        }
+
+        boolean validInput() {
+            return status == PortableInspectionStatus.READY
+                || status == PortableInspectionStatus.UNCHANGED
+                || status == PortableInspectionStatus.JOIN_LIMIT;
+        }
+    }
+
     enum HighlightColor {
         YELLOW(0, "Yellow"),
         PINK(1, "Pink"),
@@ -305,6 +379,7 @@ final class OctavoAnnotationStore {
     private final SecureRandom random;
     private State current;
     private LoadStatus loadStatus = LoadStatus.MISSING;
+    private boolean loadAttempted;
     private boolean mutationsBlocked;
     private boolean failNextPublishForTesting;
 
@@ -337,6 +412,7 @@ final class OctavoAnnotationStore {
     }
 
     synchronized LoadStatus load() {
+        loadAttempted = true;
         mutationsBlocked = false;
         if (!stateFile.exists()) {
             current = new State(current.actorId, 0, new TreeMap<>());
@@ -743,16 +819,158 @@ final class OctavoAnnotationStore {
     }
 
     synchronized byte[] exportPortableBytes() throws IOException {
-        return encodePortable(current.records);
+        PortableExport exported = checkedExportPortableBytes();
+        if (exported.status != PortableExportStatus.EXPORTED) {
+            throw new IOException(
+                "Portable annotation export is unavailable: "
+                    + exported.status);
+        }
+        return exported.bytes();
+    }
+
+    synchronized PortableExport checkedExportPortableBytes() {
+        if (!loadAttempted) {
+            return new PortableExport(
+                PortableExportStatus.NOT_LOADED, null);
+        }
+        if (mutationsBlocked) {
+            return new PortableExport(
+                PortableExportStatus.BLOCKED, null);
+        }
+        try {
+            return new PortableExport(
+                PortableExportStatus.EXPORTED,
+                encodePortable(current.records));
+        } catch (BoundExceededException exception) {
+            return new PortableExport(PortableExportStatus.LIMIT, null);
+        } catch (IOException | RuntimeException exception) {
+            return new PortableExport(
+                PortableExportStatus.LOCAL_FAILURE, null);
+        }
+    }
+
+    synchronized PortableInspection inspectPortableBytes(
+        byte[] remoteBytes) {
+        if (!loadAttempted) {
+            return emptyInspection(
+                PortableInspectionStatus.NOT_LOADED,
+                remoteBytes == null ? 0 : remoteBytes.length);
+        }
+        if (mutationsBlocked) {
+            return emptyInspection(
+                PortableInspectionStatus.BLOCKED,
+                remoteBytes == null ? 0 : remoteBytes.length);
+        }
+        if (remoteBytes != null
+            && remoteBytes.length > MAX_PORTABLE_FILE_BYTES) {
+            return emptyInspection(PortableInspectionStatus.INPUT_LIMIT,
+                                   remoteBytes.length);
+        }
+        byte[] candidate = remoteBytes == null
+            ? null : remoteBytes.clone();
+        final TreeMap<String, Envelope> remote;
+        try {
+            remote = decodePortable(candidate);
+        } catch (PortableFormatException exception) {
+            PortableInspectionStatus status =
+                exception.result == PortableMergeResult.FUTURE_VERSION
+                    ? PortableInspectionStatus.FUTURE_VERSION
+                    : PortableInspectionStatus.INPUT_LIMIT;
+            return emptyInspection(
+                status, candidate == null ? 0 : candidate.length);
+        } catch (IOException | RuntimeException exception) {
+            return emptyInspection(
+                PortableInspectionStatus.INVALID,
+                candidate == null ? 0 : candidate.length);
+        }
+
+        PortableInspectionStatus status;
+        try {
+            TreeMap<String, Envelope> merged = mergeRecords(
+                current.records, remote);
+            status = recordsEqual(current.records, merged)
+                ? PortableInspectionStatus.UNCHANGED
+                : PortableInspectionStatus.READY;
+        } catch (BoundExceededException exception) {
+            status = PortableInspectionStatus.JOIN_LIMIT;
+        } catch (IOException | RuntimeException exception) {
+            return emptyInspection(
+                PortableInspectionStatus.INVALID, candidate.length);
+        }
+        return populatedInspection(status, candidate, remote);
+    }
+
+    private static PortableInspection emptyInspection(
+        PortableInspectionStatus status, int byteLength) {
+        return new PortableInspection(status,
+                                      "",
+                                      Math.max(0, byteLength),
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0,
+                                      0);
+    }
+
+    private static PortableInspection populatedInspection(
+        PortableInspectionStatus status,
+        byte[] bytes,
+        TreeMap<String, Envelope> records) {
+        int bookmarks = 0;
+        int highlights = 0;
+        int notes = 0;
+        int visible = 0;
+        int tombstones = 0;
+        int conflicts = 0;
+        int noteVersions = 0;
+        for (Envelope envelope : records.values()) {
+            if (envelope.kind == Kind.BOOKMARK) {
+                bookmarks += 1;
+            } else if (envelope.kind == Kind.HIGHLIGHT) {
+                highlights += 1;
+            } else if (envelope.kind == Kind.NOTE) {
+                notes += 1;
+                for (Mutation head : envelope.heads.values()) {
+                    if (head.operation == Operation.PUT) {
+                        noteVersions += 1;
+                    }
+                }
+            }
+            if (visiblePut(envelope) == null) {
+                tombstones += 1;
+            } else {
+                visible += 1;
+            }
+            if (envelope.heads.size() > 1) {
+                conflicts += 1;
+            }
+        }
+        return new PortableInspection(status,
+                                      fullHex(sha256(bytes)),
+                                      bytes.length,
+                                      bookmarks,
+                                      highlights,
+                                      notes,
+                                      visible,
+                                      tombstones,
+                                      conflicts,
+                                      noteVersions);
     }
 
     synchronized PortableMergeResult mergePortableBytes(byte[] remoteBytes) {
-        if (mutationsBlocked) {
+        if (!loadAttempted || mutationsBlocked) {
             return PortableMergeResult.BLOCKED;
+        }
+        if (remoteBytes != null
+            && remoteBytes.length > MAX_PORTABLE_FILE_BYTES) {
+            return PortableMergeResult.LIMIT;
         }
         final TreeMap<String, Envelope> remote;
         try {
-            remote = decodePortable(remoteBytes);
+            remote = decodePortable(
+                remoteBytes == null ? null : remoteBytes.clone());
         } catch (PortableFormatException exception) {
             return exception.result;
         } catch (IOException | RuntimeException exception) {
@@ -788,6 +1006,10 @@ final class OctavoAnnotationStore {
 
     synchronized boolean mutationsBlocked() {
         return mutationsBlocked;
+    }
+
+    synchronized boolean loadAttemptedForPortableSync() {
+        return loadAttempted;
     }
 
     synchronized void failNextPublishForTesting() {
@@ -982,6 +1204,10 @@ final class OctavoAnnotationStore {
     }
 
     static int maximumPortableFileBytesForTesting() {
+        return MAX_PORTABLE_FILE_BYTES;
+    }
+
+    static int portableFileByteLimit() {
         return MAX_PORTABLE_FILE_BYTES;
     }
 
@@ -1981,6 +2207,15 @@ final class OctavoAnnotationStore {
         for (int index = 0; index < 16; ++index) {
             result.append(Character.forDigit((bytes[index] >>> 4) & 0xf, 16));
             result.append(Character.forDigit(bytes[index] & 0xf, 16));
+        }
+        return result.toString();
+    }
+
+    private static String fullHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            result.append(Character.forDigit((value >>> 4) & 0xf, 16));
+            result.append(Character.forDigit(value & 0xf, 16));
         }
         return result.toString();
     }

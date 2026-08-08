@@ -295,6 +295,12 @@ worker, or UI surface. It:
   remains untouched because it first needs EPUB SHA-256 plus stable portable
   identities; its path/local-ID database export is not sync state.
 
+The adopted disconnected, provider-neutral annotation coordination boundary is
+specified separately in
+[`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md). It
+qualifies caller-driven conditional synchronization and private retry/review
+state only; it does not connect or authorize a provider.
+
 ## Offline gates before Drive
 
 Annotation provider work may begin only after deterministic tests prove canonical
@@ -305,10 +311,11 @@ capacity bound. Emulator UI tests must then pass toggle/list/go-to/remove,
 presentation failure, accessibility, recreation, process restart, and the
 ordinary Port 7-10 regression matrix before a physical device is requested.
 
-The fourth local slice closes that annotation-specific offline gate on API 36.
-It does not close the separate catalog, preference, position, transfer,
-authorization, or provider threat-model gates and does not authorize a Drive
-connection.
+The fourth local slice closes the annotation wire/join gate on API 36. The
+fifth backend-only slice closes the disconnected conditional-coordination and
+durable retry/review gate. Neither closes the separate catalog, preference,
+position, transfer, concrete provider, authorization, or provider threat-model
+gates, and neither authorizes a Drive connection.
 
 The later Drive adapter will use `drive.appdata` only for hidden manifests and
 portable state and `drive.file` only for EPUBs the user approves in a visible
@@ -357,6 +364,30 @@ slice. The connected API 34 iQOO was visible but untouched; no physical setting,
 app data, or animation scale changed. No Google account, Drive API, OAuth or
 Cloud resource, signing key, Play Console state, commit, push, or merge was
 touched.
+
+On 2026-08-08, the fifth backend-only slice passes the unchanged exact
+dependency guard and dual-ABI debug/test build. Its caller-driven coordinator
+and private atomic `O1AS` state qualify fixed logical-object reads, bounded
+opaque revisions, conditional create/replace, digest-bound first-merge review,
+durable remote-recreation review, exact join-limit retention, visible durable
+attention, stale callback rejection, uncertain-write recovery, binding reset,
+and corruption/future-version blocking without a provider interface, account,
+network permission, worker, thread, clock, or UI. On the verified API 36
+x86_64/QEMU target:
+
+- all seven coordinator tests pass together in 56.295 seconds;
+- the exact 16 MiB-minus-44 remote snapshot stages, reloads, merges, converges
+  without a write, and reloads clean in 56.531 seconds on the 192 MiB heap;
+- the portable-state, annotation-store, and note-integration regressions pass
+  8/8, 8/8, and 3/3; and
+- the clean ordinary matrix, excluding only the two externally driven restart
+  probes, passes 134/134 in 264.678 seconds and leaves the crash buffer empty.
+
+Only `emulator-5554` was addressed. The iQOO was never targeted and was
+disconnected by the user before the final matrix. Google Drive, OAuth, Google
+Cloud, Play Console, signing keys, and every physical-device setting remained
+untouched. The concrete Drive adapter and all non-annotation portable families
+remain later explicitly authorized slices.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

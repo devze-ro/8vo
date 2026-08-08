@@ -795,7 +795,7 @@ public final class OctavoAnnotationPortableStateTest {
     @Test
     public void exactPortableFileAndRecordLimitsAreAccepted()
         throws IOException {
-        byte[] exactFile = exactLimitPortableBytes();
+        byte[] exactFile = exactLimitPortableBytesForTesting();
         assertEquals(
             OctavoAnnotationStore.maximumPortableFileBytesForTesting(),
             exactFile.length);
@@ -1029,7 +1029,7 @@ public final class OctavoAnnotationPortableStateTest {
             color, flags, attachedId, label, excerpt, note));
     }
 
-    private byte[] exactLimitPortableBytes() throws IOException {
+    static byte[] exactLimitPortableBytesForTesting() throws IOException {
         int recordCount = OctavoAnnotationStore.maximumRecordsForTesting();
         int targetBytes =
             OctavoAnnotationStore.maximumPortableFileBytesForTesting();

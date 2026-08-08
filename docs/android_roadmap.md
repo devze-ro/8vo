@@ -460,9 +460,20 @@ are still pending.
   36 passes the full portable class 8/8, existing annotation store 8/8, note
   integration 3/3, ordinary matrix 127/127, separate process restart, and an
   empty crash buffer; and
+- the fifth backend-only slice adds a product-owned, caller-driven annotation
+  sync coordinator and private atomic `O1AS` retry/review state. It yields only
+  bounded read and conditional-create/replace commands, preserves opaque
+  revisions, stages exact untrusted `O1AP`, review-gates first merge and remote
+  recreation, retains capacity-limited joins, and recovers uncertain writes
+  without a clock, thread, provider interface, network permission, account, or
+  UI. API 36 passes all seven coordinator tests together in 56.295 seconds, the
+  exact 16 MiB-minus-44 snapshot alone in 56.531 seconds on the 192 MiB heap,
+  portable/store/note regressions 8/8, 8/8, and 3/3, all 134 ordinary tests in
+  264.678 seconds, and an empty crash buffer; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
-  closed, but catalog, preferences, positions, transfer manifests, provider
-  trust/encryption UX, and explicit authorization remain before cloud work.
+  closed through deterministic coordination, but the concrete Drive adapter,
+  catalog, preferences, positions, transfer manifests, provider trust/
+  encryption UX, and explicit authorization remain before cloud work.
 
 ### Annotations workspace
 
@@ -499,6 +510,8 @@ the annotation-specific offline gate is not permission to configure Google
 Cloud or connect Drive; that remains an explicitly authorized Port 11 follow-up.
 The byte-level annotation contract is
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md).
+The disconnected coordination contract is
+[`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md).
 Desktop remains a future peer over those records, not a database-file copy, and
 a second provider may motivate only the minimum proven transport seam after
 Drive works.

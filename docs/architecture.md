@@ -225,6 +225,24 @@ writable, while an unsupported future version remains preserved and blocks
 mutation. Managed-book removal does not imply local annotation deletion, so
 byte-identical re-import reconnects the same digest.
 
+The disconnected Port 11 annotation coordinator remains product-owned. Its
+private checksummed `<files>/port11/annotation-sync.v1` (`O1AS`) state binds one
+product-computed provider/account fingerprint, the last acknowledged exact
+`O1AP` digest, conservative remote-presence history, one phase, one bounded
+attention code, and—only while required—the exact staged remote snapshot. It is
+published independently with descriptor synchronization and same-directory
+`ATOMIC_MOVE`; no cross-file transaction is claimed. A caller drives one
+serialized command/result state machine that yields a fixed logical-object read
+or conditional create/replace against bounded opaque handle/revision values.
+No provider vtable, callback framework, worker, scheduler, clock, account SDK,
+or network path exists in this slice. First remote content and remote recreation
+require durable review provenance. Downloaded bytes are validated and staged
+before local merge; local `O1AN` publishes before remote success can be claimed;
+join-limit and uncertain-write state survive restart. A later concrete Drive
+host must prove semantically equivalent atomic conditional operations before it
+may execute these commands. The adopted boundary is
+[`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md).
+
 The Port 11 Android highlight projection remains product-owned. Java copies a
 bounded record-ID-sorted list of Reader0 spine/UTF-8 byte ranges and four
 semantic color IDs across JNI; native code does not reinterpret the anchors.
@@ -498,11 +516,13 @@ remains bounded to the visible-frame cap.
 Thumbnails, cover-library expansion, durable Unicode-aware full-text indexing,
 cross-spine selection, annotation search/export, per-book
 appearances, embedded fonts, complete publication accessibility, full Unicode
-shaping, and synchronization transport remain deferred. Port 11 begins the
-local bookmark, multi-color highlight, and note/storage/merge implementation
-without connecting Drive. The
- current bounded contracts are in [`android_port11.md`](android_port11.md),
- [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
+shaping, and concrete synchronization transport remain deferred. Port 11 now
+includes local bookmark, multi-color highlight, note/storage/merge, and
+disconnected deterministic annotation coordination without connecting Drive.
+The current bounded contracts are in
+[`android_port11.md`](android_port11.md),
+[`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
+[`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and

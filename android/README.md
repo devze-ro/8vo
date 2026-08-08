@@ -107,6 +107,19 @@ passes 8/8, existing store 8/8, full note integration 3/3, ordinary regression
 crash buffer. The production APK contains no golden assets. The connected iQOO
 was not touched for this backend-only slice, and Drive remains disconnected.
 
+The fifth backend-only slice adds one product-owned, caller-driven annotation
+sync coordinator and the private atomic `O1AS` retry/review file. It stages
+exact bounded `O1AP`, requires digest-bound first-merge review, durably gates
+remote recreation, retains join-limit input, remembers visible errors, and
+recovers conditional create/replace races and uncertain writes without a
+clock, thread, provider interface, account, network permission, worker, or UI.
+API 36 x86_64 passes the seven coordinator tests together in 56.295 seconds,
+the exact 16 MiB-minus-44 remote snapshot alone in 56.531 seconds on the 192
+MiB heap, portable/store/note regressions 8/8, 8/8, and 3/3, and all 134
+ordinary tests in 264.678 seconds. The crash buffer is empty. Only
+`emulator-5554` was addressed; the iQOO was never targeted and was disconnected
+before the final matrix. Google Drive remains disconnected.
+
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
 annotation/draft/note tests in 19.071 seconds and all 119 ordinary tests in
@@ -268,6 +281,13 @@ contained only expected force stops.
   stable record/mutation/tombstone identities, strict atomic publication,
   corruption/future-version recovery, and deterministic causal merge remain
   product state. Managed-book removal does not erase annotations.
+- `OctavoAnnotationSyncStore` and `OctavoAnnotationSyncCoordinator` own the
+  disconnected annotation-only coordination boundary. The store atomically
+  retains binding, converged/in-flight digests, conservative presence history,
+  durable attention/review phase, and a staged exact `O1AP`; the caller-driven
+  coordinator yields only bounded read or conditional create/replace commands.
+  There is no provider adapter, account SDK, hidden worker, scheduler, or
+  network request in this slice.
 - `OctavoNoteDraftStore` owns one local-only, 8 KiB, checksummed incomplete-note
   envelope at `<files>/port11/note-draft.v1`. It atomically autosaves exact
   editor text for crash recovery but never becomes a portable mutation or
@@ -709,17 +729,20 @@ superseded regression evidence. Port 7 intentionally remains a bounded
 appearance foundation. Per-book
 appearance overrides, a bundled cross-device-identical or embedded font, full
 Unicode shaping, complete publication accessibility, cover/library expansion,
-annotation search/export and synchronization transport remain deferred.
+annotation search/export and concrete synchronization transport remain deferred.
 Port 8 adds structural navigation; Port 9 adds bounded session-local in-book
 search; Port 10 adds bounded word selection and Copy. Its local follow-up adds
 same-spine cross-page continuation and closes that bounded selection launch
 gate. Port 11 adds durable provider-neutral annotation storage, local bookmarks,
 the local multi-color highlight workflow, and the local note/recovery candidate
-while Drive remains disconnected. Durable Unicode-aware indexing, annotation
-search/export, and synchronization transport remain deferred. Spatial
+plus disconnected annotation coordination while Drive remains disconnected.
+Durable Unicode-aware indexing, annotation search/export, concrete provider
+transport, and the remaining portable record families remain deferred. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port11.md`](../docs/android_port11.md) for the current
 annotation/storage/merge boundary,
+[`../docs/android_port11_sync_coordinator.md`](../docs/android_port11_sync_coordinator.md)
+for the disconnected annotation coordination boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,
