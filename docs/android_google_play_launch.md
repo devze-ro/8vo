@@ -1,15 +1,16 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and revised first-release scope as of 2026-08-09. The
+Status: launch-gap audit and revised first-release scope as of 2026-08-10. The
 merged API 36/API 34 Port 10 selection baseline is accepted. Port 11's local
 bookmarks, multi-color highlights, and note/draft/conflict workflow are accepted
 through API 36/API 34 automation, physical touch, and bounded TalkBack review.
 Portable annotation-v1 bytes, the hardened offline join, and the disconnected
 conditional sync coordinator now pass their API 36 offline qualification;
 the independent position family is API 36/API 34-qualified. The seventh
-appearance-only `O1PF`/`O1SS` local slice is accepted on API 36. Progress choice,
-catalog/transfer families, Google Drive synchronization, and remaining bounded
-UI polish are still required launch gates.
+appearance-only `O1PF`/`O1SS` and eighth progress-choice `O1PC`/`O1PS` local
+slices are accepted on API 36. Catalog/transfer families, Google Drive
+synchronization, and remaining bounded UI polish are still required launch
+gates.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.
@@ -130,9 +131,11 @@ used in the listing.
 - Build and qualify provider-neutral product models locally before adding Google
   APIs. Annotation `O1AP` is the first completed family and has a disconnected
   conditional coordinator. Position `O1RP`/`O1RS` is independently qualified.
-  Appearance-only `O1PF`/`O1SS` is independently accepted on API 36. The Port 8
-  progress-display choice, Library identity,
-  managed-book transfer, and cloud-deletion state each still require a separate
+  Appearance-only `O1PF`/`O1SS` is independently accepted on API 36. The global
+  progress-display choice is independently accepted locally as canonical
+  `O1PC`, private atomic `O1PS`, and separate product-local `O8PG`; it is not a
+  generic settings or sync record. Library identity, managed-book transfer, and
+  cloud-deletion state each still require a separate
   versioned, bounded format and explicit merge policy; no generic operation log
   is implied. Every family must remain device-clock-independent where causality
   is required, idempotent, bounded, and safe to retry.
@@ -183,6 +186,19 @@ seconds plus confirmed force-stop/no process and fresh-process verification 1/1
 in 3.744 seconds, and the ordinary matrix 200/200 in 532.465 seconds with empty
 crash/fatal buffers. Only `emulator-5554` was targeted; the iQOO and other
 physical devices were not targeted.
+
+The independent progress-display-choice boundary is
+[`android_port11_progress_sync.md`](android_port11_progress_sync.md). Its exact
+dependency guard, architecture audit, and dual-ABI debug/instrumentation build
+pass. On API 36 `emulator-5554`, preserved-future `O8PG` Retry/Back passes 1/1
+in 6.330 seconds, focused progress passes 37/37 in 78.279 seconds, the final
+rebuilt legacy `O8PG` regression passes 7/7 in 0.202 seconds, structural
+integration passes 6/6 in 21.030 seconds, coexistence passes 49/49 in 143.490
+seconds, and the external seed/fresh-process verifier pass 1/1 in 7.514 and 1/1
+in 5.126 seconds around a confirmed force-stop with no process. The ordinary
+matrix passes 238/238 in 438.899 seconds and crash/fatal buffers are empty. Only
+the emulator was targeted; no physical device, provider, network permission,
+worker, account, OAuth flow, Google dependency, or Drive connection was used.
 
 ### Bounded UI polish
 
@@ -384,7 +400,9 @@ Qualification is ordered and stops on the first failed gate:
    conditional commands. The independent position family must retain the
    accepted `android_port11_position_sync.md` gate. The appearance-only family
    must retain the accepted API 36 gate in `android_port11_preference_sync.md`.
-   Progress choice remains a later separate portable family.
+   The progress-choice family must independently retain the accepted API 36
+   `android_port11_progress_sync.md` gate; `O1PC`, `O1PS`, and `O8PG` remain
+   separate and are not a generic sync framework.
 3. Qualify Google Drive against test accounts and at least two devices: explicit
    authorization, least-privilege scopes, first sync, offline convergence,
    conflicts, interruption/retry, quota, revocation, account switching,

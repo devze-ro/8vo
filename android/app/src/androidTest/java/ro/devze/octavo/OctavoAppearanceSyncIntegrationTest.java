@@ -1305,6 +1305,7 @@ public final class OctavoAppearanceSyncIntegrationTest {
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoProgressSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);

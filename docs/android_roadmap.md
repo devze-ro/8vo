@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-09. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-10. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -494,15 +494,28 @@ are still pending.
   verification 1/1 in 3.744 seconds, and
   the ordinary matrix 200/200 in 532.465 seconds with empty crash/fatal buffers.
   Only `emulator-5554` was targeted; the iQOO and other physical devices were
-  not targeted.
-  The Port 8 Chapter/Page/Location/Percentage choice remains a separate later
-  portable family; and
+  not targeted; and
+- the eighth independent local slice is accepted on API 36 for the existing
+  global Chapter/Page/Location/Percentage choice. It keeps canonical bounded
+  `O1PC` lanes, private atomic `O1PS` review/pending state, and product-local
+  `O8PG` bytes as separate formats and independent files. The exact dependency
+  guard, architecture audit, and dual-ABI debug/instrumentation build pass. On
+  `emulator-5554`, the
+  isolated future-`O8PG` Retry/Back case passes 1/1 in 6.330 seconds, focused
+  progress tests pass 37/37 in 78.279 seconds, the final rebuilt legacy `O8PG`
+  regression passes 7/7 in 0.202 seconds, structural integration passes 6/6 in
+  21.030 seconds, coexistence passes 49/49 in 143.490 seconds, and the external
+  seed/confirmed-force-stop/fresh-process driver passes 1/1 in 7.514 seconds and
+  1/1 in 5.126 seconds around a confirmed empty process. The ordinary matrix
+  passes 238/238 in 438.899 seconds and crash/fatal buffers are empty. Only the
+  emulator was targeted; no physical device, provider, permission, network,
+  worker, account, OAuth, Google dependency, or Drive connection was added; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
   closed through deterministic coordination and the independent position gate
   is closed through local confirmation. The accepted appearance-only local gate
-  does not authorize transport; progress choice, catalog, transfer manifests,
-  provider trust/encryption UX, and explicit authorization remain before cloud
-  work.
+  and the accepted progress-choice local gate do not authorize transport;
+  catalog, transfer manifests, provider trust/encryption UX, and explicit
+  authorization remain before cloud work.
 
 ### Annotations workspace
 
@@ -547,8 +560,11 @@ The separate provider-neutral reading-position and confirmation contract is
 [`android_port11_position_sync.md`](android_port11_position_sync.md).
 The appearance-only portable profile and private review-transaction contract is
 [`android_port11_preference_sync.md`](android_port11_preference_sync.md); its
-local implementation is accepted on API 36 and does not include the Port 8
-progress-display choice.
+local implementation is accepted on API 36. The separately accepted global
+progress-display-choice contract is
+[`android_port11_progress_sync.md`](android_port11_progress_sync.md); `O1PC`,
+`O1PS`, and `O8PG` are not annotation, position, appearance, catalog, provider,
+or transport records.
 Desktop remains a future peer over those records, not a database-file copy, and
 a second provider may motivate only the minimum proven transport seam after
 Drive works.

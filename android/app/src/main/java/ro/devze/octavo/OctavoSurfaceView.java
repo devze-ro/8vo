@@ -61,6 +61,43 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
     }
 
+    /**
+     * Exact evidence that a semantic progress choice reached a real posted
+     * reader frame. The receipt deliberately excludes derived progress text.
+     */
+    static final class ProgressPresentationReceipt {
+        final OctavoProgressDisplay choice;
+        final long progressGeneration;
+        final long frameCount;
+        final long anchorSpineIndex;
+        final long anchorByteOffset;
+        final long pageSpineIndex;
+        final long pageFirstByte;
+        final long pageOnePastLastByte;
+        final boolean strictResumeSettled;
+
+        private ProgressPresentationReceipt(
+            OctavoProgressDisplay choice,
+            long progressGeneration,
+            long frameCount,
+            long anchorSpineIndex,
+            long anchorByteOffset,
+            long pageSpineIndex,
+            long pageFirstByte,
+            long pageOnePastLastByte,
+            boolean strictResumeSettled) {
+            this.choice = choice;
+            this.progressGeneration = progressGeneration;
+            this.frameCount = frameCount;
+            this.anchorSpineIndex = anchorSpineIndex;
+            this.anchorByteOffset = anchorByteOffset;
+            this.pageSpineIndex = pageSpineIndex;
+            this.pageFirstByte = pageFirstByte;
+            this.pageOnePastLastByte = pageOnePastLastByte;
+            this.strictResumeSettled = strictResumeSettled;
+        }
+    }
+
     private interface SelectionMagnifier {
         void show(float sourceX,
                   float sourceY,
@@ -3326,6 +3363,120 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         return new AppearancePresentationReceipt(
             presentedAppearance,
             state[STATE_APPEARANCE_PRESENTED_GENERATION],
+            state[STATE_FRAME_COUNT],
+            anchorSpineIndex,
+            anchorByteOffset,
+            pageSpineIndex,
+            pageFirstByte,
+            pageOnePastLastByte,
+            true);
+    }
+
+    ProgressPresentationReceipt currentProgressPresentationReceipt() {
+        if (nativeHandle == 0) {
+            return null;
+        }
+
+        long[] state = OctavoNative.state(nativeHandle);
+        long[] navigation = OctavoNative.navigationState(nativeHandle);
+        long[] position = OctavoNative.readingPosition(nativeHandle);
+        boolean javaAppearanceUnsettled = appearanceApplyPosted
+            || requestedAppearance != null
+            || nativeAppearanceAwaitingPresentation != null
+            || presentedAppearance == null
+            || !appearanceMatchesState(presentedAppearance, state);
+        return buildProgressPresentationReceipt(
+            presentedProgressDisplay,
+            state,
+            navigation,
+            position,
+            presentationPosted,
+            javaAppearanceUnsettled,
+            strictResumePositionPersistenceBlocked(state));
+    }
+
+    static ProgressPresentationReceipt progressPresentationReceiptForTesting(
+        OctavoProgressDisplay choice,
+        long[] state,
+        long[] navigation,
+        long[] position,
+        boolean javaPresentationPending,
+        boolean javaAppearanceUnsettled,
+        boolean strictResumeBlocked) {
+        return buildProgressPresentationReceipt(
+            choice,
+            state,
+            navigation,
+            position,
+            javaPresentationPending,
+            javaAppearanceUnsettled,
+            strictResumeBlocked);
+    }
+
+    private static ProgressPresentationReceipt
+        buildProgressPresentationReceipt(
+            OctavoProgressDisplay choice,
+            long[] state,
+            long[] navigation,
+            long[] position,
+            boolean javaPresentationPending,
+            boolean javaAppearanceUnsettled,
+            boolean strictResumeBlocked) {
+        if (choice == null
+            || !validState(state)
+            || state[STATE_RESUMED] != 1
+            || state[STATE_HAS_SURFACE] != 1
+            || state[STATE_DOCUMENT_OPEN] != 1
+            || state[STATE_READER_FRAME_READY] != 1
+            || state[STATE_FRAME_COUNT] <= 0
+            || state[STATE_PAGE_MOVE_PRESENTATION_PENDING] != 0
+            || state[STATE_REFLOW_PRESENTATION_PENDING] != 0
+            || state[STATE_HOST_PRESENTATION_PENDING] != 0
+            || state[STATE_APPEARANCE_GENERATION]
+               != state[STATE_APPEARANCE_PRESENTED_GENERATION]
+            || javaPresentationPending
+            || javaAppearanceUnsettled
+            || strictResumeBlocked
+            || !validNavigationState(navigation)
+            || navigation[NAVIGATION_STATE_PENDING] != 0
+            || navigation[NAVIGATION_STATE_SEMANTIC_GENERATION]
+               != navigation[
+                   NAVIGATION_STATE_SEMANTIC_PRESENTED_GENERATION]
+            || navigation[NAVIGATION_STATE_PROGRESS_GENERATION] <= 0
+            || navigation[NAVIGATION_STATE_PROGRESS_GENERATION]
+               != navigation[
+                   NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]
+            || navigation[NAVIGATION_STATE_PROGRESS_REQUESTED_MODE]
+               != navigation[NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]
+            || navigation[NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]
+               != choice.nativeId()
+            || !validPresentedPosition(position)) {
+            return null;
+        }
+
+        long anchorSpineIndex = position[1];
+        long anchorByteOffset = position[2];
+        long pageSpineIndex = state[STATE_SPINE_INDEX];
+        long pageFirstByte = state[STATE_PAGE_FIRST_BYTE];
+        long pageOnePastLastByte =
+            state[STATE_PAGE_ONE_PAST_LAST_BYTE];
+        if (anchorSpineIndex < 0
+            || anchorSpineIndex > 0xFFFFFFFFL
+            || anchorByteOffset < 0
+            || pageSpineIndex != anchorSpineIndex
+            || state[STATE_PRESENTED_SPINE_INDEX] != anchorSpineIndex
+            || state[STATE_PRESENTED_BYTE_OFFSET] != anchorByteOffset
+            || pageFirstByte < 0
+            || pageOnePastLastByte <= pageFirstByte
+            || anchorByteOffset < pageFirstByte
+            || anchorByteOffset >= pageOnePastLastByte) {
+            return null;
+        }
+
+        return new ProgressPresentationReceipt(
+            choice,
+            navigation[
+                NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION],
             state[STATE_FRAME_COUNT],
             anchorSpineIndex,
             anchorByteOffset,

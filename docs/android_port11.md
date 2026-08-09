@@ -9,7 +9,12 @@ slice implements and API 36/API 34-qualifies provider-neutral reading positions
 and Kindle-style confirmation without extending the annotation record or
 coordinator families. The seventh, appearance-only local slice is accepted on
 API 36 with canonical `O1PF` whole-profile lanes and private atomic `O1SS`
-review transactions. Google Drive remains disconnected.
+review transactions. The eighth independent local slice is accepted on API 36
+for the existing global Chapter/Page/Location/Percentage progress-display
+choice, with canonical
+`O1PC` lanes, private atomic `O1PS` review transactions, and the pre-existing
+local `O8PG` record remaining three separate formats. Google Drive remains
+disconnected.
 
 ## Boundary
 
@@ -317,8 +322,15 @@ The frozen provider-neutral global-appearance boundary is specified in
 [`android_port11_preference_sync.md`](android_port11_preference_sync.md). Its
 bounded `O1PF` whole-profile lanes and private `O1SS` review/transaction state
 are independent of the annotation and position families. This seventh slice is
-appearance-only: the Port 8 progress-display choice requires a later portable
-family rather than a two-store partial transaction.
+appearance-only.
+
+The accepted provider-neutral global progress-display-choice boundary is
+specified in
+[`android_port11_progress_sync.md`](android_port11_progress_sync.md). Its
+bounded canonical `O1PC` lanes, private atomic `O1PS` identity/review/pending
+state, and the existing product-local `O8PG` choice are independent formats and
+independently atomic files. This eighth slice neither reuses another Port 11
+family as a generic sync framework nor connects a provider.
 
 ## Offline gates before Drive
 
@@ -334,8 +346,9 @@ The fourth local slice closes the annotation wire/join gate on API 36. The
 fifth backend-only slice closes the disconnected conditional-coordination and
 durable retry/review gate. The sixth local slice closes only the separate
 position wire/merge/presentation-confirmation gate. The seventh closes the
-appearance-only wire/store/review/presentation gate on API 36. None closes
-progress-choice, catalog, transfer, concrete-provider,
+appearance-only wire/store/review/presentation gate on API 36. The eighth closes
+the separate global progress-choice wire/store/review/presentation gate on API
+36. None closes catalog, transfer, concrete-provider,
 authorization, encryption, or provider-threat-model gates, and none authorizes
 a Drive connection.
 
@@ -408,7 +421,8 @@ x86_64/QEMU target:
 Only `emulator-5554` was addressed. The iQOO was never targeted and was
 disconnected by the user before the final matrix. Google Drive, OAuth, Google
 Cloud, Play Console, signing keys, and every physical-device setting remained
-untouched. The concrete Drive adapter and all remaining portable families
+untouched. The concrete Drive adapter and the still-unqualified catalog,
+transfer, provider, authorization, encryption, and provider-threat-model gates
 remain later explicitly authorized slices.
 
 On 2026-08-09, the sixth local slice passes the unchanged exact dependency
@@ -466,6 +480,32 @@ lifecycle, automated accessibility, and recovery boundary. Only
 targeted. The slice still uses deterministic simulated remote bytes and adds no
 provider, account, network permission, worker, clock, Google dependency, OAuth
 flow, or Drive connection.
+
+On 2026-08-10, the eighth independent progress-display-choice `O1PC`/`O1PS`
+slice passes the exact dependency guard and architecture audit and builds the
+debug plus instrumentation APKs for `x86_64` and `arm64-v8a`. The existing
+product-local `O8PG` record, provider-neutral `O1PC` bytes, and private atomic
+`O1PS` identity/review/pending state remain separate. On API 36
+`emulator-5554`:
+
+- the isolated preserved-future `O8PG` Retry/Back regression passes 1/1 in
+  6.330 seconds, and the complete focused matrix passes 37/37 in 78.279 seconds;
+- the final rebuilt legacy `O8PG` regression passes 7/7 in 0.202 seconds, while
+  structural navigation integration passes 6/6 in 21.030 seconds;
+- the cross-family coexistence regression passes 49/49 in 143.490 seconds;
+- the external seed passes 1/1 in 7.514 seconds, force-stop is confirmed with
+  no surviving process, and fresh-process verification passes 1/1 in 5.126
+  seconds;
+- the ordinary matrix, excluding only the two external-process probe methods,
+  passes 238/238 in 438.899 seconds; and
+- crash and fatal buffers are empty.
+
+Only `emulator-5554` was targeted; no physical device was targeted. The slice
+uses deterministic simulated remote bytes and adds no provider, account,
+network permission, worker, clock, Google dependency, OAuth flow, or Drive
+connection. It does not authorize the still-deferred Drive security, threat-
+model, account-binding, authorization, ownership, conditional-write, duplicate,
+switching, deletion, privacy, first-sync, reinstall, or rollback decisions.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

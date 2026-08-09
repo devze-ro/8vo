@@ -94,7 +94,8 @@ qualified local multi-color highlight slice. The local note/draft/conflict
 slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
 34 automation. The inset, marker appearance, and marker-tap-to-editor behavior
 are physically accepted. The seventh appearance-only synchronization slice is
-accepted on API 36. Google Drive remains disconnected:
+accepted on API 36. The eighth independent global progress-display-choice slice
+is also accepted on API 36. Google Drive remains disconnected:
 
 The fourth local slice adds the distinct actor-neutral `O1AP` annotation
 container and hardened offline join without a provider, account, network
@@ -133,6 +134,21 @@ matrix passes 200/200 in 532.465 seconds after excluding only the two
 external-process probe methods;
 the crash/fatal buffers are empty. The iQOO and every other physical device were
 not targeted for this appearance-sync slice.
+
+The eighth progress-display-choice slice keeps canonical provider-neutral
+`O1PC`, private atomic `O1PS`, and the existing product-local `O8PG` as separate
+formats and independently atomic files. The exact dependency guard and
+architecture audit pass, as does the dual-ABI debug/instrumentation build. On
+API 36 `emulator-5554`, the isolated preserved-future `O8PG` Retry/Back case
+passes 1/1 in 6.330 seconds, the focused matrix passes 37/37 in 78.279 seconds,
+the final rebuilt legacy `O8PG` regression passes 7/7 in 0.202 seconds,
+structural navigation integration passes 6/6 in 21.030 seconds, and coexistence
+passes 49/49 in 143.490 seconds. The external seed passes 1/1 in 7.514 seconds,
+force-stop is confirmed with no surviving process, and fresh-process
+verification passes 1/1 in 5.126 seconds. The ordinary matrix passes 238/238 in
+438.899 seconds, and crash/fatal buffers are empty. Only `emulator-5554` was
+targeted; no physical device, provider, permission, network, worker, account,
+OAuth flow, Google dependency, or Drive connection was used.
 
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
@@ -300,6 +316,16 @@ contained only expected force stops.
   display record. Same-directory synchronization and atomic replacement preserve
   prior bytes on failure. The selected Chapter, Page, Location, or Percentage
   mode becomes durable only after its matching frame is presented.
+- `OctavoProgressPortable` owns canonical bounded `O1PC` per-device semantic
+  choice lanes, exact wire conversion, deterministic clock-free merge and stale
+  replay, own-lane guards, equivocation/capacity results, recognizable-future
+  retention, and deterministic test-only simulated remote bytes.
+- `OctavoProgressSyncStore` owns the independent private atomic `O1PS` stable
+  progress-device identity, review epochs, decisions, one local or remote
+  forward/rollback transaction, recovery, typed failure, and portable export.
+  `OctavoProgressSyncPrompt` is the 8vo-owned accessible Use/Keep/Retry surface.
+  None reuses `O8PG`, `O1AP`/`O1AS`, `O1RP`/`O1RS`, or `O1PF`/`O1SS` as a generic
+  sync framework, and none connects a provider.
 - `OctavoAnnotationStore` owns the bounded, digest-keyed, versioned annotation
   envelope at `<files>/port11/annotations.v1`. Reader0 spine/UTF-8 byte anchors,
   stable record/mutation/tombstone identities, strict atomic publication,
@@ -768,11 +794,14 @@ matrix, external force-stop recovery, and the 158/158 ordinary matrix with
 empty crash/fatal buffers. The physical gate also closed touch-mode action
 focus and restored the accepted APK/private-data baseline exactly. Durable
 Unicode-aware indexing, annotation search/export, concrete provider transport,
-and the separate progress-choice, catalog, and transfer portable families
-remain deferred. The seventh appearance-only local slice adds canonical `O1PF`
+and the separate catalog and transfer portable families remain deferred. The
+seventh appearance-only local slice adds canonical `O1PF`
 whole-profile lanes plus private atomic `O1SS` decisions and staged
 presentation recovery and is accepted on API 36. It still connects no provider
-or transport. Spatial
+or transport. The eighth independent progress-choice local slice similarly adds
+canonical `O1PC` lanes plus private atomic `O1PS` review/presentation recovery,
+retains separate `O8PG`, and is accepted on API 36 without a provider or
+transport. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port11.md`](../docs/android_port11.md) for the current
 annotation/storage/merge boundary,
@@ -782,6 +811,8 @@ for the disconnected annotation coordination boundary,
 for the separate reading-position/confirmation boundary,
 [`../docs/android_port11_preference_sync.md`](../docs/android_port11_preference_sync.md)
 for the appearance-only portable profile/review-transaction boundary,
+[`../docs/android_port11_progress_sync.md`](../docs/android_port11_progress_sync.md)
+for the progress-choice portable/private/local-file boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,

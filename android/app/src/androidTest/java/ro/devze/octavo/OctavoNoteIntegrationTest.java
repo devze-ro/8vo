@@ -56,6 +56,7 @@ public final class OctavoNoteIntegrationTest {
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoProgressSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);
     }

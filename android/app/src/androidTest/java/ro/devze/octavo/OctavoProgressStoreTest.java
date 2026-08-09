@@ -96,6 +96,10 @@ public final class OctavoProgressStoreTest {
         assertSame(OctavoProgressDisplay.PERCENTAGE, store.current());
         assertSame(OctavoProgressDisplay.PERCENTAGE, store.load());
         assertSame(OctavoProgressDisplay.PERCENTAGE, store.current());
+        assertSame(OctavoProgressStore.LoadStatus.MISSING,
+                   store.loadStatus());
+        assertFalse(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.PERCENTAGE));
         assertEquals(0, store.loadSuccessCountForTesting());
         assertEquals(0, store.loadFailureCountForTesting());
         assertEquals(0, store.saveSuccessCountForTesting());
@@ -126,6 +130,10 @@ public final class OctavoProgressStoreTest {
 
             assertTrue(store.save(display));
             assertSame(display, store.current());
+            assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                       store.loadStatus());
+            assertTrue(store.hasCanonicalCurrentRecord(display));
+            assertFalse(store.hasCanonicalCurrentRecord(null));
             assertEquals(1, store.saveSuccessCountForTesting());
             assertEquals(0, store.saveFailureCountForTesting());
             assertEquals(0, store.loadSuccessCountForTesting());
@@ -142,6 +150,9 @@ public final class OctavoProgressStoreTest {
                 new OctavoProgressStore(filesDirectory);
             assertSame(display, reloaded.load());
             assertSame(display, reloaded.current());
+            assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                       reloaded.loadStatus());
+            assertTrue(reloaded.hasCanonicalCurrentRecord(display));
             assertEquals(1, reloaded.loadSuccessCountForTesting());
             assertEquals(0, reloaded.loadFailureCountForTesting());
             assertEquals(0, reloaded.missingFallbackCountForTesting());
@@ -200,6 +211,15 @@ public final class OctavoProgressStoreTest {
 
             assertSame(OctavoProgressDisplay.PERCENTAGE, store.load());
             assertSame(OctavoProgressDisplay.PERCENTAGE, store.current());
+            assertSame(
+                index == 5
+                    ? OctavoProgressStore.LoadStatus.FUTURE
+                    : OctavoProgressStore.LoadStatus.CORRUPT,
+                store.loadStatus());
+            assertFalse(store.hasCanonicalCurrentRecord(
+                OctavoProgressDisplay.PERCENTAGE));
+            assertFalse(store.hasCanonicalCurrentRecord(
+                OctavoProgressDisplay.LOCATION));
             assertEquals(0, store.loadSuccessCountForTesting());
             assertEquals(1, store.loadFailureCountForTesting());
             assertEquals(0, store.saveSuccessCountForTesting());
@@ -214,16 +234,71 @@ public final class OctavoProgressStoreTest {
     }
 
     @Test
+    public void futureRecordCannotBeOverwrittenByDirectSave()
+        throws IOException {
+        OctavoProgressStore templateStore =
+            new OctavoProgressStore(testFilesDirectory);
+        assertTrue(templateStore.save(OctavoProgressDisplay.LOCATION));
+        byte[] future = withIntAndChecksum(
+            readFile(templateStore.progressFileForTesting()),
+            VERSION_OFFSET,
+            0x80000000);
+
+        File filesDirectory = new File(testFilesDirectory, "future-save");
+        assertTrue(filesDirectory.mkdirs());
+        OctavoProgressStore store =
+            new OctavoProgressStore(filesDirectory);
+        File parent = store.progressFileForTesting().getParentFile();
+        assertNotNull(parent);
+        assertTrue(parent.mkdirs());
+        writeFile(store.progressFileForTesting(), future);
+
+        assertSame(OctavoProgressDisplay.PERCENTAGE, store.load());
+        assertSame(OctavoProgressStore.LoadStatus.FUTURE,
+                   store.loadStatus());
+        assertFalse(store.save(OctavoProgressDisplay.CHAPTER));
+        assertSame(OctavoProgressStore.LoadStatus.FUTURE,
+                   store.loadStatus());
+        assertArrayEquals(future, readFile(store.progressFileForTesting()));
+        assertEquals(0, store.saveSuccessCountForTesting());
+        assertEquals(1, store.saveFailureCountForTesting());
+        assertFalse(store.temporaryFileForTesting().exists());
+
+        OctavoProgressStore raced =
+            new OctavoProgressStore(new File(testFilesDirectory,
+                                             "future-race"));
+        assertSame(OctavoProgressDisplay.PERCENTAGE, raced.load());
+        File racedParent = raced.progressFileForTesting().getParentFile();
+        assertNotNull(racedParent);
+        assertTrue(racedParent.mkdirs());
+        writeFile(raced.progressFileForTesting(), future);
+        assertFalse(raced.save(OctavoProgressDisplay.PAGE));
+        assertSame(OctavoProgressStore.LoadStatus.FUTURE,
+                   raced.loadStatus());
+        assertArrayEquals(future, readFile(raced.progressFileForTesting()));
+    }
+
+    @Test
     public void failedSavePreservesPublishedBytesAndCurrentChoice()
         throws IOException {
         OctavoProgressStore store =
             new OctavoProgressStore(testFilesDirectory);
         assertTrue(store.save(OctavoProgressDisplay.LOCATION));
         byte[] published = readFile(store.progressFileForTesting());
+        assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                   store.loadStatus());
+        assertTrue(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.LOCATION));
         assertTrue(store.temporaryFileForTesting().mkdir());
 
         assertFalse(store.save(OctavoProgressDisplay.CHAPTER));
         assertSame(OctavoProgressDisplay.LOCATION, store.current());
+        assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                   store.loadStatus());
+        assertTrue(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.LOCATION));
+        assertFalse(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.CHAPTER));
         assertEquals(1, store.saveSuccessCountForTesting());
         assertEquals(1, store.saveFailureCountForTesting());
         assertArrayEquals(published, readFile(store.progressFileForTesting()));
@@ -267,6 +342,10 @@ public final class OctavoProgressStoreTest {
 
         assertFalse(store.save(OctavoProgressDisplay.PAGE));
         assertSame(OctavoProgressDisplay.PERCENTAGE, store.current());
+        assertSame(OctavoProgressStore.LoadStatus.MISSING,
+                   store.loadStatus());
+        assertFalse(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.PERCENTAGE));
         assertEquals(0, store.saveSuccessCountForTesting());
         assertEquals(1, store.saveFailureCountForTesting());
         assertTrue(target.isDirectory());
@@ -277,6 +356,10 @@ public final class OctavoProgressStoreTest {
         assertTrue(target.delete());
         assertTrue(store.save(OctavoProgressDisplay.PAGE));
         assertSame(OctavoProgressDisplay.PAGE, store.current());
+        assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                   store.loadStatus());
+        assertTrue(store.hasCanonicalCurrentRecord(
+            OctavoProgressDisplay.PAGE));
         assertEquals(1, store.saveSuccessCountForTesting());
         assertEquals(1, store.saveFailureCountForTesting());
         assertFalse(store.temporaryFileForTesting().exists());

@@ -331,6 +331,32 @@ It neither includes the separate Port 8 progress-display choice nor connects a
 provider, account, permission, worker, clock, OAuth flow, Google dependency, or
 Drive transport.
 
+Port 11's eighth independent local slice adds a separate provider-neutral
+boundary around the existing global Chapter/Page/Location/Percentage choice.
+Canonical bounded `O1PC` lanes carry only that semantic choice under a stable
+progress-device identity. Private atomic `O1PS` owns merge/review decisions,
+one staged forward-or-rollback transaction, recovery, and one bounded
+recognizable-future slot. The pre-existing product-local `O8PG` record remains
+the separately atomic durable on-device choice. A local or accepted remote lane
+advances only after an exact real successfully posted receipt and proved
+canonical `O8PG` publication; reverse rollback is equally ordered. None of the
+three formats is an annotation, reading-position, appearance, provider,
+account, path, database, or generic sync record.
+
+The local implementation is accepted on API 36 using deterministic simulated
+remote bytes. The exact dependency guard and architecture audit pass, and debug
+plus instrumentation APKs build for `x86_64` and `arm64-v8a`. On
+`emulator-5554`, isolated preserved-future `O8PG` Retry/Back passes 1/1 in 6.330
+seconds, focused tests pass 37/37 in 78.279 seconds, the final rebuilt legacy
+`O8PG` regression passes 7/7 in 0.202 seconds, structural integration passes
+6/6 in 21.030 seconds, and coexistence passes 49/49 in 143.490 seconds. The
+external seed passes 1/1 in 7.514 seconds, force-stop is confirmed with no
+surviving process, and fresh-process verification passes 1/1 in 5.126 seconds.
+The ordinary matrix passes 238/238 in 438.899 seconds and crash/fatal buffers
+are empty. Only the emulator was targeted. No physical device, provider,
+network permission, worker, account, OAuth flow, Google dependency, or Drive
+transport was used.
+
 Windows application data lives under `%LOCALAPPDATA%\8vo`. Migration from
 the former `lectern0` directory is handled by the Windows host and is designed
 to be safe and idempotent. Android uses its package-private files directory.
@@ -538,14 +564,15 @@ shaping, and concrete synchronization transport remain deferred. Port 11 now
 includes local bookmark, multi-color highlight, note/storage/merge, and
 disconnected deterministic annotation coordination without connecting Drive.
 Its position family is independently qualified, and its seventh appearance-only
-family is accepted on API 36. Progress choice, catalog/transfer records, and
-concrete transport remain separate later work.
+family and eighth progress-choice family are accepted on API 36. Catalog/
+transfer records and concrete transport remain separate later work.
 The current bounded contracts are in
 [`android_port11.md`](android_port11.md),
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
 [`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md),
 [`android_port11_position_sync.md`](android_port11_position_sync.md),
 [`android_port11_preference_sync.md`](android_port11_preference_sync.md),
+[`android_port11_progress_sync.md`](android_port11_progress_sync.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and

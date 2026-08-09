@@ -23,6 +23,7 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
@@ -41,6 +42,7 @@ public final class OctavoStructuralNavigationIntegrationTest {
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoProgressSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }
 
@@ -316,6 +318,7 @@ public final class OctavoStructuralNavigationIntegrationTest {
                 new AtomicReference<>();
             AtomicReference<long[]> progressNavigationBefore =
                 new AtomicReference<>();
+            AtomicLong progressSaveCountBefore = new AtomicLong();
             AtomicInteger progressResult = new AtomicInteger();
             scenario.onActivity(activity -> {
                 OctavoSurfaceView view = surface(activity);
@@ -324,9 +327,10 @@ public final class OctavoStructuralNavigationIntegrationTest {
                     view.navigationStateForTesting());
                 assertSame(OctavoProgressDisplay.PERCENTAGE,
                            activity.progressDisplayForTesting());
-                assertEquals(0,
-                             activity.progressStoreForTesting()
-                                 .saveSuccessCountForTesting());
+                long saveCount = activity.progressStoreForTesting()
+                    .saveSuccessCountForTesting();
+                assertTrue(saveCount >= 1);
+                progressSaveCountBefore.set(saveCount);
                 assertTrue(view.forcePrePresentFailuresForTesting(5));
                 progressResult.set(view.requestProgressDisplay(
                     OctavoProgressDisplay.PAGE));
@@ -396,7 +400,7 @@ public final class OctavoStructuralNavigationIntegrationTest {
                            surface(activity).presentedProgressDisplay());
                 assertSame(OctavoProgressDisplay.PERCENTAGE,
                            activity.progressStoreForTesting().current());
-                assertEquals(0,
+                assertEquals(progressSaveCountBefore.get(),
                              activity.progressStoreForTesting()
                                  .saveSuccessCountForTesting());
                 assertEquals(
@@ -429,6 +433,7 @@ public final class OctavoStructuralNavigationIntegrationTest {
             awaitReaderReady(scenario);
 
             AtomicInteger result = new AtomicInteger();
+            AtomicLong progressSaveCountBefore = new AtomicLong();
             AtomicReference<File> progressFile = new AtomicReference<>();
             scenario.onActivity(activity -> {
                 assertSame(OctavoProgressDisplay.PERCENTAGE,
@@ -437,9 +442,11 @@ public final class OctavoStructuralNavigationIntegrationTest {
                     activity.progressStoreForTesting();
                 assertSame(OctavoProgressDisplay.PERCENTAGE,
                            store.current());
-                assertEquals(0, store.saveSuccessCountForTesting());
+                long saveCount = store.saveSuccessCountForTesting();
+                assertTrue(saveCount >= 1);
+                progressSaveCountBefore.set(saveCount);
                 progressFile.set(store.progressFileForTesting());
-                assertFalse(progressFile.get().exists());
+                assertTrue(progressFile.get().isFile());
 
                 OctavoSurfaceView view = surface(activity);
                 assertTrue(view.forcePresentFailuresForTesting(8));
@@ -449,8 +456,9 @@ public final class OctavoStructuralNavigationIntegrationTest {
                            activity.progressDisplayForTesting());
                 assertSame(OctavoProgressDisplay.PERCENTAGE,
                            store.current());
-                assertEquals(0, store.saveSuccessCountForTesting());
-                assertFalse(progressFile.get().exists());
+                assertEquals(progressSaveCountBefore.get(),
+                             store.saveSuccessCountForTesting());
+                assertTrue(progressFile.get().isFile());
             });
             assertEquals(OctavoNative.NAVIGATION_ACCEPTED, result.get());
 
@@ -474,6 +482,15 @@ public final class OctavoStructuralNavigationIntegrationTest {
                 "The progress choice did not remain presentation-gated");
             assertEquals(1,
                          pending[OctavoSurfaceView.NAVIGATION_STATE_PENDING]);
+            scenario.onActivity(activity -> {
+                OctavoProgressStore store =
+                    activity.progressStoreForTesting();
+                assertSame(OctavoProgressDisplay.PERCENTAGE,
+                           store.current());
+                assertEquals(progressSaveCountBefore.get(),
+                             store.saveSuccessCountForTesting());
+                assertTrue(store.progressFileForTesting().isFile());
+            });
 
             scenario.recreate();
             awaitReaderReady(scenario);
@@ -487,8 +504,8 @@ public final class OctavoStructuralNavigationIntegrationTest {
                 assertEquals(0,
                              activity.progressStoreForTesting()
                                  .saveSuccessCountForTesting());
-                assertFalse(activity.progressStoreForTesting()
-                                .progressFileForTesting().exists());
+                assertTrue(activity.progressStoreForTesting()
+                               .progressFileForTesting().isFile());
             });
         }
     }

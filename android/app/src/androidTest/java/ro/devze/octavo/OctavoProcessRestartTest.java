@@ -37,8 +37,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Two independently invokable halves of the process-restart probe. Port 11
- * extends the retained Port 8 evidence with an interrupted appearance-sync
- * apply whose O1SS recovery must cross the real process boundary.
+ * extends the retained Port 8 evidence with interrupted appearance and
+ * progress-display applies whose O1SS and O1PS recovery must cross the real
+ * process boundary.
  *
  * The ordinary connected suite excludes this class.
  * scripts/android_port7_process_restart.ps1 remains the compatible driver and runs
@@ -53,15 +54,17 @@ import java.util.concurrent.atomic.AtomicReference;
 @ExternalProcessRestartProbe
 public final class OctavoProcessRestartTest {
     private static final int EVIDENCE_MAGIC = 0x4F385052; // "O8PR"
-    private static final int EVIDENCE_VERSION = 3;
+    private static final int EVIDENCE_VERSION = 4;
     private static final int EVIDENCE_FILE_CAP = 512;
     private static final String EVIDENCE_DIRECTORY = "port8";
     private static final String EVIDENCE_FILE =
-        "process_restart_expected.v3";
+        "process_restart_expected.v4";
     private static final String EVIDENCE_TEMPORARY_FILE =
-        "process_restart_expected.v3.tmp";
+        "process_restart_expected.v4.tmp";
     private static final String APPEARANCE_REMOTE_DEVICE_ID =
         "71717171717171717171717171717171";
+    private static final String PROGRESS_REMOTE_DEVICE_ID =
+        "72727272727272727272727272727272";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -83,6 +86,10 @@ public final class OctavoProcessRestartTest {
         final int highlightColor;
         final OctavoAppearance appearance;
         final OctavoProgressDisplay progressDisplay;
+        final OctavoProgressDisplay interruptedProgressDisplay;
+        final long progressOriginLocalSequence;
+        final long progressPendingLocalSequence;
+        final long progressReviewEpoch;
 
         ExpectedState(String bookKey,
                       long originSpineIndex,
@@ -94,7 +101,11 @@ public final class OctavoProcessRestartTest {
                       long highlightByteEnd,
                       int highlightColor,
                       OctavoAppearance appearance,
-                      OctavoProgressDisplay progressDisplay) {
+                      OctavoProgressDisplay progressDisplay,
+                      OctavoProgressDisplay interruptedProgressDisplay,
+                      long progressOriginLocalSequence,
+                      long progressPendingLocalSequence,
+                      long progressReviewEpoch) {
             this.bookKey = bookKey;
             this.originSpineIndex = originSpineIndex;
             this.originByteOffset = originByteOffset;
@@ -106,6 +117,13 @@ public final class OctavoProcessRestartTest {
             this.highlightColor = highlightColor;
             this.appearance = appearance;
             this.progressDisplay = progressDisplay;
+            this.interruptedProgressDisplay =
+                interruptedProgressDisplay;
+            this.progressOriginLocalSequence =
+                progressOriginLocalSequence;
+            this.progressPendingLocalSequence =
+                progressPendingLocalSequence;
+            this.progressReviewEpoch = progressReviewEpoch;
         }
     }
 
@@ -117,6 +135,7 @@ public final class OctavoProcessRestartTest {
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
+        OctavoProgressSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);
         clearEvidence(context);
@@ -368,6 +387,104 @@ public final class OctavoProcessRestartTest {
                 "8vo did not present the transient restart search");
             assertEquals(4, seededSearch.rowCount());
 
+            awaitAppearanceSyncLocal(scenario, expectedAppearance);
+            awaitProgressSyncLocal(scenario, expectedProgress);
+            OctavoAppearance interruptedTarget =
+                interruptedAppearanceTarget(expectedAppearance);
+            scenario.onActivity(activity -> assertTrue(
+                activity.simulateRemoteAppearanceForTesting(
+                    APPEARANCE_REMOTE_DEVICE_ID, 1,
+                    interruptedTarget)));
+            awaitAppearanceSyncChoice(scenario, interruptedTarget);
+
+            OctavoProgressDisplay interruptedProgress =
+                interruptedProgressTarget(expectedProgress);
+            AtomicReference<OctavoProgressSyncStore.Pending>
+                progressPending = new AtomicReference<>();
+            scenario.onActivity(activity -> assertTrue(
+                activity.simulateRemoteProgressForTesting(
+                    PROGRESS_REMOTE_DEVICE_ID, 1,
+                    interruptedProgress)));
+            scenario.onActivity(activity -> {
+                OctavoProgressSyncStore store =
+                    activity.progressSyncStoreForTesting();
+                List<OctavoProgressSyncStore.Candidate> candidates =
+                    store.reviewCandidates(expectedProgress);
+                OctavoProgressSyncStore.Candidate remote = null;
+                for (OctavoProgressSyncStore.Candidate candidate
+                        : candidates) {
+                    if (PROGRESS_REMOTE_DEVICE_ID.equals(
+                            candidate.deviceId)
+                        && candidate.sequence == 1) {
+                        remote = candidate;
+                        break;
+                    }
+                }
+                assertNotNull(remote);
+                assertSame(OctavoProgressSyncStore.Decision.NONE,
+                           remote.decision);
+                assertSame(OctavoProgressSyncStore.MutationResult.UPDATED,
+                    store.stageRemoteApply(remote, expectedProgress));
+                OctavoProgressSyncStore.Pending pending = store.pending();
+                assertNotNull(pending);
+                assertSame(OctavoProgressSyncStore.PendingKind.REMOTE,
+                           pending.kind);
+                assertSame(OctavoProgressSyncStore.PendingDirection.FORWARD,
+                           pending.direction);
+                assertTrue(pending.hasOriginLane);
+                assertEquals(PROGRESS_REMOTE_DEVICE_ID,
+                             pending.remoteDeviceId);
+                assertEquals(1, pending.remoteSequence);
+                assertSame(expectedProgress, pending.originDisplay());
+                assertSame(interruptedProgress, pending.targetDisplay());
+                assertEquals(pending.originLocalSequence + 1,
+                             pending.localSequence);
+                assertTrue(pending.reviewEpoch > 0);
+                assertSame(
+                    OctavoProgressSyncStore.PendingRecovery.ORIGIN_DURABLE,
+                    store.pendingRecovery(expectedProgress));
+                assertTrue(activity.progressStoreForTesting()
+                    .hasCanonicalCurrentRecord(expectedProgress));
+                OctavoSurfaceView view = surface(activity);
+                assertSame(expectedProgress,
+                           view.presentedProgressDisplay());
+                long[] exactPosition = view.readingPositionForTesting();
+                assertValidPosition(exactPosition);
+                assertEquals(position.get()[1], exactPosition[1]);
+                assertEquals(position.get()[2], exactPosition[2]);
+                long[] navigation = view.navigationStateForTesting();
+                assertNotNull(navigation);
+                assertEquals(0, navigation[
+                    OctavoSurfaceView.NAVIGATION_STATE_PENDING]);
+                assertEquals(navigation[
+                        OctavoSurfaceView
+                            .NAVIGATION_STATE_PROGRESS_GENERATION],
+                    navigation[OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
+                assertEquals(expectedProgress.nativeId(), navigation[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]);
+                assertNotNull(activity.appearanceSyncPromptForTesting());
+                assertNull(activity.progressSyncPromptForTesting());
+                progressPending.set(pending);
+            });
+            assertNotNull(progressPending.get());
+
+            // Keep the reader's real-frame receipt valid while the O1PS
+            // interruption is staged and verified. The already-visible
+            // appearance choice owns the modal layer without invalidating the
+            // Surface. Only after the exact progress cutpoint is durable do we
+            // arm the failed appearance presentation, leaving O1SS as the last
+            // mutation and therefore the first fresh-process modal owner.
+            scenario.onActivity(activity -> {
+                assertTrue(surface(activity)
+                    .forcePrePresentFailuresForTesting(5));
+                activity.appearanceSyncPromptForTesting()
+                    .useSettingsForTesting().performClick();
+            });
+            awaitAppearanceApplyPendingRetry(
+                scenario, expectedAppearance, interruptedTarget);
+
             writeEvidence(
                 context,
                 new ExpectedState(bookKey.get(),
@@ -381,24 +498,12 @@ public final class OctavoProcessRestartTest {
                                   OctavoAnnotationStore.HighlightColor
                                       .ORANGE.wireId,
                                   expectedAppearance,
-                                  expectedProgress));
-
-            awaitAppearanceSyncLocal(scenario, expectedAppearance);
-            OctavoAppearance interruptedTarget =
-                interruptedAppearanceTarget(expectedAppearance);
-            scenario.onActivity(activity -> assertTrue(
-                activity.simulateRemoteAppearanceForTesting(
-                    APPEARANCE_REMOTE_DEVICE_ID, 1,
-                    interruptedTarget)));
-            awaitAppearanceSyncChoice(scenario, interruptedTarget);
-            scenario.onActivity(activity -> {
-                assertTrue(surface(activity)
-                    .forcePrePresentFailuresForTesting(5));
-                activity.appearanceSyncPromptForTesting()
-                    .useSettingsForTesting().performClick();
-            });
-            awaitAppearanceApplyPendingRetry(
-                scenario, expectedAppearance, interruptedTarget);
+                                  expectedProgress,
+                                  interruptedProgress,
+                                  progressPending.get()
+                                      .originLocalSequence,
+                                  progressPending.get().localSequence,
+                                  progressPending.get().reviewEpoch));
         }
     }
 
@@ -434,6 +539,30 @@ public final class OctavoProcessRestartTest {
                      recoveredPending.targetAppearance());
         assertSame(OctavoAppearanceSyncStore.PendingRecovery.ORIGIN_DURABLE,
                    recoveredSync.pendingRecovery(expected.appearance));
+
+        OctavoProgressStore recoveredProgress =
+            new OctavoProgressStore(context);
+        assertSame(expected.progressDisplay, recoveredProgress.load());
+        assertSame(OctavoProgressStore.LoadStatus.CURRENT,
+                   recoveredProgress.loadStatus());
+        assertTrue(recoveredProgress.hasCanonicalCurrentRecord(
+            expected.progressDisplay));
+        OctavoProgressSyncStore recoveredProgressSync =
+            new OctavoProgressSyncStore(context);
+        assertSame(OctavoProgressSyncStore.LoadStatus.LOADED,
+                   recoveredProgressSync.load());
+        OctavoProgressPortable.Lane recoveredProgressLocal =
+            recoveredProgressSync.localLane();
+        assertNotNull(recoveredProgressLocal);
+        assertEquals(expected.progressOriginLocalSequence,
+                     recoveredProgressLocal.sequence);
+        assertSame(expected.progressDisplay,
+                   recoveredProgressLocal.choice.toDisplay());
+        assertExpectedProgressPending(
+            recoveredProgressSync.pending(), expected);
+        assertSame(OctavoProgressSyncStore.PendingRecovery.ORIGIN_DURABLE,
+            recoveredProgressSync.pendingRecovery(
+                expected.progressDisplay));
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
@@ -593,6 +722,24 @@ public final class OctavoProcessRestartTest {
                            view.presentedProgressDisplay());
                 assertSame(expected.progressDisplay,
                            activity.progressStoreForTesting().current());
+                assertTrue(activity.progressStoreForTesting()
+                    .hasCanonicalCurrentRecord(
+                        expected.progressDisplay));
+                assertExpectedProgressPending(
+                    activity.progressSyncStoreForTesting().pending(),
+                    expected);
+                assertTrue(activity
+                    .progressSyncAwaitingExplicitRetryForTesting());
+                assertNull(activity.progressSyncPromptForTesting());
+                OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                    view.currentProgressPresentationReceipt();
+                assertNotNull(receipt);
+                assertTrue(receipt.strictResumeSettled);
+                assertSame(expected.progressDisplay, receipt.choice);
+                assertEquals(expected.spineIndex,
+                             receipt.anchorSpineIndex);
+                assertEquals(expected.byteOffset,
+                             receipt.anchorByteOffset);
             });
 
             awaitAppearanceApplyPendingRetry(
@@ -611,6 +758,53 @@ public final class OctavoProcessRestartTest {
                 assertAnchorInsidePage(
                     presented, expected.spineIndex, expected.byteOffset);
             });
+
+            awaitProgressApplyPendingRetry(scenario, expected);
+            long[] progressNavigationBefore = navigationState(scenario);
+            assertEquals(0, progressNavigationBefore[
+                OctavoSurfaceView.NAVIGATION_STATE_PENDING]);
+            assertEquals(progressNavigationBefore[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_GENERATION],
+                progressNavigationBefore[OctavoSurfaceView
+                    .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
+            assertEquals(expected.progressDisplay.nativeId(),
+                progressNavigationBefore[OctavoSurfaceView
+                    .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]);
+            scenario.onActivity(activity ->
+                activity.progressSyncPromptForTesting()
+                    .retryForTesting().performClick());
+            awaitProgressSyncApplied(scenario, expected);
+            long[] appliedProgressNavigation = navigationState(scenario);
+            assertEquals(0, appliedProgressNavigation[
+                OctavoSurfaceView.NAVIGATION_STATE_PENDING]);
+            assertTrue(appliedProgressNavigation[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_GENERATION]
+                > progressNavigationBefore[OctavoSurfaceView
+                    .NAVIGATION_STATE_PROGRESS_GENERATION]);
+            assertEquals(appliedProgressNavigation[
+                    OctavoSurfaceView
+                        .NAVIGATION_STATE_PROGRESS_GENERATION],
+                appliedProgressNavigation[OctavoSurfaceView
+                    .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]);
+            assertEquals(expected.interruptedProgressDisplay.nativeId(),
+                appliedProgressNavigation[OctavoSurfaceView
+                    .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]);
+            assertEquals(0, appliedProgressNavigation[OctavoSurfaceView
+                .NAVIGATION_STATE_HISTORY_BACK_COUNT]);
+            assertEquals(0, appliedProgressNavigation[OctavoSurfaceView
+                .NAVIGATION_STATE_HISTORY_FORWARD_COUNT]);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long[] position = view.readingPositionForTesting();
+                assertValidPosition(position);
+                assertEquals(expected.spineIndex, position[1]);
+                assertEquals(expected.byteOffset, position[2]);
+                long[] presented = view.nativeStateForTesting();
+                assertAnchorInsidePage(
+                    presented, expected.spineIndex, expected.byteOffset);
+            });
         }
     }
 
@@ -618,6 +812,12 @@ public final class OctavoProcessRestartTest {
         OctavoAppearance origin) {
         return origin.withTheme(
             (origin.themeId() + 1) % OctavoAppearance.THEME_COUNT);
+    }
+
+    private static OctavoProgressDisplay interruptedProgressTarget(
+        OctavoProgressDisplay origin) {
+        OctavoProgressDisplay[] values = OctavoProgressDisplay.values();
+        return values[(origin.ordinal() + 1) % values.length];
     }
 
     private static void awaitAppearanceSyncLocal(
@@ -642,6 +842,208 @@ public final class OctavoProcessRestartTest {
             SystemClock.sleep(50);
         }
         fail("O1SS did not qualify the exact presented local profile");
+    }
+
+    private static void awaitProgressSyncLocal(
+        ActivityScenario<OctavoActivity> scenario,
+        OctavoProgressDisplay expected) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoProgressPortable.Lane local =
+                    activity.progressSyncStoreForTesting().localLane();
+                ready.set(local != null
+                    && local.choice.toDisplay() == expected
+                    && activity.pendingProgressTransactionForTesting()
+                       == null
+                    && activity
+                        .progressSyncReviewInitializedForTesting()
+                    && activity.progressStoreForTesting()
+                        .hasCanonicalCurrentRecord(expected));
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("O1PS did not qualify the exact presented progress display");
+    }
+
+    private static void assertExpectedProgressPending(
+        OctavoProgressSyncStore.Pending pending,
+        ExpectedState expected) {
+        assertNotNull(pending);
+        assertSame(OctavoProgressSyncStore.PendingKind.REMOTE,
+                   pending.kind);
+        assertSame(OctavoProgressSyncStore.PendingDirection.FORWARD,
+                   pending.direction);
+        assertTrue(pending.hasOriginLane);
+        assertEquals(expected.progressOriginLocalSequence,
+                     pending.originLocalSequence);
+        assertEquals(expected.progressPendingLocalSequence,
+                     pending.localSequence);
+        assertEquals(PROGRESS_REMOTE_DEVICE_ID,
+                     pending.remoteDeviceId);
+        assertEquals(1, pending.remoteSequence);
+        assertEquals(expected.progressReviewEpoch,
+                     pending.reviewEpoch);
+        assertSame(expected.progressDisplay,
+                   pending.originDisplay());
+        assertSame(expected.interruptedProgressDisplay,
+                   pending.targetDisplay());
+    }
+
+    private static boolean expectedProgressPending(
+        OctavoProgressSyncStore.Pending pending,
+        ExpectedState expected) {
+        return pending != null
+            && pending.kind == OctavoProgressSyncStore.PendingKind.REMOTE
+            && pending.direction
+               == OctavoProgressSyncStore.PendingDirection.FORWARD
+            && pending.hasOriginLane
+            && pending.originLocalSequence
+               == expected.progressOriginLocalSequence
+            && pending.localSequence
+               == expected.progressPendingLocalSequence
+            && PROGRESS_REMOTE_DEVICE_ID.equals(
+                pending.remoteDeviceId)
+            && pending.remoteSequence == 1
+            && pending.reviewEpoch == expected.progressReviewEpoch
+            && pending.originDisplay() == expected.progressDisplay
+            && pending.targetDisplay()
+               == expected.interruptedProgressDisplay;
+    }
+
+    private static void awaitProgressApplyPendingRetry(
+        ActivityScenario<OctavoActivity> scenario,
+        ExpectedState expected) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoProgressSyncStore store =
+                    activity.progressSyncStoreForTesting();
+                OctavoProgressSyncStore.Pending pending = store.pending();
+                OctavoProgressPortable.Lane local = store.localLane();
+                OctavoProgressSyncPrompt prompt =
+                    activity.progressSyncPromptForTesting();
+                OctavoSurfaceView view = surface(activity);
+                OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                    view.currentProgressPresentationReceipt();
+                long[] position = view.readingPositionForTesting();
+                long[] navigation = view.navigationStateForTesting();
+                ready.set(expectedProgressPending(pending, expected)
+                    && local != null
+                    && local.sequence
+                       == expected.progressOriginLocalSequence
+                    && local.choice.toDisplay()
+                       == expected.progressDisplay
+                    && store.pendingRecovery(expected.progressDisplay)
+                       == OctavoProgressSyncStore.PendingRecovery
+                           .ORIGIN_DURABLE
+                    && activity.progressStoreForTesting()
+                        .hasCanonicalCurrentRecord(
+                            expected.progressDisplay)
+                    && activity
+                        .progressSyncAwaitingExplicitRetryForTesting()
+                    && prompt != null && prompt.isShown()
+                    && prompt.retryForTesting().getVisibility()
+                       == View.VISIBLE
+                    && prompt.retryForTesting().isEnabled()
+                    && !prompt.useDisplayForTesting().isEnabled()
+                    && !prompt.keepMineForTesting().isEnabled()
+                    && receipt != null && receipt.strictResumeSettled
+                    && receipt.choice == expected.progressDisplay
+                    && receipt.anchorSpineIndex == expected.spineIndex
+                    && receipt.anchorByteOffset == expected.byteOffset
+                    && position != null && position.length == 3
+                    && position[1] == expected.spineIndex
+                    && position[2] == expected.byteOffset
+                    && navigation != null
+                    && navigation[
+                        OctavoSurfaceView.NAVIGATION_STATE_PENDING] == 0
+                    && navigation[OctavoSurfaceView
+                            .NAVIGATION_STATE_PROGRESS_GENERATION]
+                       == navigation[OctavoSurfaceView
+                            .NAVIGATION_STATE_PROGRESS_PRESENTED_GENERATION]
+                    && navigation[OctavoSurfaceView
+                            .NAVIGATION_STATE_PROGRESS_PRESENTED_MODE]
+                       == expected.progressDisplay.nativeId());
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The durable O1PS REMOTE FORWARD state did not expose Retry");
+    }
+
+    private static void awaitProgressSyncApplied(
+        ActivityScenario<OctavoActivity> scenario,
+        ExpectedState expected) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                    view.currentProgressPresentationReceipt();
+                OctavoProgressSyncStore store =
+                    activity.progressSyncStoreForTesting();
+                OctavoProgressPortable.Lane local = store.localLane();
+                long[] position = view.readingPositionForTesting();
+                ready.set(receipt != null && receipt.strictResumeSettled
+                    && receipt.choice
+                       == expected.interruptedProgressDisplay
+                    && receipt.anchorSpineIndex == expected.spineIndex
+                    && receipt.anchorByteOffset == expected.byteOffset
+                    && local != null
+                    && local.sequence
+                       == expected.progressPendingLocalSequence
+                    && local.choice.toDisplay()
+                       == expected.interruptedProgressDisplay
+                    && store.pending() == null
+                    && activity.progressSyncPromptForTesting() == null
+                    && !activity
+                        .progressSyncAwaitingExplicitRetryForTesting()
+                    && activity.progressStoreForTesting()
+                        .hasCanonicalCurrentRecord(
+                            expected.interruptedProgressDisplay)
+                    && position != null && position.length == 3
+                    && position[1] == expected.spineIndex
+                    && position[2] == expected.byteOffset);
+            });
+            if (ready.get()) {
+                scenario.onActivity(activity -> {
+                    OctavoProgressSyncStore store =
+                        activity.progressSyncStoreForTesting();
+                    OctavoProgressSyncStore.PortableExport exported =
+                        store.exportPortable();
+                    assertSame(
+                        OctavoProgressSyncStore.PortableExportStatus.EXPORTED,
+                        exported.status);
+                    OctavoProgressPortable.DecodeResult decoded =
+                        OctavoProgressPortable.decode(exported.bytes());
+                    assertSame(OctavoProgressPortable.DecodeStatus.READY,
+                               decoded.status);
+                    assertNotNull(decoded.snapshot());
+                    OctavoProgressPortable.Lane remote =
+                        decoded.snapshot().lane(PROGRESS_REMOTE_DEVICE_ID);
+                    assertNotNull(remote);
+                    assertEquals(1, remote.sequence);
+                    assertSame(expected.interruptedProgressDisplay,
+                               remote.choice.toDisplay());
+                    assertEquals(expected.progressReviewEpoch + 1,
+                                 store.reviewEpoch());
+                    assertTrue(store.reviewCandidates(
+                        expected.interruptedProgressDisplay).isEmpty());
+                });
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The restarted O1PS REMOTE FORWARD state did not finalize");
     }
 
     private static void awaitAppearanceSyncChoice(
@@ -1103,7 +1505,16 @@ public final class OctavoProcessRestartTest {
             || OctavoAnnotationStore.HighlightColor.fromWireId(
                    expected.highlightColor) == null
             || expected.appearance == null
-            || expected.progressDisplay == null) {
+            || expected.progressDisplay == null
+            || expected.interruptedProgressDisplay == null
+            || expected.interruptedProgressDisplay
+               == expected.progressDisplay
+            || expected.progressOriginLocalSequence <= 0
+            || expected.progressOriginLocalSequence == Long.MAX_VALUE
+            || expected.progressPendingLocalSequence <= 0
+            || expected.progressPendingLocalSequence
+               != expected.progressOriginLocalSequence + 1
+            || expected.progressReviewEpoch <= 0) {
             throw new IOException("Invalid process-restart evidence");
         }
 
@@ -1129,6 +1540,11 @@ public final class OctavoProcessRestartTest {
             output.writeLong(expected.highlightByteEnd);
             output.writeInt(expected.highlightColor);
             output.writeInt(expected.progressDisplay.nativeId());
+            output.writeInt(
+                expected.interruptedProgressDisplay.nativeId());
+            output.writeLong(expected.progressOriginLocalSequence);
+            output.writeLong(expected.progressPendingLocalSequence);
+            output.writeLong(expected.progressReviewEpoch);
             int[] appearance = expected.appearance.nativeConfig();
             output.writeInt(appearance.length);
             for (int value : appearance) {
@@ -1172,6 +1588,10 @@ public final class OctavoProcessRestartTest {
             long highlightByteEnd = input.readLong();
             int highlightColor = input.readInt();
             int progressDisplayId = input.readInt();
+            int interruptedProgressDisplayId = input.readInt();
+            long progressOriginLocalSequence = input.readLong();
+            long progressPendingLocalSequence = input.readLong();
+            long progressReviewEpoch = input.readLong();
             int fieldCount = input.readInt();
             if (magic != EVIDENCE_MAGIC
                 || version != EVIDENCE_VERSION
@@ -1190,7 +1610,13 @@ public final class OctavoProcessRestartTest {
                 || highlightByteStart < 0
                 || highlightByteEnd <= highlightByteStart
                 || OctavoAnnotationStore.HighlightColor.fromWireId(
-                       highlightColor) == null) {
+                       highlightColor) == null
+                || progressOriginLocalSequence <= 0
+                || progressOriginLocalSequence == Long.MAX_VALUE
+                || progressPendingLocalSequence <= 0
+                || progressPendingLocalSequence
+                   != progressOriginLocalSequence + 1
+                || progressReviewEpoch <= 0) {
                 throw new IOException("Invalid restart evidence anchor");
             }
             int[] appearance = new int[fieldCount];
@@ -1204,7 +1630,12 @@ public final class OctavoProcessRestartTest {
                 OctavoAppearance.fromNativeConfig(appearance);
             OctavoProgressDisplay progressDisplay =
                 OctavoProgressDisplay.fromNativeId(progressDisplayId);
-            if (decoded == null || progressDisplay == null) {
+            OctavoProgressDisplay interruptedProgressDisplay =
+                OctavoProgressDisplay.fromNativeId(
+                    interruptedProgressDisplayId);
+            if (decoded == null || progressDisplay == null
+                || interruptedProgressDisplay == null
+                || interruptedProgressDisplay == progressDisplay) {
                 throw new IOException("Invalid restart evidence appearance");
             }
             return new ExpectedState(key,
@@ -1217,7 +1648,11 @@ public final class OctavoProcessRestartTest {
                                      highlightByteEnd,
                                      highlightColor,
                                      decoded,
-                                     progressDisplay);
+                                     progressDisplay,
+                                     interruptedProgressDisplay,
+                                     progressOriginLocalSequence,
+                                     progressPendingLocalSequence,
+                                     progressReviewEpoch);
         } catch (EOFException exception) {
             throw new IOException("Truncated restart evidence", exception);
         }

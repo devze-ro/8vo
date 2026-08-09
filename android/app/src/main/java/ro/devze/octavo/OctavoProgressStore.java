@@ -15,6 +15,13 @@ import java.util.zip.CRC32;
 
 /** Bounded, atomic storage for Port 8's single global progress choice. */
 final class OctavoProgressStore {
+    enum LoadStatus {
+        MISSING,
+        CURRENT,
+        FUTURE,
+        CORRUPT
+    }
+
     private static final int STORE_MAGIC = 0x4F385047; // "O8PG"
     private static final int STORE_VERSION = 1;
     private static final int FIELD_COUNT = 1;
@@ -34,6 +41,7 @@ final class OctavoProgressStore {
     private long saveFailureCount;
     private long missingFallbackCount;
     private long corruptFallbackCount;
+    private LoadStatus loadStatus = LoadStatus.MISSING;
 
     OctavoProgressStore(Context context) {
         this(requireFilesDirectory(context));
@@ -51,18 +59,29 @@ final class OctavoProgressStore {
     synchronized OctavoProgressDisplay load() {
         if (!progressFile.exists()) {
             current = OctavoProgressDisplay.defaults();
+            loadStatus = LoadStatus.MISSING;
             missingFallbackCount += 1;
             return current;
         }
         try {
-            OctavoProgressDisplay loaded = decode(readBounded(progressFile));
+            byte[] bytes = readBounded(progressFile);
+            if (isRecognizableFuture(bytes)) {
+                current = OctavoProgressDisplay.defaults();
+                loadStatus = LoadStatus.FUTURE;
+                loadFailureCount += 1;
+                corruptFallbackCount += 1;
+                return current;
+            }
+            OctavoProgressDisplay loaded = decode(bytes);
             if (loaded == null) {
                 throw new IOException("Invalid Port 8 progress record");
             }
             current = loaded;
+            loadStatus = LoadStatus.CURRENT;
             loadSuccessCount += 1;
         } catch (IOException | RuntimeException exception) {
             current = OctavoProgressDisplay.defaults();
+            loadStatus = LoadStatus.CORRUPT;
             loadFailureCount += 1;
             corruptFallbackCount += 1;
         }
@@ -71,6 +90,12 @@ final class OctavoProgressStore {
 
     synchronized boolean save(OctavoProgressDisplay candidate) {
         if (candidate == null) {
+            saveFailureCount += 1;
+            return false;
+        }
+        if (loadStatus == LoadStatus.FUTURE
+            || hasRecognizableFutureRecord()) {
+            loadStatus = LoadStatus.FUTURE;
             saveFailureCount += 1;
             return false;
         }
@@ -93,12 +118,35 @@ final class OctavoProgressStore {
             return false;
         }
         current = candidate;
+        loadStatus = LoadStatus.CURRENT;
         saveSuccessCount += 1;
         return true;
     }
 
     synchronized OctavoProgressDisplay current() {
         return current;
+    }
+
+    synchronized LoadStatus loadStatus() {
+        return loadStatus;
+    }
+
+    /**
+     * Proves exact canonical current-version bytes without treating an
+     * in-memory fallback or a recognizable future record as durable state.
+     */
+    synchronized boolean hasCanonicalCurrentRecord(
+        OctavoProgressDisplay expected) {
+        if (expected == null) {
+            return false;
+        }
+        try {
+            byte[] bytes = readBounded(progressFile);
+            return !isRecognizableFuture(bytes)
+                && decode(bytes) == expected;
+        } catch (IOException | RuntimeException exception) {
+            return false;
+        }
     }
 
     synchronized boolean recoveredFromCorruption() {
@@ -216,8 +264,29 @@ final class OctavoProgressStore {
         return OctavoProgressDisplay.fromNativeId(nativeId);
     }
 
+    private static boolean isRecognizableFuture(byte[] bytes) {
+        if (bytes == null || bytes.length < 2 * Integer.BYTES
+            || bytes.length > MAX_FILE_BYTES) {
+            return false;
+        }
+        ByteBuffer prefix = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+        return prefix.getInt() == STORE_MAGIC
+            && Integer.compareUnsigned(prefix.getInt(), STORE_VERSION) > 0;
+    }
+
+    private boolean hasRecognizableFutureRecord() {
+        if (!progressFile.exists()) {
+            return false;
+        }
+        try {
+            return isRecognizableFuture(readBounded(progressFile));
+        } catch (IOException | RuntimeException exception) {
+            return false;
+        }
+    }
+
     private static byte[] readBounded(File file) throws IOException {
-        if (!file.isFile() || file.length() != RECORD_BYTES
+        if (!file.isFile() || file.length() < 0
             || file.length() > MAX_FILE_BYTES) {
             throw new IOException("Invalid progress file length");
         }
@@ -234,7 +303,7 @@ final class OctavoProgressStore {
                 }
             }
         }
-        if (count != RECORD_BYTES) {
+        if (count != file.length()) {
             throw new IOException("Progress file changed while reading");
         }
         return Arrays.copyOf(bounded, count);

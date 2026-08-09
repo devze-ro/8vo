@@ -84,6 +84,36 @@ public final class OctavoActivity extends Activity {
         "octavo.port11.appearance_rollback_epoch_retry";
     private static final String STATE_APPEARANCE_ABANDON_AFTER_RELOAD =
         "octavo.port11.appearance_abandon_after_reload";
+    private static final String STATE_PROGRESS_REVIEW_PENDING =
+        "octavo.port11.progress_review_pending";
+    private static final String STATE_PROGRESS_RETRY_ACTION =
+        "octavo.port11.progress_retry_action";
+    private static final String STATE_PROGRESS_RETRY_DEVICE =
+        "octavo.port11.progress_retry_device";
+    private static final String STATE_PROGRESS_RETRY_SEQUENCE =
+        "octavo.port11.progress_retry_sequence";
+    private static final String STATE_PROGRESS_RETRY_EPOCH =
+        "octavo.port11.progress_retry_epoch";
+    private static final String STATE_PROGRESS_RETRY_ORIGIN_SEQUENCE =
+        "octavo.port11.progress_retry_origin_sequence";
+    private static final String STATE_PROGRESS_RETRY_LOCAL_SEQUENCE =
+        "octavo.port11.progress_retry_local_sequence";
+    private static final String STATE_PROGRESS_RETRY_REMOTE_DEVICE =
+        "octavo.port11.progress_retry_remote_device";
+    private static final String STATE_PROGRESS_RETRY_REMOTE_SEQUENCE =
+        "octavo.port11.progress_retry_remote_sequence";
+    private static final String STATE_PROGRESS_RETRY_PENDING_KIND =
+        "octavo.port11.progress_retry_pending_kind";
+    private static final String STATE_PROGRESS_RETRY_ORIGIN_CHOICE =
+        "octavo.port11.progress_retry_origin_choice";
+    private static final String STATE_PROGRESS_RETRY_TARGET_CHOICE =
+        "octavo.port11.progress_retry_target_choice";
+    private static final String STATE_PROGRESS_REVIEW_EPOCH_BEFORE_RETRY =
+        "octavo.port11.progress_review_epoch_before_retry";
+    private static final String STATE_PROGRESS_ROLLBACK_EPOCH_RETRY =
+        "octavo.port11.progress_rollback_epoch_retry";
+    private static final String STATE_PROGRESS_ABANDON_AFTER_RELOAD =
+        "octavo.port11.progress_abandon_after_reload";
     private static final int POSITION_RETRY_MARK_GO = 1;
     private static final int POSITION_RETRY_STAY = 2;
     private static final int POSITION_RETRY_DISMISS = 3;
@@ -93,6 +123,13 @@ public final class OctavoActivity extends Activity {
     private static final int APPEARANCE_RETRY_DISMISS = 4;
     private static final int APPEARANCE_RETRY_FORWARD = 5;
     private static final int APPEARANCE_RETRY_ROLLBACK = 6;
+    private static final int PROGRESS_RETRY_RELOAD = 1;
+    private static final int PROGRESS_RETRY_USE = 2;
+    private static final int PROGRESS_RETRY_KEEP = 3;
+    private static final int PROGRESS_RETRY_DISMISS = 4;
+    private static final int PROGRESS_RETRY_FORWARD = 5;
+    private static final int PROGRESS_RETRY_ROLLBACK = 6;
+    private static final int PROGRESS_RETRY_LOCAL_STAGE = 7;
     private static final int SEARCH_BUSY_RETRY_LIMIT = 96;
     private static final long SEARCH_BUSY_RETRY_DELAY_MILLIS = 32;
 
@@ -350,11 +387,239 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    /**
+     * Saved UI intent only. O1PS remains the authority for candidates and
+     * pending transactions; every restored descriptor must match it exactly
+     * before it can act.
+     */
+    private static final class ProgressSyncRetryDescriptor {
+        final int action;
+        final String deviceId;
+        final long sequence;
+        final long reviewEpoch;
+        final long originSequence;
+        final long localSequence;
+        final String remoteDeviceId;
+        final long remoteSequence;
+        final int pendingKind;
+        final int originChoiceId;
+        final int targetChoiceId;
+
+        private ProgressSyncRetryDescriptor(
+            int action, String deviceId, long sequence,
+            long reviewEpoch, long originSequence, long localSequence,
+            String remoteDeviceId, long remoteSequence, int pendingKind,
+            int originChoiceId, int targetChoiceId) {
+            this.action = action;
+            this.deviceId = deviceId;
+            this.sequence = sequence;
+            this.reviewEpoch = reviewEpoch;
+            this.originSequence = originSequence;
+            this.localSequence = localSequence;
+            this.remoteDeviceId = remoteDeviceId;
+            this.remoteSequence = remoteSequence;
+            this.pendingKind = pendingKind;
+            this.originChoiceId = originChoiceId;
+            this.targetChoiceId = targetChoiceId;
+        }
+
+        static ProgressSyncRetryDescriptor reload() {
+            return new ProgressSyncRetryDescriptor(
+                PROGRESS_RETRY_RELOAD, null, 0, 0, 0,
+                0, null, 0, 0, -1, -1);
+        }
+
+        static ProgressSyncRetryDescriptor candidate(
+            int action, OctavoProgressSyncStore.Candidate candidate) {
+            return new ProgressSyncRetryDescriptor(
+                action, candidate.deviceId, candidate.sequence,
+                candidate.reviewEpoch, candidate.originLocalSequence,
+                0, null, 0, 0, -1, -1);
+        }
+
+        static ProgressSyncRetryDescriptor pending(
+            int action, OctavoProgressSyncStore.Pending pending) {
+            int durableAction = pending.direction
+                    == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                ? PROGRESS_RETRY_ROLLBACK : PROGRESS_RETRY_FORWARD;
+            if (action != durableAction) {
+                throw new IllegalArgumentException(
+                    "Progress Retry direction is stale");
+            }
+            return new ProgressSyncRetryDescriptor(
+                durableAction, null, 0, 0, pending.originLocalSequence,
+                pending.localSequence, pending.remoteDeviceId,
+                pending.remoteSequence,
+                pending.kind == OctavoProgressSyncStore.PendingKind.LOCAL
+                    ? 1 : 2,
+                -1, -1);
+        }
+
+        static ProgressSyncRetryDescriptor localStage(
+            OctavoProgressPortable.Lane origin,
+            OctavoProgressDisplay target) {
+            if (origin == null || target == null
+                || origin.choice.toDisplay() == target) {
+                throw new IllegalArgumentException(
+                    "Invalid local progress stage Retry");
+            }
+            return new ProgressSyncRetryDescriptor(
+                PROGRESS_RETRY_LOCAL_STAGE, null, 0, 0,
+                origin.sequence, 0, null, 0, 0,
+                origin.choice.semanticId,
+                OctavoProgressPortable.Choice.fromDisplay(
+                    target).semanticId);
+        }
+
+        boolean candidateAction() {
+            return action >= PROGRESS_RETRY_USE
+                && action <= PROGRESS_RETRY_DISMISS;
+        }
+
+        boolean pendingAction() {
+            return action == PROGRESS_RETRY_FORWARD
+                || action == PROGRESS_RETRY_ROLLBACK;
+        }
+
+        boolean localStageAction() {
+            return action == PROGRESS_RETRY_LOCAL_STAGE;
+        }
+
+        OctavoProgressDisplay localStageOriginDisplay() {
+            return new OctavoProgressPortable.Choice(
+                originChoiceId).toDisplay();
+        }
+
+        OctavoProgressDisplay localStageTargetDisplay() {
+            return new OctavoProgressPortable.Choice(
+                targetChoiceId).toDisplay();
+        }
+
+        boolean matches(OctavoProgressSyncStore.Candidate candidate) {
+            return candidateAction() && candidate != null
+                && deviceId.equals(candidate.deviceId)
+                && sequence == candidate.sequence
+                && reviewEpoch == candidate.reviewEpoch
+                && originSequence == candidate.originLocalSequence;
+        }
+
+        boolean matches(OctavoProgressSyncStore.Pending pending) {
+            return pendingAction() && pending != null
+                && action
+                   == (pending.direction
+                           == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                       ? PROGRESS_RETRY_ROLLBACK
+                       : PROGRESS_RETRY_FORWARD)
+                && originSequence == pending.originLocalSequence
+                && localSequence == pending.localSequence
+                && remoteDeviceId.equals(pending.remoteDeviceId)
+                && remoteSequence == pending.remoteSequence
+                && pendingKind
+                   == (pending.kind
+                       == OctavoProgressSyncStore.PendingKind.LOCAL
+                           ? 1 : 2);
+        }
+
+        boolean matchesPendingIdentity(
+            OctavoProgressSyncStore.Pending pending) {
+            return pendingAction() && pending != null
+                && originSequence == pending.originLocalSequence
+                && localSequence == pending.localSequence
+                && remoteDeviceId.equals(pending.remoteDeviceId)
+                && remoteSequence == pending.remoteSequence
+                && pendingKind
+                   == (pending.kind
+                       == OctavoProgressSyncStore.PendingKind.LOCAL
+                           ? 1 : 2);
+        }
+
+        void save(Bundle state) {
+            state.putInt(STATE_PROGRESS_RETRY_ACTION, action);
+            state.putString(STATE_PROGRESS_RETRY_DEVICE, deviceId);
+            state.putLong(STATE_PROGRESS_RETRY_SEQUENCE, sequence);
+            state.putLong(STATE_PROGRESS_RETRY_EPOCH, reviewEpoch);
+            state.putLong(STATE_PROGRESS_RETRY_ORIGIN_SEQUENCE,
+                          originSequence);
+            state.putLong(STATE_PROGRESS_RETRY_LOCAL_SEQUENCE,
+                          localSequence);
+            state.putString(STATE_PROGRESS_RETRY_REMOTE_DEVICE,
+                            remoteDeviceId);
+            state.putLong(STATE_PROGRESS_RETRY_REMOTE_SEQUENCE,
+                          remoteSequence);
+            state.putInt(STATE_PROGRESS_RETRY_PENDING_KIND, pendingKind);
+            state.putInt(
+                STATE_PROGRESS_RETRY_ORIGIN_CHOICE, originChoiceId);
+            state.putInt(
+                STATE_PROGRESS_RETRY_TARGET_CHOICE, targetChoiceId);
+        }
+
+        static ProgressSyncRetryDescriptor restore(Bundle state) {
+            if (state == null) {
+                return null;
+            }
+            int action = state.getInt(STATE_PROGRESS_RETRY_ACTION, 0);
+            if (action == PROGRESS_RETRY_RELOAD) {
+                return reload();
+            }
+            String device = state.getString(STATE_PROGRESS_RETRY_DEVICE);
+            long sequence = state.getLong(
+                STATE_PROGRESS_RETRY_SEQUENCE, 0);
+            long epoch = state.getLong(
+                STATE_PROGRESS_RETRY_EPOCH, 0);
+            long origin = state.getLong(
+                STATE_PROGRESS_RETRY_ORIGIN_SEQUENCE, 0);
+            long local = state.getLong(
+                STATE_PROGRESS_RETRY_LOCAL_SEQUENCE, 0);
+            String remote = state.getString(
+                STATE_PROGRESS_RETRY_REMOTE_DEVICE);
+            long remoteSequence = state.getLong(
+                STATE_PROGRESS_RETRY_REMOTE_SEQUENCE, 0);
+            int kind = state.getInt(
+                STATE_PROGRESS_RETRY_PENDING_KIND, 0);
+            int originChoice = state.getInt(
+                STATE_PROGRESS_RETRY_ORIGIN_CHOICE, -1);
+            int targetChoice = state.getInt(
+                STATE_PROGRESS_RETRY_TARGET_CHOICE, -1);
+            if (action >= PROGRESS_RETRY_USE
+                && action <= PROGRESS_RETRY_DISMISS
+                && OctavoProgressPortable.validDeviceId(device)
+                && sequence > 0 && epoch > 0 && origin > 0) {
+                return new ProgressSyncRetryDescriptor(
+                    action, device, sequence, epoch, origin,
+                    0, null, 0, 0, -1, -1);
+            }
+            if ((action == PROGRESS_RETRY_FORWARD
+                 || action == PROGRESS_RETRY_ROLLBACK)
+                && origin >= 0 && local > 0
+                && OctavoProgressPortable.validDeviceId(remote)
+                && remoteSequence >= 0 && (kind == 1 || kind == 2)) {
+                return new ProgressSyncRetryDescriptor(
+                    action, null, 0, 0, origin, local,
+                    remote, remoteSequence, kind, -1, -1);
+            }
+            if (action == PROGRESS_RETRY_LOCAL_STAGE
+                && origin > 0
+                && originChoice >= OctavoProgressPortable.Choice.CHAPTER
+                && originChoice
+                   <= OctavoProgressPortable.Choice.PERCENTAGE
+                && targetChoice >= OctavoProgressPortable.Choice.CHAPTER
+                && targetChoice
+                   <= OctavoProgressPortable.Choice.PERCENTAGE
+                && originChoice != targetChoice) {
+                return new ProgressSyncRetryDescriptor(
+                    action, null, 0, 0, origin, 0,
+                    null, 0, 0, originChoice, targetChoice);
+            }
+            return null;
+        }
+    }
+
     private OctavoLibraryStore libraryStore;
     private OctavoAppearanceStore appearanceStore;
     private OctavoAppearanceSyncStore appearanceSyncStore;
     private OctavoAppearance appearance;
     private OctavoProgressStore progressStore;
+    private OctavoProgressSyncStore progressSyncStore;
     private OctavoProgressDisplay progressDisplay;
     private OctavoAnnotationStore annotationStore;
     private OctavoNoteDraftStore noteDraftStore;
@@ -385,6 +650,8 @@ public final class OctavoActivity extends Activity {
     private OctavoReadingPositionPrompt readingPositionPrompt;
     private FrameLayout appearanceSyncOverlay;
     private OctavoAppearanceSyncPrompt appearanceSyncPrompt;
+    private FrameLayout progressSyncOverlay;
+    private OctavoProgressSyncPrompt progressSyncPrompt;
     private TextView failureBanner;
     private boolean failureBannerAnnouncementDeferred;
     private View readerEntryCover;
@@ -398,7 +665,6 @@ public final class OctavoActivity extends Activity {
     private boolean chromeVisible;
     private String lastOpenError;
     private String deferredAppearanceFailure;
-    private String deferredProgressFailure;
     private OctavoAppearance pendingAppearancePersistence;
     private boolean appearancePersistencePosted;
     private boolean appearanceSyncReviewPending;
@@ -428,8 +694,32 @@ public final class OctavoActivity extends Activity {
     private OctavoAppearance consumedAppearanceReceiptProfile;
     private long consumedAppearanceReceiptGeneration = -1;
     private long consumedAppearanceReceiptFrame = -1;
-    private OctavoProgressDisplay pendingProgressPersistence;
-    private boolean progressPersistencePosted;
+    private boolean progressSyncReviewPending;
+    private boolean progressSyncReviewInitialized;
+    private boolean progressSyncPendingLoaded;
+    private boolean progressSyncAwaitingExplicitRetry;
+    private boolean progressSyncRollbackRequested;
+    private boolean progressSyncO8pgFutureBlocked;
+    private OctavoProgressSyncStore.Candidate progressSyncCandidate;
+    private OctavoProgressSyncStore.Candidate progressSyncPromptCandidate;
+    private OctavoProgressSyncStore.Pending progressSyncPending;
+    private Runnable progressSyncRetry;
+    private String progressSyncFailureHeading;
+    private String progressSyncFailureMessage;
+    private ProgressSyncRetryDescriptor progressSyncRetryDescriptor;
+    private long progressSyncReviewEpochBeforeRetry = -1;
+    private boolean progressSyncRollbackEpochReconciliation;
+    private boolean progressSyncAbandonAfterReload;
+    private long progressSyncPromptGeneration;
+    private OctavoSurfaceView progressReceiptSurface;
+    private OctavoSurfaceView.ProgressPresentationReceipt
+        latestProgressReceipt;
+    private OctavoSurfaceView consumedProgressReceiptSurface;
+    private OctavoProgressDisplay consumedProgressReceiptChoice;
+    private long consumedProgressReceiptGeneration = -1;
+    private long consumedProgressReceiptFrame = -1;
+    private long progressSyncOriginSpineIndex = -1;
+    private long progressSyncOriginByteOffset = -1;
     private boolean navigationSnapshotRefreshPosted;
     private boolean searchSnapshotRefreshPosted;
     private boolean bookmarkNavigationPending;
@@ -450,10 +740,6 @@ public final class OctavoActivity extends Activity {
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
-    };
-    private final Runnable persistProgress = () -> {
-        progressPersistencePosted = false;
-        flushProgressPersistence();
     };
     private final Runnable refreshNavigationSnapshot = () -> {
         navigationSnapshotRefreshPosted = false;
@@ -531,8 +817,85 @@ public final class OctavoActivity extends Activity {
         }
         progressStore = new OctavoProgressStore(this);
         progressDisplay = progressStore.load();
+        OctavoProgressStore.LoadStatus progressLoadStatus =
+            progressStore.loadStatus();
         boolean progressResetAfterCorruption =
-            progressStore.recoveredFromCorruption();
+            progressLoadStatus == OctavoProgressStore.LoadStatus.CORRUPT;
+        progressSyncO8pgFutureBlocked =
+            progressLoadStatus == OctavoProgressStore.LoadStatus.FUTURE;
+        progressSyncStore = new OctavoProgressSyncStore(this);
+        OctavoProgressSyncStore.LoadStatus progressSyncLoadStatus =
+            progressSyncStore.load();
+        boolean progressRecoveredFromFinalizedSyncLane = false;
+        if ((progressLoadStatus == OctavoProgressStore.LoadStatus.MISSING
+             || progressLoadStatus
+                == OctavoProgressStore.LoadStatus.CORRUPT)
+            && progressSyncLoadStatus
+               == OctavoProgressSyncStore.LoadStatus.LOADED) {
+            OctavoProgressDisplay synchronizedDisplay =
+                progressSyncStore.effectiveDisplay();
+            if (synchronizedDisplay != null) {
+                // A finalized O1PS lane is the durable provenance for a
+                // missing/invalid O8PG. Present that exact choice first so
+                // the real-frame path recreates O8PG without advancing the
+                // local lane as though the fallback were a new user choice.
+                progressDisplay = synchronizedDisplay;
+                progressRecoveredFromFinalizedSyncLane = true;
+            }
+        }
+        progressSyncPendingLoaded =
+            progressSyncStore.pending() != null;
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.restore(savedInstanceState);
+        progressSyncReviewEpochBeforeRetry = savedInstanceState == null
+            ? -1 : savedInstanceState.getLong(
+                STATE_PROGRESS_REVIEW_EPOCH_BEFORE_RETRY, -1);
+        progressSyncRollbackEpochReconciliation =
+            savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_PROGRESS_ROLLBACK_EPOCH_RETRY, false);
+        if (progressSyncReviewEpochBeforeRetry >= 0) {
+            // An uncertain epoch publication is user-action-required state.
+            // A recreated first frame must not initialize or advance review
+            // until Retry reloads and proves the exact prior/candidate bytes.
+            progressSyncAwaitingExplicitRetry = true;
+        }
+        progressSyncAbandonAfterReload =
+            savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_PROGRESS_ABANDON_AFTER_RELOAD, false);
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.action
+               == PROGRESS_RETRY_RELOAD) {
+            progressSyncAwaitingExplicitRetry = true;
+        }
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.localStageAction()) {
+            progressSyncAwaitingExplicitRetry = true;
+        }
+        if (progressSyncAbandonAfterReload) {
+            progressSyncAwaitingExplicitRetry = true;
+        }
+        OctavoProgressSyncStore.Pending loadedProgressPending =
+            progressSyncStore.pending();
+        if (loadedProgressPending != null) {
+            progressSyncRollbackRequested =
+                loadedProgressPending.direction
+                == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+            progressSyncAwaitingExplicitRetry = true;
+            if (progressSyncRetryDescriptor != null
+                && progressSyncRetryDescriptor.pendingAction()
+                && !(progressSyncAbandonAfterReload
+                    ? progressSyncRetryDescriptor.matchesPendingIdentity(
+                        loadedProgressPending)
+                    : progressSyncRetryDescriptor.matches(
+                        loadedProgressPending))) {
+                progressSyncRetryDescriptor = null;
+            }
+        } else if (progressSyncRetryDescriptor != null
+                   && progressSyncRetryDescriptor.pendingAction()) {
+            progressSyncRetryDescriptor = null;
+        }
         annotationStore = new OctavoAnnotationStore(this);
         OctavoAnnotationStore.LoadStatus annotationLoadStatus =
             annotationStore.load();
@@ -558,6 +921,9 @@ public final class OctavoActivity extends Activity {
         boolean restoreAppearanceReviewPending = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_APPEARANCE_REVIEW_PENDING, false);
+        boolean restoreProgressReviewPending = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_PROGRESS_REVIEW_PENDING, false);
         OctavoLibraryStore.Book restoreBook =
             restoreKey == null ? null : libraryStore.findBook(restoreKey);
         boolean readerRestored = restoreBook != null
@@ -568,6 +934,7 @@ public final class OctavoActivity extends Activity {
             readingPositionReviewPending = restoreReviewPending;
             appearanceSyncReviewPending =
                 restoreAppearanceReviewPending;
+            progressSyncReviewPending = restoreProgressReviewPending;
             ReadingPositionChoiceRetry restoredRetry =
                 ReadingPositionChoiceRetry.restore(savedInstanceState);
             if (restoredRetry != null
@@ -580,13 +947,19 @@ public final class OctavoActivity extends Activity {
                 "Reader appearance was reset because its saved settings were invalid");
         }
         if (progressResetAfterCorruption) {
-            showOpenFailure(
-                "Reader progress display was reset because its saved setting was invalid");
+            showOpenFailure(progressRecoveredFromFinalizedSyncLane
+                ? "Reader progress display will be recovered from its last "
+                    + "synchronized setting after the reader confirms it "
+                    + "on screen"
+                : "Reader progress display was reset because its saved "
+                    + "setting was invalid");
         }
         reportAnnotationLoadStatus(annotationLoadStatus);
         reportNoteDraftLoadStatus(noteDraftLoadStatus);
         reportReadingPositionLoadStatus(readingPositionLoadStatus);
         reportAppearanceSyncLoadStatus(appearanceSyncLoadStatus);
+        reportProgressSyncLoadStatus(
+            progressSyncLoadStatus, progressLoadStatus);
     }
 
     @Override
@@ -601,6 +974,9 @@ public final class OctavoActivity extends Activity {
         state.putBoolean(
             STATE_APPEARANCE_REVIEW_PENDING,
             appearanceSyncReviewPending);
+        state.putBoolean(
+            STATE_PROGRESS_REVIEW_PENDING,
+            progressSyncReviewPending);
         if (readingPositionChoiceRetry != null && activeBook != null
             && activeBook.key.equals(
                 readingPositionChoiceRetry.bookDigest)) {
@@ -635,6 +1011,37 @@ public final class OctavoActivity extends Activity {
         if (appearanceSyncAbandonAfterReload) {
             state.putBoolean(
                 STATE_APPEARANCE_ABANDON_AFTER_RELOAD, true);
+        }
+        ProgressSyncRetryDescriptor progressRetry =
+            progressSyncRetryDescriptor;
+        OctavoProgressSyncStore.Pending progressPending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (progressPending != null) {
+            progressRetry = ProgressSyncRetryDescriptor.pending(
+                progressPending.direction
+                    == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                    ? PROGRESS_RETRY_ROLLBACK
+                    : PROGRESS_RETRY_FORWARD,
+                progressPending);
+        } else if (progressSyncAwaitingExplicitRetry
+                   && progressRetry == null) {
+            progressRetry = ProgressSyncRetryDescriptor.reload();
+        }
+        if (progressRetry != null) {
+            progressRetry.save(state);
+        }
+        if (progressSyncReviewEpochBeforeRetry >= 0) {
+            state.putLong(
+                STATE_PROGRESS_REVIEW_EPOCH_BEFORE_RETRY,
+                progressSyncReviewEpochBeforeRetry);
+            state.putBoolean(
+                STATE_PROGRESS_ROLLBACK_EPOCH_RETRY,
+                progressSyncRollbackEpochReconciliation);
+        }
+        if (progressSyncAbandonAfterReload) {
+            state.putBoolean(
+                STATE_PROGRESS_ABANDON_AFTER_RELOAD, true);
         }
         super.onSaveInstanceState(state);
     }
@@ -672,11 +1079,20 @@ public final class OctavoActivity extends Activity {
             }
             updateAppearanceSyncPromptBounds();
         }
+        if (progressSyncPrompt != null) {
+            progressSyncPrompt.applyAppearance(appearance);
+            if (progressSyncOverlay != null) {
+                progressSyncOverlay.setBackgroundColor(
+                    progressSyncPrompt.overlayColor());
+            }
+            updateProgressSyncPromptBounds();
+        }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
         }
-        restorePendingReadingPositionAfterLifecycle();
         restorePendingAppearanceAfterLifecycle();
+        restorePendingReadingPositionAfterLifecycle();
+        restorePendingProgressAfterLifecycle();
     }
 
     @Override
@@ -685,6 +1101,8 @@ public final class OctavoActivity extends Activity {
             dismissAppearanceSyncForBack();
         } else if (readingPositionPrompt != null) {
             dismissReadingPositionForBack();
+        } else if (progressSyncPrompt != null) {
+            dismissProgressSyncForBack();
         } else if (appearancePanel != null) {
             closeAppearancePanel();
         } else if (bookmarksPanel != null) {
@@ -703,7 +1121,8 @@ public final class OctavoActivity extends Activity {
                     return;
                 }
                 processAppearancePresentationReceipt();
-                considerAppearanceSyncCandidate();
+                processProgressPresentationReceipt();
+                drainDeferredSyncPrompts();
             });
         } else if (surfaceView != null
                    && surfaceView.hasNavigationPending()) {
@@ -727,22 +1146,13 @@ public final class OctavoActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.hostResumed();
         }
-        restorePendingReadingPositionAfterLifecycle();
         restorePendingAppearanceAfterLifecycle();
-        if (readingPositionReviewInitialized) {
-            considerReadingPositionCandidate();
-        }
-        if (appearanceSyncReviewInitialized) {
-            considerAppearanceSyncCandidate();
-        }
+        restorePendingReadingPositionAfterLifecycle();
+        restorePendingProgressAfterLifecycle();
+        drainDeferredSyncPrompts();
         if (deferredAppearanceFailure != null) {
             String message = deferredAppearanceFailure;
             deferredAppearanceFailure = null;
-            showOpenFailure(message);
-        }
-        if (deferredProgressFailure != null) {
-            String message = deferredProgressFailure;
-            deferredProgressFailure = null;
             showOpenFailure(message);
         }
     }
@@ -755,14 +1165,12 @@ public final class OctavoActivity extends Activity {
         }
         restorePendingReadingPositionAfterLifecycle();
         flushAppearancePersistence();
-        flushProgressPersistence();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
         flushAppearancePersistence();
-        flushProgressPersistence();
         releaseReader();
         super.onDestroy();
     }
@@ -876,6 +1284,8 @@ public final class OctavoActivity extends Activity {
         readingPositionReviewInitialized = false;
         appearanceSyncReviewPending = recordOpened;
         appearanceSyncReviewInitialized = false;
+        progressSyncReviewPending = recordOpened;
+        progressSyncReviewInitialized = false;
         hasPresentedReadingPosition = false;
         libraryRoot = null;
         readerRoot = root;
@@ -1286,6 +1696,7 @@ public final class OctavoActivity extends Activity {
             public void onReaderPresentationChanged(String label) {
                 finishReaderEntryCover();
                 processAppearancePresentationReceipt();
+                processProgressPresentationReceipt();
                 if (readerProgress != null && label != null) {
                     updateProgressControlLabel(readerProgress, label);
                 }
@@ -1353,7 +1764,7 @@ public final class OctavoActivity extends Activity {
                 if (navigationPanel != null) {
                     navigationPanel.updateProgressDisplay(presented);
                 }
-                persistPresentedProgress(presented);
+                processProgressPresentationReceipt();
                 updateReaderNavigationAvailability(surfaceView);
                 scheduleNavigationSnapshotRefresh();
             }
@@ -1361,6 +1772,26 @@ public final class OctavoActivity extends Activity {
             @Override
             public void onNavigationRequestFailure(String message) {
                 bookmarkNavigationPending = false;
+                OctavoProgressSyncStore.Pending progressPending =
+                    progressSyncStore == null ? null
+                        : progressSyncStore.pending();
+                if (progressPending != null) {
+                    progressSyncPending = progressPending;
+                    showProgressSyncFailure(
+                        "Progress display update needs attention",
+                        TextUtils.isEmpty(message)
+                            ? "The requested progress display was not "
+                                + "confirmed on screen. Retry is safe."
+                            : message,
+                        progressPending.direction
+                            == OctavoProgressSyncStore.PendingDirection
+                                .ROLLBACK
+                            ? () -> retryPendingProgressRollback(
+                                progressPending)
+                            : OctavoActivity.this::
+                                retryPendingProgressForward);
+                    return;
+                }
                 OctavoReadingPositionStore.Candidate pending =
                     activeBook == null || readingPositionStore == null
                         ? null
@@ -1616,8 +2047,10 @@ public final class OctavoActivity extends Activity {
             || readingPositionStore == null
             || readingPositionPrompt != null
             || appearanceSyncPrompt != null
+            || progressSyncPrompt != null
             || appearancePanel != null || navigationPanel != null
-            || searchPanel != null || bookmarksPanel != null) {
+            || searchPanel != null || bookmarksPanel != null
+            || surfaceView.hasSelectionForAccessibility()) {
             return;
         }
         List<OctavoReadingPositionStore.Candidate> candidates =
@@ -1648,6 +2081,7 @@ public final class OctavoActivity extends Activity {
             qualifyAndShowReadingPosition(candidate);
             return;
         }
+        considerProgressSyncCandidate();
     }
 
     private void qualifyAndShowReadingPosition(
@@ -2130,7 +2564,10 @@ public final class OctavoActivity extends Activity {
     }
 
     private boolean ensureReadingPositionPrompt(String locationLabel) {
-        if (readerRoot == null || appearanceSyncPrompt != null) {
+        if (appearanceSyncPrompt != null || progressSyncPrompt != null) {
+            return false;
+        }
+        if (readerRoot == null) {
             showOpenFailure("Reading-position confirmation is unavailable");
             return false;
         }
@@ -2282,20 +2719,24 @@ public final class OctavoActivity extends Activity {
             return;
         }
         restoreReaderAccessibilityBoundary();
-        if (appearanceSyncPrompt == null) {
+        if (appearanceSyncPrompt == null
+            && progressSyncPrompt == null) {
             restoreFailureBannerAfterModalPrompt();
         }
         if (restoreFocus) {
-            considerAppearanceSyncCandidate();
-        }
-        if (restoreFocus) {
-            restoreReadingPositionFocusAfterClose();
+            drainDeferredSyncPrompts();
+            if (appearanceSyncPrompt == null
+                && readingPositionPrompt == null
+                && progressSyncPrompt == null) {
+                restoreReadingPositionFocusAfterClose();
+            }
         }
     }
 
     private void restoreReadingPositionFocusAfterClose() {
         if (readingPositionPrompt != null
             || appearanceSyncPrompt != null
+            || progressSyncPrompt != null
             || surfaceView == null || !surfaceView.isShown()) {
             return;
         }
@@ -2304,6 +2745,7 @@ public final class OctavoActivity extends Activity {
         focusReturn.post(() -> {
             if (readingPositionPrompt != null
                 || appearanceSyncPrompt != null
+                || progressSyncPrompt != null
                 || surfaceView != focusReturn || !focusReturn.isShown()) {
                 return;
             }
@@ -2339,6 +2781,7 @@ public final class OctavoActivity extends Activity {
         banner.post(() -> {
             if (readingPositionPrompt == null
                 && appearanceSyncPrompt == null
+                && progressSyncPrompt == null
                 && failureBanner == banner
                 && banner.isShown()
                 && failureBannerAnnouncementDeferred) {
@@ -3352,6 +3795,7 @@ public final class OctavoActivity extends Activity {
             || appearanceSyncStore.pending() != null
             || appearanceSyncPrompt != null
             || readingPositionPrompt != null
+            || progressSyncPrompt != null
             || appearancePanel != null || navigationPanel != null
             || searchPanel != null || bookmarksPanel != null
             || surfaceView.hasSelectionForAccessibility()) {
@@ -3648,6 +4092,7 @@ public final class OctavoActivity extends Activity {
         OctavoAppearanceSyncStore.Candidate expected) {
         if (readerRoot == null || surfaceView == null
             || readingPositionPrompt != null
+            || progressSyncPrompt != null
             || presented == null || remote == null
             || presented.equals(remote)
             || surfaceView.hasSelectionForAccessibility()) {
@@ -3687,6 +4132,7 @@ public final class OctavoActivity extends Activity {
     private boolean ensureAppearanceSyncFailurePrompt() {
         if (readerRoot == null || surfaceView == null
             || readingPositionPrompt != null
+            || progressSyncPrompt != null
             || surfaceView.hasSelectionForAccessibility()
             || (appearanceSyncPrompt == null
                 && !hasSettledAppearanceReceiptEvidence())) {
@@ -3894,6 +4340,7 @@ public final class OctavoActivity extends Activity {
         if (!appearanceSyncAwaitingExplicitRetry || !activityResumed
             || readerRoot == null || surfaceView == null
             || readingPositionPrompt != null
+            || progressSyncPrompt != null
             || appearancePanel != null || navigationPanel != null
             || searchPanel != null || bookmarksPanel != null
             || surfaceView.hasSelectionForAccessibility()
@@ -4064,11 +4511,17 @@ public final class OctavoActivity extends Activity {
             return;
         }
         restoreReaderAccessibilityBoundary();
-        if (readingPositionPrompt == null) {
+        if (readingPositionPrompt == null
+            && progressSyncPrompt == null) {
             restoreFailureBannerAfterModalPrompt();
         }
         if (restoreFocus) {
-            restoreAppearanceSyncFocusAfterClose();
+            drainDeferredSyncPrompts();
+            if (appearanceSyncPrompt == null
+                && readingPositionPrompt == null
+                && progressSyncPrompt == null) {
+                restoreAppearanceSyncFocusAfterClose();
+            }
         }
     }
 
@@ -4076,7 +4529,8 @@ public final class OctavoActivity extends Activity {
         boolean readerObscured = appearancePanel != null
             || navigationPanel != null || searchPanel != null
             || bookmarksPanel != null || readingPositionPrompt != null
-            || appearanceSyncPrompt != null;
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null;
         if (surfaceView != null) {
             surfaceView.setImportantForAccessibility(
                 readerObscured
@@ -4098,6 +4552,7 @@ public final class OctavoActivity extends Activity {
     private void restoreAppearanceSyncFocusAfterClose() {
         if (appearanceSyncPrompt != null
             || readingPositionPrompt != null
+            || progressSyncPrompt != null
             || surfaceView == null || !surfaceView.isShown()) {
             return;
         }
@@ -4106,6 +4561,7 @@ public final class OctavoActivity extends Activity {
         target.post(() -> {
             if (appearanceSyncPrompt != null
                 || readingPositionPrompt != null
+                || progressSyncPrompt != null
                 || surfaceView != target
                 || !target.isShown()) {
                 return;
@@ -4676,44 +5132,2140 @@ public final class OctavoActivity extends Activity {
         decor.postOnAnimation(persistAppearance);
     }
 
-    private void persistPresentedProgress(OctavoProgressDisplay presented) {
-        pendingProgressPersistence = presented;
-        if (progressPersistencePosted) {
+    private void reportProgressSyncLoadStatus(
+        OctavoProgressSyncStore.LoadStatus syncStatus,
+        OctavoProgressStore.LoadStatus localStatus) {
+        if (localStatus == OctavoProgressStore.LoadStatus.FUTURE) {
+            progressSyncO8pgFutureBlocked = true;
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The saved progress display was written by a newer "
+                    + "version. Its bytes were preserved and synchronization "
+                    + "is blocked.",
+                this::reloadProgressSyncState);
             return;
         }
-        View decor = getWindow().getDecorView();
-        progressPersistencePosted = true;
-        decor.postOnAnimation(persistProgress);
+        if (syncStatus == null
+            || syncStatus == OctavoProgressSyncStore.LoadStatus.LOADED
+            || syncStatus
+               == OctavoProgressSyncStore.LoadStatus.MISSING_CREATED) {
+            return;
+        }
+        String message = progressSyncStore == null
+            ? "Progress-display synchronization is unavailable."
+            : progressSyncStore.lastError();
+        if (TextUtils.isEmpty(message)) {
+            message = syncStatus
+                == OctavoProgressSyncStore.LoadStatus.CORRUPT_QUARANTINED
+                ? "Invalid progress-display sync state was quarantined."
+                : "Progress-display synchronization needs attention.";
+        }
+        if (syncStatus
+            == OctavoProgressSyncStore.LoadStatus.CORRUPT_QUARANTINED) {
+            showOpenFailure(message);
+            return;
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            message,
+            this::reloadProgressSyncState);
     }
 
-    private void flushProgressPersistence() {
-        if (progressPersistencePosted) {
-            getWindow().getDecorView().removeCallbacks(persistProgress);
-            progressPersistencePosted = false;
+    /**
+     * Consumes one exact settled real-frame receipt. Its identity is marked
+     * consumed before either file is touched so a duplicate frame can never
+     * execute a user-visible Retry implicitly.
+     */
+    private void processProgressPresentationReceipt() {
+        OctavoSurfaceView owner = surfaceView;
+        if (owner == null || progressSyncStore == null) {
+            return;
         }
-        OctavoProgressDisplay candidate = pendingProgressPersistence;
-        pendingProgressPersistence = null;
-        if (candidate != null && !progressStore.save(candidate)) {
-            // Retain the latest presented choice for an explicit lifecycle or
-            // later presentation retry; never publish a fallback record.
-            pendingProgressPersistence = candidate;
-            reportProgressPersistenceFailure();
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            owner.currentProgressPresentationReceipt();
+        if (receipt == null || receipt.choice == null
+            || !receipt.strictResumeSettled) {
+            return;
         }
-    }
+        latestProgressReceipt = receipt;
+        progressReceiptSurface = owner;
+        if (consumedProgressReceiptSurface == owner
+            && consumedProgressReceiptGeneration
+               == receipt.progressGeneration
+            && consumedProgressReceiptFrame == receipt.frameCount
+            && consumedProgressReceiptChoice == receipt.choice) {
+            return;
+        }
+        consumedProgressReceiptSurface = owner;
+        consumedProgressReceiptGeneration = receipt.progressGeneration;
+        consumedProgressReceiptFrame = receipt.frameCount;
+        consumedProgressReceiptChoice = receipt.choice;
+        progressDisplay = receipt.choice;
 
-    private void reportProgressPersistenceFailure() {
-        String message = "Progress display changed, but could not be saved";
-        lastOpenError = message;
-        if (activityResumed) {
-            OctavoNavigationPanel target = navigationPanel;
-            if (target != null) {
-                target.showError(message);
-            } else {
-                showOpenFailure(message);
+        if (progressSyncO8pgFutureBlocked) {
+            presentRetainedProgressSyncFailure();
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        progressSyncPending = pending;
+        if (pending != null) {
+            progressSyncRollbackRequested = pending.direction
+                == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+            if (progressSyncPendingLoaded) {
+                if (progressSyncRetryDescriptor != null
+                    && progressSyncRetryDescriptor.localStageAction()) {
+                    if (!localStageMatchesPending(
+                            progressSyncRetryDescriptor, pending)) {
+                        showProgressSyncFailure(
+                            "Progress display update needs attention",
+                            "The restored local display Retry does not "
+                                + "match the durable pending transaction.",
+                            this::reloadProgressSyncForLocalStage);
+                        return;
+                    }
+                    progressSyncRetryDescriptor =
+                        ProgressSyncRetryDescriptor.pending(
+                            PROGRESS_RETRY_FORWARD, pending);
+                }
+                showLoadedPendingProgressRetry(pending, receipt);
+                return;
             }
-        } else {
-            deferredProgressFailure = message;
+            if (progressSyncAwaitingExplicitRetry) {
+                presentRetainedProgressSyncFailure();
+                return;
+            }
+            if (pending.direction
+                == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+                if (receipt.choice == pending.originDisplay()) {
+                    finishPendingProgressRollback(pending, receipt);
+                }
+            } else if (receipt.choice == pending.targetDisplay()) {
+                completePendingProgressForward(pending, receipt, false);
+            }
+            return;
         }
+
+        if (progressSyncAwaitingExplicitRetry) {
+            presentRetainedProgressSyncFailure();
+            return;
+        }
+
+        progressSyncPendingLoaded = false;
+        OctavoProgressPortable.Lane local =
+            progressSyncStore.localLane();
+        if (local == null) {
+            stageInitialPresentedProgress(receipt);
+            return;
+        }
+        OctavoProgressDisplay localDisplay = local.choice.toDisplay();
+        if (receipt.choice != localDisplay) {
+            // Product UI stages before requesting the Surface. This bounded
+            // compatibility path handles package-private/test requests and
+            // upgrades from the pre-O1PS Port 8 implementation.
+            stageObservedPresentedProgress(receipt, localDisplay);
+            return;
+        }
+        if (!progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            saveCanonicalProgressWithoutLaneAdvance(receipt);
+            return;
+        }
+        finishProgressConvergence(receipt);
+    }
+
+    private void stageInitialPresentedProgress(
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        if (!progressReceiptIsCurrent(receipt)
+            || progressSyncO8pgFutureBlocked) {
+            return;
+        }
+        OctavoProgressSyncStore.MutationResult staged =
+            progressSyncStore.stageInitialPresented(receipt.choice);
+        if (staged == OctavoProgressSyncStore.MutationResult.UNCHANGED) {
+            finishProgressConvergence(receipt);
+            return;
+        }
+        if (staged != OctavoProgressSyncStore.MutationResult.UPDATED) {
+            showProgressMutationFailure(
+                staged,
+                "The presented progress display could not be staged.",
+                () -> retryReceiptProgressMutation(receipt.choice));
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null || pending.targetDisplay() != receipt.choice) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The staged progress display could not be verified.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        progressSyncPending = pending;
+        completePendingProgressForward(
+            pending, receipt,
+            progressStore.loadStatus()
+                == OctavoProgressStore.LoadStatus.CURRENT);
+    }
+
+    private void stageObservedPresentedProgress(
+        OctavoSurfaceView.ProgressPresentationReceipt receipt,
+        OctavoProgressDisplay finalizedOrigin) {
+        if (!progressReceiptIsCurrent(receipt)
+            || finalizedOrigin == null
+            || finalizedOrigin == receipt.choice) {
+            return;
+        }
+        OctavoProgressSyncStore.MutationResult staged =
+            progressSyncStore.stageLocalApply(
+                finalizedOrigin, receipt.choice);
+        if (staged != OctavoProgressSyncStore.MutationResult.UPDATED) {
+            showProgressMutationFailure(
+                staged,
+                "The presented progress display could not be staged.",
+                () -> retryReceiptProgressMutation(receipt.choice));
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null || pending.targetDisplay() != receipt.choice) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The staged progress display could not be verified.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        progressSyncPending = pending;
+        completePendingProgressForward(pending, receipt, false);
+    }
+
+    private void retryReceiptProgressMutation(
+        OctavoProgressDisplay expectedChoice) {
+        progressSyncAwaitingExplicitRetry = false;
+        clearConsumedProgressReceipt();
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null || receipt.choice != expectedChoice) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The exact progress display is no longer confirmed on "
+                    + "screen.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        processProgressPresentationReceipt();
+    }
+
+    private void saveCanonicalProgressWithoutLaneAdvance(
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        if (!progressReceiptIsCurrent(receipt)) {
+            return;
+        }
+        OctavoProgressSyncStore.O8pgProof proof =
+            saveExactProgressForSync(receipt.choice);
+        if (proof == null) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The presented progress display could not be saved. "
+                    + "Retry is safe.",
+                () -> retrySaveCanonicalProgress(receipt.choice));
+            return;
+        }
+        finishProgressConvergence(receipt);
+    }
+
+    private void retrySaveCanonicalProgress(
+        OctavoProgressDisplay expectedChoice) {
+        progressSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null || receipt.choice != expectedChoice) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The exact progress display is no longer confirmed on "
+                    + "screen.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        saveCanonicalProgressWithoutLaneAdvance(receipt);
+    }
+
+    private void completePendingProgressForward(
+        OctavoProgressSyncStore.Pending expected,
+        OctavoSurfaceView.ProgressPresentationReceipt receipt,
+        boolean allowCanonicalLoadProof) {
+        OctavoProgressSyncStore.Pending current =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (!progressReceiptIsCurrent(receipt)
+            || expected == null || current == null
+            || !expected.sameIdentity(current)
+            || current.direction
+               != OctavoProgressSyncStore.PendingDirection.FORWARD
+            || receipt.choice != expected.targetDisplay()) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The exact pending progress display is not currently "
+                    + "confirmed on screen.",
+                this::retryPendingProgressForward);
+            return;
+        }
+        if (progressSyncOriginSpineIndex >= 0
+            && (receipt.anchorSpineIndex != progressSyncOriginSpineIndex
+                || receipt.anchorByteOffset
+                   != progressSyncOriginByteOffset)) {
+            beginPendingProgressRollback(
+                expected,
+                "The reading place changed while applying the display. "
+                    + "Restoring your earlier display.");
+            return;
+        }
+
+        OctavoProgressSyncStore.O8pgProof proof = null;
+        if (allowCanonicalLoadProof
+            && progressStore.loadStatus()
+               == OctavoProgressStore.LoadStatus.CURRENT
+            && progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            proof = OctavoProgressSyncStore.O8pgProof.CANONICAL_V1_LOAD;
+        }
+        if (proof == null) {
+            proof = saveExactProgressForSync(receipt.choice);
+        }
+        if (proof == null) {
+            progressSyncPending = expected;
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The display appeared, but its local record could not be "
+                    + "saved. Retry is safe.",
+                this::retryPendingProgressForward);
+            return;
+        }
+        OctavoProgressSyncStore.MutationResult completed =
+            progressSyncStore.completePending(
+                expected, receipt.choice, receipt.choice, proof);
+        if (completed == OctavoProgressSyncStore.MutationResult.CONFLICT
+            && expected.hasOriginLane) {
+            beginPendingProgressRollback(
+                expected,
+                "The other device changed while its display was being "
+                    + "applied. Restoring your display.");
+            return;
+        }
+        if (!completed.succeeded()) {
+            showProgressMutationFailure(
+                completed,
+                "The durable progress-display confirmation could not be "
+                    + "finished.",
+                this::retryPendingProgressForward);
+            return;
+        }
+        progressSyncPending = null;
+        progressSyncPendingLoaded = false;
+        progressSyncRollbackRequested = false;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncAbandonAfterReload = false;
+        progressSyncRetryDescriptor = null;
+        progressSyncOriginSpineIndex = -1;
+        progressSyncOriginByteOffset = -1;
+        finishProgressConvergence(receipt);
+    }
+
+    private OctavoProgressSyncStore.O8pgProof saveExactProgressForSync(
+        OctavoProgressDisplay target) {
+        if (progressSyncO8pgFutureBlocked
+            || progressStore.loadStatus()
+               == OctavoProgressStore.LoadStatus.FUTURE) {
+            return null;
+        }
+        boolean canonicalBefore =
+            progressStore.hasCanonicalCurrentRecord(target);
+        if (progressStore.save(target)) {
+            return OctavoProgressSyncStore.O8pgProof
+                .CURRENT_PROCESS_ATOMIC_SAVE;
+        }
+        if (progressStore.loadStatus()
+            == OctavoProgressStore.LoadStatus.FUTURE) {
+            progressSyncO8pgFutureBlocked = true;
+            return null;
+        }
+        if (!canonicalBefore
+            && progressStore.hasCanonicalCurrentRecord(target)) {
+            return OctavoProgressSyncStore.O8pgProof
+                .CURRENT_PROCESS_RECONCILED_AFTER_UNCERTAIN_SAVE;
+        }
+        return null;
+    }
+
+    private void finishProgressConvergence(
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        if (!progressReceiptIsCurrent(receipt)
+            || !progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            return;
+        }
+        OctavoProgressSyncStore.MutationResult converged =
+            progressSyncStore.recordConverged(receipt.choice);
+        if (!converged.succeeded()) {
+            showProgressMutationFailure(
+                converged,
+                "Matching progress-display candidates could not be "
+                    + "recorded.",
+                () -> retryFinishProgressConvergence(receipt.choice));
+            return;
+        }
+        progressDisplay = receipt.choice;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetry = null;
+        if (progressSyncRetryDescriptor != null
+            && !progressSyncRetryDescriptor.candidateAction()
+            && !progressSyncRetryDescriptor.localStageAction()) {
+            progressSyncRetryDescriptor = null;
+        }
+        boolean retainChoice = progressSyncCandidate != null
+            && progressSyncCandidateIsCurrent(
+                progressSyncCandidate, receipt.choice);
+        boolean promptWasVisible = progressSyncPrompt != null;
+        if (retainChoice) {
+            ensureProgressSyncChoicePrompt(
+                receipt.choice,
+                progressSyncCandidate.targetDisplay(),
+                progressSyncCandidate);
+        } else {
+            closeProgressSyncPrompt(false);
+        }
+        if (initializeProgressSyncReview() && !retainChoice) {
+            drainDeferredSyncPrompts();
+        }
+        if (promptWasVisible
+            && appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && progressSyncPrompt == null) {
+            restoreProgressSyncFocusAfterClose();
+        }
+    }
+
+    private void retryFinishProgressConvergence(
+        OctavoProgressDisplay expectedChoice) {
+        progressSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null || receipt.choice != expectedChoice) {
+            reloadProgressSyncState();
+            return;
+        }
+        finishProgressConvergence(receipt);
+    }
+
+    private OctavoSurfaceView.ProgressPresentationReceipt
+        currentProgressReceipt() {
+        if (surfaceView == null) {
+            return null;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            surfaceView.currentProgressPresentationReceipt();
+        if (receipt != null) {
+            latestProgressReceipt = receipt;
+            progressReceiptSurface = surfaceView;
+        }
+        return receipt;
+    }
+
+    private boolean progressReceiptIsCurrent(
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        if (receipt == null || surfaceView == null
+            || progressReceiptSurface != surfaceView) {
+            return false;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt current =
+            surfaceView.currentProgressPresentationReceipt();
+        return current != null
+            && current.choice == receipt.choice
+            && current.progressGeneration == receipt.progressGeneration
+            && current.frameCount == receipt.frameCount
+            && current.anchorSpineIndex == receipt.anchorSpineIndex
+            && current.anchorByteOffset == receipt.anchorByteOffset;
+    }
+
+    private void clearConsumedProgressReceipt() {
+        consumedProgressReceiptSurface = null;
+        consumedProgressReceiptChoice = null;
+        consumedProgressReceiptGeneration = -1;
+        consumedProgressReceiptFrame = -1;
+    }
+
+    private boolean initializeProgressSyncReview() {
+        if (progressSyncReviewInitialized) {
+            return true;
+        }
+        if (progressSyncStore == null
+            || progressSyncO8pgFutureBlocked
+            || progressSyncStore.pending() != null) {
+            return false;
+        }
+        boolean advanceExplicitOpen = progressSyncReviewPending;
+        long before = progressSyncStore.reviewEpoch();
+        OctavoProgressSyncStore.MutationResult result =
+            progressSyncStore.beginReviewEpoch(advanceExplicitOpen);
+        if (!result.succeeded()) {
+            if (advanceExplicitOpen
+                && (result == OctavoProgressSyncStore.MutationResult
+                        .PUBLISH_UNCERTAIN
+                    || result == OctavoProgressSyncStore.MutationResult
+                        .BLOCKED)) {
+                progressSyncReviewEpochBeforeRetry = before;
+                progressSyncRollbackEpochReconciliation = false;
+                showProgressSyncFailure(
+                    "Progress display update needs attention",
+                    progressSyncStore.lastError(),
+                    this::reconcileProgressSyncReviewEpoch);
+                return false;
+            }
+            showProgressMutationFailure(
+                result,
+                "Progress-display review could not be initialized.",
+                () -> {
+                    if (initializeProgressSyncReview()) {
+                        closeProgressSyncPrompt(true);
+                        considerProgressSyncCandidate();
+                    }
+                });
+            return false;
+        }
+        progressSyncReviewInitialized = true;
+        progressSyncReviewPending = false;
+        progressSyncReviewEpochBeforeRetry = -1;
+        progressSyncRollbackEpochReconciliation = false;
+        return true;
+    }
+
+    private void reconcileProgressSyncReviewEpoch() {
+        if (progressSyncStore == null
+            || progressSyncReviewEpochBeforeRetry < 0) {
+            reloadProgressSyncState();
+            return;
+        }
+        long before = progressSyncReviewEpochBeforeRetry;
+        OctavoProgressSyncStore.LoadStatus status =
+            progressSyncStore.load();
+        if (status != OctavoProgressSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoProgressSyncStore.LoadStatus.MISSING_CREATED) {
+            reportProgressSyncLoadStatus(
+                status, progressStore.loadStatus());
+            return;
+        }
+        long expected = before == Long.MAX_VALUE
+            ? Long.MAX_VALUE : before + 1;
+        long loaded = progressSyncStore.reviewEpoch();
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        progressSyncAwaitingExplicitRetry = false;
+        if (progressSyncRollbackEpochReconciliation) {
+            if (pending != null && loaded == before) {
+                progressSyncReviewEpochBeforeRetry = -1;
+                progressSyncRollbackEpochReconciliation = false;
+                progressSyncPendingLoaded = true;
+                retryPendingProgressRollback(pending);
+                return;
+            }
+            if (pending == null && loaded == expected) {
+                progressSyncPending = null;
+                progressSyncPendingLoaded = false;
+                progressSyncRollbackRequested = false;
+                progressSyncAbandonAfterReload = false;
+                progressSyncRetryDescriptor = null;
+                progressSyncReviewPending = false;
+                progressSyncReviewInitialized = true;
+                progressSyncReviewEpochBeforeRetry = -1;
+                progressSyncRollbackEpochReconciliation = false;
+                OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                    currentProgressReceipt();
+                if (receipt != null
+                    && progressStore.hasCanonicalCurrentRecord(
+                        receipt.choice)) {
+                    finishProgressConvergence(receipt);
+                }
+                return;
+            }
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The rollback state and review epoch disagree; automatic "
+                    + "recovery is blocked.",
+                this::reconcileProgressSyncReviewEpoch);
+            return;
+        }
+        if (pending != null) {
+            progressSyncPendingLoaded = true;
+            showLoadedPendingProgressRetry(
+                pending, currentProgressReceipt());
+            return;
+        }
+        if (loaded == expected && (loaded != before
+                                   || before == Long.MAX_VALUE)) {
+            progressSyncReviewInitialized = true;
+            progressSyncReviewPending = false;
+            progressSyncReviewEpochBeforeRetry = -1;
+            closeProgressSyncPrompt(false);
+            drainDeferredSyncPrompts();
+            return;
+        }
+        if (loaded == before) {
+            progressSyncReviewEpochBeforeRetry = -1;
+            progressSyncAwaitingExplicitRetry = false;
+            initializeProgressSyncReview();
+            return;
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            "The progress review epoch changed unexpectedly.",
+            this::reconcileProgressSyncReviewEpoch);
+    }
+
+    private void showLoadedPendingProgressRetry(
+        OctavoProgressSyncStore.Pending pending,
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        progressSyncPending = pending;
+        progressSyncPendingLoaded = true;
+        if (progressSyncAbandonAfterReload) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The interrupted dismissal must be reconciled before the "
+                    + "progress display can continue.",
+                this::reloadProgressSyncForAbandon);
+            return;
+        }
+        progressSyncRollbackRequested = pending.direction
+            == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+        OctavoProgressDisplay canonical =
+            progressStore.loadStatus()
+                    == OctavoProgressStore.LoadStatus.CURRENT
+                ? progressStore.current() : null;
+        OctavoProgressSyncStore.PendingRecovery recovery =
+            progressSyncStore.pendingRecovery(canonical);
+        String message;
+        if (pending.direction
+            == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            message = recovery
+                    == OctavoProgressSyncStore.PendingRecovery.ORIGIN_DURABLE
+                ? "Your earlier display is saved, but rollback "
+                    + "confirmation still needs to finish."
+                : "A progress-display rollback was interrupted. Retry is "
+                    + "required to restore it safely.";
+        } else if (recovery
+                   == OctavoProgressSyncStore.PendingRecovery.TARGET_DURABLE) {
+            message = "The display and its local record are present, but "
+                + "synchronization confirmation still needs to finish.";
+        } else if (recovery
+                   == OctavoProgressSyncStore.PendingRecovery.ORIGIN_DURABLE) {
+            message = "A display update was interrupted before it was "
+                + "shown. Retry is safe; your saved display remains.";
+        } else {
+            message = "A display update was interrupted and its exact "
+                + "durable state needs to be reconciled. Retry is safe.";
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            message,
+            pending.direction
+                == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                ? () -> retryPendingProgressRollback(pending)
+                : this::retryPendingProgressForward);
+    }
+
+    private void retryPendingProgressForward() {
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (pending == null) {
+            reloadProgressSyncState();
+            return;
+        }
+        if (pending.direction
+            == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            retryPendingProgressRollback(pending);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncRollbackRequested = false;
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.pending(
+                PROGRESS_RETRY_FORWARD, pending);
+        boolean allowCanonicalLoadProof = progressSyncPendingLoaded;
+        progressSyncPendingLoaded = false;
+        progressSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt != null
+            && receipt.choice == pending.targetDisplay()) {
+            completePendingProgressForward(
+                pending, receipt, allowCanonicalLoadProof);
+            return;
+        }
+        requestPendingProgressTarget(
+            pending,
+            "Applying the pending progress display. Waiting for the "
+                + "reader to confirm it on screen.");
+    }
+
+    private void requestPendingProgressTarget(
+        OctavoProgressSyncStore.Pending pending,
+        String workingMessage) {
+        if (pending == null || surfaceView == null) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The reader is unavailable. Reopen the book and Retry.",
+                this::retryPendingProgressForward);
+            return;
+        }
+        ensureProgressSyncPendingPrompt(pending);
+        if (progressSyncPrompt != null) {
+            progressSyncPrompt.showWorking(workingMessage);
+        }
+        int result = surfaceView.requestProgressDisplay(
+            pending.targetDisplay());
+        if (result == OctavoNative.NAVIGATION_ALREADY_PRESENTED) {
+            OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                currentProgressReceipt();
+            if (receipt != null
+                && receipt.choice == pending.targetDisplay()) {
+                completePendingProgressForward(pending, receipt, false);
+                return;
+            }
+        } else if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+            return;
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            result == OctavoNative.NAVIGATION_BUSY
+                ? "The reader is finishing another change. Retry when it "
+                    + "settles."
+                : "The progress display could not be presented. Retry is "
+                    + "safe.",
+            this::retryPendingProgressForward);
+    }
+
+    private void beginPendingProgressRollback(
+        OctavoProgressSyncStore.Pending expected,
+        String status) {
+        if (expected == null || !expected.hasOriginLane) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "These first synchronized progress settings have no "
+                    + "earlier display to restore. Retry the update.",
+                this::retryPendingProgressForward);
+            return;
+        }
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.pending(
+                expected.direction
+                    == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                    ? PROGRESS_RETRY_ROLLBACK
+                    : PROGRESS_RETRY_FORWARD,
+                expected);
+        OctavoProgressSyncStore.MutationResult requested =
+            progressSyncStore.requestRollback(expected);
+        if (!requested.succeeded()) {
+            if (requested
+                    == OctavoProgressSyncStore.MutationResult
+                        .PUBLISH_UNCERTAIN
+                || requested
+                    == OctavoProgressSyncStore.MutationResult.BLOCKED) {
+                progressSyncAbandonAfterReload = true;
+                showProgressSyncFailure(
+                    "Progress display update needs attention",
+                    progressSyncStore.lastError(),
+                    this::reloadProgressSyncForAbandon);
+                return;
+            }
+            showProgressMutationFailure(
+                requested,
+                "Rollback could not be staged.",
+                () -> beginPendingProgressRollback(expected, status));
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null
+            || pending.direction
+               != OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The staged rollback could not be verified.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncPendingLoaded = false;
+        progressSyncRollbackRequested = true;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.pending(
+                PROGRESS_RETRY_ROLLBACK, pending);
+        retryPendingProgressRollback(pending, status);
+    }
+
+    private void retryPendingProgressRollback(
+        OctavoProgressSyncStore.Pending expected) {
+        retryPendingProgressRollback(
+            expected, "Restoring your progress display.");
+    }
+
+    private void retryPendingProgressRollback(
+        OctavoProgressSyncStore.Pending expected,
+        String status) {
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (expected == null || pending == null
+            || !expected.sameIdentity(pending)
+            || pending.direction
+               != OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            reloadProgressSyncState();
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncRollbackRequested = true;
+        progressSyncPendingLoaded = false;
+        progressSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt != null
+            && receipt.choice == pending.originDisplay()) {
+            finishPendingProgressRollback(pending, receipt);
+            return;
+        }
+        if (surfaceView == null) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The reader is unavailable. Reopen the book and Retry.",
+                () -> retryPendingProgressRollback(pending));
+            return;
+        }
+        ensureProgressSyncPendingPrompt(pending);
+        if (progressSyncPrompt != null) {
+            progressSyncPrompt.showWorking(status);
+        }
+        int result = surfaceView.requestProgressDisplay(
+            pending.originDisplay());
+        if (result == OctavoNative.NAVIGATION_ALREADY_PRESENTED) {
+            receipt = currentProgressReceipt();
+            if (receipt != null
+                && receipt.choice == pending.originDisplay()) {
+                finishPendingProgressRollback(pending, receipt);
+                return;
+            }
+        } else if (result == OctavoNative.NAVIGATION_ACCEPTED) {
+            return;
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            result == OctavoNative.NAVIGATION_BUSY
+                ? "The reader is finishing another change. Retry when it "
+                    + "settles."
+                : "Your earlier progress display could not be restored. "
+                    + "Retry is safe.",
+            () -> retryPendingProgressRollback(pending));
+    }
+
+    private void finishPendingProgressRollback(
+        OctavoProgressSyncStore.Pending expected,
+        OctavoSurfaceView.ProgressPresentationReceipt receipt) {
+        OctavoProgressSyncStore.Pending current =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (!progressReceiptIsCurrent(receipt)
+            || expected == null || current == null
+            || !expected.sameIdentity(current)
+            || current.direction
+               != OctavoProgressSyncStore.PendingDirection.ROLLBACK
+            || receipt.choice != current.originDisplay()) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The earlier progress display has not been confirmed on "
+                    + "screen.",
+                () -> retryPendingProgressRollback(expected));
+            return;
+        }
+        OctavoProgressSyncStore.O8pgProof proof =
+            saveExactProgressForSync(receipt.choice);
+        if (proof == null) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "Your display was restored on screen, but its local record "
+                    + "could not be saved. Retry is safe.",
+                () -> retryPendingProgressRollback(expected));
+            return;
+        }
+        boolean advanceDeferredEpoch = progressSyncReviewPending;
+        long before = progressSyncStore.reviewEpoch();
+        OctavoProgressSyncStore.MutationResult dismissed =
+            progressSyncStore.dismissPendingAfterRollback(
+                expected, receipt.choice, receipt.choice, proof,
+                advanceDeferredEpoch);
+        if (!dismissed.succeeded()) {
+            if (dismissed
+                    == OctavoProgressSyncStore.MutationResult.PUBLISH_UNCERTAIN
+                || dismissed
+                    == OctavoProgressSyncStore.MutationResult.BLOCKED) {
+                progressSyncReviewEpochBeforeRetry =
+                    advanceDeferredEpoch ? before : -1;
+                progressSyncRollbackEpochReconciliation =
+                    advanceDeferredEpoch;
+                showProgressSyncFailure(
+                    "Progress display update needs attention",
+                    progressSyncStore.lastError(),
+                    advanceDeferredEpoch
+                        ? this::reconcileProgressSyncReviewEpoch
+                        : this::reloadProgressSyncState);
+            } else {
+                showProgressMutationFailure(
+                    dismissed,
+                    "The restored progress display could not be durably "
+                        + "confirmed.",
+                    () -> retryPendingProgressRollback(expected));
+            }
+            return;
+        }
+        progressSyncPending = null;
+        progressSyncPendingLoaded = false;
+        progressSyncRollbackRequested = false;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncAbandonAfterReload = false;
+        progressSyncRetryDescriptor = null;
+        progressSyncOriginSpineIndex = -1;
+        progressSyncOriginByteOffset = -1;
+        if (advanceDeferredEpoch) {
+            progressSyncReviewPending = false;
+            progressSyncReviewInitialized = true;
+        }
+        progressSyncReviewEpochBeforeRetry = -1;
+        progressSyncRollbackEpochReconciliation = false;
+        closeProgressSyncPrompt(true);
+        finishProgressConvergence(receipt);
+    }
+
+    private void reloadProgressSyncForAbandon() {
+        if (progressSyncStore == null) {
+            return;
+        }
+        OctavoProgressSyncStore.LoadStatus status =
+            progressSyncStore.load();
+        if (status != OctavoProgressSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoProgressSyncStore.LoadStatus.MISSING_CREATED) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                progressSyncStore.lastError(),
+                this::reloadProgressSyncForAbandon);
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        ProgressSyncRetryDescriptor descriptor =
+            progressSyncRetryDescriptor;
+        if (progressSyncAbandonAfterReload && pending == null
+            && descriptor != null && descriptor.pendingAction()) {
+            OctavoProgressPortable.Lane local =
+                progressSyncStore.localLane();
+            OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                currentProgressReceipt();
+            if (local != null
+                && local.sequence == descriptor.originSequence
+                && receipt != null
+                && receipt.choice == local.choice.toDisplay()
+                && progressStore.hasCanonicalCurrentRecord(
+                    receipt.choice)) {
+                progressSyncPending = null;
+                progressSyncPendingLoaded = false;
+                progressSyncRollbackRequested = false;
+                progressSyncAbandonAfterReload = false;
+                progressSyncRetryDescriptor = null;
+                finishProgressConvergence(receipt);
+                return;
+            }
+        }
+        if (!progressSyncAbandonAfterReload || pending == null
+            || descriptor == null
+            || !descriptor.matchesPendingIdentity(pending)) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The uncertain rollback could not be matched to its exact "
+                    + "pending progress transaction.",
+                this::reloadProgressSyncForAbandon);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncPendingLoaded = false;
+        progressSyncAwaitingExplicitRetry = false;
+        if (pending.direction
+            == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            progressSyncRollbackRequested = true;
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.pending(
+                    PROGRESS_RETRY_ROLLBACK, pending);
+            retryPendingProgressRollback(pending);
+            return;
+        }
+        if (pending.direction
+            == OctavoProgressSyncStore.PendingDirection.FORWARD) {
+            beginPendingProgressRollback(
+                pending,
+                "Restoring your progress display before dismissing the "
+                    + "interrupted update.");
+            return;
+        }
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            "The pending progress transaction has an invalid direction.",
+            this::reloadProgressSyncForAbandon);
+    }
+
+    private void reloadProgressSyncForLocalStage() {
+        ProgressSyncRetryDescriptor descriptor =
+            progressSyncRetryDescriptor;
+        if (descriptor == null || !descriptor.localStageAction()
+            || progressSyncStore == null || progressStore == null) {
+            reloadProgressSyncState();
+            return;
+        }
+        progressStore.load();
+        OctavoProgressStore.LoadStatus localStatus =
+            progressStore.loadStatus();
+        progressSyncO8pgFutureBlocked =
+            localStatus == OctavoProgressStore.LoadStatus.FUTURE;
+        OctavoProgressSyncStore.LoadStatus status =
+            progressSyncStore.load();
+        if (progressSyncO8pgFutureBlocked
+            || (status != OctavoProgressSyncStore.LoadStatus.LOADED
+                && status != OctavoProgressSyncStore.LoadStatus
+                    .MISSING_CREATED)) {
+            reportProgressSyncLoadStatus(status, localStatus);
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending != null) {
+            if (!localStageMatchesPending(descriptor, pending)) {
+                showProgressSyncFailure(
+                    "Progress display update needs attention",
+                    "The uncertain local display stage resolved to a "
+                        + "different pending transaction.",
+                    this::reloadProgressSyncForLocalStage);
+                return;
+            }
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.pending(
+                    PROGRESS_RETRY_FORWARD, pending);
+            progressSyncPending = pending;
+            progressSyncPendingLoaded = true;
+            showLoadedPendingProgressRetry(
+                pending, currentProgressReceipt());
+            return;
+        }
+        OctavoProgressPortable.Lane local =
+            progressSyncStore.localLane();
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        boolean exactPrior = local != null
+            && local.sequence == descriptor.originSequence
+            && local.choice.toDisplay()
+                == descriptor.localStageOriginDisplay()
+            && receipt != null
+            && receipt.choice == descriptor.localStageOriginDisplay()
+            && progressStore.hasCanonicalCurrentRecord(receipt.choice);
+        if (!exactPrior) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The uncertain local display stage could not be matched "
+                    + "to either exact durable outcome.",
+                this::reloadProgressSyncForLocalStage);
+            return;
+        }
+        progressSyncAwaitingExplicitRetry = true;
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            "The progress-display stage did not publish. Retry will stage "
+                + "the same display again.",
+            this::retryUnstagedLocalProgressApply);
+    }
+
+    private void retryUnstagedLocalProgressApply() {
+        ProgressSyncRetryDescriptor descriptor =
+            progressSyncRetryDescriptor;
+        if (descriptor == null || !descriptor.localStageAction()) {
+            reloadProgressSyncState();
+            return;
+        }
+        OctavoProgressPortable.Lane local =
+            progressSyncStore == null ? null
+                : progressSyncStore.localLane();
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (local == null || receipt == null
+            || local.sequence != descriptor.originSequence
+            || local.choice.toDisplay()
+                != descriptor.localStageOriginDisplay()
+            || receipt.choice != descriptor.localStageOriginDisplay()
+            || !progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The exact local progress origin is no longer current.",
+                this::reloadProgressSyncForLocalStage);
+            return;
+        }
+        progressSyncAwaitingExplicitRetry = false;
+        requestProgressDisplayFromNavigation(
+            descriptor.localStageTargetDisplay());
+    }
+
+    private static boolean localStageMatchesPending(
+        ProgressSyncRetryDescriptor descriptor,
+        OctavoProgressSyncStore.Pending pending) {
+        return descriptor != null && descriptor.localStageAction()
+            && pending != null
+            && pending.kind == OctavoProgressSyncStore.PendingKind.LOCAL
+            && pending.direction
+               == OctavoProgressSyncStore.PendingDirection.FORWARD
+            && pending.hasOriginLane
+            && pending.originLocalSequence == descriptor.originSequence
+            && pending.originDisplay()
+               == descriptor.localStageOriginDisplay()
+            && pending.targetDisplay()
+               == descriptor.localStageTargetDisplay();
+    }
+
+    private void reloadProgressSyncState() {
+        if (progressSyncStore == null || progressStore == null) {
+            return;
+        }
+        if (progressSyncAbandonAfterReload) {
+            reloadProgressSyncForAbandon();
+            return;
+        }
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.localStageAction()) {
+            reloadProgressSyncForLocalStage();
+            return;
+        }
+        OctavoProgressDisplay loadedDisplay = progressStore.load();
+        OctavoProgressStore.LoadStatus localStatus =
+            progressStore.loadStatus();
+        progressSyncO8pgFutureBlocked =
+            localStatus == OctavoProgressStore.LoadStatus.FUTURE;
+        OctavoProgressSyncStore.LoadStatus status =
+            progressSyncStore.load();
+        progressSyncPending = progressSyncStore.pending();
+        progressSyncPendingLoaded = progressSyncPending != null;
+        progressSyncRollbackRequested = progressSyncPending != null
+            && progressSyncPending.direction
+               == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+        progressSyncAwaitingExplicitRetry = false;
+        clearConsumedProgressReceipt();
+        if (progressSyncO8pgFutureBlocked
+            || (status != OctavoProgressSyncStore.LoadStatus.LOADED
+                && status != OctavoProgressSyncStore.LoadStatus
+                    .MISSING_CREATED)) {
+            reportProgressSyncLoadStatus(status, localStatus);
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (progressSyncPending != null) {
+            showLoadedPendingProgressRetry(
+                progressSyncPending, receipt);
+            return;
+        }
+        if (receipt == null) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "A settled reader frame is required before progress "
+                    + "synchronization can continue.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        if (localStatus == OctavoProgressStore.LoadStatus.CURRENT
+            && loadedDisplay != receipt.choice) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The saved and presented progress displays disagree. "
+                    + "Reopen the reader before retrying.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        processProgressPresentationReceipt();
+    }
+
+    private void requestProgressDisplayFromNavigation(
+        OctavoProgressDisplay requested) {
+        if (requested == null || surfaceView == null
+            || progressSyncStore == null || progressStore == null) {
+            requestNavigation(
+                OctavoNative.NAVIGATION_UNAVAILABLE,
+                "Updating the reader progress display.");
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        OctavoProgressPortable.Lane local =
+            progressSyncStore.localLane();
+        if (progressSyncO8pgFutureBlocked
+            || progressSyncAwaitingExplicitRetry
+            || progressSyncStore.pending() != null
+            || receipt == null || local == null
+            || local.choice.toDisplay() != receipt.choice
+            || !progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            closeNavigationPanel(false);
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "Finish the retained progress synchronization Retry "
+                    + "before changing this display.",
+                progressSyncStore.pending() == null
+                    ? this::reloadProgressSyncState
+                    : this::retryPendingProgressForward);
+            return;
+        }
+        if (requested == receipt.choice) {
+            requestNavigation(
+                OctavoNative.NAVIGATION_ALREADY_PRESENTED,
+                "The reader already uses this progress display.");
+            return;
+        }
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.localStage(local, requested);
+        OctavoProgressSyncStore.MutationResult staged =
+            progressSyncStore.stageLocalApply(
+                receipt.choice, requested);
+        if (staged != OctavoProgressSyncStore.MutationResult.UPDATED) {
+            closeNavigationPanel(false);
+            showProgressMutationFailure(
+                staged,
+                "The progress display change could not be staged.",
+                () -> requestProgressDisplayAfterRetry(requested));
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null || pending.targetDisplay() != requested) {
+            closeNavigationPanel(false);
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The staged progress display could not be verified.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncPendingLoaded = false;
+        progressSyncRollbackRequested = false;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.pending(
+                PROGRESS_RETRY_FORWARD, pending);
+        progressSyncOriginSpineIndex = receipt.anchorSpineIndex;
+        progressSyncOriginByteOffset = receipt.anchorByteOffset;
+        closeNavigationPanel(false);
+        requestPendingProgressTarget(
+            pending,
+            "Updating the reader progress display. Waiting for the reader "
+                + "to confirm it on screen.");
+    }
+
+    private void requestProgressDisplayAfterRetry(
+        OctavoProgressDisplay requested) {
+        progressSyncAwaitingExplicitRetry = false;
+        closeProgressSyncPrompt(false);
+        openNavigationPanel();
+        requestProgressDisplayFromNavigation(requested);
+    }
+
+    private void drainDeferredSyncPrompts() {
+        if (!activityResumed) {
+            return;
+        }
+        if (appearanceSyncPrompt == null
+            && appearanceSyncAwaitingExplicitRetry) {
+            presentRetainedAppearanceSyncFailure();
+        }
+        if (appearanceSyncPrompt != null) {
+            return;
+        }
+        if (appearanceSyncReviewInitialized) {
+            considerAppearanceSyncCandidate();
+        }
+        if (appearanceSyncPrompt != null) {
+            return;
+        }
+        if (readingPositionPrompt == null
+            && readingPositionReviewInitialized) {
+            considerReadingPositionCandidate();
+        }
+        if (readingPositionPrompt != null) {
+            return;
+        }
+        if (progressSyncPrompt == null
+            && progressSyncAwaitingExplicitRetry) {
+            presentRetainedProgressSyncFailure();
+        }
+        if (progressSyncPrompt != null) {
+            return;
+        }
+        if (progressSyncReviewInitialized) {
+            considerProgressSyncCandidate();
+        }
+    }
+
+    private void considerProgressSyncCandidate() {
+        if (progressSyncAwaitingExplicitRetry
+            || progressSyncO8pgFutureBlocked) {
+            presentRetainedProgressSyncFailure();
+            return;
+        }
+        if (!activityResumed || !progressSyncReviewInitialized
+            || surfaceView == null || progressSyncStore == null
+            || progressSyncStore.pending() != null
+            || progressSyncPrompt != null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || appearancePanel != null || navigationPanel != null
+            || searchPanel != null || bookmarksPanel != null
+            || surfaceView.hasSelectionForAccessibility()) {
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null
+            || !progressStore.hasCanonicalCurrentRecord(receipt.choice)) {
+            return;
+        }
+        List<OctavoProgressSyncStore.Candidate> candidates =
+            progressSyncStore.reviewCandidates(receipt.choice);
+        if (candidates.isEmpty()) {
+            return;
+        }
+        ProgressSyncRetryDescriptor retained =
+            progressSyncRetryDescriptor;
+        if (retained != null && retained.candidateAction()) {
+            OctavoProgressSyncStore.Candidate retryCandidate = null;
+            for (OctavoProgressSyncStore.Candidate current : candidates) {
+                if (retained.matches(current)) {
+                    retryCandidate = current;
+                    break;
+                }
+            }
+            if (retryCandidate == null) {
+                progressSyncRetryDescriptor = null;
+            } else {
+                progressSyncCandidate = retryCandidate;
+                if (ensureProgressSyncChoicePrompt(
+                        receipt.choice,
+                        retryCandidate.targetDisplay(),
+                        retryCandidate)) {
+                    showProgressSyncFailure(
+                        "Progress display update needs attention",
+                        "The earlier choice was not saved. Retry is safe; "
+                            + "the reading place has not moved.",
+                        progressCandidateRetry(retained.action));
+                }
+                return;
+            }
+        }
+        OctavoProgressSyncStore.Candidate candidate = candidates.get(0);
+        progressSyncCandidate = candidate;
+        if (!ensureProgressSyncChoicePrompt(
+                receipt.choice, candidate.targetDisplay(), candidate)) {
+            progressSyncCandidate = null;
+        }
+    }
+
+    private boolean progressSyncCandidateIsCurrent(
+        OctavoProgressSyncStore.Candidate candidate,
+        OctavoProgressDisplay exactPresentedOrigin) {
+        if (candidate == null || exactPresentedOrigin == null
+            || progressSyncStore == null
+            || progressSyncStore.pending() != null) {
+            return false;
+        }
+        for (OctavoProgressSyncStore.Candidate current
+                : progressSyncStore.reviewCandidates(
+                    exactPresentedOrigin)) {
+            if (candidate.sameIdentity(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void useProgressSyncCandidate() {
+        useProgressSyncCandidate(progressSyncCandidate);
+    }
+
+    private void useProgressSyncCandidate(
+        OctavoProgressSyncStore.Candidate expected) {
+        OctavoProgressSyncStore.Candidate candidate =
+            progressSyncCandidate;
+        if (expected == null || candidate == null
+            || !expected.sameIdentity(candidate)) {
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null
+            || !progressSyncCandidateIsCurrent(
+                candidate, receipt.choice)
+            || receipt.choice != candidate.originDisplay()) {
+            closeProgressSyncPrompt(false);
+            considerProgressSyncCandidate();
+            restoreProgressSyncFocusAfterClose();
+            return;
+        }
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.candidate(
+                PROGRESS_RETRY_USE, candidate);
+        OctavoProgressSyncStore.MutationResult staged =
+            progressSyncStore.stageRemoteApply(
+                candidate, receipt.choice);
+        if (staged != OctavoProgressSyncStore.MutationResult.UPDATED) {
+            showProgressMutationFailure(
+                staged,
+                "The other device's progress display could not be staged.",
+                this::useProgressSyncCandidate);
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null
+            || pending.targetDisplay() != candidate.targetDisplay()) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The staged progress display could not be verified.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncPendingLoaded = false;
+        progressSyncRollbackRequested = false;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.pending(
+                PROGRESS_RETRY_FORWARD, pending);
+        progressSyncCandidate = null;
+        progressSyncOriginSpineIndex = receipt.anchorSpineIndex;
+        progressSyncOriginByteOffset = receipt.anchorByteOffset;
+        requestPendingProgressTarget(
+            pending,
+            "Applying the other device's progress display. Waiting for "
+                + "the reader to confirm it on screen.");
+    }
+
+    private void keepCurrentProgressDisplay() {
+        keepCurrentProgressDisplay(progressSyncCandidate);
+    }
+
+    private void keepCurrentProgressDisplay(
+        OctavoProgressSyncStore.Candidate expected) {
+        OctavoProgressSyncStore.Candidate candidate =
+            progressSyncCandidate;
+        if (expected == null || candidate == null
+            || !expected.sameIdentity(candidate)) {
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null
+            || !progressSyncCandidateIsCurrent(
+                candidate, receipt.choice)
+            || receipt.choice != candidate.originDisplay()) {
+            closeProgressSyncPrompt(false);
+            considerProgressSyncCandidate();
+            restoreProgressSyncFocusAfterClose();
+            return;
+        }
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.candidate(
+                PROGRESS_RETRY_KEEP, candidate);
+        OctavoProgressSyncStore.MutationResult kept =
+            progressSyncStore.keep(candidate, receipt.choice);
+        if (!kept.succeeded()) {
+            showProgressMutationFailure(
+                kept,
+                "Keep mine could not be saved.",
+                this::keepCurrentProgressDisplay);
+            return;
+        }
+        progressSyncRetryDescriptor = null;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetry = null;
+        closeProgressSyncPrompt(false);
+        drainDeferredSyncPrompts();
+        if (appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && progressSyncPrompt == null) {
+            restoreProgressSyncFocusAfterClose();
+        }
+    }
+
+    private Runnable progressCandidateRetry(int action) {
+        switch (action) {
+            case PROGRESS_RETRY_USE:
+                return this::useProgressSyncCandidate;
+            case PROGRESS_RETRY_KEEP:
+                return this::keepCurrentProgressDisplay;
+            case PROGRESS_RETRY_DISMISS:
+                return this::dismissProgressSyncForBack;
+            default:
+                return this::reloadProgressSyncState;
+        }
+    }
+
+    private void dismissProgressSyncForBack() {
+        if (progressSyncO8pgFutureBlocked
+            || (progressStore != null
+                && progressStore.loadStatus()
+                   == OctavoProgressStore.LoadStatus.FUTURE)) {
+            // Back cannot turn a preserved newer O8PG into a rollback or a
+            // durable Later decision. Keep the recovery surface in place and
+            // require an explicit reload without touching either file or the
+            // currently presented Surface choice.
+            progressSyncO8pgFutureBlocked = true;
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The saved progress display was written by a newer "
+                    + "version. Its bytes were preserved and "
+                    + "synchronization is blocked.",
+                this::reloadProgressSyncState);
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (pending != null) {
+            if (surfaceView != null
+                && surfaceView.hasNavigationPending()) {
+                if (progressSyncPrompt != null) {
+                    progressSyncPrompt.showWorking(
+                        "Waiting for the progress display to settle.");
+                }
+                return;
+            }
+            if (!pending.hasOriginLane) {
+                if (progressSyncPrompt != null) {
+                    progressSyncPrompt.announceForAccessibility(
+                        "Retry is required to finish the first progress "
+                            + "display confirmation");
+                }
+                return;
+            }
+            if (pending.direction
+                == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+                retryPendingProgressRollback(pending);
+            } else {
+                beginPendingProgressRollback(
+                    pending,
+                    "Restoring your progress display before dismissing "
+                        + "the interrupted update.");
+            }
+            return;
+        }
+        OctavoProgressSyncStore.Candidate candidate =
+            progressSyncCandidate;
+        if (candidate == null) {
+            if (progressSyncAwaitingExplicitRetry
+                || progressSyncO8pgFutureBlocked) {
+                if (progressSyncPrompt != null) {
+                    progressSyncPrompt.announceForAccessibility(
+                        "Retry is required to finish the progress display "
+                            + "update");
+                }
+                return;
+            }
+            closeProgressSyncPrompt(true);
+            return;
+        }
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt == null
+            || !progressSyncCandidateIsCurrent(
+                candidate, receipt.choice)
+            || receipt.choice != candidate.originDisplay()) {
+            closeProgressSyncPrompt(false);
+            considerProgressSyncCandidate();
+            restoreProgressSyncFocusAfterClose();
+            return;
+        }
+        progressSyncRetryDescriptor =
+            ProgressSyncRetryDescriptor.candidate(
+                PROGRESS_RETRY_DISMISS, candidate);
+        OctavoProgressSyncStore.MutationResult dismissed =
+            progressSyncStore.dismiss(candidate, receipt.choice);
+        if (!dismissed.succeeded()) {
+            showProgressMutationFailure(
+                dismissed,
+                "Later could not be saved.",
+                this::dismissProgressSyncForBack);
+            return;
+        }
+        progressSyncRetryDescriptor = null;
+        progressSyncAwaitingExplicitRetry = false;
+        progressSyncRetry = null;
+        closeProgressSyncPrompt(false);
+        drainDeferredSyncPrompts();
+        if (appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && progressSyncPrompt == null) {
+            restoreProgressSyncFocusAfterClose();
+        }
+    }
+
+    private boolean ensureProgressSyncChoicePrompt(
+        OctavoProgressDisplay presented,
+        OctavoProgressDisplay remote,
+        OctavoProgressSyncStore.Candidate expected) {
+        if (readerRoot == null || surfaceView == null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || presented == null || remote == null
+            || presented == remote
+            || surfaceView.hasSelectionForAccessibility()) {
+            return false;
+        }
+        if (progressSyncPrompt != null
+            && progressSyncPromptCandidate != null
+            && progressSyncPromptCandidate.sameIdentity(expected)) {
+            try {
+                progressSyncPrompt.updateChoices(presented, remote);
+                return true;
+            } catch (IllegalArgumentException exception) {
+                closeProgressSyncPrompt(false);
+            }
+        } else if (progressSyncPrompt != null) {
+            closeProgressSyncPrompt(false);
+        }
+        closeReaderPanelsForProgressSync();
+        OctavoProgressSyncPrompt prompt;
+        long generation = progressSyncPromptGeneration + 1;
+        try {
+            prompt = new OctavoProgressSyncPrompt(
+                this, appearance, presented, remote,
+                progressSyncPromptListener(expected, generation));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            showOpenFailure(
+                "Progress-display confirmation is unavailable; reopen "
+                    + "the book to retry");
+            return false;
+        }
+        progressSyncPromptGeneration = generation;
+        progressSyncPromptCandidate = expected;
+        return installProgressSyncPrompt(prompt);
+    }
+
+    private boolean ensureProgressSyncPendingPrompt(
+        OctavoProgressSyncStore.Pending pending) {
+        if (pending == null || readerRoot == null || surfaceView == null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || surfaceView.hasSelectionForAccessibility()) {
+            return false;
+        }
+        if (progressSyncPrompt != null) {
+            return true;
+        }
+        closeReaderPanelsForProgressSync();
+        OctavoProgressDisplay current = progressDisplay;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt != null) {
+            current = receipt.choice;
+        }
+        OctavoProgressDisplay other = current == pending.targetDisplay()
+            ? pending.originDisplay() : pending.targetDisplay();
+        OctavoProgressSyncPrompt prompt;
+        long generation = progressSyncPromptGeneration + 1;
+        try {
+            prompt = other != null && other != current
+                ? new OctavoProgressSyncPrompt(
+                    this, appearance, current, other,
+                    progressSyncPromptListener(null, generation))
+                : new OctavoProgressSyncPrompt(
+                    this, appearance, current,
+                    progressSyncPromptListener(null, generation));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            showOpenFailure(
+                "Progress-display recovery is unavailable; reopen the "
+                    + "book to retry");
+            return false;
+        }
+        progressSyncPromptGeneration = generation;
+        return installProgressSyncPrompt(prompt);
+    }
+
+    private boolean ensureProgressSyncFailurePrompt() {
+        if (readerRoot == null || surfaceView == null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || surfaceView.hasSelectionForAccessibility()
+            || (progressSyncPrompt == null
+                && !hasSettledProgressReceiptEvidence())) {
+            return false;
+        }
+        if (progressSyncPrompt != null) {
+            return true;
+        }
+        closeReaderPanelsForProgressSync();
+        OctavoProgressDisplay current = progressDisplay == null
+            ? OctavoProgressDisplay.defaults() : progressDisplay;
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        if (receipt != null) {
+            current = receipt.choice;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        OctavoProgressSyncStore.Candidate candidate =
+            progressSyncCandidate;
+        OctavoProgressDisplay other = pending != null
+            ? (current == pending.targetDisplay()
+                ? pending.originDisplay() : pending.targetDisplay())
+            : candidate == null ? null : candidate.targetDisplay();
+        OctavoProgressSyncPrompt prompt;
+        long generation = progressSyncPromptGeneration + 1;
+        try {
+            prompt = other != null && other != current
+                ? new OctavoProgressSyncPrompt(
+                    this, appearance, current, other,
+                    progressSyncPromptListener(null, generation))
+                : new OctavoProgressSyncPrompt(
+                    this, appearance, current,
+                    progressSyncPromptListener(null, generation));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            showOpenFailure(
+                "Progress-display recovery is unavailable; reopen the "
+                    + "book to retry");
+            return false;
+        }
+        progressSyncPromptGeneration = generation;
+        return installProgressSyncPrompt(prompt);
+    }
+
+    private OctavoProgressSyncPrompt.Listener progressSyncPromptListener(
+        OctavoProgressSyncStore.Candidate expected,
+        long generation) {
+        return new OctavoProgressSyncPrompt.Listener() {
+            @Override
+            public void onUseDisplay() {
+                if (progressSyncPromptGeneration != generation) {
+                    return;
+                }
+                useProgressSyncCandidate(expected);
+            }
+
+            @Override
+            public void onKeepMine() {
+                if (progressSyncPromptGeneration != generation) {
+                    return;
+                }
+                keepCurrentProgressDisplay(expected);
+            }
+
+            @Override
+            public void onRetry() {
+                if (progressSyncPromptGeneration != generation) {
+                    return;
+                }
+                Runnable retry = progressSyncRetry;
+                progressSyncRetry = null;
+                progressSyncAwaitingExplicitRetry = false;
+                if (retry != null) {
+                    retry.run();
+                    return;
+                }
+                OctavoProgressSyncStore.Pending pending =
+                    progressSyncStore == null ? null
+                        : progressSyncStore.pending();
+                if (pending != null
+                    && pending.direction
+                       == OctavoProgressSyncStore.PendingDirection
+                           .ROLLBACK) {
+                    retryPendingProgressRollback(pending);
+                } else if (pending != null) {
+                    retryPendingProgressForward();
+                } else {
+                    reloadProgressSyncState();
+                }
+            }
+        };
+    }
+
+    private boolean installProgressSyncPrompt(
+        OctavoProgressSyncPrompt prompt) {
+        if (readerRoot == null || surfaceView == null || prompt == null) {
+            return false;
+        }
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(8));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overlay.setBackgroundColor(prompt.overlayColor());
+        FrameLayout.LayoutParams layout =
+            new FrameLayout.LayoutParams(
+                progressSyncPromptWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER);
+        layout.leftMargin = dp(20);
+        layout.topMargin = dp(20);
+        layout.rightMargin = dp(20);
+        layout.bottomMargin = dp(20);
+        overlay.addView(prompt, layout);
+        readerRoot.addView(overlay, matchParentLayout());
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        progressSyncOverlay = overlay;
+        progressSyncPrompt = prompt;
+        obscureFailureBannerForModalPrompt();
+        int duration = progressSyncPromptMotionDuration();
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            prompt.setTranslationY(dp(16));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            prompt.animate().translationY(0.0f)
+                .setDuration(duration).start();
+        }
+        prompt.post(() -> {
+            if (progressSyncPrompt != prompt) {
+                return;
+            }
+            View focus = prompt.preferredInitialFocus();
+            focus.requestFocus();
+            focus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            prompt.announceForAccessibility(
+                "Progress display confirmation opened");
+        });
+        return true;
+    }
+
+    private void closeReaderPanelsForProgressSync() {
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
+        }
+    }
+
+    private void showProgressSyncFailure(String heading,
+                                         String message,
+                                         Runnable retry) {
+        if (progressSyncO8pgFutureBlocked
+            || (progressStore != null
+                && progressStore.loadStatus()
+                   == OctavoProgressStore.LoadStatus.FUTURE)) {
+            progressSyncO8pgFutureBlocked = true;
+            heading = "Progress display update needs attention";
+            message = "The saved progress display was written by a newer "
+                + "version. Its bytes were preserved and synchronization "
+                + "is blocked.";
+            retry = this::reloadProgressSyncState;
+        }
+        progressSyncAwaitingExplicitRetry = true;
+        progressSyncRetry = retry;
+        progressSyncFailureHeading = TextUtils.isEmpty(heading)
+            ? "Progress display update needs attention" : heading;
+        progressSyncFailureMessage = TextUtils.isEmpty(message)
+            ? "The progress-display update was not saved. Retry is safe."
+            : message;
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (pending != null) {
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.pending(
+                    pending.direction
+                        == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                        ? PROGRESS_RETRY_ROLLBACK
+                        : PROGRESS_RETRY_FORWARD,
+                    pending);
+        } else if (progressSyncRetryDescriptor == null) {
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.reload();
+        }
+        lastOpenError = progressSyncFailureMessage;
+        if (presentRetainedProgressSyncFailure()) {
+            return;
+        }
+        if (readerRoot == null
+            || (activityResumed
+                && !hasSettledProgressReceiptEvidence()
+                && appearanceSyncPrompt == null
+                && readingPositionPrompt == null
+                && appearancePanel == null && navigationPanel == null
+                && searchPanel == null && bookmarksPanel == null
+                && (surfaceView == null
+                    || !surfaceView.hasSelectionForAccessibility()))) {
+            showOpenFailure(lastOpenError);
+        }
+    }
+
+    private boolean presentRetainedProgressSyncFailure() {
+        if (!progressSyncAwaitingExplicitRetry || !activityResumed
+            || readerRoot == null || surfaceView == null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || appearancePanel != null || navigationPanel != null
+            || searchPanel != null || bookmarksPanel != null
+            || surfaceView.hasSelectionForAccessibility()
+            || (progressSyncPrompt == null
+                && !hasSettledProgressReceiptEvidence())) {
+            return false;
+        }
+        if (progressSyncRetry == null) {
+            progressSyncRetry = restoredProgressSyncRetry();
+        }
+        if (!ensureProgressSyncFailurePrompt()) {
+            return false;
+        }
+        String heading = TextUtils.isEmpty(progressSyncFailureHeading)
+            ? "Progress display update needs attention"
+            : progressSyncFailureHeading;
+        String message = TextUtils.isEmpty(progressSyncFailureMessage)
+            ? progressSyncStore != null
+                && !TextUtils.isEmpty(progressSyncStore.lastError())
+                ? progressSyncStore.lastError()
+                : "The earlier progress-display update was not saved. "
+                    + "Retry is required; this frame will not retry it "
+                    + "automatically."
+            : progressSyncFailureMessage;
+        progressSyncPrompt.showRetryableFailure(heading, message);
+        View focus = progressSyncPrompt.preferredInitialFocus();
+        focus.post(() -> {
+            if (progressSyncPrompt == null || !focus.isShown()) {
+                return;
+            }
+            focus.requestFocus();
+            focus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+        });
+        return true;
+    }
+
+    private Runnable restoredProgressSyncRetry() {
+        if (progressSyncO8pgFutureBlocked
+            || (progressStore != null
+                && progressStore.loadStatus()
+                   == OctavoProgressStore.LoadStatus.FUTURE)) {
+            // A preserved newer O8PG blocks every restored action. In
+            // particular, a durable pending/candidate descriptor must not
+            // request a Surface mode before a reload proves the block gone.
+            progressSyncO8pgFutureBlocked = true;
+            return this::reloadProgressSyncState;
+        }
+        if (progressSyncAbandonAfterReload) {
+            return this::reloadProgressSyncForAbandon;
+        }
+        if (progressSyncReviewEpochBeforeRetry >= 0) {
+            return this::reconcileProgressSyncReviewEpoch;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        if (pending != null
+            && pending.direction
+               == OctavoProgressSyncStore.PendingDirection.ROLLBACK) {
+            return () -> retryPendingProgressRollback(pending);
+        }
+        if (pending != null) {
+            return this::retryPendingProgressForward;
+        }
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.candidateAction()) {
+            return progressCandidateRetry(
+                progressSyncRetryDescriptor.action);
+        }
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.localStageAction()) {
+            return this::reloadProgressSyncForLocalStage;
+        }
+        return this::reloadProgressSyncState;
+    }
+
+    private boolean hasSettledProgressReceiptEvidence() {
+        OctavoSurfaceView.ProgressPresentationReceipt receipt =
+            currentProgressReceipt();
+        return receipt != null && receipt.choice != null
+            && receipt.strictResumeSettled;
+    }
+
+    private void restorePendingProgressAfterLifecycle() {
+        if (progressSyncStore == null || surfaceView == null) {
+            return;
+        }
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore.pending();
+        if (pending == null) {
+            return;
+        }
+        if (progressSyncRetryDescriptor != null
+            && progressSyncRetryDescriptor.localStageAction()) {
+            if (!localStageMatchesPending(
+                    progressSyncRetryDescriptor, pending)) {
+                showProgressSyncFailure(
+                    "Progress display update needs attention",
+                    "The restored local display Retry does not match the "
+                        + "durable pending transaction.",
+                    this::reloadProgressSyncForLocalStage);
+                return;
+            }
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.pending(
+                    PROGRESS_RETRY_FORWARD, pending);
+        }
+        if (progressSyncAbandonAfterReload) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The interrupted dismissal must be reconciled before the "
+                    + "progress display can continue.",
+                this::reloadProgressSyncForAbandon);
+            return;
+        }
+        progressSyncPending = pending;
+        progressSyncRollbackRequested = pending.direction
+            == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+        if (!progressSyncAwaitingExplicitRetry) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The progress-display update was paused before its durable "
+                    + "confirmation finished. Retry is safe.",
+                pending.direction
+                    == OctavoProgressSyncStore.PendingDirection.ROLLBACK
+                    ? () -> retryPendingProgressRollback(pending)
+                    : this::retryPendingProgressForward);
+        }
+    }
+
+    private void showProgressMutationFailure(
+        OctavoProgressSyncStore.MutationResult result,
+        String fallback,
+        Runnable retry) {
+        String detail = progressSyncStore == null
+            ? null : progressSyncStore.lastError();
+        String message = TextUtils.isEmpty(detail) ? fallback : detail;
+        Runnable exactRetry = result
+                == OctavoProgressSyncStore.MutationResult.PUBLISH_UNCERTAIN
+            || result == OctavoProgressSyncStore.MutationResult.BLOCKED
+            ? this::reloadProgressSyncState : retry;
+        showProgressSyncFailure(
+            "Progress display update needs attention",
+            message,
+            exactRetry);
+    }
+
+    private int progressSyncPromptWidth() {
+        int displayWidth = getResources().getDisplayMetrics().widthPixels;
+        int availableWidth = readerRoot == null
+                || readerRoot.getWidth() <= 0
+            ? displayWidth : readerRoot.getWidth();
+        return Math.min(
+            appearancePanelWidth(),
+            Math.max(availableWidth - dp(40), 1));
+    }
+
+    private void updateProgressSyncPromptBounds() {
+        if (progressSyncPrompt == null
+            || !(progressSyncPrompt.getLayoutParams()
+                instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams layout =
+            (FrameLayout.LayoutParams)
+                progressSyncPrompt.getLayoutParams();
+        layout.width = progressSyncPromptWidth();
+        progressSyncPrompt.setLayoutParams(layout);
+    }
+
+    private int progressSyncPromptMotionDuration() {
+        if (progressSyncPrompt != null
+            && progressSyncPrompt.suppressHostMotion()) {
+            return 0;
+        }
+        return sideSheetMotionDuration(
+            OctavoDesignTokens.forAppearance(appearance));
+    }
+
+    private void closeProgressSyncPrompt(boolean restoreFocus) {
+        boolean ownedPrompt = progressSyncOverlay != null
+            || progressSyncPrompt != null;
+        progressSyncPromptGeneration += 1;
+        if (progressSyncOverlay != null) {
+            progressSyncOverlay.animate().cancel();
+            if (progressSyncOverlay.getParent() instanceof ViewGroup) {
+                ((ViewGroup)progressSyncOverlay.getParent())
+                    .removeView(progressSyncOverlay);
+            }
+        }
+        if (progressSyncPrompt != null) {
+            progressSyncPrompt.animate().cancel();
+        }
+        progressSyncOverlay = null;
+        progressSyncPrompt = null;
+        progressSyncPromptCandidate = null;
+        progressSyncCandidate = null;
+        if (!ownedPrompt) {
+            return;
+        }
+        restoreReaderAccessibilityBoundary();
+        if (appearanceSyncPrompt == null
+            && readingPositionPrompt == null) {
+            restoreFailureBannerAfterModalPrompt();
+        }
+        if (restoreFocus) {
+            drainDeferredSyncPrompts();
+            if (appearanceSyncPrompt == null
+                && readingPositionPrompt == null
+                && progressSyncPrompt == null) {
+                restoreProgressSyncFocusAfterClose();
+            }
+        }
+    }
+
+    private void restoreProgressSyncFocusAfterClose() {
+        if (progressSyncPrompt != null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || surfaceView == null || !surfaceView.isShown()) {
+            return;
+        }
+        View target = readerProgress != null && readerProgress.isShown()
+            ? readerProgress : surfaceView;
+        target.requestFocus();
+        target.post(() -> {
+            if (progressSyncPrompt != null
+                || appearanceSyncPrompt != null
+                || readingPositionPrompt != null
+                || !target.isShown()) {
+                return;
+            }
+            target.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            target.announceForAccessibility(
+                "Progress display confirmation closed");
+        });
     }
 
     private void flushAppearancePersistence() {
@@ -4919,6 +7471,14 @@ public final class OctavoActivity extends Activity {
             appearanceSyncOverlay.setBackgroundColor(
                 appearanceSyncPrompt.overlayColor());
         }
+        if (progressSyncPrompt != null) {
+            progressSyncPrompt.applyAppearance(appearance);
+        }
+        if (progressSyncOverlay != null
+            && progressSyncPrompt != null) {
+            progressSyncOverlay.setBackgroundColor(
+                progressSyncPrompt.overlayColor());
+        }
         if (failureBanner != null) {
             failureBanner.setTextColor(tokens.error);
             failureBanner.setBackgroundColor(tokens.dialogSurface);
@@ -4952,7 +7512,8 @@ public final class OctavoActivity extends Activity {
             || activeBook == null || annotationStore == null
             || bookmarksPanel != null
             || readingPositionPrompt != null
-            || appearanceSyncPrompt != null) {
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -5309,7 +7870,8 @@ public final class OctavoActivity extends Activity {
         if (readerRoot == null || surfaceView == null
             || navigationPanel != null
             || readingPositionPrompt != null
-            || appearanceSyncPrompt != null) {
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -5410,11 +7972,7 @@ public final class OctavoActivity extends Activity {
                 @Override
                 public void onProgressDisplayRequested(
                     OctavoProgressDisplay requested) {
-                    requestNavigation(
-                        surfaceView == null
-                            ? OctavoNative.NAVIGATION_UNAVAILABLE
-                            : surfaceView.requestProgressDisplay(requested),
-                        "Updating the reader progress display.");
+                    requestProgressDisplayFromNavigation(requested);
                 }
                 });
         } catch (IllegalStateException failure) {
@@ -5494,7 +8052,8 @@ public final class OctavoActivity extends Activity {
         if (readerRoot == null || surfaceView == null
             || searchPanel != null
             || readingPositionPrompt != null
-            || appearanceSyncPrompt != null) {
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -5681,7 +8240,8 @@ public final class OctavoActivity extends Activity {
         if (readerRoot == null || surfaceView == null
             || appearancePanel != null
             || readingPositionPrompt != null
-            || appearanceSyncPrompt != null) {
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null) {
             return;
         }
         if (navigationPanel != null) {
@@ -5810,10 +8370,11 @@ public final class OctavoActivity extends Activity {
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
         if (restoreFocus) {
-            considerAppearanceSyncCandidate();
+            drainDeferredSyncPrompts();
         }
         if (restoreFocus && appearanceSyncPrompt == null
             && readingPositionPrompt == null
+            && progressSyncPrompt == null
             && focusReturn != null
             && focusReturn.isShown()) {
             focusReturn.requestFocus();
@@ -5821,6 +8382,7 @@ public final class OctavoActivity extends Activity {
                 if (appearancePanel != null
                     || appearanceSyncPrompt != null
                     || readingPositionPrompt != null
+                    || progressSyncPrompt != null
                     || !focusReturn.isShown()) {
                     return;
                 }
@@ -5868,16 +8430,18 @@ public final class OctavoActivity extends Activity {
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
         if (restoreFocus) {
-            considerAppearanceSyncCandidate();
+            drainDeferredSyncPrompts();
         }
         if (restoreFocus && appearanceSyncPrompt == null
             && readingPositionPrompt == null
+            && progressSyncPrompt == null
             && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
                 if (navigationPanel != null
                     || appearanceSyncPrompt != null
                     || readingPositionPrompt != null
+                    || progressSyncPrompt != null
                     || !focusReturn.isShown()) {
                     return;
                 }
@@ -5940,16 +8504,18 @@ public final class OctavoActivity extends Activity {
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
         if (restoreFocus) {
-            considerAppearanceSyncCandidate();
+            drainDeferredSyncPrompts();
         }
         if (restoreFocus && appearanceSyncPrompt == null
             && readingPositionPrompt == null
+            && progressSyncPrompt == null
             && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
                 if (searchPanel != null
                     || appearanceSyncPrompt != null
                     || readingPositionPrompt != null
+                    || progressSyncPrompt != null
                     || !focusReturn.isShown()) {
                     return;
                 }
@@ -6003,16 +8569,18 @@ public final class OctavoActivity extends Activity {
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
         if (restoreFocus) {
-            considerAppearanceSyncCandidate();
+            drainDeferredSyncPrompts();
         }
         if (restoreFocus && appearanceSyncPrompt == null
             && readingPositionPrompt == null
+            && progressSyncPrompt == null
             && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
                 if (bookmarksPanel != null
                     || appearanceSyncPrompt != null
                     || readingPositionPrompt != null
+                    || progressSyncPrompt != null
                     || !focusReturn.isShown()) {
                     return;
                 }
@@ -6267,9 +8835,9 @@ public final class OctavoActivity extends Activity {
     }
 
     private void releaseReader() {
-        flushProgressPersistence();
         closeAppearanceSyncPrompt(false);
         closeReadingPositionPrompt(false);
+        closeProgressSyncPrompt(false);
         readingPositionChoiceRetry = null;
         if (failureBanner != null
             && failureBanner.getParent() instanceof ViewGroup) {
@@ -6282,6 +8850,8 @@ public final class OctavoActivity extends Activity {
         readingPositionReviewInitialized = false;
         appearanceSyncReviewPending = false;
         appearanceSyncReviewInitialized = false;
+        progressSyncReviewPending = false;
+        progressSyncReviewInitialized = false;
         OctavoAppearanceSyncStore.Pending durableAppearancePending =
             appearanceSyncStore == null ? null
                 : appearanceSyncStore.pending();
@@ -6312,6 +8882,41 @@ public final class OctavoActivity extends Activity {
         consumedAppearanceReceiptProfile = null;
         consumedAppearanceReceiptGeneration = -1;
         consumedAppearanceReceiptFrame = -1;
+        OctavoProgressSyncStore.Pending durableProgressPending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        progressSyncPending = durableProgressPending;
+        progressSyncPendingLoaded = durableProgressPending != null;
+        progressSyncRollbackRequested = durableProgressPending != null
+            && durableProgressPending.direction
+               == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+        ProgressSyncRetryDescriptor retainedProgressRetry =
+            progressSyncRetryDescriptor;
+        if (durableProgressPending != null) {
+            progressSyncRetryDescriptor =
+                ProgressSyncRetryDescriptor.pending(
+                    progressSyncRollbackRequested
+                        ? PROGRESS_RETRY_ROLLBACK
+                        : PROGRESS_RETRY_FORWARD,
+                    durableProgressPending);
+        } else if (retainedProgressRetry != null
+                   && (retainedProgressRetry.localStageAction()
+                       || retainedProgressRetry.candidateAction())) {
+            progressSyncRetryDescriptor = retainedProgressRetry;
+        } else {
+            progressSyncRetryDescriptor = null;
+        }
+        progressSyncAwaitingExplicitRetry =
+            (progressSyncRetryDescriptor != null
+             && progressSyncRetryDescriptor.localStageAction())
+            || progressSyncAbandonAfterReload;
+        progressSyncCandidate = null;
+        progressSyncRetry = null;
+        progressReceiptSurface = null;
+        latestProgressReceipt = null;
+        clearConsumedProgressReceipt();
+        progressSyncOriginSpineIndex = -1;
+        progressSyncOriginByteOffset = -1;
         hasPresentedReadingPosition = false;
         presentedReadingSpineIndex = 0;
         presentedReadingByteOffset = 0;
@@ -6402,7 +9007,8 @@ public final class OctavoActivity extends Activity {
         readerRoot.addView(banner, layout);
         failureBanner = banner;
         if (readingPositionPrompt != null
-            || appearanceSyncPrompt != null) {
+            || appearanceSyncPrompt != null
+            || progressSyncPrompt != null) {
             failureBannerAnnouncementDeferred = true;
             obscureFailureBannerForModalPrompt();
         } else {
@@ -6753,6 +9359,140 @@ public final class OctavoActivity extends Activity {
         processAppearancePresentationReceipt();
     }
 
+    boolean simulateRemoteProgressForTesting(
+        String deviceId,
+        long sequence,
+        OctavoProgressDisplay display) {
+        try {
+            return mergeSimulatedRemoteProgressForTesting(
+                OctavoProgressPortable.simulatedRemoteBytes(
+                    deviceId, sequence, display));
+        } catch (IOException | RuntimeException exception) {
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The simulated remote progress display is invalid.",
+                this::reloadProgressSyncState);
+            return false;
+        }
+    }
+
+    boolean mergeSimulatedRemoteProgressForTesting(byte[] bytes) {
+        if (progressSyncStore == null) {
+            return false;
+        }
+        if (progressSyncO8pgFutureBlocked
+            || progressStore == null
+            || progressStore.loadStatus()
+               == OctavoProgressStore.LoadStatus.FUTURE) {
+            progressSyncO8pgFutureBlocked = true;
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                "The saved progress display was written by a newer "
+                    + "version. Its bytes were preserved and "
+                    + "synchronization is blocked.",
+                this::reloadProgressSyncState);
+            return false;
+        }
+        OctavoProgressSyncStore.PortableMergeResult result =
+            progressSyncStore.mergePortableBytes(bytes);
+        if (!result.succeeded()) {
+            Runnable retry = this::reloadProgressSyncState;
+            if (bytes != null
+                && bytes.length
+                   <= OctavoProgressPortable.maximumFutureBytes()) {
+                byte[] retryBytes = bytes.clone();
+                retry = () -> mergeSimulatedRemoteProgressForTesting(
+                    retryBytes);
+            }
+            showProgressSyncFailure(
+                "Progress display update needs attention",
+                progressSyncStore.lastError(),
+                retry);
+            return false;
+        }
+        if (result
+            == OctavoProgressSyncStore.PortableMergeResult
+                .FUTURE_RETAINED) {
+            showOpenFailure(progressSyncStore.lastError());
+            return true;
+        }
+        if (result
+            == OctavoProgressSyncStore.PortableMergeResult.MERGED) {
+            boolean promptWasVisible = progressSyncPrompt != null;
+            if (progressSyncStore.pending() == null) {
+                closeProgressSyncPrompt(false);
+                OctavoSurfaceView.ProgressPresentationReceipt receipt =
+                    currentProgressReceipt();
+                if (receipt != null
+                    && progressStore.hasCanonicalCurrentRecord(
+                        receipt.choice)) {
+                    finishProgressConvergence(receipt);
+                } else {
+                    considerProgressSyncCandidate();
+                }
+                if (promptWasVisible
+                    && appearanceSyncPrompt == null
+                    && readingPositionPrompt == null
+                    && progressSyncPrompt == null) {
+                    restoreProgressSyncFocusAfterClose();
+                }
+            }
+        }
+        return true;
+    }
+
+    OctavoProgressSyncPrompt progressSyncPromptForTesting() {
+        return progressSyncPrompt;
+    }
+
+    OctavoProgressSyncStore progressSyncStoreForTesting() {
+        return progressSyncStore;
+    }
+
+    OctavoProgressSyncStore.Candidate
+        pendingProgressSyncCandidateForTesting() {
+        return progressSyncCandidate;
+    }
+
+    OctavoProgressSyncStore.Pending
+        pendingProgressTransactionForTesting() {
+        return progressSyncStore == null ? null
+            : progressSyncStore.pending();
+    }
+
+    boolean progressSyncAwaitingExplicitRetryForTesting() {
+        return progressSyncAwaitingExplicitRetry;
+    }
+
+    boolean progressSyncRollbackRequestedForTesting() {
+        OctavoProgressSyncStore.Pending pending =
+            progressSyncStore == null ? null
+                : progressSyncStore.pending();
+        return pending != null
+            && pending.direction
+               == OctavoProgressSyncStore.PendingDirection.ROLLBACK;
+    }
+
+    boolean progressSyncReviewPendingForTesting() {
+        return progressSyncReviewPending;
+    }
+
+    boolean progressSyncReviewInitializedForTesting() {
+        return progressSyncReviewInitialized;
+    }
+
+    boolean progressSyncO8pgFutureBlockedForTesting() {
+        return progressSyncO8pgFutureBlocked;
+    }
+
+    int progressSyncPromptMotionDurationForTesting() {
+        return progressSyncPromptMotionDuration();
+    }
+
+    void processProgressPresentationReceiptForTesting() {
+        processProgressPresentationReceipt();
+    }
+
     long[] currentReadingPageForTesting() {
         return !hasPresentedReadingPosition
             ? null
@@ -6827,11 +9567,11 @@ public final class OctavoActivity extends Activity {
     }
 
     void flushProgressPersistenceForTesting() {
-        flushProgressPersistence();
+        processProgressPresentationReceipt();
     }
 
     void queuePresentedProgressPersistenceForTesting() {
-        persistPresentedProgress(progressDisplay);
+        processProgressPresentationReceipt();
     }
 
     void requestAppearanceForTesting(OctavoAppearance requested) {
