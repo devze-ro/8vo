@@ -35,8 +35,147 @@ public final class OctavoActivity extends Activity {
         "octavo.port6.active_book_key";
     private static final String STATE_CHROME_VISIBLE =
         "octavo.port7.chrome_visible";
+    private static final String STATE_POSITION_REVIEW_PENDING =
+        "octavo.port11.position_review_pending";
+    private static final String STATE_POSITION_RETRY_ACTION =
+        "octavo.port11.position_retry_action";
+    private static final String STATE_POSITION_RETRY_BOOK =
+        "octavo.port11.position_retry_book";
+    private static final String STATE_POSITION_RETRY_DEVICE =
+        "octavo.port11.position_retry_device";
+    private static final String STATE_POSITION_RETRY_SEQUENCE =
+        "octavo.port11.position_retry_sequence";
+    private static final String STATE_POSITION_RETRY_SPINE =
+        "octavo.port11.position_retry_spine";
+    private static final String STATE_POSITION_RETRY_BYTE =
+        "octavo.port11.position_retry_byte";
+    private static final String STATE_POSITION_RETRY_EPOCH =
+        "octavo.port11.position_retry_epoch";
+    private static final String STATE_POSITION_RETRY_ORIGIN_SEQUENCE =
+        "octavo.port11.position_retry_origin_sequence";
+    private static final String STATE_POSITION_RETRY_ORIGIN_SPINE =
+        "octavo.port11.position_retry_origin_spine";
+    private static final String STATE_POSITION_RETRY_ORIGIN_BYTE =
+        "octavo.port11.position_retry_origin_byte";
+    private static final int POSITION_RETRY_MARK_GO = 1;
+    private static final int POSITION_RETRY_STAY = 2;
+    private static final int POSITION_RETRY_DISMISS = 3;
     private static final int SEARCH_BUSY_RETRY_LIMIT = 96;
     private static final long SEARCH_BUSY_RETRY_DELAY_MILLIS = 32;
+
+    private static final class ReadingPositionChoiceRetry {
+        final int action;
+        final String bookDigest;
+        final String deviceId;
+        final long sequence;
+        final long spineIndex;
+        final long byteOffset;
+        final long reviewEpoch;
+        final long originSequence;
+        final long originSpineIndex;
+        final long originByteOffset;
+
+        ReadingPositionChoiceRetry(
+            int action,
+            OctavoReadingPositionStore.Candidate candidate) {
+            this(action,
+                 candidate.bookDigest,
+                 candidate.deviceId,
+                 candidate.sequence,
+                 candidate.spineIndex,
+                 candidate.byteOffset,
+                 candidate.reviewEpoch,
+                 candidate.originSequence,
+                 candidate.originSpineIndex,
+                 candidate.originByteOffset);
+        }
+
+        private ReadingPositionChoiceRetry(int action,
+                                           String bookDigest,
+                                           String deviceId,
+                                           long sequence,
+                                           long spineIndex,
+                                           long byteOffset,
+                                           long reviewEpoch,
+                                           long originSequence,
+                                           long originSpineIndex,
+                                           long originByteOffset) {
+            this.action = action;
+            this.bookDigest = bookDigest;
+            this.deviceId = deviceId;
+            this.sequence = sequence;
+            this.spineIndex = spineIndex;
+            this.byteOffset = byteOffset;
+            this.reviewEpoch = reviewEpoch;
+            this.originSequence = originSequence;
+            this.originSpineIndex = originSpineIndex;
+            this.originByteOffset = originByteOffset;
+        }
+
+        boolean matches(OctavoReadingPositionStore.Candidate candidate) {
+            return candidate != null
+                && bookDigest.equals(candidate.bookDigest)
+                && deviceId.equals(candidate.deviceId)
+                && sequence == candidate.sequence
+                && spineIndex == candidate.spineIndex
+                && byteOffset == candidate.byteOffset
+                && reviewEpoch == candidate.reviewEpoch
+                && originSequence == candidate.originSequence
+                && originSpineIndex == candidate.originSpineIndex
+                && originByteOffset == candidate.originByteOffset;
+        }
+
+        void save(Bundle state) {
+            state.putInt(STATE_POSITION_RETRY_ACTION, action);
+            state.putString(STATE_POSITION_RETRY_BOOK, bookDigest);
+            state.putString(STATE_POSITION_RETRY_DEVICE, deviceId);
+            state.putLong(STATE_POSITION_RETRY_SEQUENCE, sequence);
+            state.putLong(STATE_POSITION_RETRY_SPINE, spineIndex);
+            state.putLong(STATE_POSITION_RETRY_BYTE, byteOffset);
+            state.putLong(STATE_POSITION_RETRY_EPOCH, reviewEpoch);
+            state.putLong(
+                STATE_POSITION_RETRY_ORIGIN_SEQUENCE, originSequence);
+            state.putLong(STATE_POSITION_RETRY_ORIGIN_SPINE,
+                          originSpineIndex);
+            state.putLong(STATE_POSITION_RETRY_ORIGIN_BYTE,
+                          originByteOffset);
+        }
+
+        static ReadingPositionChoiceRetry restore(Bundle state) {
+            if (state == null) {
+                return null;
+            }
+            int action = state.getInt(STATE_POSITION_RETRY_ACTION, 0);
+            String bookDigest = state.getString(STATE_POSITION_RETRY_BOOK);
+            String deviceId = state.getString(STATE_POSITION_RETRY_DEVICE);
+            long sequence = state.getLong(STATE_POSITION_RETRY_SEQUENCE, 0);
+            long spineIndex = state.getLong(STATE_POSITION_RETRY_SPINE, -1);
+            long byteOffset = state.getLong(STATE_POSITION_RETRY_BYTE, -1);
+            long reviewEpoch = state.getLong(STATE_POSITION_RETRY_EPOCH, 0);
+            long originSequence = state.getLong(
+                STATE_POSITION_RETRY_ORIGIN_SEQUENCE, 0);
+            long originSpineIndex = state.getLong(
+                STATE_POSITION_RETRY_ORIGIN_SPINE, -1);
+            long originByteOffset = state.getLong(
+                STATE_POSITION_RETRY_ORIGIN_BYTE, -1);
+            if ((action != POSITION_RETRY_MARK_GO
+                 && action != POSITION_RETRY_STAY
+                 && action != POSITION_RETRY_DISMISS)
+                || !OctavoReadingPositionPortable.validBookDigest(bookDigest)
+                || !OctavoReadingPositionPortable.validDeviceId(deviceId)
+                || sequence <= 0 || reviewEpoch <= 0 || originSequence <= 0
+                || !OctavoReadingPositionPortable.validAnchor(
+                    spineIndex, byteOffset)
+                || !OctavoReadingPositionPortable.validAnchor(
+                    originSpineIndex, originByteOffset)) {
+                return null;
+            }
+            return new ReadingPositionChoiceRetry(
+                action, bookDigest, deviceId, sequence,
+                spineIndex, byteOffset, reviewEpoch,
+                originSequence, originSpineIndex, originByteOffset);
+        }
+    }
 
     private OctavoLibraryStore libraryStore;
     private OctavoAppearanceStore appearanceStore;
@@ -45,6 +184,7 @@ public final class OctavoActivity extends Activity {
     private OctavoProgressDisplay progressDisplay;
     private OctavoAnnotationStore annotationStore;
     private OctavoNoteDraftStore noteDraftStore;
+    private OctavoReadingPositionStore readingPositionStore;
     private LinearLayout libraryRoot;
     private FrameLayout systemBarRoot;
     private View statusBarScrim;
@@ -67,7 +207,10 @@ public final class OctavoActivity extends Activity {
     private OctavoSearchPanel searchPanel;
     private FrameLayout bookmarksOverlay;
     private OctavoBookmarksPanel bookmarksPanel;
+    private FrameLayout readingPositionOverlay;
+    private OctavoReadingPositionPrompt readingPositionPrompt;
     private TextView failureBanner;
+    private boolean failureBannerAnnouncementDeferred;
     private View readerEntryCover;
     private int readerEntryCoverGeneration;
     private View appearanceTransitionScrim;
@@ -88,6 +231,19 @@ public final class OctavoActivity extends Activity {
     private boolean searchSnapshotRefreshPosted;
     private boolean bookmarkNavigationPending;
     private boolean noteSelectionRetained;
+    private boolean readingPositionReviewPending;
+    private boolean readingPositionReviewInitialized;
+    private boolean hasPresentedReadingPosition;
+    private long presentedReadingSpineIndex;
+    private long presentedReadingByteOffset;
+    private long presentedReadingPageSpineIndex;
+    private long presentedReadingPageFirstByte;
+    private long presentedReadingPageOnePastLastByte;
+    private long presentedReadingFrameCount;
+    private OctavoReadingPositionStore.Candidate readingPositionCandidate;
+    private Runnable readingPositionRetry;
+    private boolean readingPositionAwaitingExplicitRetry;
+    private ReadingPositionChoiceRetry readingPositionChoiceRetry;
     private final Runnable persistAppearance = () -> {
         appearancePersistencePosted = false;
         flushAppearancePersistence();
@@ -133,6 +289,9 @@ public final class OctavoActivity extends Activity {
         noteDraftStore = new OctavoNoteDraftStore(this);
         OctavoNoteDraftStore.LoadStatus noteDraftLoadStatus =
             noteDraftStore.load();
+        readingPositionStore = new OctavoReadingPositionStore(this);
+        OctavoReadingPositionStore.LoadStatus readingPositionLoadStatus =
+            readingPositionStore.load();
         chromeVisible = savedInstanceState != null
             && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
@@ -143,10 +302,23 @@ public final class OctavoActivity extends Activity {
         String restoreKey = savedInstanceState == null
             ? null
             : savedInstanceState.getString(STATE_ACTIVE_BOOK_KEY);
+        boolean restoreReviewPending = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_POSITION_REVIEW_PENDING, false);
         OctavoLibraryStore.Book restoreBook =
             restoreKey == null ? null : libraryStore.findBook(restoreKey);
-        if (restoreBook == null || !showReader(restoreBook, false)) {
+        boolean readerRestored = restoreBook != null
+            && showReader(restoreBook, false);
+        if (!readerRestored) {
             showLibrary();
+        } else {
+            readingPositionReviewPending = restoreReviewPending;
+            ReadingPositionChoiceRetry restoredRetry =
+                ReadingPositionChoiceRetry.restore(savedInstanceState);
+            if (restoredRetry != null
+                && activeBook.key.equals(restoredRetry.bookDigest)) {
+                readingPositionChoiceRetry = restoredRetry;
+            }
         }
         if (appearanceResetAfterCorruption) {
             showOpenFailure(
@@ -158,6 +330,7 @@ public final class OctavoActivity extends Activity {
         }
         reportAnnotationLoadStatus(annotationLoadStatus);
         reportNoteDraftLoadStatus(noteDraftLoadStatus);
+        reportReadingPositionLoadStatus(readingPositionLoadStatus);
     }
 
     @Override
@@ -166,6 +339,14 @@ public final class OctavoActivity extends Activity {
             state.putString(STATE_ACTIVE_BOOK_KEY, activeBook.key);
         }
         state.putBoolean(STATE_CHROME_VISIBLE, chromeVisible);
+        state.putBoolean(
+            STATE_POSITION_REVIEW_PENDING,
+            readingPositionReviewPending);
+        if (readingPositionChoiceRetry != null && activeBook != null
+            && activeBook.key.equals(
+                readingPositionChoiceRetry.bookDigest)) {
+            readingPositionChoiceRetry.save(state);
+        }
         super.onSaveInstanceState(state);
     }
 
@@ -186,14 +367,25 @@ public final class OctavoActivity extends Activity {
         if (bookmarksPanel != null) {
             bookmarksPanel.applyAppearance(appearance);
         }
+        if (readingPositionPrompt != null) {
+            readingPositionPrompt.applyAppearance(appearance);
+            if (readingPositionOverlay != null) {
+                readingPositionOverlay.setBackgroundColor(
+                    readingPositionPrompt.overlayColor());
+            }
+            updateReadingPositionPromptBounds();
+        }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
         }
+        restorePendingReadingPositionAfterLifecycle();
     }
 
     @Override
     public void onBackPressed() {
-        if (appearancePanel != null) {
+        if (readingPositionPrompt != null) {
+            dismissReadingPositionForBack();
+        } else if (appearancePanel != null) {
             closeAppearancePanel();
         } else if (bookmarksPanel != null) {
             closeBookmarksPanel();
@@ -226,6 +418,10 @@ public final class OctavoActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.hostResumed();
         }
+        restorePendingReadingPositionAfterLifecycle();
+        if (readingPositionReviewInitialized) {
+            considerReadingPositionCandidate();
+        }
         if (deferredAppearanceFailure != null) {
             String message = deferredAppearanceFailure;
             deferredAppearanceFailure = null;
@@ -244,6 +440,7 @@ public final class OctavoActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.hostPaused();
         }
+        restorePendingReadingPositionAfterLifecycle();
         flushAppearancePersistence();
         flushProgressPersistence();
         super.onPause();
@@ -307,6 +504,18 @@ public final class OctavoActivity extends Activity {
         if (session == null) {
             return false;
         }
+        boolean strictResume = false;
+        OctavoReadingPositionPortable.Lane synchronizedLane =
+            readingPositionStore == null
+                ? null : readingPositionStore.localLane(target.key);
+        if (synchronizedLane != null) {
+            session = new OctavoLibraryStore.Session(
+                target,
+                true,
+                synchronizedLane.spineIndex,
+                synchronizedLane.byteOffset);
+            strictResume = true;
+        }
         if (recordOpened) {
             chromeVisible = false;
         }
@@ -318,6 +527,7 @@ public final class OctavoActivity extends Activity {
                     this,
                     libraryStore,
                     session,
+                    strictResume,
                     appearance,
                     progressDisplay,
                     annotationStore.highlights(session.book.key),
@@ -347,6 +557,9 @@ public final class OctavoActivity extends Activity {
             OctavoDesignTokens.forAppearance(appearance).readerPage);
         surfaceView = replacement;
         activeBook = target;
+        readingPositionReviewPending = recordOpened;
+        readingPositionReviewInitialized = false;
+        hasPresentedReadingPosition = false;
         libraryRoot = null;
         readerRoot = root;
         installReaderEntryCover();
@@ -673,13 +886,29 @@ public final class OctavoActivity extends Activity {
                     }
                     cancelAppearanceTransition();
                 }
-                showOpenFailure(highlightStillAwaiting
-                    ? "Highlight saved, but it could not be displayed. "
-                        + "Reopen the book to retry."
-                    : noteMarkerStillAwaiting
-                        ? "Note saved, but its marker could not be displayed. "
+                OctavoReadingPositionStore.Candidate pending =
+                    activeBook == null || readingPositionStore == null
+                        ? null
+                        : readingPositionStore.pendingGo(activeBook.key);
+                if (pending != null && readingPositionPrompt != null) {
+                    readingPositionCandidate = pending;
+                    showReadingPositionRetryableFailure(
+                        "The requested page was not confirmed on screen. "
+                            + "Retry is safe.");
+                    readingPositionRetry = () ->
+                        navigateToPendingReadingPosition(pending);
+                }
+                if (pending == null || highlightStillAwaiting
+                    || noteMarkerStillAwaiting
+                    || appearanceStillAwaiting) {
+                    showOpenFailure(highlightStillAwaiting
+                        ? "Highlight saved, but it could not be displayed. "
                             + "Reopen the book to retry."
-                        : "Unable to present reader changes; try again");
+                        : noteMarkerStillAwaiting
+                            ? "Note saved, but its marker could not be displayed. "
+                                + "Reopen the book to retry."
+                            : "Unable to present reader changes; try again");
+                }
             }
 
             @Override
@@ -701,6 +930,28 @@ public final class OctavoActivity extends Activity {
                 scheduleNavigationSnapshotRefresh();
                 scheduleSearchSnapshotRefresh();
                 updateBookmarkToggle();
+            }
+
+            @Override
+            public void onReadingPositionRestoreFailure() {
+                showReadingPositionRestoreFailure();
+            }
+
+            @Override
+            public void onReadingPositionPresented(
+                long spineIndex,
+                long byteOffset,
+                long pageSpineIndex,
+                long pageFirstByte,
+                long pageOnePastLastByte,
+                long frameCount) {
+                handlePresentedReadingPosition(
+                    spineIndex,
+                    byteOffset,
+                    pageSpineIndex,
+                    pageFirstByte,
+                    pageOnePastLastByte,
+                    frameCount);
             }
 
             @Override
@@ -747,7 +998,18 @@ public final class OctavoActivity extends Activity {
             @Override
             public void onNavigationRequestFailure(String message) {
                 bookmarkNavigationPending = false;
-                reportNavigationRequestFailure(message);
+                OctavoReadingPositionStore.Candidate pending =
+                    activeBook == null || readingPositionStore == null
+                        ? null
+                        : readingPositionStore.pendingGo(activeBook.key);
+                if (pending != null && readingPositionPrompt != null) {
+                    readingPositionCandidate = pending;
+                    showReadingPositionRetryableFailure(message);
+                    readingPositionRetry = () ->
+                        navigateToPendingReadingPosition(pending);
+                } else {
+                    reportNavigationRequestFailure(message);
+                }
             }
 
             @Override
@@ -836,6 +1098,900 @@ public final class OctavoActivity extends Activity {
                 return openNoteFromMarker(note);
             }
         };
+    }
+
+    private void handlePresentedReadingPosition(
+        long spineIndex,
+        long byteOffset,
+        long pageSpineIndex,
+        long pageFirstByte,
+        long pageOnePastLastByte,
+        long frameCount) {
+        if (activeBook == null || readingPositionStore == null
+            || spineIndex < 0 || byteOffset < 0
+            || pageSpineIndex != spineIndex
+            || pageFirstByte < 0
+            || pageOnePastLastByte <= pageFirstByte
+            || byteOffset < pageFirstByte
+            || byteOffset >= pageOnePastLastByte) {
+            return;
+        }
+        hasPresentedReadingPosition = true;
+        presentedReadingSpineIndex = spineIndex;
+        presentedReadingByteOffset = byteOffset;
+        presentedReadingPageSpineIndex = pageSpineIndex;
+        presentedReadingPageFirstByte = pageFirstByte;
+        presentedReadingPageOnePastLastByte = pageOnePastLastByte;
+        presentedReadingFrameCount = frameCount;
+        if (readingPositionAwaitingExplicitRetry) {
+            return;
+        }
+
+        OctavoReadingPositionStore.Candidate pending =
+            readingPositionStore.pendingGo(activeBook.key);
+        if (pending != null && pageContainsReadingCandidate(pending)) {
+            readingPositionCandidate = pending;
+            completePresentedPositionMove(pending);
+            return;
+        }
+
+        OctavoReadingPositionStore.Candidate shown =
+            readingPositionCandidate;
+        boolean restoreFocusIfNoPrompt = false;
+        boolean movedFromPrompt = shown != null
+            && (shown.originSpineIndex != spineIndex
+                || shown.originByteOffset != byteOffset);
+        OctavoReadingPositionStore.MutationResult recorded =
+            readingPositionStore.recordSuccessfullyPresented(
+                activeBook.key,
+                spineIndex,
+                byteOffset,
+                pageSpineIndex,
+                pageFirstByte,
+                pageOnePastLastByte,
+                true,
+                shown);
+        if (recorded == OctavoReadingPositionStore.MutationResult.CONFLICT
+            && shown != null) {
+            restoreFocusIfNoPrompt = readingPositionPrompt != null;
+            closeReadingPositionPrompt(false);
+            shown = null;
+            movedFromPrompt = false;
+            recorded = readingPositionStore.recordSuccessfullyPresented(
+                activeBook.key,
+                spineIndex,
+                byteOffset,
+                spineIndex,
+                pageFirstByte,
+                pageOnePastLastByte,
+                true);
+        }
+        if (!recorded.succeeded()) {
+            final OctavoReadingPositionStore.Candidate retryShown = shown;
+            if (movedFromPrompt && retryShown != null) {
+                rememberReadingPositionChoiceRetry(
+                    POSITION_RETRY_DISMISS, retryShown);
+            }
+            showReadingPositionStoreFailure(() ->
+                retryPresentedReadingPosition(retryShown));
+            return;
+        }
+        if (movedFromPrompt) {
+            clearReadingPositionChoiceRetry(shown);
+            closeReadingPositionPrompt(true);
+        } else if (shown == null && readingPositionPrompt != null) {
+            closeReadingPositionPrompt(true);
+        }
+        if (!initializeReadingPositionReview()) {
+            if (restoreFocusIfNoPrompt
+                && readingPositionPrompt == null) {
+                restoreReadingPositionFocusAfterClose();
+            }
+            return;
+        }
+        considerReadingPositionCandidate();
+        if (restoreFocusIfNoPrompt && readingPositionPrompt == null) {
+            restoreReadingPositionFocusAfterClose();
+        }
+    }
+
+    private void retryPresentedReadingPosition(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (!hasPresentedReadingPosition || activeBook == null) {
+            showReadingPositionStoreFailure(
+                () -> retryPresentedReadingPosition(candidate));
+            return;
+        }
+        OctavoReadingPositionStore.MutationResult result =
+            readingPositionStore.recordSuccessfullyPresented(
+                activeBook.key,
+                presentedReadingSpineIndex,
+                presentedReadingByteOffset,
+                presentedReadingPageSpineIndex,
+                presentedReadingPageFirstByte,
+                presentedReadingPageOnePastLastByte,
+                true,
+                candidate);
+        if (!result.succeeded()) {
+            showReadingPositionStoreFailure(
+                () -> retryPresentedReadingPosition(candidate));
+            return;
+        }
+        clearReadingPositionChoiceRetry(candidate);
+        closeReadingPositionPrompt(true);
+        if (initializeReadingPositionReview()) {
+            considerReadingPositionCandidate();
+        }
+    }
+
+    private boolean initializeReadingPositionReview() {
+        if (readingPositionReviewInitialized) {
+            return true;
+        }
+        if (activeBook == null || readingPositionStore == null) {
+            return false;
+        }
+        OctavoReadingPositionStore.MutationResult result =
+            readingPositionStore.beginBookReview(
+                activeBook.key, readingPositionReviewPending);
+        if (!result.succeeded()) {
+            showReadingPositionStoreFailure(() -> {
+                if (initializeReadingPositionReview()) {
+                    considerReadingPositionCandidate();
+                }
+            });
+            return false;
+        }
+        readingPositionReviewInitialized = true;
+        readingPositionReviewPending = false;
+        return true;
+    }
+
+    private void considerReadingPositionCandidate() {
+        if (!activityResumed || !hasPresentedReadingPosition
+            || activeBook == null || surfaceView == null
+            || readingPositionStore == null
+            || readingPositionPrompt != null) {
+            return;
+        }
+        List<OctavoReadingPositionStore.Candidate> candidates =
+            readingPositionStore.reviewCandidates(
+                activeBook.key,
+                presentedReadingPageSpineIndex,
+                presentedReadingByteOffset);
+        if (readingPositionChoiceRetry != null) {
+            OctavoReadingPositionStore.Candidate retained = null;
+            for (OctavoReadingPositionStore.Candidate candidate
+                    : candidates) {
+                if (readingPositionChoiceRetry.matches(candidate)) {
+                    retained = candidate;
+                    break;
+                }
+            }
+            if (retained != null
+                && !pageContainsReadingCandidate(retained)) {
+                qualifyAndShowReadingPosition(retained);
+                return;
+            }
+            readingPositionChoiceRetry = null;
+        }
+        for (OctavoReadingPositionStore.Candidate candidate : candidates) {
+            if (pageContainsReadingCandidate(candidate)) {
+                continue;
+            }
+            qualifyAndShowReadingPosition(candidate);
+            return;
+        }
+    }
+
+    private void qualifyAndShowReadingPosition(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (!readingPositionCandidateIsCurrent(candidate)
+            || surfaceView == null) {
+            boolean promptWasVisible = readingPositionPrompt != null;
+            closeReadingPositionPrompt(false);
+            considerReadingPositionCandidate();
+            if (promptWasVisible && readingPositionPrompt == null) {
+                restoreReadingPositionFocusAfterClose();
+            }
+            return;
+        }
+        long[] qualification = surfaceView.qualifySyncedReadingPosition(
+            candidate.spineIndex, candidate.byteOffset);
+        boolean exact = qualification != null
+            && qualification.length
+                == OctavoNative.POSITION_QUALIFICATION_FIELD_COUNT
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_STATUS]
+                == OctavoNative.NAVIGATION_ACCEPTED
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_SPINE_INDEX]
+                == candidate.spineIndex
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_BYTE_OFFSET]
+                == candidate.byteOffset;
+        readingPositionCandidate = candidate;
+        if (!exact) {
+            if (!ensureReadingPositionPrompt(
+                    "a saved location in this book")) {
+                return;
+            }
+            showReadingPositionRetryableFailure(
+                "Reading position unavailable",
+                "The other device's exact Reader0 location could not be "
+                    + "verified. Retry is safe.");
+            readingPositionRetry = () ->
+                qualifyAndShowReadingPosition(candidate);
+            return;
+        }
+        if (!ensureReadingPositionPrompt(
+                readingPositionLocationLabel(qualification))) {
+            return;
+        }
+        if (showRetainedReadingPositionChoiceRetry(candidate)) {
+            return;
+        } else if (candidate.decision
+            == OctavoReadingPositionStore.Decision.GO_PENDING) {
+            showReadingPositionRetryableFailure(
+                "The earlier move was not confirmed on screen. Retry to "
+                    + "finish it safely.");
+            readingPositionRetry = () ->
+                navigateToPendingReadingPosition(candidate);
+        } else {
+            readingPositionRetry = null;
+            readingPositionPrompt.showChoice();
+        }
+    }
+
+    private boolean readingPositionCandidateIsCurrent(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (candidate == null || activeBook == null) {
+            return false;
+        }
+        for (OctavoReadingPositionStore.Candidate current
+                : readingPositionStore.reviewCandidates(
+                    activeBook.key,
+                    presentedReadingSpineIndex,
+                    presentedReadingByteOffset)) {
+            if (candidate.sameIdentity(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void rememberReadingPositionChoiceRetry(
+        int action,
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (candidate != null) {
+            readingPositionChoiceRetry =
+                new ReadingPositionChoiceRetry(action, candidate);
+        }
+    }
+
+    private void clearReadingPositionChoiceRetry(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (readingPositionChoiceRetry != null
+            && readingPositionChoiceRetry.matches(candidate)) {
+            readingPositionChoiceRetry = null;
+        }
+    }
+
+    private boolean showRetainedReadingPositionChoiceRetry(
+        OctavoReadingPositionStore.Candidate candidate) {
+        ReadingPositionChoiceRetry retained = readingPositionChoiceRetry;
+        if (retained == null || !retained.matches(candidate)) {
+            return false;
+        }
+        if (candidate.decision
+                == OctavoReadingPositionStore.Decision.GO_PENDING
+            && retained.action != POSITION_RETRY_DISMISS) {
+            readingPositionChoiceRetry = null;
+            return false;
+        }
+        String message;
+        if (retained.action == POSITION_RETRY_MARK_GO) {
+            message = "Go there was not saved. Retry is safe; the reader "
+                + "has not moved.";
+            readingPositionRetry = this::goToReadingPositionCandidate;
+        } else if (retained.action == POSITION_RETRY_STAY) {
+            message = "Stay here was not saved. Retry is safe; the reader "
+                + "has not moved.";
+            readingPositionRetry = this::stayAtPresentedReadingPosition;
+        } else {
+            message = "The dismissal was not saved. Retry is safe; the "
+                + "reader has not moved.";
+            readingPositionRetry = this::dismissReadingPositionForBack;
+        }
+        showReadingPositionRetryableFailure(
+            "Reading position update needs attention", message);
+        return true;
+    }
+
+    private void goToReadingPositionCandidate() {
+        OctavoReadingPositionStore.Candidate candidate =
+            readingPositionCandidate;
+        if (candidate == null || activeBook == null) {
+            showReadingPositionStoreFailure(
+                this::considerReadingPositionCandidate);
+            return;
+        }
+        OctavoReadingPositionStore.MutationResult result =
+            readingPositionStore.markGoPending(
+                candidate,
+                candidate.originSequence,
+                candidate.originSpineIndex,
+                candidate.originByteOffset);
+        if (!result.succeeded()) {
+            rememberReadingPositionChoiceRetry(
+                POSITION_RETRY_MARK_GO, candidate);
+            showReadingPositionStoreFailure(
+                this::goToReadingPositionCandidate);
+            return;
+        }
+        clearReadingPositionChoiceRetry(candidate);
+        OctavoReadingPositionStore.Candidate pending =
+            readingPositionStore.pendingGo(activeBook.key);
+        if (pending == null || !pending.sameIdentity(candidate)) {
+            showReadingPositionStoreFailure(
+                this::goToReadingPositionCandidate);
+            return;
+        }
+        readingPositionCandidate = pending;
+        navigateToPendingReadingPosition(pending);
+    }
+
+    private void navigateToPendingReadingPosition(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (!readingPositionCandidateIsCurrent(candidate)
+            || surfaceView == null) {
+            showReadingPositionStoreFailure(
+                () -> navigateToPendingReadingPosition(candidate));
+            return;
+        }
+        long[] qualification = surfaceView.qualifySyncedReadingPosition(
+            candidate.spineIndex, candidate.byteOffset);
+        boolean exact = qualification != null
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_STATUS]
+                == OctavoNative.NAVIGATION_ACCEPTED
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_SPINE_INDEX]
+                == candidate.spineIndex
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_BYTE_OFFSET]
+                == candidate.byteOffset;
+        if (!exact) {
+            if (!ensureReadingPositionPrompt(
+                    "a saved location in this book")) {
+                return;
+            }
+            showReadingPositionRetryableFailure(
+                "The exact saved location is unavailable. Retry is safe.");
+            readingPositionRetry = () ->
+                navigateToPendingReadingPosition(candidate);
+            return;
+        }
+        int request = surfaceView.requestSyncedReadingPosition(
+            candidate.spineIndex, candidate.byteOffset);
+        if (request == OctavoNative.NAVIGATION_ALREADY_PRESENTED
+            && pageContainsReadingCandidate(candidate)) {
+            completePresentedPositionMove(candidate);
+        } else if (request == OctavoNative.NAVIGATION_ACCEPTED) {
+            if (!ensureReadingPositionPrompt(
+                    readingPositionLocationLabel(qualification))) {
+                return;
+            }
+            readingPositionPrompt.showWorking(
+                "Opening the other device's position. Waiting for the "
+                    + "page to appear.");
+            readingPositionRetry = () ->
+                navigateToPendingReadingPosition(candidate);
+        } else {
+            if (!ensureReadingPositionPrompt(
+                    readingPositionLocationLabel(qualification))) {
+                return;
+            }
+            showReadingPositionRetryableFailure(
+                request == OctavoNative.NAVIGATION_BUSY
+                    ? "The reader is finishing another page. Retry when it "
+                        + "settles."
+                    : "The other device's position could not be opened. "
+                        + "Retry is safe.");
+            readingPositionRetry = () ->
+                navigateToPendingReadingPosition(candidate);
+        }
+    }
+
+    private void completePresentedPositionMove(
+        OctavoReadingPositionStore.Candidate candidate) {
+        if (!hasPresentedReadingPosition || activeBook == null
+            || !pageContainsReadingCandidate(candidate)) {
+            showReadingPositionStoreFailure(
+                () -> navigateToPendingReadingPosition(candidate));
+            return;
+        }
+        OctavoReadingPositionStore.MutationResult result =
+            readingPositionStore.completeGo(
+                candidate,
+                candidate.spineIndex,
+                candidate.byteOffset,
+                presentedReadingSpineIndex,
+                presentedReadingByteOffset,
+                presentedReadingPageSpineIndex,
+                presentedReadingPageFirstByte,
+                presentedReadingPageOnePastLastByte,
+                true);
+        if (!result.succeeded()) {
+            if (!ensureReadingPositionPrompt(
+                    "the requested saved location")) {
+                return;
+            }
+            showReadingPositionRetryableFailure(
+                "The page appeared, but its durable confirmation could not "
+                    + "be saved. Retry is safe.");
+            readingPositionRetry = () ->
+                completePresentedPositionMove(candidate);
+            return;
+        }
+        clearReadingPositionChoiceRetry(candidate);
+        closeReadingPositionPrompt(true);
+    }
+
+    private void stayAtPresentedReadingPosition() {
+        OctavoReadingPositionStore.Candidate candidate =
+            readingPositionCandidate;
+        OctavoReadingPositionStore.MutationResult result =
+            readingPositionStore.stay(candidate);
+        if (!result.succeeded()) {
+            rememberReadingPositionChoiceRetry(
+                POSITION_RETRY_STAY, candidate);
+            showReadingPositionStoreFailure(
+                this::stayAtPresentedReadingPosition);
+            return;
+        }
+        clearReadingPositionChoiceRetry(candidate);
+        closeReadingPositionPrompt(true);
+    }
+
+    private void dismissReadingPositionForBack() {
+        OctavoReadingPositionStore.Candidate candidate =
+            readingPositionCandidate;
+        if (candidate == null) {
+            readingPositionChoiceRetry = null;
+            closeReadingPositionPrompt(true);
+            return;
+        }
+        if (surfaceView != null && surfaceView.hasNavigationPending()) {
+            readingPositionPrompt.showWorking(
+                "Waiting for the requested page to finish.");
+            return;
+        }
+        OctavoReadingPositionStore.MutationResult result;
+        boolean presentedAtOrigin = hasPresentedReadingPosition
+            && presentedReadingSpineIndex == candidate.originSpineIndex
+            && presentedReadingByteOffset == candidate.originByteOffset;
+        if (candidate.decision
+            == OctavoReadingPositionStore.Decision.GO_PENDING) {
+            if (!presentedAtOrigin) {
+                showReadingPositionRetryableFailure(
+                    "The requested move is still pending. Retry its durable "
+                        + "confirmation before dismissing it.");
+                readingPositionRetry = pageContainsReadingCandidate(candidate)
+                    ? () -> completePresentedPositionMove(candidate)
+                    : () -> navigateToPendingReadingPosition(candidate);
+                return;
+            }
+            readingPositionAwaitingExplicitRetry = false;
+            result = readingPositionStore.dismissPendingAfterRollback(
+                candidate,
+                presentedReadingSpineIndex,
+                presentedReadingByteOffset,
+                presentedReadingPageSpineIndex,
+                presentedReadingPageFirstByte,
+                presentedReadingPageOnePastLastByte,
+                true);
+        } else if (!presentedAtOrigin) {
+            readingPositionAwaitingExplicitRetry = false;
+            if (activeBook == null) {
+                rememberReadingPositionChoiceRetry(
+                    POSITION_RETRY_DISMISS, candidate);
+                showReadingPositionStoreFailure(
+                    this::dismissReadingPositionForBack);
+                return;
+            }
+            result = readingPositionStore.recordSuccessfullyPresented(
+                activeBook.key,
+                presentedReadingSpineIndex,
+                presentedReadingByteOffset,
+                presentedReadingPageSpineIndex,
+                presentedReadingPageFirstByte,
+                presentedReadingPageOnePastLastByte,
+                true,
+                candidate);
+        } else {
+            readingPositionAwaitingExplicitRetry = false;
+            result = readingPositionStore.dismiss(candidate);
+        }
+        if (!result.succeeded()) {
+            rememberReadingPositionChoiceRetry(
+                POSITION_RETRY_DISMISS, candidate);
+            showReadingPositionStoreFailure(
+                this::dismissReadingPositionForBack);
+            return;
+        }
+        clearReadingPositionChoiceRetry(candidate);
+        closeReadingPositionPrompt(true);
+    }
+
+    private void restorePendingReadingPositionAfterLifecycle() {
+        if (activeBook == null || readingPositionStore == null
+            || readingPositionPrompt == null) {
+            return;
+        }
+        OctavoReadingPositionStore.Candidate pending =
+            readingPositionStore.pendingGo(activeBook.key);
+        if (pending == null) {
+            if (readingPositionCandidate == null
+                && readingPositionRetry != null) {
+                showReadingPositionRetryableFailure(
+                    "The reading-position operation was paused. Retry is "
+                        + "safe.");
+            }
+            return;
+        }
+        readingPositionCandidate = pending;
+        showReadingPositionRetryableFailure(
+            "The move was paused before its page was confirmed. Retry is "
+                + "safe.");
+        readingPositionRetry = () ->
+            navigateToPendingReadingPosition(pending);
+    }
+
+    private boolean pageContainsReadingCandidate(
+        OctavoReadingPositionStore.Candidate candidate) {
+        return candidate != null
+            && hasPresentedReadingPosition
+            && candidate.spineIndex == presentedReadingSpineIndex
+            && presentedReadingPageFirstByte <= candidate.byteOffset
+            && presentedReadingPageOnePastLastByte > candidate.byteOffset;
+    }
+
+    private String readingPositionLocationLabel(long[] qualification) {
+        if (qualification != null
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_LOCATION_AVAILABLE] == 1
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_LOCATION_INDEX] > 0
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_LOCATION_COUNT]
+                >= qualification[
+                    OctavoNative.POSITION_QUALIFICATION_LOCATION_INDEX]) {
+            return String.format(
+                Locale.ROOT,
+                "Location %d of %d (%d%%)",
+                qualification[
+                    OctavoNative.POSITION_QUALIFICATION_LOCATION_INDEX],
+                qualification[
+                    OctavoNative.POSITION_QUALIFICATION_LOCATION_COUNT],
+                qualification[
+                    OctavoNative.POSITION_QUALIFICATION_PERCENT]);
+        }
+        return "a saved location in this book";
+    }
+
+    private void showReadingPositionRestoreFailure() {
+        OctavoReadingPositionPortable.Lane local =
+            activeBook == null || readingPositionStore == null
+                ? null : readingPositionStore.localLane(activeBook.key);
+        if (local == null) {
+            showOpenFailure(
+                "The synchronized reading position could not be restored");
+            return;
+        }
+        if (!ensureReadingPositionPrompt(
+                "the saved position for this device")) {
+            return;
+        }
+        showReadingPositionRetryableFailure(
+            "Reading position unavailable",
+            "The exact saved Reader0 location was not presented. The book "
+                + "remains unchanged; Retry is safe.");
+        readingPositionRetry = () -> retrySynchronizedLocalResume(local);
+    }
+
+    private void retrySynchronizedLocalResume(
+        OctavoReadingPositionPortable.Lane local) {
+        if (surfaceView == null) {
+            showReadingPositionRestoreFailure();
+            return;
+        }
+        long[] qualification = surfaceView.qualifySyncedReadingPosition(
+            local.spineIndex, local.byteOffset);
+        boolean exact = qualification != null
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_STATUS]
+                == OctavoNative.NAVIGATION_ACCEPTED
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_SPINE_INDEX]
+                == local.spineIndex
+            && qualification[
+                OctavoNative.POSITION_QUALIFICATION_BYTE_OFFSET]
+                == local.byteOffset;
+        if (!exact) {
+            showReadingPositionRestoreFailure();
+            return;
+        }
+        int request = surfaceView.requestSyncedReadingPosition(
+            local.spineIndex, local.byteOffset);
+        if (request == OctavoNative.NAVIGATION_ACCEPTED) {
+            readingPositionPrompt.showWorking(
+                "Retrying the exact saved position. Waiting for the page "
+                    + "to appear.");
+            readingPositionRetry = () ->
+                retrySynchronizedLocalResume(local);
+        } else {
+            showReadingPositionRestoreFailure();
+        }
+    }
+
+    private void showReadingPositionRetryableFailure(String message) {
+        readingPositionAwaitingExplicitRetry = true;
+        readingPositionPrompt.showRetryableFailure(message);
+    }
+
+    private void showReadingPositionRetryableFailure(
+        String heading,
+        String message) {
+        readingPositionAwaitingExplicitRetry = true;
+        readingPositionPrompt.showRetryableFailure(heading, message);
+    }
+
+    private void showReadingPositionStoreFailure(Runnable retry) {
+        if (!ensureReadingPositionPrompt(
+                "this reading position update")) {
+            return;
+        }
+        String message = readingPositionStore == null
+            ? "Reading-position state is unavailable."
+            : readingPositionStore.lastError();
+        showReadingPositionRetryableFailure(
+            "Reading position update needs attention",
+            TextUtils.isEmpty(message)
+                ? "The reading position could not be saved. Retry is safe."
+                : message);
+        readingPositionRetry = retry;
+    }
+
+    private boolean ensureReadingPositionPrompt(String locationLabel) {
+        if (readerRoot == null) {
+            showOpenFailure("Reading-position confirmation is unavailable");
+            return false;
+        }
+        if (readingPositionPrompt != null) {
+            readingPositionPrompt.setLocationLabel(locationLabel);
+            return true;
+        }
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
+        }
+        OctavoDesignTokens tokens =
+            OctavoDesignTokens.forAppearance(appearance);
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(8));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        OctavoReadingPositionPrompt prompt;
+        try {
+            prompt = new OctavoReadingPositionPrompt(
+                    this,
+                    appearance,
+                    locationLabel,
+                    new OctavoReadingPositionPrompt.Listener() {
+                    @Override
+                    public void onGoThere() {
+                        goToReadingPositionCandidate();
+                    }
+
+                    @Override
+                    public void onStayHere() {
+                        stayAtPresentedReadingPosition();
+                    }
+
+                    @Override
+                    public void onRetry() {
+                        Runnable retry = readingPositionRetry;
+                        readingPositionRetry = null;
+                        readingPositionAwaitingExplicitRetry = false;
+                        if (retry != null) {
+                            retry.run();
+                        } else {
+                            showReadingPositionStoreFailure(
+                                OctavoActivity.this::
+                                    considerReadingPositionCandidate);
+                        }
+                    }
+                    });
+        } catch (IllegalStateException failure) {
+            showOpenFailure(
+                "Reading-position styling is unavailable; reopen to retry");
+            return false;
+        }
+        overlay.setBackgroundColor(prompt.overlayColor());
+        FrameLayout.LayoutParams promptLayout =
+            new FrameLayout.LayoutParams(
+                readingPositionPromptWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER);
+        promptLayout.leftMargin = dp(20);
+        promptLayout.topMargin = dp(20);
+        promptLayout.rightMargin = dp(20);
+        promptLayout.bottomMargin = dp(20);
+        overlay.addView(prompt, promptLayout);
+        readerRoot.addView(overlay, matchParentLayout());
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerTopChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readerBottomChrome.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        readingPositionOverlay = overlay;
+        readingPositionPrompt = prompt;
+        obscureFailureBannerForReadingPositionPrompt();
+        int duration = sideSheetMotionDuration(tokens);
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            prompt.setTranslationY(dp(16));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            prompt.animate().translationY(0.0f)
+                .setDuration(duration).start();
+        }
+        prompt.post(() -> {
+            if (readingPositionPrompt != prompt) {
+                return;
+            }
+            View focus = prompt.preferredInitialFocus();
+            focus.requestFocus();
+            focus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            prompt.announceForAccessibility(
+                "Reading position confirmation opened");
+        });
+        return true;
+    }
+
+    private int readingPositionPromptWidth() {
+        int displayWidth = getResources().getDisplayMetrics().widthPixels;
+        int availableWidth = readerRoot == null || readerRoot.getWidth() <= 0
+            ? displayWidth : readerRoot.getWidth();
+        return Math.min(
+            appearancePanelWidth(),
+            Math.max(availableWidth - dp(40), 1));
+    }
+
+    private void updateReadingPositionPromptBounds() {
+        if (readingPositionPrompt == null
+            || !(readingPositionPrompt.getLayoutParams()
+                instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams layout =
+            (FrameLayout.LayoutParams)
+                readingPositionPrompt.getLayoutParams();
+        layout.width = readingPositionPromptWidth();
+        readingPositionPrompt.setLayoutParams(layout);
+    }
+
+    private void closeReadingPositionPrompt(boolean restoreFocus) {
+        if (readingPositionOverlay != null) {
+            readingPositionOverlay.animate().cancel();
+            if (readingPositionOverlay.getParent() instanceof ViewGroup) {
+                ((ViewGroup)readingPositionOverlay.getParent())
+                    .removeView(readingPositionOverlay);
+            }
+        }
+        if (readingPositionPrompt != null) {
+            readingPositionPrompt.animate().cancel();
+        }
+        readingPositionOverlay = null;
+        readingPositionPrompt = null;
+        readingPositionCandidate = null;
+        readingPositionRetry = null;
+        readingPositionAwaitingExplicitRetry = false;
+        if (surfaceView != null) {
+            surfaceView.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        }
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        restoreFailureBannerAfterReadingPositionPrompt();
+        if (restoreFocus) {
+            restoreReadingPositionFocusAfterClose();
+        }
+    }
+
+    private void restoreReadingPositionFocusAfterClose() {
+        if (surfaceView == null || !surfaceView.isShown()) {
+            return;
+        }
+        OctavoSurfaceView focusReturn = surfaceView;
+        focusReturn.requestFocus();
+        focusReturn.post(() -> {
+            if (readingPositionPrompt != null
+                || surfaceView != focusReturn || !focusReturn.isShown()) {
+                return;
+            }
+            focusReturn.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            focusReturn.announceForAccessibility(
+                "Reading position confirmation closed");
+        });
+    }
+
+    private void obscureFailureBannerForReadingPositionPrompt() {
+        if (failureBanner == null) {
+            return;
+        }
+        failureBanner.setVisibility(View.INVISIBLE);
+        failureBanner.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+    }
+
+    private void restoreFailureBannerAfterReadingPositionPrompt() {
+        TextView banner = failureBanner;
+        if (banner == null || !(banner.getParent() instanceof ViewGroup)) {
+            failureBannerAnnouncementDeferred = false;
+            return;
+        }
+        banner.setVisibility(View.VISIBLE);
+        banner.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        if (!failureBannerAnnouncementDeferred) {
+            return;
+        }
+        banner.post(() -> {
+            if (readingPositionPrompt == null && failureBanner == banner
+                && banner.isShown()
+                && failureBannerAnnouncementDeferred) {
+                failureBannerAnnouncementDeferred = false;
+                banner.announceForAccessibility(
+                    banner.getText().toString());
+            }
+        });
+    }
+
+    private void reportReadingPositionLoadStatus(
+        OctavoReadingPositionStore.LoadStatus status) {
+        if (status == OctavoReadingPositionStore.LoadStatus
+                .CORRUPT_QUARANTINED) {
+            showOpenFailure(
+                "Invalid reading-position state was quarantined; local "
+                    + "positions start fresh");
+        } else if (status == OctavoReadingPositionStore.LoadStatus
+                       .CORRUPT_BLOCKED
+                   || status == OctavoReadingPositionStore.LoadStatus
+                       .FUTURE_VERSION_BLOCKED) {
+            showOpenFailure(readingPositionStore.lastError());
+        }
     }
 
     private boolean openNoteFromMarker(
@@ -1475,6 +2631,7 @@ public final class OctavoActivity extends Activity {
                 && navigationPanel == null
                 && searchPanel == null
                 && bookmarksPanel == null
+                && readingPositionPrompt == null
                 ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         int duration = readerChromeMotionDuration(animate);
@@ -1630,7 +2787,8 @@ public final class OctavoActivity extends Activity {
     private void openBookmarksPanel() {
         if (readerRoot == null || surfaceView == null
             || activeBook == null || annotationStore == null
-            || bookmarksPanel != null) {
+            || bookmarksPanel != null
+            || readingPositionPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -1985,7 +3143,8 @@ public final class OctavoActivity extends Activity {
 
     private void openNavigationPanel() {
         if (readerRoot == null || surfaceView == null
-            || navigationPanel != null) {
+            || navigationPanel != null
+            || readingPositionPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -2168,7 +3327,8 @@ public final class OctavoActivity extends Activity {
 
     private void openSearchPanel() {
         if (readerRoot == null || surfaceView == null
-            || searchPanel != null) {
+            || searchPanel != null
+            || readingPositionPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -2353,7 +3513,8 @@ public final class OctavoActivity extends Activity {
 
     private void openAppearancePanel() {
         if (readerRoot == null || surfaceView == null
-            || appearancePanel != null) {
+            || appearancePanel != null
+            || readingPositionPrompt != null) {
             return;
         }
         if (navigationPanel != null) {
@@ -2908,6 +4069,24 @@ public final class OctavoActivity extends Activity {
 
     private void releaseReader() {
         flushProgressPersistence();
+        closeReadingPositionPrompt(false);
+        readingPositionChoiceRetry = null;
+        if (failureBanner != null
+            && failureBanner.getParent() instanceof ViewGroup) {
+            ((ViewGroup)failureBanner.getParent())
+                .removeView(failureBanner);
+        }
+        failureBanner = null;
+        failureBannerAnnouncementDeferred = false;
+        readingPositionReviewPending = false;
+        readingPositionReviewInitialized = false;
+        hasPresentedReadingPosition = false;
+        presentedReadingSpineIndex = 0;
+        presentedReadingByteOffset = 0;
+        presentedReadingPageSpineIndex = 0;
+        presentedReadingPageFirstByte = 0;
+        presentedReadingPageOnePastLastByte = 0;
+        presentedReadingFrameCount = 0;
         cancelNavigationSnapshotRefresh();
         cancelSearchSnapshotRefresh();
         noteSelectionRetained = false;
@@ -2966,6 +4145,7 @@ public final class OctavoActivity extends Activity {
             ((ViewGroup)failureBanner.getParent())
                 .removeView(failureBanner);
         }
+        failureBannerAnnouncementDeferred = false;
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
         TextView banner = new TextView(this);
@@ -2989,12 +4169,20 @@ public final class OctavoActivity extends Activity {
         layout.bottomMargin = dp(72);
         readerRoot.addView(banner, layout);
         failureBanner = banner;
-        banner.announceForAccessibility(message);
+        if (readingPositionPrompt != null) {
+            failureBannerAnnouncementDeferred = true;
+            obscureFailureBannerForReadingPositionPrompt();
+        } else {
+            banner.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            banner.announceForAccessibility(message);
+        }
         banner.postDelayed(() -> {
             if (failureBanner == banner
                 && banner.getParent() instanceof ViewGroup) {
                 ((ViewGroup)banner.getParent()).removeView(banner);
                 failureBanner = null;
+                failureBannerAnnouncementDeferred = false;
             }
         }, 5000);
     }
@@ -3159,6 +4347,93 @@ public final class OctavoActivity extends Activity {
 
     OctavoNoteDraftStore noteDraftStoreForTesting() {
         return noteDraftStore;
+    }
+
+    boolean simulateRemotePositionForTesting(String deviceId,
+                                             long sequence,
+                                             long spineIndex,
+                                             long byteOffset) {
+        if (activeBook == null) {
+            return false;
+        }
+        try {
+            return mergeSimulatedRemotePositionForTesting(
+                OctavoReadingPositionPortable.simulatedRemoteBytes(
+                    activeBook.key,
+                    deviceId,
+                    sequence,
+                    spineIndex,
+                    byteOffset));
+        } catch (IOException | RuntimeException exception) {
+            showReadingPositionStoreFailure(() ->
+                simulateRemotePositionForTesting(
+                    deviceId, sequence, spineIndex, byteOffset));
+            return false;
+        }
+    }
+
+    boolean mergeSimulatedRemotePositionForTesting(byte[] bytes) {
+        if (readingPositionStore == null) {
+            return false;
+        }
+        OctavoReadingPositionStore.PortableMergeResult result =
+            readingPositionStore.mergeSimulatedRemoteBytes(bytes);
+        if (!result.succeeded()) {
+            byte[] retryBytes = bytes == null ? null : bytes.clone();
+            showReadingPositionStoreFailure(() ->
+                mergeSimulatedRemotePositionForTesting(retryBytes));
+            return false;
+        }
+        if (result == OctavoReadingPositionStore.PortableMergeResult.MERGED) {
+            boolean promptWasVisible = readingPositionPrompt != null;
+            closeReadingPositionPrompt(false);
+            if (hasPresentedReadingPosition
+                && initializeReadingPositionReview()) {
+                considerReadingPositionCandidate();
+            }
+            if (promptWasVisible && readingPositionPrompt == null) {
+                restoreReadingPositionFocusAfterClose();
+            }
+        }
+        return true;
+    }
+
+    OctavoReadingPositionPrompt positionPromptForTesting() {
+        return readingPositionPrompt;
+    }
+
+    OctavoReadingPositionStore readingPositionStoreForTesting() {
+        return readingPositionStore;
+    }
+
+    OctavoReadingPositionStore.Candidate
+        pendingPositionCandidateForTesting() {
+        return readingPositionCandidate;
+    }
+
+    long[] currentReadingPageForTesting() {
+        return !hasPresentedReadingPosition
+            ? null
+            : new long[] {
+                presentedReadingSpineIndex,
+                presentedReadingByteOffset,
+                presentedReadingPageFirstByte,
+                presentedReadingPageOnePastLastByte,
+                presentedReadingFrameCount
+            };
+    }
+
+    int positionPromptMotionDurationForTesting() {
+        return sideSheetMotionDuration(
+            OctavoDesignTokens.forAppearance(appearance));
+    }
+
+    boolean positionAwaitingExplicitRetryForTesting() {
+        return readingPositionAwaitingExplicitRetry;
+    }
+
+    void showFailureForTesting(String message) {
+        showOpenFailure(message);
     }
 
     void openSearchPanelForTesting() {

@@ -3,8 +3,11 @@
 Status: implementation contract adopted 2026-08-07. The accepted first three
 local slices are bookmarks, durable multi-color highlights, and note editing/
 recoverable drafts/conflict UI. The fourth local slice freezes and qualifies
-actor-neutral portable bytes plus the deterministic offline join. Google Drive
-remains disconnected until every offline gate passes.
+actor-neutral portable bytes plus the deterministic offline join, and the fifth
+qualifies disconnected annotation coordination. The sixth, independent local
+slice implements and API 36/API 34-qualifies provider-neutral reading positions
+and Kindle-style confirmation without extending the annotation record or
+coordinator families. Google Drive remains disconnected.
 
 ## Boundary
 
@@ -301,6 +304,13 @@ specified separately in
 qualifies caller-driven conditional synchronization and private retry/review
 state only; it does not connect or authorize a provider.
 
+The adopted provider-neutral reading-position and Kindle-style confirmation
+boundary is specified in
+[`android_port11_position_sync.md`](android_port11_position_sync.md). Its
+bounded `O1RP` lanes and private `O1RS` decisions are independent of `O1AP`,
+`O1AN`, and `O1AS`; this local slice uses simulated remote bytes and adds no
+provider, account, permission, worker, clock, or Drive connection.
+
 ## Offline gates before Drive
 
 Annotation provider work may begin only after deterministic tests prove canonical
@@ -313,9 +323,10 @@ ordinary Port 7-10 regression matrix before a physical device is requested.
 
 The fourth local slice closes the annotation wire/join gate on API 36. The
 fifth backend-only slice closes the disconnected conditional-coordination and
-durable retry/review gate. Neither closes the separate catalog, preference,
-position, transfer, concrete provider, authorization, or provider threat-model
-gates, and neither authorizes a Drive connection.
+durable retry/review gate. The sixth local slice closes only the separate
+position wire/merge/presentation-confirmation gate. None closes catalog,
+preference, transfer, concrete-provider, authorization, encryption, or provider
+threat-model gates, and none authorizes a Drive connection.
 
 The later Drive adapter will use `drive.appdata` only for hidden manifests and
 portable state and `drive.file` only for EPUBs the user approves in a visible
@@ -386,8 +397,45 @@ x86_64/QEMU target:
 Only `emulator-5554` was addressed. The iQOO was never targeted and was
 disconnected by the user before the final matrix. Google Drive, OAuth, Google
 Cloud, Play Console, signing keys, and every physical-device setting remained
-untouched. The concrete Drive adapter and all non-annotation portable families
+untouched. The concrete Drive adapter and all remaining portable families
 remain later explicitly authorized slices.
+
+On 2026-08-09, the sixth local slice passes the unchanged exact dependency
+guard and architecture audit and builds debug plus instrumentation APKs for
+`x86_64` and `arm64-v8a`. Its independent `O1RP`/`O1RS` family qualifies exact
+EPUB SHA-256 identity, bounded per-device Reader0 anchors, deterministic
+clock-free merge/stale replay, strict successful-presentation publication,
+durable Go/Stay/Back/retry decisions, process recovery, and a modal accessible
+confirmation surface. On API 36 `emulator-5554`:
+
+- all three focused position classes pass 24/24 together in 45.912 seconds;
+- the external driver passes its 1/1 seed in 5.264 seconds, confirms force-stop
+  with no surviving process, and passes its 1/1 fresh-process verification in
+  3.742 seconds;
+- the ordinary matrix, excluding only that externally driven probe, passes
+  158/158 in 462.672 seconds; and
+- the crash and fatal buffers are empty, while the production APK declares no
+  permissions and contains no simulated remote snapshot fixture.
+
+The first API 34 iQOO run passed 22/24 and exposed that the primary action could
+not accept input focus while the physical device was in touch mode. The fixed
+candidate explicitly makes Go there, Stay here, and Retry touch-mode focusable.
+The two failed cases then pass 2/2 in 4.388 seconds, and the complete focused
+matrix passes 24/24 in 23.245 seconds. The external seed/confirmed-force-stop/
+fresh-process driver passes in 1.992 and 1.076 seconds, the ordinary matrix
+passes 158/158 in 317.321 seconds, crash/fatal buffers are empty, and exit
+history contains only expected user-requested force-stops/package replacement.
+
+No physical system setting changed: font and all animation scales remained
+`1.0`, while accessibility and touch exploration remained off. Cleanup restored
+the accepted app/test APK hashes, the exact 26-file persistent archive, and all
+32 paths, lengths, and SHA-256 values in the accepted 4,996,158-byte private
+manifest; no app/test process survived. Automation covers the modal boundary,
+48dp actions, touch-mode focus, synthetic 200% wrapping, and reduced motion;
+the user explicitly deferred hands-on iQOO TalkBack/large-text review. No
+provider, account, network permission, worker, clock, Google dependency, OAuth,
+Drive API, cloud resource, signing key, or Play Console state was added or
+mutated.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

@@ -47,6 +47,7 @@
 #define OCTAVO_ANDROID_UI0_SNAPSHOT_VERSION 1
 #define OCTAVO_ANDROID_NAVIGATION_KIND_SEARCH 7
 #define OCTAVO_ANDROID_NAVIGATION_KIND_ANNOTATION 8
+#define OCTAVO_ANDROID_NAVIGATION_KIND_SYNCED_POSITION 9
 #define OCTAVO_ANDROID_HIGHLIGHT_PACKET_VERSION 1
 #define OCTAVO_ANDROID_HIGHLIGHT_PACKET_HEADER_COUNT 2
 #define OCTAVO_ANDROID_HIGHLIGHT_PACKET_STRIDE 4
@@ -332,6 +333,7 @@ typedef struct OctavoAndroidApp
   U32 resume_spine_index;
   U64 resume_byte_offset;
   B32 restore_requested;
+  B32 strict_restore_requested;
   B32 restore_attempted;
   B32 restore_succeeded;
   uint64_t restore_failure_count;
@@ -3400,6 +3402,9 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
         &navigation);
       U64 target_byte = navigation.target_byte_offset;
       if (restore_result == EpubReaderResult_Ok &&
+          (!app->strict_restore_requested ||
+           (navigation.target_spine_index == app->resume_spine_index &&
+            navigation.target_byte_offset == app->resume_byte_offset)) &&
           app->reader.has_current_page &&
           app->reader.current_page.spine_index == app->resume_spine_index &&
           app->reader.current_page.first_byte <= target_byte &&
@@ -3415,10 +3420,42 @@ octavo_android_build_reader_frame(OctavoAndroidApp *app)
         __android_log_print(
           ANDROID_LOG_WARN,
           "8vo",
-          "Android Port 7 saved-location restore failed result=%d target=%u:%llu",
+          "Android saved-location restore failed result=%d strict=%d",
           (int)restore_result,
-          (unsigned)app->resume_spine_index,
-          (unsigned long long)app->resume_byte_offset);
+          app->strict_restore_requested ? 1 : 0);
+        if (app->strict_restore_requested)
+        {
+          /* A strict portable anchor that Reader0 rejected or clamped must
+             not become the fallback frame. Return to one deterministic exact
+             origin while retaining the failed requested bytes and failure
+             state for the product-owned visible recovery surface. */
+          app->layout_config.focused_spine_index = 0;
+          EpubReaderNavigationResult safe_navigation = {0};
+          EpubReaderResult safe_result = epub_reader_navigate_to_location(
+            &app->reader,
+            0,
+            0,
+            EpubReaderNavigationReason_Location,
+            app->layout_key,
+            app->layout_config,
+            (EpubReaderNavigationOptions){.suppress_history = 1},
+            &safe_navigation);
+          if (safe_result != EpubReaderResult_Ok ||
+              safe_navigation.target_spine_index != 0 ||
+              safe_navigation.target_byte_offset != 0 ||
+              !app->reader.has_current_page ||
+              app->reader.current_page.spine_index != 0 ||
+              app->reader.current_page.first_byte != 0 ||
+              app->reader.current_page.one_past_last_byte == 0)
+          {
+            __android_log_print(
+              ANDROID_LOG_ERROR,
+              "8vo",
+              "Android strict restore could not recover its safe origin");
+            return 0;
+          }
+          pagination_ready = 1;
+        }
       }
     }
     if (!pagination_ready && had_published_frame &&
@@ -3704,12 +3741,7 @@ octavo_android_pending_frame_matches(OctavoAndroidApp *app)
     __android_log_print(
       ANDROID_LOG_ERROR,
       "8vo",
-      "Android Port 7 refused page mismatch "
-      "expected=%u:%llu actual=%u:%llu",
-      (unsigned)app->page_move_expected_spine_index,
-      (unsigned long long)app->page_move_expected_byte_offset,
-      (unsigned)app->reader_frame.spine_index,
-      (unsigned long long)app->reader_frame.view_byte_offset);
+      "Android refused a page frame outside its expected position");
     return 0;
   }
   if (app->semantic_navigation_waiting_for_present)
@@ -3726,9 +3758,7 @@ octavo_android_pending_frame_matches(OctavoAndroidApp *app)
       __android_log_print(
         ANDROID_LOG_ERROR,
         "8vo",
-        "Android Port 8 refused structural target %u:%llu",
-        (unsigned)app->semantic_navigation_expected_spine_index,
-        (unsigned long long)expected);
+        "Android refused a structural frame outside its exact target");
       return 0;
     }
   }
@@ -3746,9 +3776,7 @@ octavo_android_pending_frame_matches(OctavoAndroidApp *app)
       __android_log_print(
         ANDROID_LOG_ERROR,
         "8vo",
-        "Android Port 7 refused reflow outside anchor %u:%llu",
-        (unsigned)app->reflow_anchor_spine_index,
-        (unsigned long long)anchor);
+        "Android refused a reflow frame outside its preserved position");
       return 0;
     }
   }
@@ -4436,6 +4464,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
                                          jlong resume_spine_index,
                                          jlong resume_byte_offset,
                                          jboolean resume_requested,
+                                         jboolean strict_resume,
                                          jboolean chrome_visible,
                                          jintArray appearance_config,
                                          jintArray appearance_colors,
@@ -4475,6 +4504,8 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
     return 0;
   }
   app->restore_requested = resume_requested ? 1 : 0;
+  app->strict_restore_requested =
+    resume_requested && strict_resume ? 1 : 0;
   app->resume_spine_index = (U32)resume_spine_index;
   app->resume_byte_offset = (U64)resume_byte_offset;
   app->chrome_visible = chrome_visible ? 1 : 0;
@@ -4527,12 +4558,11 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android Port 7 state created document=%s title=%s restore=%d:%u:%llu",
+    "Android reader state created document=%s title=%s restore=%d strict=%d",
     app->document_path,
     app->document_title,
     app->restore_requested,
-    (unsigned)app->resume_spine_index,
-    (unsigned long long)app->resume_byte_offset);
+    app->strict_restore_requested);
   return (jlong)(uintptr_t)app;
 }
 

@@ -82,6 +82,7 @@ public final class OctavoAppearanceTest {
     public void resetPort6LibraryAndPort7Appearance() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }

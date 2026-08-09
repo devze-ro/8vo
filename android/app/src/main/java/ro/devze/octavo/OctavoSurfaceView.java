@@ -116,6 +116,13 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             boolean noteMarkerStillAwaiting);
         void onAppearanceRequestsSettled(OctavoAppearance appearance);
         void onReaderPresentationChanged(String progressLabel);
+        void onReadingPositionRestoreFailure();
+        void onReadingPositionPresented(long spineIndex,
+                                        long byteOffset,
+                                        long pageSpineIndex,
+                                        long pageFirstByte,
+                                        long pageOnePastLastByte,
+                                        long frameCount);
         void onNavigationStateChanged();
         void onStructuralNavigationPresented(long generation);
         void onProgressDisplayPresented(OctavoProgressDisplay display,
@@ -277,6 +284,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private final OctavoLibraryStore libraryStore;
     private final OctavoLibraryStore.Book book;
     private final Listener listener;
+    private final boolean strictResume;
     private final OctavoReaderAccessibilityProvider accessibilityProvider;
     private final int swipeMinimumDistancePx;
     private final int touchSlopPx;
@@ -346,6 +354,11 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     private int noteMarkerGestureIndex = -1;
     private boolean chromeVisible;
     private long lastNotifiedFrameCount;
+    private boolean strictResumeFailureNotified;
+    private boolean strictResumeRecovered;
+    private boolean strictResumeRecoveryAwaitingPresentation;
+    private long strictResumeRecoverySpineIndex;
+    private long strictResumeRecoveryByteOffset;
     private long[] cachedNavigationState;
     private long lastNotifiedSemanticNavigationGeneration;
     private long lastNotifiedProgressDisplayGeneration;
@@ -455,6 +468,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
     OctavoSurfaceView(Context context,
                       OctavoLibraryStore libraryStore,
                       OctavoLibraryStore.Session session,
+                      boolean strictResume,
                       OctavoAppearance appearance,
                       OctavoProgressDisplay progressDisplay,
                       List<OctavoAnnotationStore.Highlight> highlights,
@@ -481,6 +495,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             Math.round(8.0f * density), 1);
         this.libraryStore = libraryStore;
         this.listener = listener;
+        this.strictResume = strictResume;
         book = session.book;
         presentedAppearance = appearance == null
             ? OctavoAppearance.defaults() : appearance;
@@ -498,6 +513,7 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
             session.spineIndex,
             session.byteOffset,
             session.hasPosition,
+            strictResume,
             chromeVisible,
             presentedAppearance.nativeConfig(),
             tokens.nativeUi0Colors(),
@@ -2137,6 +2153,40 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
                 nativeHandle, spineIndex, byteOffset));
     }
 
+    long[] qualifySyncedReadingPosition(long spineIndex,
+                                        long byteOffset) {
+        if (nativeHandle == 0
+            || spineIndex < 0
+            || spineIndex > 0xFFFFFFFFL
+            || byteOffset < 0) {
+            return null;
+        }
+        long[] result = OctavoNative.qualifySyncedPosition(
+            nativeHandle, spineIndex, byteOffset);
+        return result != null && result.length == 7 ? result : null;
+    }
+
+    int requestSyncedReadingPosition(long spineIndex,
+                                     long byteOffset) {
+        if (nativeHandle == 0
+            || spineIndex < 0
+            || spineIndex > 0xFFFFFFFFL
+            || byteOffset < 0) {
+            return finishNavigationRequest(
+                OctavoNative.NAVIGATION_INVALID);
+        }
+        int nativeResult = OctavoNative.navigateToSyncedPosition(
+            nativeHandle, spineIndex, byteOffset);
+        if (nativeResult == OctavoNative.NAVIGATION_ACCEPTED
+            && strictResumeFailureNotified
+            && !strictResumeRecovered) {
+            strictResumeRecoveryAwaitingPresentation = true;
+            strictResumeRecoverySpineIndex = spineIndex;
+            strictResumeRecoveryByteOffset = byteOffset;
+        }
+        return finishNavigationRequest(nativeResult);
+    }
+
     long[] presentedAnchorForAnnotations() {
         if (nativeHandle == 0) {
             return null;
@@ -2597,7 +2647,22 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         }
         lastNotifiedFrameCount = frameCount;
         resetPresentationRetries();
-        capturePresentedPosition();
+        boolean strictRestoreFailed =
+            strictResumePositionPersistenceBlocked(state);
+        long[] presentedPosition = null;
+        if (strictRestoreFailed
+            && strictResumeRecoveryAwaitingPresentation) {
+            long[] recovery = OctavoNative.readingPosition(nativeHandle);
+            if (validPresentedPosition(recovery)
+                && recovery[1] == strictResumeRecoverySpineIndex
+                && recovery[2] == strictResumeRecoveryByteOffset) {
+                strictResumeRecovered = true;
+                strictResumeRecoveryAwaitingPresentation = false;
+                presentedPosition = capturePresentedPosition(recovery);
+            }
+        } else if (!strictRestoreFailed) {
+            presentedPosition = capturePresentedPosition();
+        }
         reconcileHighlightPresentation();
         drainQueuedHighlightProjection();
         reconcileNoteMarkerPresentation();
@@ -2617,6 +2682,20 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (listener != null) {
             listener.onReaderPresentationChanged(
                 OctavoNative.progressLabel(nativeHandle));
+            if (strictRestoreFailed
+                && !strictResumeFailureNotified) {
+                strictResumeFailureNotified = true;
+                listener.onReadingPositionRestoreFailure();
+            }
+            if (presentedPosition != null) {
+                listener.onReadingPositionPresented(
+                    presentedPosition[1],
+                    presentedPosition[2],
+                    state[STATE_SPINE_INDEX],
+                    state[STATE_PAGE_FIRST_BYTE],
+                    state[STATE_PAGE_ONE_PAST_LAST_BYTE],
+                    frameCount);
+            }
         }
         scheduleLocationWarm(LOCATION_WARM_INITIAL_DELAY_MILLIS);
         if (nativeAppearanceAwaitingPresentation == null) {
@@ -2779,15 +2858,18 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         accessibilityProvider.onChromeVisibilityChanged();
     }
 
-    private void capturePresentedPosition() {
+    private long[] capturePresentedPosition() {
         if (nativeHandle == 0) {
-            return;
+            return null;
         }
         long[] position = OctavoNative.readingPosition(nativeHandle);
-        if (position == null
-            || position.length != 3
-            || position[0] != 1) {
-            return;
+        return capturePresentedPosition(position);
+    }
+
+    private long[] capturePresentedPosition(long[] position) {
+        if (strictResumePositionPersistenceBlocked()
+            || !validPresentedPosition(position)) {
+            return null;
         }
         pendingPosition = true;
         pendingSpineIndex = position[1];
@@ -2797,11 +2879,40 @@ final class OctavoSurfaceView extends SurfaceView implements SurfaceHolder.Callb
         if (!persistencePosted) {
             flushPresentedPosition();
         }
+        return position;
+    }
+
+    private static boolean validPresentedPosition(long[] position) {
+        return position != null
+            && position.length == 3
+            && position[0] == 1;
+    }
+
+    private boolean strictResumePositionPersistenceBlocked() {
+        long[] state = nativeHandle == 0
+            ? null : OctavoNative.state(nativeHandle);
+        return strictResumePositionPersistenceBlocked(state);
+    }
+
+    private boolean strictResumePositionPersistenceBlocked(long[] state) {
+        if (!strictResume || strictResumeRecovered) {
+            return false;
+        }
+        return !validState(state)
+            || state[STATE_RESTORE_REQUESTED] == 0
+            || state[STATE_RESTORE_ATTEMPTED] == 0
+            || state[STATE_RESTORE_SUCCEEDED] == 0;
     }
 
     private void flushPresentedPosition() {
         removeCallbacks(persistPosition);
         persistencePosted = false;
+        if (strictResumePositionPersistenceBlocked()) {
+            pendingPosition = false;
+            pendingSpineIndex = 0;
+            pendingByteOffset = 0;
+            return;
+        }
         if (!pendingPosition) {
             return;
         }

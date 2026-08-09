@@ -735,14 +735,24 @@ search; Port 10 adds bounded word selection and Copy. Its local follow-up adds
 same-spine cross-page continuation and closes that bounded selection launch
 gate. Port 11 adds durable provider-neutral annotation storage, local bookmarks,
 the local multi-color highlight workflow, and the local note/recovery candidate
-plus disconnected annotation coordination while Drive remains disconnected.
-Durable Unicode-aware indexing, annotation search/export, concrete provider
+plus disconnected annotation coordination. Its sixth independent local slice
+now adds API 36/API 34-qualified bounded provider-neutral `O1RP` reading-position
+lanes, private atomic `O1RS` decisions, strict Reader0 anchor/presentation
+qualification, and a Kindle-style Go there/Stay here/Retry confirmation while
+Drive remains disconnected. Both targets pass the 24/24 focused position
+matrix, external force-stop recovery, and the 158/158 ordinary matrix with
+empty crash/fatal buffers. The physical gate also closed touch-mode action
+focus and restored the accepted APK/private-data baseline exactly. Durable
+Unicode-aware indexing, annotation
+search/export, concrete provider
 transport, and the remaining portable record families remain deferred. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port11.md`](../docs/android_port11.md) for the current
 annotation/storage/merge boundary,
 [`../docs/android_port11_sync_coordinator.md`](../docs/android_port11_sync_coordinator.md)
 for the disconnected annotation coordination boundary,
+[`../docs/android_port11_position_sync.md`](../docs/android_port11_position_sync.md)
+for the separate reading-position/confirmation boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,

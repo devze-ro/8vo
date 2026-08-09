@@ -13,6 +13,7 @@ enum
   OCTAVO_ANDROID_NAVIGATION_HEADER_COUNT = 16,
   OCTAVO_ANDROID_NAVIGATION_ROW_STRIDE = 10,
   OCTAVO_ANDROID_NAVIGATION_ROW_CAP = EPUB_READER_FRAME_NAV_ITEM_CAP,
+  OCTAVO_ANDROID_POSITION_QUALIFICATION_FIELD_COUNT = 7,
 
   OCTAVO_ANDROID_NAVIGATION_FLAG_READY = 1 << 0,
   OCTAVO_ANDROID_NAVIGATION_FLAG_FALLBACK = 1 << 1,
@@ -104,6 +105,10 @@ octavo_android_restore_presented_reader(OctavoAndroidApp *app)
     (EpubReaderNavigationOptions){.suppress_history = 1},
     &restoration);
   if (result != EpubReaderResult_Ok ||
+      restoration.target_spine_index !=
+        app->presented_anchor_spine_index ||
+      restoration.target_byte_offset !=
+        app->presented_anchor_byte_offset ||
       !app->reader.has_current_page ||
       app->reader.current_page.spine_index !=
         app->presented_anchor_spine_index ||
@@ -112,6 +117,16 @@ octavo_android_restore_presented_reader(OctavoAndroidApp *app)
       app->reader.current_page.one_past_last_byte <=
         app->presented_anchor_byte_offset)
   {
+    /* Reader0 could not reconstruct the exact last posted origin. Keep the
+       still-visible platform buffer, but make every native publication gate
+       fail until the host recreates this reader. A speculative candidate must
+       never become a readable or presentable fallback state. */
+    octavo_android_invalidate_prepared_static_frame(app);
+    app->presented_anchor_valid = 0;
+    app->reader_frame.ready = 0;
+    app->reader_frame.document_open = 0;
+    app->reader_view_ready = 0;
+    app->reader_initialized = 0;
     return 0;
   }
   app->layout_config.focused_spine_index = app->reader.active_spine_index;
@@ -986,6 +1001,150 @@ Java_ro_devze_octavo_OctavoNative_navigateToAnnotation(
     app,
     OCTAVO_ANDROID_NAVIGATION_KIND_ANNOTATION,
     EpubReaderNavigationReason_Bookmark,
+    origin,
+    navigation);
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_ro_devze_octavo_OctavoNative_qualifySyncedPosition(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong spine_index,
+  jlong byte_offset)
+{
+  (void)type;
+  jlong values[OCTAVO_ANDROID_POSITION_QUALIFICATION_FIELD_COUNT] = {0};
+  values[0] = OCTAVO_ANDROID_NAVIGATION_INVALID;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (app && spine_index >= 0 && (uint64_t)spine_index <= UINT32_MAX &&
+      byte_offset >= 0)
+  {
+    if (!octavo_android_navigation_can_begin(app) ||
+        app->reader.has_active_selection)
+    {
+      app->semantic_navigation_gate_block_count += 1u;
+      values[0] = OCTAVO_ANDROID_NAVIGATION_BUSY;
+    }
+    else
+    {
+      EpubReaderNavigationResult navigation = {0};
+      EpubReaderResult navigation_result =
+        epub_reader_navigate_to_location(
+          &app->reader,
+          (U32)spine_index,
+          (U64)byte_offset,
+          EpubReaderNavigationReason_Location,
+          app->layout_key,
+          app->layout_config,
+          (EpubReaderNavigationOptions){.suppress_history = 1},
+          &navigation);
+      B32 exact = navigation_result == EpubReaderResult_Ok &&
+        navigation.target_spine_index == (U32)spine_index &&
+        navigation.target_byte_offset == (U64)byte_offset &&
+        app->reader.has_current_page &&
+        app->reader.current_page.spine_index == (U32)spine_index &&
+        app->reader.current_page.first_byte <= (U64)byte_offset &&
+        app->reader.current_page.one_past_last_byte > (U64)byte_offset;
+      EpubReaderLocationSummary location = {0};
+      if (exact)
+      {
+        (void)epub_reader_location_summary_for_position(
+          &app->reader, (U32)spine_index, (U64)byte_offset, &location);
+      }
+
+      if (!octavo_android_restore_presented_reader(app))
+      {
+        values[0] = OCTAVO_ANDROID_NAVIGATION_FAILED;
+      }
+      else if (!exact)
+      {
+        values[0] = navigation_result == EpubReaderResult_Ok ?
+          OCTAVO_ANDROID_NAVIGATION_UNAVAILABLE :
+          octavo_android_navigation_result(navigation_result);
+      }
+      else
+      {
+        values[0] = OCTAVO_ANDROID_NAVIGATION_ACCEPTED;
+        values[1] = spine_index;
+        values[2] = byte_offset;
+        values[3] = location.available ? 1 : 0;
+        values[4] = (jlong)location.location_index;
+        values[5] = (jlong)location.location_count;
+        values[6] = (jlong)location.percent;
+      }
+    }
+  }
+
+  jlongArray result = (*environment)->NewLongArray(
+    environment, OCTAVO_ANDROID_POSITION_QUALIFICATION_FIELD_COUNT);
+  if (result)
+  {
+    (*environment)->SetLongArrayRegion(
+      environment,
+      result,
+      0,
+      OCTAVO_ANDROID_POSITION_QUALIFICATION_FIELD_COUNT,
+      values);
+  }
+  return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_ro_devze_octavo_OctavoNative_navigateToSyncedPosition(
+  JNIEnv *environment,
+  jclass type,
+  jlong handle,
+  jlong spine_index,
+  jlong byte_offset)
+{
+  (void)environment;
+  (void)type;
+  OctavoAndroidApp *app = octavo_android_from_handle(handle);
+  if (!app || spine_index < 0 || (uint64_t)spine_index > UINT32_MAX ||
+      byte_offset < 0)
+  {
+    return OCTAVO_ANDROID_NAVIGATION_INVALID;
+  }
+  if (!octavo_android_navigation_can_begin(app))
+  {
+    app->semantic_navigation_gate_block_count += 1u;
+    return OCTAVO_ANDROID_NAVIGATION_BUSY;
+  }
+
+  EpubReaderNavigationEntry origin =
+    octavo_android_presented_navigation_entry(
+      app, EpubReaderNavigationReason_Location);
+  EpubReaderNavigationResult navigation = {0};
+  EpubReaderResult result = epub_reader_navigate_to_location(
+    &app->reader,
+    (U32)spine_index,
+    (U64)byte_offset,
+    EpubReaderNavigationReason_Location,
+    app->layout_key,
+    app->layout_config,
+    (EpubReaderNavigationOptions){.suppress_history = 1},
+    &navigation);
+  if (result != EpubReaderResult_Ok)
+  {
+    app->semantic_navigation_failure_count += 1u;
+    return octavo_android_navigation_failure_after_restore(app, result);
+  }
+  if (navigation.target_spine_index != (U32)spine_index ||
+      navigation.target_byte_offset != (U64)byte_offset ||
+      !app->reader.has_current_page ||
+      app->reader.current_page.spine_index != (U32)spine_index ||
+      app->reader.current_page.first_byte > (U64)byte_offset ||
+      app->reader.current_page.one_past_last_byte <= (U64)byte_offset)
+  {
+    app->semantic_navigation_failure_count += 1u;
+    return octavo_android_navigation_failure_after_restore(
+      app, EpubReaderResult_Boundary);
+  }
+  return octavo_android_begin_direct_navigation(
+    app,
+    OCTAVO_ANDROID_NAVIGATION_KIND_SYNCED_POSITION,
+    EpubReaderNavigationReason_Location,
     origin,
     navigation);
 }

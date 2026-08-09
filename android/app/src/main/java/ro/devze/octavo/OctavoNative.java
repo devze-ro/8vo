@@ -19,6 +19,14 @@ final class OctavoNative {
     static final int NAVIGATION_UNAVAILABLE = -2;
     static final int NAVIGATION_BUSY = -3;
     static final int NAVIGATION_FAILED = -4;
+    static final int POSITION_QUALIFICATION_FIELD_COUNT = 7;
+    static final int POSITION_QUALIFICATION_STATUS = 0;
+    static final int POSITION_QUALIFICATION_SPINE_INDEX = 1;
+    static final int POSITION_QUALIFICATION_BYTE_OFFSET = 2;
+    static final int POSITION_QUALIFICATION_LOCATION_AVAILABLE = 3;
+    static final int POSITION_QUALIFICATION_LOCATION_INDEX = 4;
+    static final int POSITION_QUALIFICATION_LOCATION_COUNT = 5;
+    static final int POSITION_QUALIFICATION_PERCENT = 6;
     static final int SELECTION_ACCEPTED = 1;
     static final int SELECTION_ALREADY_PRESENTED = 2;
     static final int SELECTION_INVALID = -1;
@@ -58,6 +66,7 @@ final class OctavoNative {
                               long resumeSpineIndex,
                               long resumeByteOffset,
                               boolean resumeRequested,
+                              boolean strictResume,
                               boolean chromeVisible,
                               int[] appearanceConfig,
                               int[] appearanceColors,
@@ -131,6 +140,12 @@ final class OctavoNative {
     static native int navigateToAnnotation(long handle,
                                            long spineIndex,
                                            long byteOffset);
+    static native long[] qualifySyncedPosition(long handle,
+                                               long spineIndex,
+                                               long byteOffset);
+    static native int navigateToSyncedPosition(long handle,
+                                               long spineIndex,
+                                               long byteOffset);
     static native int navigateToPage(long handle, long oneBasedPage);
     static native int navigateToPercent(long handle, int percent);
     static native int moveHistory(long handle, boolean forward);

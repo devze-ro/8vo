@@ -459,7 +459,7 @@ are still pending.
   tombstones, explicit conflict recovery, and safe private-actor rotation. API
   36 passes the full portable class 8/8, existing annotation store 8/8, note
   integration 3/3, ordinary matrix 127/127, separate process restart, and an
-  empty crash buffer; and
+  empty crash buffer;
 - the fifth backend-only slice adds a product-owned, caller-driven annotation
   sync coordinator and private atomic `O1AS` retry/review state. It yields only
   bounded read and conditional-create/replace commands, preserves opaque
@@ -469,10 +469,22 @@ are still pending.
   UI. API 36 passes all seven coordinator tests together in 56.295 seconds, the
   exact 16 MiB-minus-44 snapshot alone in 56.531 seconds on the 192 MiB heap,
   portable/store/note regressions 8/8, 8/8, and 3/3, all 134 ordinary tests in
-  264.678 seconds, and an empty crash buffer; and
+  264.678 seconds, and an empty crash buffer;
+- the sixth independent local slice adds bounded canonical `O1RP` per-device
+  position lanes and private atomic `O1RS` review/decision state, keyed by exact
+  EPUB SHA-256 and authoritative Reader0 spine/UTF-8 byte anchors. It qualifies
+  clock-free merge and stale replay, strict successful-presentation publication,
+  exact Go there completion, Stay here, durable Back/re-prompt/retry behavior,
+  strict restore, reflow, recreation, and process death without reusing the
+  annotation families. The final candidate passes 24/24 focused tests, the
+  external seed/confirmed-force-stop/fresh-process driver, all 158 ordinary
+  tests, and empty crash/fatal buffers on both API 36 x86_64 and API 34 ARM64.
+  The physical gate also found and closed touch-mode action focus, then restored
+  the accepted APKs and 32-file private manifest exactly; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
-  closed through deterministic coordination, but the concrete Drive adapter,
-  catalog, preferences, positions, transfer manifests, provider trust/
+  closed through deterministic coordination and the independent position gate
+  is closed through local confirmation, but the concrete Drive adapter,
+  catalog, preferences, transfer manifests, provider trust/
   encryption UX, and explicit authorization remain before cloud work.
 
 ### Annotations workspace
@@ -512,6 +524,8 @@ The byte-level annotation contract is
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md).
 The disconnected coordination contract is
 [`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md).
+The separate provider-neutral reading-position and confirmation contract is
+[`android_port11_position_sync.md`](android_port11_position_sync.md).
 Desktop remains a future peer over those records, not a database-file copy, and
 a second provider may motivate only the minimum proven transport seam after
 Drive works.

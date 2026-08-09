@@ -79,6 +79,7 @@ public final class OctavoAccessibilityTest {
     public void resetLibraryAndAppearance() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }

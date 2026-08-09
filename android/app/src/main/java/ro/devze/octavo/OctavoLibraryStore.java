@@ -84,10 +84,26 @@ final class OctavoLibraryStore {
         final long byteOffset;
 
         Session(Book book) {
+            this(book,
+                 book.hasPosition,
+                 book.spineIndex,
+                 book.byteOffset);
+        }
+
+        Session(Book book,
+                boolean hasPosition,
+                long spineIndex,
+                long byteOffset) {
+            if (book == null
+                || spineIndex < 0
+                || spineIndex > 0xFFFFFFFFL
+                || byteOffset < 0) {
+                throw new IllegalArgumentException();
+            }
             this.book = book;
-            hasPosition = book.hasPosition;
-            spineIndex = book.spineIndex;
-            byteOffset = book.byteOffset;
+            this.hasPosition = hasPosition;
+            this.spineIndex = spineIndex;
+            this.byteOffset = byteOffset;
         }
     }
 
