@@ -1,5 +1,6 @@
 package ro.devze.octavo;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -57,9 +58,41 @@ public final class OctavoActivity extends Activity {
         "octavo.port11.position_retry_origin_spine";
     private static final String STATE_POSITION_RETRY_ORIGIN_BYTE =
         "octavo.port11.position_retry_origin_byte";
+    private static final String STATE_APPEARANCE_REVIEW_PENDING =
+        "octavo.port11.appearance_review_pending";
+    private static final String STATE_APPEARANCE_RETRY_ACTION =
+        "octavo.port11.appearance_retry_action";
+    private static final String STATE_APPEARANCE_RETRY_DEVICE =
+        "octavo.port11.appearance_retry_device";
+    private static final String STATE_APPEARANCE_RETRY_SEQUENCE =
+        "octavo.port11.appearance_retry_sequence";
+    private static final String STATE_APPEARANCE_RETRY_EPOCH =
+        "octavo.port11.appearance_retry_epoch";
+    private static final String STATE_APPEARANCE_RETRY_ORIGIN_SEQUENCE =
+        "octavo.port11.appearance_retry_origin_sequence";
+    private static final String STATE_APPEARANCE_RETRY_LOCAL_SEQUENCE =
+        "octavo.port11.appearance_retry_local_sequence";
+    private static final String STATE_APPEARANCE_RETRY_REMOTE_DEVICE =
+        "octavo.port11.appearance_retry_remote_device";
+    private static final String STATE_APPEARANCE_RETRY_REMOTE_SEQUENCE =
+        "octavo.port11.appearance_retry_remote_sequence";
+    private static final String STATE_APPEARANCE_RETRY_PENDING_KIND =
+        "octavo.port11.appearance_retry_pending_kind";
+    private static final String STATE_APPEARANCE_REVIEW_EPOCH_BEFORE_RETRY =
+        "octavo.port11.appearance_review_epoch_before_retry";
+    private static final String STATE_APPEARANCE_ROLLBACK_EPOCH_RETRY =
+        "octavo.port11.appearance_rollback_epoch_retry";
+    private static final String STATE_APPEARANCE_ABANDON_AFTER_RELOAD =
+        "octavo.port11.appearance_abandon_after_reload";
     private static final int POSITION_RETRY_MARK_GO = 1;
     private static final int POSITION_RETRY_STAY = 2;
     private static final int POSITION_RETRY_DISMISS = 3;
+    private static final int APPEARANCE_RETRY_RELOAD = 1;
+    private static final int APPEARANCE_RETRY_USE = 2;
+    private static final int APPEARANCE_RETRY_KEEP = 3;
+    private static final int APPEARANCE_RETRY_DISMISS = 4;
+    private static final int APPEARANCE_RETRY_FORWARD = 5;
+    private static final int APPEARANCE_RETRY_ROLLBACK = 6;
     private static final int SEARCH_BUSY_RETRY_LIMIT = 96;
     private static final long SEARCH_BUSY_RETRY_DELAY_MILLIS = 32;
 
@@ -177,8 +210,149 @@ public final class OctavoActivity extends Activity {
         }
     }
 
+    private static final class AppearanceSyncRetryDescriptor {
+        final int action;
+        final String deviceId;
+        final long sequence;
+        final long reviewEpoch;
+        final long originSequence;
+        final long localSequence;
+        final String remoteDeviceId;
+        final long remoteSequence;
+        final int pendingKind;
+
+        private AppearanceSyncRetryDescriptor(
+            int action, String deviceId, long sequence,
+            long reviewEpoch, long originSequence, long localSequence,
+            String remoteDeviceId, long remoteSequence, int pendingKind) {
+            this.action = action;
+            this.deviceId = deviceId;
+            this.sequence = sequence;
+            this.reviewEpoch = reviewEpoch;
+            this.originSequence = originSequence;
+            this.localSequence = localSequence;
+            this.remoteDeviceId = remoteDeviceId;
+            this.remoteSequence = remoteSequence;
+            this.pendingKind = pendingKind;
+        }
+
+        static AppearanceSyncRetryDescriptor reload() {
+            return new AppearanceSyncRetryDescriptor(
+                APPEARANCE_RETRY_RELOAD, null, 0, 0, 0,
+                0, null, 0, 0);
+        }
+
+        static AppearanceSyncRetryDescriptor candidate(
+            int action, OctavoAppearanceSyncStore.Candidate candidate) {
+            return new AppearanceSyncRetryDescriptor(
+                action, candidate.deviceId, candidate.sequence,
+                candidate.reviewEpoch, candidate.originLocalSequence,
+                0, null, 0, 0);
+        }
+
+        static AppearanceSyncRetryDescriptor pending(
+            int action, OctavoAppearanceSyncStore.Pending pending) {
+            return new AppearanceSyncRetryDescriptor(
+                action, null, 0, 0, pending.originLocalSequence,
+                pending.localSequence, pending.remoteDeviceId,
+                pending.remoteSequence,
+                pending.kind == OctavoAppearanceSyncStore.PendingKind.LOCAL
+                    ? 1 : 2);
+        }
+
+        boolean candidateAction() {
+            return action >= APPEARANCE_RETRY_USE
+                && action <= APPEARANCE_RETRY_DISMISS;
+        }
+
+        boolean pendingAction() {
+            return action == APPEARANCE_RETRY_FORWARD
+                || action == APPEARANCE_RETRY_ROLLBACK;
+        }
+
+        boolean matches(OctavoAppearanceSyncStore.Candidate candidate) {
+            return candidateAction() && candidate != null
+                && deviceId.equals(candidate.deviceId)
+                && sequence == candidate.sequence
+                && reviewEpoch == candidate.reviewEpoch
+                && originSequence == candidate.originLocalSequence;
+        }
+
+        boolean matches(OctavoAppearanceSyncStore.Pending pending) {
+            return pendingAction() && pending != null
+                && originSequence == pending.originLocalSequence
+                && localSequence == pending.localSequence
+                && remoteDeviceId.equals(pending.remoteDeviceId)
+                && remoteSequence == pending.remoteSequence
+                && pendingKind
+                   == (pending.kind
+                       == OctavoAppearanceSyncStore.PendingKind.LOCAL
+                           ? 1 : 2);
+        }
+
+        void save(Bundle state) {
+            state.putInt(STATE_APPEARANCE_RETRY_ACTION, action);
+            state.putString(STATE_APPEARANCE_RETRY_DEVICE, deviceId);
+            state.putLong(STATE_APPEARANCE_RETRY_SEQUENCE, sequence);
+            state.putLong(STATE_APPEARANCE_RETRY_EPOCH, reviewEpoch);
+            state.putLong(STATE_APPEARANCE_RETRY_ORIGIN_SEQUENCE,
+                          originSequence);
+            state.putLong(STATE_APPEARANCE_RETRY_LOCAL_SEQUENCE,
+                          localSequence);
+            state.putString(STATE_APPEARANCE_RETRY_REMOTE_DEVICE,
+                            remoteDeviceId);
+            state.putLong(STATE_APPEARANCE_RETRY_REMOTE_SEQUENCE,
+                          remoteSequence);
+            state.putInt(STATE_APPEARANCE_RETRY_PENDING_KIND,
+                         pendingKind);
+        }
+
+        static AppearanceSyncRetryDescriptor restore(Bundle state) {
+            if (state == null) {
+                return null;
+            }
+            int action = state.getInt(STATE_APPEARANCE_RETRY_ACTION, 0);
+            if (action == APPEARANCE_RETRY_RELOAD) {
+                return reload();
+            }
+            String device = state.getString(STATE_APPEARANCE_RETRY_DEVICE);
+            long sequence = state.getLong(
+                STATE_APPEARANCE_RETRY_SEQUENCE, 0);
+            long epoch = state.getLong(STATE_APPEARANCE_RETRY_EPOCH, 0);
+            long origin = state.getLong(
+                STATE_APPEARANCE_RETRY_ORIGIN_SEQUENCE, 0);
+            long local = state.getLong(
+                STATE_APPEARANCE_RETRY_LOCAL_SEQUENCE, 0);
+            String remote = state.getString(
+                STATE_APPEARANCE_RETRY_REMOTE_DEVICE);
+            long remoteSequence = state.getLong(
+                STATE_APPEARANCE_RETRY_REMOTE_SEQUENCE, 0);
+            int kind = state.getInt(
+                STATE_APPEARANCE_RETRY_PENDING_KIND, 0);
+            if (action >= APPEARANCE_RETRY_USE
+                && action <= APPEARANCE_RETRY_DISMISS
+                && OctavoAppearancePortable.validDeviceId(device)
+                && sequence > 0 && epoch > 0 && origin > 0) {
+                return new AppearanceSyncRetryDescriptor(
+                    action, device, sequence, epoch, origin,
+                    0, null, 0, 0);
+            }
+            if ((action == APPEARANCE_RETRY_FORWARD
+                 || action == APPEARANCE_RETRY_ROLLBACK)
+                && origin >= 0 && local > 0
+                && OctavoAppearancePortable.validDeviceId(remote)
+                && remoteSequence >= 0 && (kind == 1 || kind == 2)) {
+                return new AppearanceSyncRetryDescriptor(
+                    action, null, 0, 0, origin, local,
+                    remote, remoteSequence, kind);
+            }
+            return null;
+        }
+    }
+
     private OctavoLibraryStore libraryStore;
     private OctavoAppearanceStore appearanceStore;
+    private OctavoAppearanceSyncStore appearanceSyncStore;
     private OctavoAppearance appearance;
     private OctavoProgressStore progressStore;
     private OctavoProgressDisplay progressDisplay;
@@ -209,6 +383,8 @@ public final class OctavoActivity extends Activity {
     private OctavoBookmarksPanel bookmarksPanel;
     private FrameLayout readingPositionOverlay;
     private OctavoReadingPositionPrompt readingPositionPrompt;
+    private FrameLayout appearanceSyncOverlay;
+    private OctavoAppearanceSyncPrompt appearanceSyncPrompt;
     private TextView failureBanner;
     private boolean failureBannerAnnouncementDeferred;
     private View readerEntryCover;
@@ -225,6 +401,33 @@ public final class OctavoActivity extends Activity {
     private String deferredProgressFailure;
     private OctavoAppearance pendingAppearancePersistence;
     private boolean appearancePersistencePosted;
+    private boolean appearanceSyncReviewPending;
+    private boolean appearanceSyncReviewInitialized;
+    private boolean appearanceSyncPendingLoaded;
+    private boolean appearanceSyncAwaitingExplicitRetry;
+    private boolean appearanceSyncRollbackRequested;
+    private boolean appearanceSyncUnstagedRollbackRequested;
+    private OctavoAppearance appearanceSyncUnstagedOrigin;
+    private OctavoAppearanceSyncStore.Candidate appearanceSyncCandidate;
+    private OctavoAppearanceSyncStore.Candidate
+        appearanceSyncPromptCandidate;
+    private long appearanceSyncPromptGeneration;
+    private OctavoAppearanceSyncStore.Pending appearanceSyncPending;
+    private Runnable appearanceSyncRetry;
+    private String appearanceSyncFailureHeading;
+    private String appearanceSyncFailureMessage;
+    private AppearanceSyncRetryDescriptor appearanceSyncRetryDescriptor;
+    private long appearanceSyncReviewEpochBeforeRetry = -1;
+    private boolean appearanceSyncRollbackEpochReconciliation;
+    private boolean appearanceSyncStageUncertain;
+    private boolean appearanceSyncAbandonAfterReload;
+    private OctavoSurfaceView appearanceReceiptSurface;
+    private OctavoSurfaceView.AppearancePresentationReceipt
+        latestAppearanceReceipt;
+    private OctavoSurfaceView consumedAppearanceReceiptSurface;
+    private OctavoAppearance consumedAppearanceReceiptProfile;
+    private long consumedAppearanceReceiptGeneration = -1;
+    private long consumedAppearanceReceiptFrame = -1;
     private OctavoProgressDisplay pendingProgressPersistence;
     private boolean progressPersistencePosted;
     private boolean navigationSnapshotRefreshPosted;
@@ -279,6 +482,53 @@ public final class OctavoActivity extends Activity {
         appearance = appearanceStore.load();
         boolean appearanceResetAfterCorruption =
             appearanceStore.recoveredFromCorruption();
+        appearanceSyncStore = new OctavoAppearanceSyncStore(this);
+        OctavoAppearanceSyncStore.LoadStatus appearanceSyncLoadStatus =
+            appearanceSyncStore.load();
+        appearanceSyncPendingLoaded =
+            appearanceSyncStore.pending() != null;
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.restore(savedInstanceState);
+        appearanceSyncReviewEpochBeforeRetry = savedInstanceState == null
+            ? -1 : savedInstanceState.getLong(
+                STATE_APPEARANCE_REVIEW_EPOCH_BEFORE_RETRY, -1);
+        appearanceSyncRollbackEpochReconciliation =
+            savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_APPEARANCE_ROLLBACK_EPOCH_RETRY, false);
+        appearanceSyncAbandonAfterReload = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_APPEARANCE_ABANDON_AFTER_RELOAD, false);
+        appearanceSyncStageUncertain = appearanceSyncAbandonAfterReload;
+        if (appearanceSyncAbandonAfterReload) {
+            appearanceSyncAwaitingExplicitRetry = true;
+        }
+        if (appearanceSyncRetryDescriptor != null
+            && appearanceSyncRetryDescriptor.action
+               == APPEARANCE_RETRY_RELOAD) {
+            appearanceSyncAwaitingExplicitRetry = true;
+        }
+        if (appearanceSyncRetryDescriptor != null
+            && appearanceSyncRetryDescriptor.pendingAction()) {
+            OctavoAppearanceSyncStore.Pending restoredPending =
+                appearanceSyncStore.pending();
+            if (!appearanceSyncRetryDescriptor.matches(restoredPending)) {
+                if (appearanceSyncReviewEpochBeforeRetry >= 0
+                    && appearanceSyncRetryDescriptor.action
+                       == APPEARANCE_RETRY_ROLLBACK) {
+                    appearanceSyncRetryDescriptor =
+                        AppearanceSyncRetryDescriptor.reload();
+                    appearanceSyncAwaitingExplicitRetry = true;
+                    appearanceSyncRollbackRequested = true;
+                } else {
+                    appearanceSyncRetryDescriptor = null;
+                }
+            } else {
+                appearanceSyncRollbackRequested =
+                    appearanceSyncRetryDescriptor.action
+                    == APPEARANCE_RETRY_ROLLBACK;
+            }
+        }
         progressStore = new OctavoProgressStore(this);
         progressDisplay = progressStore.load();
         boolean progressResetAfterCorruption =
@@ -305,6 +555,9 @@ public final class OctavoActivity extends Activity {
         boolean restoreReviewPending = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_POSITION_REVIEW_PENDING, false);
+        boolean restoreAppearanceReviewPending = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_APPEARANCE_REVIEW_PENDING, false);
         OctavoLibraryStore.Book restoreBook =
             restoreKey == null ? null : libraryStore.findBook(restoreKey);
         boolean readerRestored = restoreBook != null
@@ -313,6 +566,8 @@ public final class OctavoActivity extends Activity {
             showLibrary();
         } else {
             readingPositionReviewPending = restoreReviewPending;
+            appearanceSyncReviewPending =
+                restoreAppearanceReviewPending;
             ReadingPositionChoiceRetry restoredRetry =
                 ReadingPositionChoiceRetry.restore(savedInstanceState);
             if (restoredRetry != null
@@ -331,6 +586,7 @@ public final class OctavoActivity extends Activity {
         reportAnnotationLoadStatus(annotationLoadStatus);
         reportNoteDraftLoadStatus(noteDraftLoadStatus);
         reportReadingPositionLoadStatus(readingPositionLoadStatus);
+        reportAppearanceSyncLoadStatus(appearanceSyncLoadStatus);
     }
 
     @Override
@@ -342,10 +598,43 @@ public final class OctavoActivity extends Activity {
         state.putBoolean(
             STATE_POSITION_REVIEW_PENDING,
             readingPositionReviewPending);
+        state.putBoolean(
+            STATE_APPEARANCE_REVIEW_PENDING,
+            appearanceSyncReviewPending);
         if (readingPositionChoiceRetry != null && activeBook != null
             && activeBook.key.equals(
                 readingPositionChoiceRetry.bookDigest)) {
             readingPositionChoiceRetry.save(state);
+        }
+        AppearanceSyncRetryDescriptor appearanceRetry =
+            appearanceSyncRetryDescriptor;
+        OctavoAppearanceSyncStore.Pending syncPending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (syncPending != null) {
+            appearanceRetry = AppearanceSyncRetryDescriptor.pending(
+                appearanceSyncRollbackRequested
+                    ? APPEARANCE_RETRY_ROLLBACK
+                    : APPEARANCE_RETRY_FORWARD,
+                syncPending);
+        } else if (appearanceSyncAwaitingExplicitRetry
+                   && appearanceRetry == null) {
+            appearanceRetry = AppearanceSyncRetryDescriptor.reload();
+        }
+        if (appearanceRetry != null) {
+            appearanceRetry.save(state);
+        }
+        if (appearanceSyncReviewEpochBeforeRetry >= 0) {
+            state.putLong(
+                STATE_APPEARANCE_REVIEW_EPOCH_BEFORE_RETRY,
+                appearanceSyncReviewEpochBeforeRetry);
+            state.putBoolean(
+                STATE_APPEARANCE_ROLLBACK_EPOCH_RETRY,
+                appearanceSyncRollbackEpochReconciliation);
+        }
+        if (appearanceSyncAbandonAfterReload) {
+            state.putBoolean(
+                STATE_APPEARANCE_ABANDON_AFTER_RELOAD, true);
         }
         super.onSaveInstanceState(state);
     }
@@ -375,15 +664,26 @@ public final class OctavoActivity extends Activity {
             }
             updateReadingPositionPromptBounds();
         }
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.applyAppearance(appearance);
+            if (appearanceSyncOverlay != null) {
+                appearanceSyncOverlay.setBackgroundColor(
+                    appearanceSyncPrompt.overlayColor());
+            }
+            updateAppearanceSyncPromptBounds();
+        }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
         }
         restorePendingReadingPositionAfterLifecycle();
+        restorePendingAppearanceAfterLifecycle();
     }
 
     @Override
     public void onBackPressed() {
-        if (readingPositionPrompt != null) {
+        if (appearanceSyncPrompt != null) {
+            dismissAppearanceSyncForBack();
+        } else if (readingPositionPrompt != null) {
             dismissReadingPositionForBack();
         } else if (appearancePanel != null) {
             closeAppearancePanel();
@@ -396,6 +696,15 @@ public final class OctavoActivity extends Activity {
         } else if (surfaceView != null
                    && surfaceView.dismissSelectionForBack()) {
             // Text selection is a transient reader mode and owns this Back.
+            OctavoSurfaceView selectionOwner = surfaceView;
+            selectionOwner.post(() -> {
+                if (surfaceView != selectionOwner
+                    || selectionOwner.hasSelectionForAccessibility()) {
+                    return;
+                }
+                processAppearancePresentationReceipt();
+                considerAppearanceSyncCandidate();
+            });
         } else if (surfaceView != null
                    && surfaceView.hasNavigationPending()) {
             // A destination remains provisional until its frame is posted.
@@ -419,8 +728,12 @@ public final class OctavoActivity extends Activity {
             surfaceView.hostResumed();
         }
         restorePendingReadingPositionAfterLifecycle();
+        restorePendingAppearanceAfterLifecycle();
         if (readingPositionReviewInitialized) {
             considerReadingPositionCandidate();
+        }
+        if (appearanceSyncReviewInitialized) {
+            considerAppearanceSyncCandidate();
         }
         if (deferredAppearanceFailure != null) {
             String message = deferredAppearanceFailure;
@@ -550,7 +863,9 @@ public final class OctavoActivity extends Activity {
             return false;
         }
 
-        releaseReader();
+        if (surfaceView != null || readerRoot != null || activeBook != null) {
+            releaseReader();
+        }
         FrameLayout root = createReaderRoot(replacement, readerTitle);
         FrameLayout windowRoot = createSystemBarFrame(
             root, 0,
@@ -559,6 +874,8 @@ public final class OctavoActivity extends Activity {
         activeBook = target;
         readingPositionReviewPending = recordOpened;
         readingPositionReviewInitialized = false;
+        appearanceSyncReviewPending = recordOpened;
+        appearanceSyncReviewInitialized = false;
         hasPresentedReadingPosition = false;
         libraryRoot = null;
         readerRoot = root;
@@ -845,7 +1162,7 @@ public final class OctavoActivity extends Activity {
                 if (appearancePanel != null) {
                     appearancePanel.updatePresentedAppearance(presented);
                 }
-                persistPresentedAppearance(presented);
+                processAppearancePresentationReceipt();
                 finishAppearanceTransition(presented);
             }
 
@@ -859,7 +1176,29 @@ public final class OctavoActivity extends Activity {
                     }
                     cancelAppearanceTransition();
                 }
-                showOpenFailure("Unable to present reader appearance");
+                if (appearanceSyncStore != null
+                    && appearanceSyncStore.pending() != null) {
+                    OctavoAppearanceSyncStore.Pending pending =
+                        appearanceSyncStore.pending();
+                    showAppearanceSyncFailure(
+                        "Reading settings update needs attention",
+                        "The requested reading settings were not confirmed "
+                            + "on screen. Retry is safe.",
+                        appearanceSyncRollbackRequested
+                            ? () -> beginPendingAppearanceRollback(
+                                pending,
+                                "Restoring your reading settings.")
+                            : OctavoActivity.this::
+                                retryPendingAppearanceForward);
+                } else if (appearanceSyncUnstagedRollbackRequested) {
+                    showAppearanceSyncFailure(
+                        "Reading settings update needs attention",
+                        "Your earlier reading settings were not confirmed "
+                            + "on screen. Retry is safe.",
+                        OctavoActivity.this::retryUnstagedAppearanceRollback);
+                } else {
+                    showOpenFailure("Unable to present reader appearance");
+                }
             }
 
             @Override
@@ -901,13 +1240,38 @@ public final class OctavoActivity extends Activity {
                 if (pending == null || highlightStillAwaiting
                     || noteMarkerStillAwaiting
                     || appearanceStillAwaiting) {
-                    showOpenFailure(highlightStillAwaiting
+                    if (appearanceStillAwaiting
+                        && appearanceSyncStore != null
+                        && appearanceSyncStore.pending() != null) {
+                        OctavoAppearanceSyncStore.Pending syncPending =
+                            appearanceSyncStore.pending();
+                        showAppearanceSyncFailure(
+                            "Reading settings update needs attention",
+                            "The requested reading settings were not "
+                                + "confirmed on screen. Retry is safe.",
+                            appearanceSyncRollbackRequested
+                                ? () -> beginPendingAppearanceRollback(
+                                    syncPending,
+                                    "Restoring your reading settings.")
+                                : OctavoActivity.this::
+                                    retryPendingAppearanceForward);
+                    } else if (appearanceStillAwaiting
+                               && appearanceSyncUnstagedRollbackRequested) {
+                        showAppearanceSyncFailure(
+                            "Reading settings update needs attention",
+                            "Your earlier reading settings were not "
+                                + "confirmed on screen. Retry is safe.",
+                            OctavoActivity.this::
+                                retryUnstagedAppearanceRollback);
+                    } else {
+                        showOpenFailure(highlightStillAwaiting
                         ? "Highlight saved, but it could not be displayed. "
                             + "Reopen the book to retry."
                         : noteMarkerStillAwaiting
                             ? "Note saved, but its marker could not be displayed. "
                                 + "Reopen the book to retry."
                             : "Unable to present reader changes; try again");
+                    }
                 }
             }
 
@@ -915,14 +1279,13 @@ public final class OctavoActivity extends Activity {
             public void onAppearanceRequestsSettled(
                 OctavoAppearance settled) {
                 finishAppearanceTransition(settled);
+                processAppearancePresentationReceipt();
             }
 
             @Override
             public void onReaderPresentationChanged(String label) {
-                if (appearanceStore.hasPendingMigration()) {
-                    persistPresentedAppearance(appearance);
-                }
                 finishReaderEntryCover();
+                processAppearancePresentationReceipt();
                 if (readerProgress != null && label != null) {
                     updateProgressControlLabel(readerProgress, label);
                 }
@@ -1251,7 +1614,10 @@ public final class OctavoActivity extends Activity {
         if (!activityResumed || !hasPresentedReadingPosition
             || activeBook == null || surfaceView == null
             || readingPositionStore == null
-            || readingPositionPrompt != null) {
+            || readingPositionPrompt != null
+            || appearanceSyncPrompt != null
+            || appearancePanel != null || navigationPanel != null
+            || searchPanel != null || bookmarksPanel != null) {
             return;
         }
         List<OctavoReadingPositionStore.Candidate> candidates =
@@ -1764,7 +2130,7 @@ public final class OctavoActivity extends Activity {
     }
 
     private boolean ensureReadingPositionPrompt(String locationLabel) {
-        if (readerRoot == null) {
+        if (readerRoot == null || appearanceSyncPrompt != null) {
             showOpenFailure("Reading-position confirmation is unavailable");
             return false;
         }
@@ -1848,7 +2214,7 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         readingPositionOverlay = overlay;
         readingPositionPrompt = prompt;
-        obscureFailureBannerForReadingPositionPrompt();
+        obscureFailureBannerForModalPrompt();
         int duration = sideSheetMotionDuration(tokens);
         if (duration > 0) {
             overlay.setAlpha(0.0f);
@@ -1895,6 +2261,8 @@ public final class OctavoActivity extends Activity {
     }
 
     private void closeReadingPositionPrompt(boolean restoreFocus) {
+        boolean ownedPrompt = readingPositionOverlay != null
+            || readingPositionPrompt != null;
         if (readingPositionOverlay != null) {
             readingPositionOverlay.animate().cancel();
             if (readingPositionOverlay.getParent() instanceof ViewGroup) {
@@ -1910,32 +2278,32 @@ public final class OctavoActivity extends Activity {
         readingPositionCandidate = null;
         readingPositionRetry = null;
         readingPositionAwaitingExplicitRetry = false;
-        if (surfaceView != null) {
-            surfaceView.setImportantForAccessibility(
-                View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        if (!ownedPrompt) {
+            return;
         }
-        if (readerTopChrome != null) {
-            readerTopChrome.setImportantForAccessibility(
-                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        restoreReaderAccessibilityBoundary();
+        if (appearanceSyncPrompt == null) {
+            restoreFailureBannerAfterModalPrompt();
         }
-        if (readerBottomChrome != null) {
-            readerBottomChrome.setImportantForAccessibility(
-                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        if (restoreFocus) {
+            considerAppearanceSyncCandidate();
         }
-        restoreFailureBannerAfterReadingPositionPrompt();
         if (restoreFocus) {
             restoreReadingPositionFocusAfterClose();
         }
     }
 
     private void restoreReadingPositionFocusAfterClose() {
-        if (surfaceView == null || !surfaceView.isShown()) {
+        if (readingPositionPrompt != null
+            || appearanceSyncPrompt != null
+            || surfaceView == null || !surfaceView.isShown()) {
             return;
         }
         OctavoSurfaceView focusReturn = surfaceView;
         focusReturn.requestFocus();
         focusReturn.post(() -> {
             if (readingPositionPrompt != null
+                || appearanceSyncPrompt != null
                 || surfaceView != focusReturn || !focusReturn.isShown()) {
                 return;
             }
@@ -1947,7 +2315,7 @@ public final class OctavoActivity extends Activity {
         });
     }
 
-    private void obscureFailureBannerForReadingPositionPrompt() {
+    private void obscureFailureBannerForModalPrompt() {
         if (failureBanner == null) {
             return;
         }
@@ -1956,7 +2324,7 @@ public final class OctavoActivity extends Activity {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
     }
 
-    private void restoreFailureBannerAfterReadingPositionPrompt() {
+    private void restoreFailureBannerAfterModalPrompt() {
         TextView banner = failureBanner;
         if (banner == null || !(banner.getParent() instanceof ViewGroup)) {
             failureBannerAnnouncementDeferred = false;
@@ -1969,7 +2337,9 @@ public final class OctavoActivity extends Activity {
             return;
         }
         banner.post(() -> {
-            if (readingPositionPrompt == null && failureBanner == banner
+            if (readingPositionPrompt == null
+                && appearanceSyncPrompt == null
+                && failureBanner == banner
                 && banner.isShown()
                 && failureBannerAnnouncementDeferred) {
                 failureBannerAnnouncementDeferred = false;
@@ -1991,6 +2361,1767 @@ public final class OctavoActivity extends Activity {
                    || status == OctavoReadingPositionStore.LoadStatus
                        .FUTURE_VERSION_BLOCKED) {
             showOpenFailure(readingPositionStore.lastError());
+        }
+    }
+
+    private void reportAppearanceSyncLoadStatus(
+        OctavoAppearanceSyncStore.LoadStatus status) {
+        if (status == null
+            || status == OctavoAppearanceSyncStore.LoadStatus.LOADED
+            || status
+               == OctavoAppearanceSyncStore.LoadStatus.MISSING_CREATED) {
+            return;
+        }
+        String message = appearanceSyncStore == null
+            ? "Reading-settings synchronization is unavailable."
+            : appearanceSyncStore.lastError();
+        if (TextUtils.isEmpty(message)) {
+            message = status
+                == OctavoAppearanceSyncStore.LoadStatus
+                    .CORRUPT_QUARANTINED
+                ? "Invalid reading-settings sync state was quarantined."
+                : "Reading-settings synchronization needs attention.";
+        }
+        final String visibleMessage = message;
+        if (readerRoot != null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                visibleMessage,
+                this::reloadAppearanceSyncState);
+        } else {
+            showOpenFailure(visibleMessage);
+        }
+    }
+
+    /**
+     * Consumes only settled Surface evidence. The receipt key is recorded
+     * before touching either private store so a duplicate frame can never
+     * turn a surfaced failure into an implicit Retry.
+     */
+    private void processAppearancePresentationReceipt() {
+        OctavoSurfaceView receiptOwner = surfaceView;
+        if (receiptOwner == null || appearanceSyncStore == null) {
+            return;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            receiptOwner.currentAppearancePresentationReceipt();
+        if (receipt == null || receipt.profile == null
+            || !receipt.strictResumeSettled) {
+            return;
+        }
+        latestAppearanceReceipt = receipt;
+        appearanceReceiptSurface = receiptOwner;
+        if (consumedAppearanceReceiptSurface == receiptOwner
+            && consumedAppearanceReceiptGeneration
+               == receipt.appearanceGeneration
+            && consumedAppearanceReceiptFrame == receipt.frameCount
+            && receipt.profile.equals(consumedAppearanceReceiptProfile)) {
+            return;
+        }
+        consumedAppearanceReceiptSurface = receiptOwner;
+        consumedAppearanceReceiptGeneration =
+            receipt.appearanceGeneration;
+        consumedAppearanceReceiptFrame = receipt.frameCount;
+        consumedAppearanceReceiptProfile = receipt.profile;
+
+        if (appearanceSyncAwaitingExplicitRetry) {
+            presentRetainedAppearanceSyncFailure();
+            return;
+        }
+        if (appearanceSyncUnstagedRollbackRequested) {
+            if (appearanceSyncUnstagedOrigin != null
+                && receipt.profile.equals(
+                    appearanceSyncUnstagedOrigin)) {
+                if (appearanceSyncAbandonAfterReload) {
+                    finishUncertainStageAbandon(receipt);
+                    return;
+                }
+                appearanceSyncUnstagedRollbackRequested = false;
+                appearanceSyncUnstagedOrigin = null;
+                if (appearanceStore.loadStatus()
+                        == OctavoAppearanceStore.LoadStatus.CURRENT
+                    && appearanceStore.hasCanonicalCurrentRecord(
+                        receipt.profile)) {
+                    finishAppearanceConvergence(receipt);
+                } else {
+                    saveCanonicalAppearanceWithoutLaneAdvance(receipt);
+                }
+            }
+            return;
+        }
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        appearanceSyncPending = pending;
+        if (pending != null) {
+            if (appearanceSyncPendingLoaded) {
+                showLoadedPendingAppearanceRetry(pending, receipt);
+                return;
+            }
+            if (appearanceSyncRollbackRequested) {
+                if (receipt.profile.equals(pending.originAppearance())) {
+                    finishPendingAppearanceRollback(pending, receipt);
+                }
+                return;
+            }
+            if (receipt.profile.equals(pending.targetAppearance())) {
+                completePendingAppearanceForward(pending, receipt, false);
+            }
+            return;
+        }
+
+        appearanceSyncPendingLoaded = false;
+        OctavoAppearancePortable.Lane local =
+            appearanceSyncStore.localLane();
+        if (local == null
+            || !receipt.profile.equals(local.profile.toAppearance())) {
+            closeStaleAppearanceSyncChoice(false);
+            stagePresentedLocalAppearance(receipt);
+            return;
+        }
+
+        if (appearanceStore.loadStatus()
+                != OctavoAppearanceStore.LoadStatus.CURRENT
+            || !appearanceStore.hasCanonicalCurrentRecord(
+                receipt.profile)) {
+            saveCanonicalAppearanceWithoutLaneAdvance(receipt);
+            return;
+        }
+        finishAppearanceConvergence(receipt);
+    }
+
+    private void stagePresentedLocalAppearance(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (!receiptIsCurrent(receipt)) {
+            return;
+        }
+        OctavoAppearancePortable.Lane priorLocal =
+            appearanceSyncStore.localLane();
+        OctavoAppearanceSyncStore.MutationResult staged =
+            appearanceSyncStore.stageLocalPresented(receipt.profile);
+        if (staged == OctavoAppearanceSyncStore.MutationResult.UNCHANGED) {
+            finishAppearanceConvergence(receipt);
+            return;
+        }
+        if (staged != OctavoAppearanceSyncStore.MutationResult.UPDATED) {
+            appearanceSyncUnstagedOrigin = priorLocal == null
+                ? null : priorLocal.profile.toAppearance();
+            appearanceSyncStageUncertain = staged
+                == OctavoAppearanceSyncStore.MutationResult
+                    .PUBLISH_UNCERTAIN;
+            showAppearanceMutationFailure(
+                staged,
+                "The presented reading settings could not be staged.",
+                () -> retryStagePresentedLocalAppearance(
+                    receipt.profile));
+            return;
+        }
+        appearanceSyncStageUncertain = false;
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        if (pending == null
+            || !receipt.profile.equals(pending.targetAppearance())) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The staged reading-settings update could not be verified.",
+                this::reloadAppearanceSyncState);
+            return;
+        }
+        appearanceSyncPending = pending;
+        completePendingAppearanceForward(pending, receipt, false);
+    }
+
+    private void saveCanonicalAppearanceWithoutLaneAdvance(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (!receiptIsCurrent(receipt)) {
+            return;
+        }
+        OctavoAppearanceSyncStore.O7stProof proof =
+            saveExactAppearanceForSync(receipt.profile);
+        if (proof == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The presented reading settings could not be saved. "
+                    + "Retry is safe.",
+                () -> retrySaveCanonicalAppearanceWithoutLaneAdvance(
+                    receipt.profile));
+            return;
+        }
+        finishAppearanceConvergence(receipt);
+    }
+
+    private void completePendingAppearanceForward(
+        OctavoAppearanceSyncStore.Pending expected,
+        OctavoSurfaceView.AppearancePresentationReceipt receipt,
+        boolean allowCanonicalLoadProof) {
+        if (!receiptIsCurrent(receipt)
+            || expected == null
+            || !expected.sameIdentity(appearanceSyncStore.pending())
+            || !receipt.profile.equals(expected.targetAppearance())) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The exact pending reading settings are not currently "
+                    + "confirmed on screen.",
+                this::retryPendingAppearanceForward);
+            return;
+        }
+
+        OctavoAppearanceSyncStore.O7stProof proof = null;
+        if (allowCanonicalLoadProof
+            && appearanceStore.loadStatus()
+               == OctavoAppearanceStore.LoadStatus.CURRENT
+            && appearanceStore.hasCanonicalCurrentRecord(
+                receipt.profile)) {
+            proof = OctavoAppearanceSyncStore.O7stProof.CANONICAL_V3_LOAD;
+        }
+        if (proof == null) {
+            proof = saveExactAppearanceForSync(receipt.profile);
+        }
+        if (proof == null) {
+            appearanceSyncPending = expected;
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The settings appeared, but their local record could not "
+                    + "be saved. Retry is safe.",
+                this::retryPendingAppearanceForward);
+            return;
+        }
+        OctavoAppearanceSyncStore.MutationResult completed =
+            appearanceSyncStore.completePending(
+                expected, receipt.profile, receipt.profile, proof);
+        if (completed == OctavoAppearanceSyncStore.MutationResult.CONFLICT
+            && expected.hasOriginLane) {
+            beginPendingAppearanceRollback(
+                expected,
+                "The other device changed its settings while they were "
+                    + "being applied. Restoring your settings.");
+            return;
+        }
+        if (!completed.succeeded()) {
+            showAppearanceMutationFailure(
+                completed,
+                "The durable reading-settings confirmation could not be "
+                    + "finished.",
+                this::retryPendingAppearanceForward);
+            return;
+        }
+        appearanceSyncPending = null;
+        appearanceSyncPendingLoaded = false;
+        appearanceSyncRollbackRequested = false;
+        appearanceSyncStageUncertain = false;
+        appearanceSyncAbandonAfterReload = false;
+        appearanceSyncRetryDescriptor = null;
+        finishAppearanceConvergence(receipt);
+    }
+
+    private OctavoAppearanceSyncStore.O7stProof saveExactAppearanceForSync(
+        OctavoAppearance target) {
+        if (appearanceStore.save(target)) {
+            pendingAppearancePersistence = null;
+            return OctavoAppearanceSyncStore.O7stProof
+                .CURRENT_PROCESS_ATOMIC_SAVE;
+        }
+        if (appearanceStore.hasCanonicalCurrentRecord(target)) {
+            pendingAppearancePersistence = null;
+            return OctavoAppearanceSyncStore.O7stProof
+                .CURRENT_PROCESS_RECONCILED_AFTER_UNCERTAIN_SAVE;
+        }
+        return null;
+    }
+
+    private void finishAppearanceConvergence(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (!receiptIsCurrent(receipt)) {
+            return;
+        }
+        OctavoAppearanceSyncStore.MutationResult converged =
+            appearanceSyncStore.recordConverged(receipt.profile);
+        if (!converged.succeeded()) {
+            showAppearanceMutationFailure(
+                converged,
+                "Equal reading-settings candidates could not be recorded.",
+                () -> retryFinishAppearanceConvergence(
+                    receipt.profile));
+            return;
+        }
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncRetry = null;
+        if (appearanceSyncRetryDescriptor != null
+            && !appearanceSyncRetryDescriptor.candidateAction()) {
+            appearanceSyncRetryDescriptor = null;
+        }
+        boolean retainChoice = appearanceSyncCandidate != null
+            && appearanceSyncCandidateIsCurrent(
+                appearanceSyncCandidate, receipt.profile);
+        if (retainChoice) {
+            ensureAppearanceSyncChoicePrompt(
+                receipt.profile,
+                appearanceSyncCandidate.targetAppearance(),
+                appearanceSyncCandidate);
+        } else {
+            closeAppearanceSyncPrompt(true);
+        }
+        if (initializeAppearanceSyncReview()) {
+            if (!retainChoice) {
+                considerAppearanceSyncCandidate();
+            }
+        }
+    }
+
+    private boolean initializeAppearanceSyncReview() {
+        if (appearanceSyncReviewInitialized) {
+            return true;
+        }
+        if (appearanceSyncStore == null) {
+            return false;
+        }
+        boolean advanceExplicitOpen = appearanceSyncReviewPending;
+        long reviewEpochBefore = appearanceSyncStore.reviewEpoch();
+        OctavoAppearanceSyncStore.MutationResult result =
+            appearanceSyncStore.beginReviewEpoch(
+                advanceExplicitOpen);
+        if (!result.succeeded()) {
+            if (advanceExplicitOpen
+                && (result == OctavoAppearanceSyncStore.MutationResult
+                        .PUBLISH_UNCERTAIN
+                    || result == OctavoAppearanceSyncStore.MutationResult
+                        .BLOCKED)) {
+                appearanceSyncReviewEpochBeforeRetry = reviewEpochBefore;
+                appearanceSyncRollbackEpochReconciliation = false;
+                showAppearanceSyncFailure(
+                    "Reading settings update needs attention",
+                    appearanceSyncStore.lastError(),
+                    this::reconcileAppearanceReviewEpoch);
+                return false;
+            }
+            showAppearanceMutationFailure(
+                result,
+                "Reading-settings review could not be initialized.",
+                () -> {
+                    if (initializeAppearanceSyncReview()) {
+                        closeAppearanceSyncPrompt(true);
+                        considerAppearanceSyncCandidate();
+                    }
+                });
+            return false;
+        }
+        appearanceSyncReviewInitialized = true;
+        appearanceSyncReviewPending = false;
+        appearanceSyncReviewEpochBeforeRetry = -1;
+        appearanceSyncRollbackEpochReconciliation = false;
+        return true;
+    }
+
+    private void retryPendingAppearanceForward() {
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (pending == null) {
+            reloadAppearanceSyncState();
+            return;
+        }
+        appearanceSyncPending = pending;
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.pending(
+                APPEARANCE_RETRY_FORWARD, pending);
+        boolean allowCanonicalLoadProof = appearanceSyncPendingLoaded;
+        appearanceSyncPendingLoaded = false;
+        appearanceSyncRollbackRequested = false;
+        appearanceSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt != null
+            && receipt.profile.equals(pending.targetAppearance())) {
+            completePendingAppearanceForward(
+                pending, receipt, allowCanonicalLoadProof);
+            return;
+        }
+        if (surfaceView == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The reader is unavailable. Reopen the book and Retry.",
+                this::retryPendingAppearanceForward);
+            return;
+        }
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.showWorking(
+                "Applying the pending reading settings. Waiting for the "
+                    + "reader to confirm them on screen.");
+        }
+        requestReaderAppearance(pending.targetAppearance());
+    }
+
+    private void retryUnstagedAppearanceRollback() {
+        OctavoAppearance origin = appearanceSyncUnstagedOrigin;
+        if (origin == null && appearanceSyncStore != null) {
+            OctavoAppearancePortable.Lane local =
+                appearanceSyncStore.localLane();
+            origin = local == null ? null : local.profile.toAppearance();
+        }
+        if (origin == null || surfaceView == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "No earlier synchronized settings can be restored. Retry "
+                    + "the original settings update.",
+                this::reloadAppearanceSyncState);
+            return;
+        }
+        appearanceSyncUnstagedOrigin = origin;
+        appearanceSyncUnstagedRollbackRequested = true;
+        appearanceSyncAwaitingExplicitRetry = false;
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.showWorking(
+                "Restoring your durable reading settings.");
+        }
+        requestReaderAppearance(origin);
+    }
+
+    private void showLoadedPendingAppearanceRetry(
+        OctavoAppearanceSyncStore.Pending pending,
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        String message;
+        if (receipt != null
+            && receipt.profile.equals(pending.targetAppearance())
+            && appearanceStore.loadStatus()
+               == OctavoAppearanceStore.LoadStatus.CURRENT
+            && appearanceStore.hasCanonicalCurrentRecord(
+                receipt.profile)) {
+            message = "The settings and their local record are present, "
+                + "but synchronization confirmation still needs to finish.";
+        } else if (receipt != null
+                   && receipt.profile.equals(pending.originAppearance())) {
+            message = "A settings update was interrupted before it was "
+                + "shown. Retry is safe; your current settings remain.";
+        } else {
+            message = "A settings update was interrupted and its exact "
+                + "durable state needs to be reconciled. Retry is safe.";
+        }
+        showAppearanceSyncFailure(
+            "Reading settings update needs attention",
+            message,
+            appearanceSyncRollbackRequested
+                ? () -> beginPendingAppearanceRollback(
+                    pending, "Restoring your reading settings.")
+                : this::retryPendingAppearanceForward);
+    }
+
+    private void beginPendingAppearanceRollback(
+        OctavoAppearanceSyncStore.Pending pending,
+        String status) {
+        if (pending == null || !pending.hasOriginLane) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "These first reading settings have no earlier synchronized "
+                    + "profile to restore. Retry the update.",
+                this::retryPendingAppearanceForward);
+            return;
+        }
+        appearanceSyncPending = pending;
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.pending(
+                APPEARANCE_RETRY_ROLLBACK, pending);
+        appearanceSyncRollbackRequested = true;
+        appearanceSyncPendingLoaded = false;
+        appearanceSyncAwaitingExplicitRetry = false;
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt != null
+            && receipt.profile.equals(pending.originAppearance())) {
+            finishPendingAppearanceRollback(pending, receipt);
+            return;
+        }
+        if (surfaceView == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The reader is unavailable. Reopen the book and Retry.",
+                () -> beginPendingAppearanceRollback(pending, status));
+            return;
+        }
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.showWorking(status);
+        }
+        requestReaderAppearance(pending.originAppearance());
+    }
+
+    private void finishPendingAppearanceRollback(
+        OctavoAppearanceSyncStore.Pending expected,
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (!receiptIsCurrent(receipt)
+            || expected == null
+            || !expected.sameIdentity(appearanceSyncStore.pending())
+            || !receipt.profile.equals(expected.originAppearance())) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The earlier settings have not been confirmed on screen.",
+                () -> beginPendingAppearanceRollback(
+                    expected, "Restoring your reading settings."));
+            return;
+        }
+        OctavoAppearanceSyncStore.O7stProof proof =
+            saveExactAppearanceForSync(receipt.profile);
+        if (proof == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "Your settings were restored on screen, but their local "
+                    + "record could not be saved. Retry is safe.",
+                () -> retryFinishPendingAppearanceRollback(expected));
+            return;
+        }
+        boolean advanceDeferredReviewEpoch =
+            appearanceSyncReviewPending;
+        long rollbackReviewEpochBefore =
+            appearanceSyncStore.reviewEpoch();
+        OctavoAppearanceSyncStore.MutationResult dismissed =
+            appearanceSyncStore.dismissPendingAfterRollback(
+                expected, receipt.profile, receipt.profile, proof,
+                advanceDeferredReviewEpoch);
+        if (!dismissed.succeeded()) {
+            if (dismissed == OctavoAppearanceSyncStore.MutationResult
+                    .PUBLISH_UNCERTAIN
+                || dismissed == OctavoAppearanceSyncStore.MutationResult
+                    .BLOCKED) {
+                appearanceSyncRollbackRequested = true;
+                appearanceSyncReviewEpochBeforeRetry =
+                    advanceDeferredReviewEpoch
+                        ? rollbackReviewEpochBefore : -1;
+                appearanceSyncRollbackEpochReconciliation =
+                    advanceDeferredReviewEpoch;
+                showAppearanceSyncFailure(
+                    "Reading settings update needs attention",
+                    appearanceSyncStore.lastError(),
+                    () -> reloadAppearanceSyncStateForRollback(
+                        expected, rollbackReviewEpochBefore,
+                        advanceDeferredReviewEpoch));
+            } else {
+                showAppearanceMutationFailure(
+                    dismissed,
+                    "The restored settings could not be durably confirmed.",
+                    () -> retryFinishPendingAppearanceRollback(expected));
+            }
+            return;
+        }
+        appearanceSyncPending = null;
+        appearanceSyncRollbackRequested = false;
+        appearanceSyncPendingLoaded = false;
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncStageUncertain = false;
+        appearanceSyncAbandonAfterReload = false;
+        appearanceSyncRetryDescriptor = null;
+        if (advanceDeferredReviewEpoch) {
+            appearanceSyncReviewPending = false;
+            appearanceSyncReviewInitialized = true;
+        }
+        appearanceSyncReviewEpochBeforeRetry = -1;
+        appearanceSyncRollbackEpochReconciliation = false;
+        closeAppearanceSyncPrompt(true);
+        finishAppearanceConvergence(receipt);
+    }
+
+    private void reloadAppearanceSyncState() {
+        if (appearanceSyncStore == null) {
+            return;
+        }
+        OctavoAppearanceSyncStore.LoadStatus status =
+            appearanceSyncStore.load();
+        appearanceSyncPending = appearanceSyncStore.pending();
+        appearanceSyncPendingLoaded = appearanceSyncPending != null;
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncRollbackRequested = false;
+        if (status != OctavoAppearanceSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoAppearanceSyncStore.LoadStatus.MISSING_CREATED) {
+            reportAppearanceSyncLoadStatus(status);
+            return;
+        }
+        if (!appearanceSyncAbandonAfterReload) {
+            // Reload proves which side of the uncertain staging replace won.
+            // A later, unrelated Back must not inherit that resolved state.
+            appearanceSyncStageUncertain = false;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (appearanceSyncPending != null && receipt != null) {
+            showLoadedPendingAppearanceRetry(
+                appearanceSyncPending, receipt);
+        } else if (receipt != null) {
+            stageOrConvergeAfterExplicitRetry(receipt);
+        }
+    }
+
+    private void reloadAppearanceSyncForAbandon() {
+        if (appearanceSyncStore == null) {
+            return;
+        }
+        OctavoAppearanceSyncStore.LoadStatus status =
+            appearanceSyncStore.load();
+        if (status != OctavoAppearanceSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoAppearanceSyncStore.LoadStatus.MISSING_CREATED) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                appearanceSyncStore.lastError(),
+                this::reloadAppearanceSyncForAbandon);
+            return;
+        }
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        appearanceSyncPending = pending;
+        appearanceSyncPendingLoaded = pending != null;
+        appearanceSyncStageUncertain = false;
+        if (pending != null) {
+            if (!pending.hasOriginLane) {
+                showAppearanceSyncFailure(
+                    "Reading settings update needs attention",
+                    "The uncertain first settings publication has no "
+                        + "earlier synchronized profile to restore.",
+                    this::retryPendingAppearanceForward);
+                return;
+            }
+            appearanceSyncAbandonAfterReload = false;
+            appearanceSyncPendingLoaded = false;
+            beginPendingAppearanceRollback(
+                pending, "Restoring your reading settings.");
+            return;
+        }
+        OctavoAppearancePortable.Lane local =
+            appearanceSyncStore.localLane();
+        OctavoAppearance origin = local == null
+            ? appearanceStore.current()
+            : local.profile.toAppearance();
+        if (origin == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The earlier durable reading settings could not be "
+                    + "identified.",
+                this::reloadAppearanceSyncForAbandon);
+            return;
+        }
+        appearanceSyncUnstagedOrigin = origin;
+        appearanceSyncUnstagedRollbackRequested = true;
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt != null && receipt.profile.equals(origin)) {
+            finishUncertainStageAbandon(receipt);
+            return;
+        }
+        if (surfaceView == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "Reopen the reader to restore the earlier settings.",
+                this::reloadAppearanceSyncForAbandon);
+            return;
+        }
+        appearanceSyncAwaitingExplicitRetry = false;
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.showWorking(
+                "Restoring your durable reading settings.");
+        }
+        requestReaderAppearance(origin);
+    }
+
+    private void finishUncertainStageAbandon(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (!receiptIsCurrent(receipt)) {
+            return;
+        }
+        OctavoAppearanceSyncStore.O7stProof proof =
+            saveExactAppearanceForSync(receipt.profile);
+        if (proof == null) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The earlier settings appeared, but their local record "
+                    + "could not be restored.",
+                this::reloadAppearanceSyncForAbandon);
+            return;
+        }
+        AppearanceSyncRetryDescriptor descriptor =
+            appearanceSyncRetryDescriptor;
+        if (descriptor != null && descriptor.candidateAction()) {
+            OctavoAppearanceSyncStore.Candidate exact = null;
+            for (OctavoAppearanceSyncStore.Candidate candidate
+                    : appearanceSyncStore.reviewCandidates(
+                        receipt.profile)) {
+                if (descriptor.matches(candidate)) {
+                    exact = candidate;
+                    break;
+                }
+            }
+            if (exact != null) {
+                OctavoAppearanceSyncStore.MutationResult dismissed =
+                    appearanceSyncStore.dismiss(exact, receipt.profile);
+                if (!dismissed.succeeded()) {
+                    showAppearanceMutationFailure(
+                        dismissed,
+                        "Later could not be saved after recovery.",
+                        this::reloadAppearanceSyncForAbandon);
+                    return;
+                }
+            }
+        }
+        appearanceSyncAbandonAfterReload = false;
+        appearanceSyncStageUncertain = false;
+        appearanceSyncUnstagedRollbackRequested = false;
+        appearanceSyncUnstagedOrigin = null;
+        appearanceSyncRollbackRequested = false;
+        appearanceSyncRetryDescriptor = null;
+        finishAppearanceConvergence(receipt);
+    }
+
+    private void reconcileAppearanceReviewEpoch() {
+        if (appearanceSyncStore == null
+            || appearanceSyncReviewEpochBeforeRetry < 0) {
+            reloadAppearanceSyncState();
+            return;
+        }
+        long before = appearanceSyncReviewEpochBeforeRetry;
+        OctavoAppearanceSyncStore.LoadStatus status =
+            appearanceSyncStore.load();
+        if (status != OctavoAppearanceSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoAppearanceSyncStore.LoadStatus.MISSING_CREATED) {
+            reportAppearanceSyncLoadStatus(status);
+            return;
+        }
+        long expected = before == Long.MAX_VALUE
+            ? Long.MAX_VALUE : before + 1;
+        long loaded = appearanceSyncStore.reviewEpoch();
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        appearanceSyncAwaitingExplicitRetry = false;
+        if (appearanceSyncRollbackEpochReconciliation
+            && pending != null) {
+            if (loaded != before) {
+                showAppearanceSyncFailure(
+                    "Reading settings update needs attention",
+                    "The rollback state and review epoch disagree; "
+                        + "automatic recovery is blocked.",
+                    this::reconcileAppearanceReviewEpoch);
+                return;
+            }
+            appearanceSyncReviewEpochBeforeRetry = -1;
+            appearanceSyncRollbackEpochReconciliation = false;
+            appearanceSyncRollbackRequested = true;
+            beginPendingAppearanceRollback(
+                pending, "Restoring your reading settings.");
+            return;
+        }
+        boolean advancedRollbackAtMaximum =
+            appearanceSyncRollbackEpochReconciliation
+            && pending == null && loaded == expected;
+        if (pending == null && loaded == expected
+            && (loaded != before || advancedRollbackAtMaximum)) {
+            boolean reconciledRollback =
+                appearanceSyncRollbackEpochReconciliation;
+            OctavoSurfaceView.AppearancePresentationReceipt receipt = null;
+            if (reconciledRollback) {
+                receipt = currentAppearanceReceipt();
+                OctavoAppearancePortable.Lane local =
+                    appearanceSyncStore.localLane();
+                if (receipt == null || local == null
+                    || !receipt.profile.equals(
+                        local.profile.toAppearance())) {
+                    showAppearanceSyncFailure(
+                        "Reading settings update needs attention",
+                        "The rollback was saved, but its exact restored "
+                            + "settings are not yet confirmed on screen.",
+                        this::reconcileAppearanceReviewEpoch);
+                    return;
+                }
+            }
+            appearanceSyncReviewEpochBeforeRetry = -1;
+            appearanceSyncRollbackEpochReconciliation = false;
+            appearanceSyncReviewPending = false;
+            appearanceSyncReviewInitialized = true;
+            appearanceSyncPending = null;
+            appearanceSyncPendingLoaded = false;
+            appearanceSyncRollbackRequested = false;
+            appearanceSyncRetryDescriptor = null;
+            if (reconciledRollback) {
+                finishAppearanceConvergence(receipt);
+            } else {
+                closeAppearanceSyncPrompt(true);
+                considerAppearanceSyncCandidate();
+            }
+            return;
+        }
+        if (pending == null && loaded == before
+            && !appearanceSyncRollbackEpochReconciliation) {
+            appearanceSyncReviewEpochBeforeRetry = -1;
+            appearanceSyncRollbackEpochReconciliation = false;
+            if (initializeAppearanceSyncReview()) {
+                closeAppearanceSyncPrompt(true);
+                considerAppearanceSyncCandidate();
+            }
+            return;
+        }
+        showAppearanceSyncFailure(
+            "Reading settings update needs attention",
+            "The reading-settings review epoch changed unexpectedly; "
+                + "automatic review is blocked.",
+            this::reconcileAppearanceReviewEpoch);
+    }
+
+    private void reloadAppearanceSyncStateForRollback(
+        OctavoAppearanceSyncStore.Pending expected,
+        long reviewEpochBefore,
+        boolean advancedDeferredReviewEpoch) {
+        if (appearanceSyncStore == null) {
+            return;
+        }
+        OctavoAppearanceSyncStore.LoadStatus status =
+            appearanceSyncStore.load();
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        appearanceSyncPending = pending;
+        appearanceSyncPendingLoaded = pending != null;
+        appearanceSyncAwaitingExplicitRetry = false;
+        if (status != OctavoAppearanceSyncStore.LoadStatus.LOADED
+            && status
+               != OctavoAppearanceSyncStore.LoadStatus.MISSING_CREATED) {
+            appearanceSyncRollbackRequested = true;
+            reportAppearanceSyncLoadStatus(status);
+            return;
+        }
+        if (pending == null) {
+            appearanceSyncRollbackRequested = false;
+            if (advancedDeferredReviewEpoch) {
+                long expectedEpoch = reviewEpochBefore == Long.MAX_VALUE
+                    ? Long.MAX_VALUE : reviewEpochBefore + 1;
+                if (appearanceSyncStore.reviewEpoch() != expectedEpoch) {
+                    showAppearanceSyncFailure(
+                        "Reading settings update needs attention",
+                        "The rollback completed, but its review epoch could "
+                            + "not be proven. Retry is safe.",
+                        this::reloadAppearanceSyncState);
+                    return;
+                }
+                appearanceSyncReviewPending = false;
+                appearanceSyncReviewInitialized = true;
+            }
+            appearanceSyncReviewEpochBeforeRetry = -1;
+            appearanceSyncRollbackEpochReconciliation = false;
+            appearanceSyncRetryDescriptor = null;
+            OctavoSurfaceView.AppearancePresentationReceipt receipt =
+                currentAppearanceReceipt();
+            if (receipt != null) {
+                finishAppearanceConvergence(receipt);
+            } else {
+                closeAppearanceSyncPrompt(true);
+            }
+            return;
+        }
+        if (expected != null && !expected.sameIdentity(pending)) {
+            appearanceSyncRollbackRequested = false;
+            OctavoSurfaceView.AppearancePresentationReceipt receipt =
+                currentAppearanceReceipt();
+            if (receipt != null) {
+                showLoadedPendingAppearanceRetry(pending, receipt);
+            } else {
+                showAppearanceSyncFailure(
+                    "Reading settings update needs attention",
+                    "The reconciled settings are waiting for an exact "
+                        + "reader frame. Retry after the reader settles.",
+                    this::reloadAppearanceSyncState);
+            }
+            return;
+        }
+        appearanceSyncRollbackRequested = true;
+        beginPendingAppearanceRollback(
+            pending, "Restoring your reading settings.");
+    }
+
+    private void stageOrConvergeAfterExplicitRetry(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        appearanceSyncAwaitingExplicitRetry = false;
+        consumedAppearanceReceiptSurface = null;
+        processAppearancePresentationReceipt();
+    }
+
+    private void retryStagePresentedLocalAppearance(
+        OctavoAppearance expectedProfile) {
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null || !receipt.profile.equals(expectedProfile)) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The exact presented settings changed before Retry. Wait "
+                    + "for the reader to settle, then Retry.",
+                () -> retryStagePresentedLocalAppearance(expectedProfile));
+            return;
+        }
+        stagePresentedLocalAppearance(receipt);
+    }
+
+    private void retrySaveCanonicalAppearanceWithoutLaneAdvance(
+        OctavoAppearance expectedProfile) {
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null || !receipt.profile.equals(expectedProfile)) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The exact presented settings changed before Retry.",
+                () -> retrySaveCanonicalAppearanceWithoutLaneAdvance(
+                    expectedProfile));
+            return;
+        }
+        saveCanonicalAppearanceWithoutLaneAdvance(receipt);
+    }
+
+    private void retryFinishAppearanceConvergence(
+        OctavoAppearance expectedProfile) {
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null || !receipt.profile.equals(expectedProfile)) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The exact presented settings changed before Retry.",
+                () -> retryFinishAppearanceConvergence(expectedProfile));
+            return;
+        }
+        finishAppearanceConvergence(receipt);
+    }
+
+    private void retryFinishPendingAppearanceRollback(
+        OctavoAppearanceSyncStore.Pending expected) {
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null || expected == null
+            || !receipt.profile.equals(expected.originAppearance())) {
+            beginPendingAppearanceRollback(
+                expected, "Restoring your reading settings.");
+            return;
+        }
+        finishPendingAppearanceRollback(expected, receipt);
+    }
+
+    private void showAppearanceMutationFailure(
+        OctavoAppearanceSyncStore.MutationResult result,
+        String fallback,
+        Runnable retry) {
+        String message = appearanceSyncStore == null
+            ? null : appearanceSyncStore.lastError();
+        if (TextUtils.isEmpty(message)) {
+            message = fallback;
+        }
+        Runnable exactRetry = retry;
+        if (result == OctavoAppearanceSyncStore.MutationResult
+                .PUBLISH_UNCERTAIN
+            || result == OctavoAppearanceSyncStore.MutationResult.BLOCKED) {
+            exactRetry = this::reloadAppearanceSyncState;
+        }
+        showAppearanceSyncFailure(
+            "Reading settings update needs attention",
+            message,
+            exactRetry);
+    }
+
+    private OctavoSurfaceView.AppearancePresentationReceipt
+        currentAppearanceReceipt() {
+        if (surfaceView == null) {
+            return null;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            surfaceView.currentAppearancePresentationReceipt();
+        if (receipt != null) {
+            latestAppearanceReceipt = receipt;
+            appearanceReceiptSurface = surfaceView;
+        }
+        return receipt;
+    }
+
+    private boolean receiptIsCurrent(
+        OctavoSurfaceView.AppearancePresentationReceipt receipt) {
+        if (receipt == null || surfaceView == null
+            || appearanceReceiptSurface != surfaceView) {
+            return false;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt current =
+            surfaceView.currentAppearancePresentationReceipt();
+        return current != null
+            && current.appearanceGeneration == receipt.appearanceGeneration
+            && current.frameCount == receipt.frameCount
+            && current.profile.equals(receipt.profile);
+    }
+
+    private void considerAppearanceSyncCandidate() {
+        if (appearanceSyncAwaitingExplicitRetry) {
+            presentRetainedAppearanceSyncFailure();
+            return;
+        }
+        if (!activityResumed || !appearanceSyncReviewInitialized
+            || surfaceView == null || appearanceSyncStore == null
+            || appearanceSyncStore.pending() != null
+            || appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || appearancePanel != null || navigationPanel != null
+            || searchPanel != null || bookmarksPanel != null
+            || surfaceView.hasSelectionForAccessibility()) {
+            return;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null) {
+            return;
+        }
+        List<OctavoAppearanceSyncStore.Candidate> candidates =
+            appearanceSyncStore.reviewCandidates(receipt.profile);
+        if (candidates.isEmpty()) {
+            considerReadingPositionCandidate();
+            return;
+        }
+        OctavoAppearanceSyncStore.Candidate candidate = candidates.get(0);
+        AppearanceSyncRetryDescriptor retained =
+            appearanceSyncRetryDescriptor;
+        if (retained != null && retained.candidateAction()) {
+            OctavoAppearanceSyncStore.Candidate retryCandidate = null;
+            for (OctavoAppearanceSyncStore.Candidate current : candidates) {
+                if (retained.matches(current)) {
+                    retryCandidate = current;
+                    break;
+                }
+            }
+            if (retryCandidate == null) {
+                appearanceSyncRetryDescriptor = null;
+            } else {
+                appearanceSyncCandidate = retryCandidate;
+                if (ensureAppearanceSyncChoicePrompt(
+                        receipt.profile,
+                        retryCandidate.targetAppearance(),
+                        retryCandidate)) {
+                    showAppearanceSyncFailure(
+                        "Reading settings update needs attention",
+                        "The earlier choice was not saved. Retry is safe; "
+                            + "the reader has not moved.",
+                        appearanceCandidateRetry(retained.action));
+                }
+                return;
+            }
+        }
+        if (candidate.targetAppearance().equals(receipt.profile)) {
+            OctavoAppearanceSyncStore.MutationResult converged =
+                appearanceSyncStore.recordConverged(receipt.profile);
+            if (!converged.succeeded()) {
+                showAppearanceMutationFailure(
+                    converged,
+                    "Matching reading settings could not be recorded.",
+                    this::considerAppearanceSyncCandidate);
+            } else {
+                considerAppearanceSyncCandidate();
+            }
+            return;
+        }
+        appearanceSyncCandidate = candidate;
+        if (!ensureAppearanceSyncChoicePrompt(
+                receipt.profile, candidate.targetAppearance(),
+                candidate)) {
+            appearanceSyncCandidate = null;
+        }
+    }
+
+    private boolean appearanceSyncCandidateIsCurrent(
+        OctavoAppearanceSyncStore.Candidate candidate,
+        OctavoAppearance exactPresentedOrigin) {
+        if (candidate == null || exactPresentedOrigin == null
+            || appearanceSyncStore == null
+            || appearanceSyncStore.pending() != null) {
+            return false;
+        }
+        for (OctavoAppearanceSyncStore.Candidate current
+                : appearanceSyncStore.reviewCandidates(
+                    exactPresentedOrigin)) {
+            if (candidate.sameIdentity(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void useAppearanceSyncCandidate() {
+        useAppearanceSyncCandidate(appearanceSyncCandidate);
+    }
+
+    private void useAppearanceSyncCandidate(
+        OctavoAppearanceSyncStore.Candidate expected) {
+        OctavoAppearanceSyncStore.Candidate candidate =
+            appearanceSyncCandidate;
+        if (expected == null || candidate == null
+            || !expected.sameIdentity(candidate)) {
+            return;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null
+            || !appearanceSyncCandidateIsCurrent(
+                candidate, receipt.profile)
+            || !receipt.profile.equals(candidate.originAppearance())) {
+            closeAppearanceSyncPrompt(false);
+            considerAppearanceSyncCandidate();
+            restoreAppearanceSyncFocusAfterClose();
+            return;
+        }
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.candidate(
+                APPEARANCE_RETRY_USE, candidate);
+        OctavoAppearanceSyncStore.MutationResult staged =
+            appearanceSyncStore.stageRemoteApply(
+                candidate, receipt.profile);
+        if (staged != OctavoAppearanceSyncStore.MutationResult.UPDATED) {
+            appearanceSyncStageUncertain = staged
+                == OctavoAppearanceSyncStore.MutationResult
+                    .PUBLISH_UNCERTAIN;
+            appearanceSyncUnstagedOrigin = receipt.profile;
+            showAppearanceMutationFailure(
+                staged,
+                "The other device's settings could not be staged.",
+                this::useAppearanceSyncCandidate);
+            return;
+        }
+        appearanceSyncStageUncertain = false;
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        if (pending == null
+            || !pending.targetAppearance().equals(
+                candidate.targetAppearance())) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The staged reading settings could not be verified.",
+                this::reloadAppearanceSyncState);
+            return;
+        }
+        appearanceSyncPending = pending;
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.pending(
+                APPEARANCE_RETRY_FORWARD, pending);
+        appearanceSyncCandidate = null;
+        appearanceSyncPendingLoaded = false;
+        appearanceSyncAwaitingExplicitRetry = false;
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.showWorking(
+                "Applying the other device's reading settings. Waiting "
+                    + "for the reader to confirm them on screen.");
+        }
+        requestReaderAppearance(pending.targetAppearance());
+    }
+
+    private void keepCurrentAppearanceSettings() {
+        keepCurrentAppearanceSettings(appearanceSyncCandidate);
+    }
+
+    private void keepCurrentAppearanceSettings(
+        OctavoAppearanceSyncStore.Candidate expected) {
+        OctavoAppearanceSyncStore.Candidate candidate =
+            appearanceSyncCandidate;
+        if (expected == null || candidate == null
+            || !expected.sameIdentity(candidate)) {
+            return;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt == null
+            || !appearanceSyncCandidateIsCurrent(
+                candidate, receipt.profile)
+            || !receipt.profile.equals(candidate.originAppearance())) {
+            closeAppearanceSyncPrompt(false);
+            considerAppearanceSyncCandidate();
+            restoreAppearanceSyncFocusAfterClose();
+            return;
+        }
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.candidate(
+                APPEARANCE_RETRY_KEEP, candidate);
+        OctavoAppearanceSyncStore.MutationResult kept =
+            appearanceSyncStore.keep(candidate, receipt.profile);
+        if (!kept.succeeded()) {
+            showAppearanceMutationFailure(
+                kept,
+                "Keep mine could not be saved.",
+                this::keepCurrentAppearanceSettings);
+            return;
+        }
+        appearanceSyncRetryDescriptor = null;
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncRetry = null;
+        appearanceSyncStageUncertain = false;
+        appearanceSyncAbandonAfterReload = false;
+        closeAppearanceSyncPrompt(true);
+        considerAppearanceSyncCandidate();
+    }
+
+    private void dismissAppearanceSyncForBack() {
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (pending != null) {
+            appearanceSyncRetryDescriptor =
+                AppearanceSyncRetryDescriptor.pending(
+                    APPEARANCE_RETRY_ROLLBACK, pending);
+            beginPendingAppearanceRollback(
+                pending,
+                "Restoring your reading settings before dismissing the "
+                    + "interrupted update.");
+            return;
+        }
+        OctavoAppearanceSyncStore.Candidate candidate =
+            appearanceSyncCandidate;
+        if (appearanceSyncStageUncertain) {
+            appearanceSyncAbandonAfterReload = true;
+            appearanceSyncRollbackRequested = true;
+            appearanceSyncAwaitingExplicitRetry = false;
+            if (candidate != null) {
+                appearanceSyncRetryDescriptor =
+                    AppearanceSyncRetryDescriptor.candidate(
+                        APPEARANCE_RETRY_DISMISS, candidate);
+            } else if (appearanceSyncRetryDescriptor == null) {
+                appearanceSyncRetryDescriptor =
+                    AppearanceSyncRetryDescriptor.reload();
+            }
+            reloadAppearanceSyncForAbandon();
+            return;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (candidate == null) {
+            if (appearanceSyncAwaitingExplicitRetry) {
+                OctavoAppearance origin = appearanceSyncUnstagedOrigin;
+                if (origin == null && appearanceSyncStore != null) {
+                    OctavoAppearancePortable.Lane local =
+                        appearanceSyncStore.localLane();
+                    origin = local == null ? null
+                        : local.profile.toAppearance();
+                }
+                if (origin != null) {
+                    appearanceSyncUnstagedOrigin = origin;
+                    appearanceSyncUnstagedRollbackRequested = true;
+                    appearanceSyncAwaitingExplicitRetry = false;
+                    appearanceSyncRetryDescriptor =
+                        AppearanceSyncRetryDescriptor.reload();
+                    if (appearanceSyncPrompt != null) {
+                        appearanceSyncPrompt.showWorking(
+                            "Restoring your durable reading settings before "
+                                + "closing this update.");
+                    }
+                    requestReaderAppearance(origin);
+                    return;
+                }
+                if (appearanceSyncPrompt != null) {
+                    appearanceSyncPrompt.announceForAccessibility(
+                        "Retry is required to finish the reading settings "
+                            + "update");
+                }
+                return;
+            }
+            closeAppearanceSyncPrompt(true);
+            return;
+        }
+        if (receipt == null
+            || !appearanceSyncCandidateIsCurrent(
+                candidate, receipt.profile)
+            || !receipt.profile.equals(candidate.originAppearance())) {
+            closeAppearanceSyncPrompt(false);
+            considerAppearanceSyncCandidate();
+            restoreAppearanceSyncFocusAfterClose();
+            return;
+        }
+        appearanceSyncRetryDescriptor =
+            AppearanceSyncRetryDescriptor.candidate(
+                APPEARANCE_RETRY_DISMISS, candidate);
+        OctavoAppearanceSyncStore.MutationResult dismissed =
+            appearanceSyncStore.dismiss(candidate, receipt.profile);
+        if (!dismissed.succeeded()) {
+            showAppearanceMutationFailure(
+                dismissed,
+                "Later could not be saved.",
+                this::dismissAppearanceSyncForBack);
+            return;
+        }
+        appearanceSyncRetryDescriptor = null;
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncRetry = null;
+        appearanceSyncStageUncertain = false;
+        appearanceSyncAbandonAfterReload = false;
+        closeAppearanceSyncPrompt(true);
+        considerAppearanceSyncCandidate();
+    }
+
+    private boolean ensureAppearanceSyncChoicePrompt(
+        OctavoAppearance presented,
+        OctavoAppearance remote,
+        OctavoAppearanceSyncStore.Candidate expected) {
+        if (readerRoot == null || surfaceView == null
+            || readingPositionPrompt != null
+            || presented == null || remote == null
+            || presented.equals(remote)
+            || surfaceView.hasSelectionForAccessibility()) {
+            return false;
+        }
+        if (appearanceSyncPrompt != null
+            && appearanceSyncPromptCandidate != null
+            && appearanceSyncPromptCandidate.sameIdentity(expected)) {
+            try {
+                appearanceSyncPrompt.updateProfiles(presented, remote);
+                return true;
+            } catch (IllegalArgumentException exception) {
+                closeAppearanceSyncPrompt(false);
+            }
+        } else if (appearanceSyncPrompt != null) {
+            closeAppearanceSyncPrompt(false);
+        }
+        closeReaderPanelsForAppearanceSync();
+        OctavoAppearanceSyncPrompt prompt;
+        long promptGeneration = appearanceSyncPromptGeneration + 1;
+        try {
+            prompt = new OctavoAppearanceSyncPrompt(
+                this, presented, remote,
+                appearanceSyncPromptListener(
+                    expected, promptGeneration));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            showOpenFailure(
+                "Reading-settings confirmation is unavailable; reopen "
+                    + "the book to retry");
+            return false;
+        }
+        appearanceSyncPromptGeneration = promptGeneration;
+        appearanceSyncPromptCandidate = expected;
+        return installAppearanceSyncPrompt(prompt);
+    }
+
+    private boolean ensureAppearanceSyncFailurePrompt() {
+        if (readerRoot == null || surfaceView == null
+            || readingPositionPrompt != null
+            || surfaceView.hasSelectionForAccessibility()
+            || (appearanceSyncPrompt == null
+                && !hasSettledAppearanceReceiptEvidence())) {
+            return false;
+        }
+        if (appearanceSyncPrompt != null) {
+            return true;
+        }
+        closeReaderPanelsForAppearanceSync();
+        OctavoAppearance current = appearance;
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            currentAppearanceReceipt();
+        if (receipt != null) {
+            current = receipt.profile;
+        }
+        OctavoAppearanceSyncPrompt prompt;
+        long promptGeneration = appearanceSyncPromptGeneration + 1;
+        try {
+            OctavoAppearanceSyncStore.Pending pending =
+                appearanceSyncStore == null ? null
+                    : appearanceSyncStore.pending();
+            OctavoAppearanceSyncStore.Candidate candidate =
+                appearanceSyncCandidate;
+            OctavoAppearance target = pending != null
+                ? pending.targetAppearance()
+                : candidate == null ? null
+                    : candidate.targetAppearance();
+            prompt = target != null && !target.equals(current)
+                ? new OctavoAppearanceSyncPrompt(
+                    this, current, target,
+                    appearanceSyncPromptListener(
+                        null, promptGeneration))
+                : new OctavoAppearanceSyncPrompt(
+                    this, current, appearanceSyncPromptListener(
+                        null, promptGeneration));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            showOpenFailure(
+                "Reading-settings recovery is unavailable; reopen the "
+                    + "book to retry");
+            return false;
+        }
+        appearanceSyncPromptGeneration = promptGeneration;
+        return installAppearanceSyncPrompt(prompt);
+    }
+
+    private OctavoAppearanceSyncPrompt.Listener
+        appearanceSyncPromptListener(
+            OctavoAppearanceSyncStore.Candidate expected,
+            long promptGeneration) {
+        return new OctavoAppearanceSyncPrompt.Listener() {
+            @Override
+            public void onUseSettings() {
+                if (appearanceSyncPromptGeneration
+                    != promptGeneration) {
+                    return;
+                }
+                useAppearanceSyncCandidate(expected);
+            }
+
+            @Override
+            public void onKeepMine() {
+                if (appearanceSyncPromptGeneration
+                    != promptGeneration) {
+                    return;
+                }
+                keepCurrentAppearanceSettings(expected);
+            }
+
+            @Override
+            public void onRetry() {
+                if (appearanceSyncPromptGeneration
+                    != promptGeneration) {
+                    return;
+                }
+                Runnable retry = appearanceSyncRetry;
+                appearanceSyncRetry = null;
+                appearanceSyncAwaitingExplicitRetry = false;
+                if (retry != null) {
+                    retry.run();
+                } else if (appearanceSyncStore != null
+                           && appearanceSyncStore.pending() != null) {
+                    retryPendingAppearanceForward();
+                } else {
+                    reloadAppearanceSyncState();
+                }
+            }
+        };
+    }
+
+    private boolean installAppearanceSyncPrompt(
+        OctavoAppearanceSyncPrompt prompt) {
+        if (readerRoot == null || surfaceView == null || prompt == null) {
+            return false;
+        }
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
+        overlay.setElevation(dp(8));
+        overlay.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overlay.setBackgroundColor(prompt.overlayColor());
+        FrameLayout.LayoutParams layout =
+            new FrameLayout.LayoutParams(
+                appearanceSyncPromptWidth(),
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER);
+        layout.leftMargin = dp(20);
+        layout.topMargin = dp(20);
+        layout.rightMargin = dp(20);
+        layout.bottomMargin = dp(20);
+        overlay.addView(prompt, layout);
+        readerRoot.addView(overlay, matchParentLayout());
+        surfaceView.setImportantForAccessibility(
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+        appearanceSyncOverlay = overlay;
+        appearanceSyncPrompt = prompt;
+        obscureFailureBannerForModalPrompt();
+        int duration = appearanceSyncPromptMotionDuration();
+        if (duration > 0) {
+            overlay.setAlpha(0.0f);
+            prompt.setTranslationY(dp(16));
+            overlay.animate().alpha(1.0f).setDuration(duration).start();
+            prompt.animate().translationY(0.0f)
+                .setDuration(duration).start();
+        }
+        prompt.post(() -> {
+            if (appearanceSyncPrompt != prompt) {
+                return;
+            }
+            View focus = prompt.preferredInitialFocus();
+            focus.requestFocus();
+            focus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            prompt.announceForAccessibility(
+                "Reading settings confirmation opened");
+        });
+        return true;
+    }
+
+    private void closeReaderPanelsForAppearanceSync() {
+        if (appearancePanel != null) {
+            closeAppearancePanel(false);
+        }
+        if (navigationPanel != null) {
+            closeNavigationPanel(false);
+        }
+        if (searchPanel != null) {
+            closeSearchPanel(false);
+        }
+        if (bookmarksPanel != null) {
+            closeBookmarksPanel(false);
+        }
+    }
+
+    private void showAppearanceSyncFailure(String heading,
+                                           String message,
+                                           Runnable retry) {
+        appearanceSyncAwaitingExplicitRetry = true;
+        appearanceSyncRetry = retry;
+        appearanceSyncFailureHeading = TextUtils.isEmpty(heading)
+            ? "Reading settings update needs attention" : heading;
+        appearanceSyncFailureMessage = TextUtils.isEmpty(message)
+            ? "The reading-settings update was not saved. Retry is safe."
+            : message;
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (pending != null) {
+            appearanceSyncRetryDescriptor =
+                AppearanceSyncRetryDescriptor.pending(
+                    appearanceSyncRollbackRequested
+                        ? APPEARANCE_RETRY_ROLLBACK
+                        : APPEARANCE_RETRY_FORWARD,
+                    pending);
+        } else if (appearanceSyncRetryDescriptor == null) {
+            appearanceSyncRetryDescriptor =
+                AppearanceSyncRetryDescriptor.reload();
+        }
+        lastOpenError = appearanceSyncFailureMessage;
+        if (presentRetainedAppearanceSyncFailure()) {
+            return;
+        }
+        if (readerRoot == null
+            || (activityResumed
+                && !hasSettledAppearanceReceiptEvidence()
+                && readingPositionPrompt == null
+                && appearancePanel == null && navigationPanel == null
+                && searchPanel == null && bookmarksPanel == null
+                && (surfaceView == null
+                    || !surfaceView.hasSelectionForAccessibility()))) {
+            showOpenFailure(lastOpenError);
+        }
+    }
+
+    private boolean presentRetainedAppearanceSyncFailure() {
+        if (!appearanceSyncAwaitingExplicitRetry || !activityResumed
+            || readerRoot == null || surfaceView == null
+            || readingPositionPrompt != null
+            || appearancePanel != null || navigationPanel != null
+            || searchPanel != null || bookmarksPanel != null
+            || surfaceView.hasSelectionForAccessibility()
+            || (appearanceSyncPrompt == null
+                && !hasSettledAppearanceReceiptEvidence())) {
+            return false;
+        }
+        if (appearanceSyncRetry == null) {
+            appearanceSyncRetry = restoredAppearanceSyncRetry();
+        }
+        if (!ensureAppearanceSyncFailurePrompt()) {
+            return false;
+        }
+        String heading = TextUtils.isEmpty(appearanceSyncFailureHeading)
+            ? "Reading settings update needs attention"
+            : appearanceSyncFailureHeading;
+        String message = TextUtils.isEmpty(appearanceSyncFailureMessage)
+            ? appearanceSyncStore != null
+                && !TextUtils.isEmpty(appearanceSyncStore.lastError())
+                ? appearanceSyncStore.lastError()
+                : "The earlier reading-settings update was not saved. "
+                    + "Retry is required; this frame will not retry it "
+                    + "automatically."
+            : appearanceSyncFailureMessage;
+        appearanceSyncPrompt.showRetryableFailure(heading, message);
+        View focus = appearanceSyncPrompt.preferredInitialFocus();
+        focus.post(() -> {
+            if (appearanceSyncPrompt == null || !focus.isShown()) {
+                return;
+            }
+            focus.requestFocus();
+            focus.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+        });
+        return true;
+    }
+
+    private Runnable restoredAppearanceSyncRetry() {
+        if (appearanceSyncAbandonAfterReload) {
+            return this::reloadAppearanceSyncForAbandon;
+        }
+        if (appearanceSyncReviewEpochBeforeRetry >= 0) {
+            return this::reconcileAppearanceReviewEpoch;
+        }
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (pending != null) {
+            boolean rollback = appearanceSyncRollbackRequested
+                || (appearanceSyncRetryDescriptor != null
+                    && appearanceSyncRetryDescriptor.action
+                       == APPEARANCE_RETRY_ROLLBACK);
+            return rollback
+                ? () -> beginPendingAppearanceRollback(
+                    pending, "Restoring your reading settings.")
+                : this::retryPendingAppearanceForward;
+        }
+        if (appearanceSyncRetryDescriptor != null
+            && appearanceSyncRetryDescriptor.candidateAction()) {
+            return appearanceCandidateRetry(
+                appearanceSyncRetryDescriptor.action);
+        }
+        return this::reloadAppearanceSyncState;
+    }
+
+    private boolean hasSettledAppearanceReceiptEvidence() {
+        if (surfaceView == null) {
+            return false;
+        }
+        OctavoSurfaceView.AppearancePresentationReceipt receipt =
+            surfaceView.currentAppearancePresentationReceipt();
+        if (receipt == null || receipt.profile == null
+            || !receipt.strictResumeSettled) {
+            return false;
+        }
+        latestAppearanceReceipt = receipt;
+        appearanceReceiptSurface = surfaceView;
+        return true;
+    }
+
+    private Runnable appearanceCandidateRetry(int action) {
+        switch (action) {
+            case APPEARANCE_RETRY_USE:
+                return this::useAppearanceSyncCandidate;
+            case APPEARANCE_RETRY_KEEP:
+                return this::keepCurrentAppearanceSettings;
+            case APPEARANCE_RETRY_DISMISS:
+                return this::dismissAppearanceSyncForBack;
+            default:
+                return this::reloadAppearanceSyncState;
+        }
+    }
+
+    private void restorePendingAppearanceAfterLifecycle() {
+        if (appearanceSyncStore == null || surfaceView == null) {
+            return;
+        }
+        OctavoAppearanceSyncStore.Pending pending =
+            appearanceSyncStore.pending();
+        if (pending == null) {
+            return;
+        }
+        appearanceSyncPending = pending;
+        if (!appearanceSyncAwaitingExplicitRetry) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The reading-settings update was paused before its durable "
+                    + "confirmation finished. Retry is safe.",
+                appearanceSyncRollbackRequested
+                    ? () -> beginPendingAppearanceRollback(
+                        pending, "Restoring your reading settings.")
+                    : this::retryPendingAppearanceForward);
+        }
+    }
+
+    private int appearanceSyncPromptWidth() {
+        int displayWidth = getResources().getDisplayMetrics().widthPixels;
+        int availableWidth = readerRoot == null
+                || readerRoot.getWidth() <= 0
+            ? displayWidth : readerRoot.getWidth();
+        return Math.min(
+            appearancePanelWidth(),
+            Math.max(availableWidth - dp(40), 1));
+    }
+
+    private void updateAppearanceSyncPromptBounds() {
+        if (appearanceSyncPrompt == null
+            || !(appearanceSyncPrompt.getLayoutParams()
+                instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        FrameLayout.LayoutParams layout =
+            (FrameLayout.LayoutParams)
+                appearanceSyncPrompt.getLayoutParams();
+        layout.width = appearanceSyncPromptWidth();
+        appearanceSyncPrompt.setLayoutParams(layout);
+    }
+
+    private int appearanceSyncPromptMotionDuration() {
+        if (appearanceSyncPrompt != null
+            && appearanceSyncPrompt.suppressHostMotion()) {
+            return 0;
+        }
+        return sideSheetMotionDuration(
+            OctavoDesignTokens.forAppearance(appearance));
+    }
+
+    private void closeAppearanceSyncPrompt(boolean restoreFocus) {
+        boolean ownedPrompt = appearanceSyncOverlay != null
+            || appearanceSyncPrompt != null;
+        appearanceSyncPromptGeneration += 1;
+        if (appearanceSyncOverlay != null) {
+            appearanceSyncOverlay.animate().cancel();
+            if (appearanceSyncOverlay.getParent() instanceof ViewGroup) {
+                ((ViewGroup)appearanceSyncOverlay.getParent())
+                    .removeView(appearanceSyncOverlay);
+            }
+        }
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.animate().cancel();
+        }
+        appearanceSyncOverlay = null;
+        appearanceSyncPrompt = null;
+        appearanceSyncPromptCandidate = null;
+        appearanceSyncCandidate = null;
+        if (!ownedPrompt) {
+            return;
+        }
+        restoreReaderAccessibilityBoundary();
+        if (readingPositionPrompt == null) {
+            restoreFailureBannerAfterModalPrompt();
+        }
+        if (restoreFocus) {
+            restoreAppearanceSyncFocusAfterClose();
+        }
+    }
+
+    private void restoreReaderAccessibilityBoundary() {
+        boolean readerObscured = appearancePanel != null
+            || navigationPanel != null || searchPanel != null
+            || bookmarksPanel != null || readingPositionPrompt != null
+            || appearanceSyncPrompt != null;
+        if (surfaceView != null) {
+            surfaceView.setImportantForAccessibility(
+                readerObscured
+                    ? View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                    : View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        }
+        int chromeImportance = chromeVisible && !readerObscured
+            ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS;
+        if (readerTopChrome != null) {
+            readerTopChrome.setImportantForAccessibility(chromeImportance);
+        }
+        if (readerBottomChrome != null) {
+            readerBottomChrome.setImportantForAccessibility(
+                chromeImportance);
+        }
+    }
+
+    private void restoreAppearanceSyncFocusAfterClose() {
+        if (appearanceSyncPrompt != null
+            || readingPositionPrompt != null
+            || surfaceView == null || !surfaceView.isShown()) {
+            return;
+        }
+        OctavoSurfaceView target = surfaceView;
+        target.requestFocus();
+        target.post(() -> {
+            if (appearanceSyncPrompt != null
+                || readingPositionPrompt != null
+                || surfaceView != target
+                || !target.isShown()) {
+                return;
+            }
+            target.performAccessibilityAction(
+                AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                null);
+            target.announceForAccessibility(
+                "Reading settings confirmation closed");
+        });
+    }
+
+    private void closeStaleAppearanceSyncChoice(boolean restoreFocus) {
+        if (appearanceSyncCandidate != null
+            && appearanceSyncStore.pending() == null) {
+            closeAppearanceSyncPrompt(restoreFocus);
         }
     }
 
@@ -2486,9 +4617,17 @@ public final class OctavoActivity extends Activity {
             scrim.setClickable(true);
             scrim.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            int index = appearanceOverlay == null
-                ? readerRoot.getChildCount()
-                : readerRoot.indexOfChild(appearanceOverlay);
+            int index = readerRoot.getChildCount();
+            if (appearanceOverlay != null) {
+                index = Math.min(
+                    index, readerRoot.indexOfChild(appearanceOverlay));
+            }
+            if (appearanceSyncOverlay != null) {
+                index = Math.min(
+                    index,
+                    readerRoot.indexOfChild(appearanceSyncOverlay));
+            }
+            index = Math.max(index, 0);
             readerRoot.addView(scrim, index, matchParentLayout());
             appearanceTransitionScrim = scrim;
         }
@@ -2583,8 +4722,19 @@ public final class OctavoActivity extends Activity {
             appearancePersistencePosted = false;
         }
         OctavoAppearance candidate = pendingAppearancePersistence;
+        if (candidate != null && appearanceSyncAwaitingExplicitRetry
+            && appearanceSyncStore != null
+            && appearanceSyncStore.pending() != null) {
+            // O1SS owns an explicit saga Retry. A pause/destroy flush must
+            // not publish O7ST out of order or consume that Retry intent.
+            return;
+        }
         pendingAppearancePersistence = null;
         if (candidate != null && !appearanceStore.save(candidate)) {
+            // Retain the exact successfully presented appearance. A failed
+            // atomic replace must not turn a newer on-screen choice into a
+            // one-shot persistence attempt.
+            pendingAppearancePersistence = candidate;
             reportAppearancePersistenceFailure();
         }
     }
@@ -2632,6 +4782,7 @@ public final class OctavoActivity extends Activity {
                 && searchPanel == null
                 && bookmarksPanel == null
                 && readingPositionPrompt == null
+                && appearanceSyncPrompt == null
                 ? View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 : View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         int duration = readerChromeMotionDuration(animate);
@@ -2668,6 +4819,10 @@ public final class OctavoActivity extends Activity {
     }
 
     private int sideSheetMotionDuration(OctavoDesignTokens tokens) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && !ValueAnimator.areAnimatorsEnabled()) {
+            return 0;
+        }
         AccessibilityManager manager = (AccessibilityManager)
             getSystemService(ACCESSIBILITY_SERVICE);
         if (manager != null && manager.isEnabled()
@@ -2756,6 +4911,14 @@ public final class OctavoActivity extends Activity {
             bookmarksOverlay.setBackgroundColor(
                 bookmarksPanel.overlayColor());
         }
+        if (appearanceSyncPrompt != null) {
+            appearanceSyncPrompt.applyAppearance(appearance);
+        }
+        if (appearanceSyncOverlay != null
+            && appearanceSyncPrompt != null) {
+            appearanceSyncOverlay.setBackgroundColor(
+                appearanceSyncPrompt.overlayColor());
+        }
         if (failureBanner != null) {
             failureBanner.setTextColor(tokens.error);
             failureBanner.setBackgroundColor(tokens.dialogSurface);
@@ -2788,7 +4951,8 @@ public final class OctavoActivity extends Activity {
         if (readerRoot == null || surfaceView == null
             || activeBook == null || annotationStore == null
             || bookmarksPanel != null
-            || readingPositionPrompt != null) {
+            || readingPositionPrompt != null
+            || appearanceSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -3144,7 +5308,8 @@ public final class OctavoActivity extends Activity {
     private void openNavigationPanel() {
         if (readerRoot == null || surfaceView == null
             || navigationPanel != null
-            || readingPositionPrompt != null) {
+            || readingPositionPrompt != null
+            || appearanceSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -3328,7 +5493,8 @@ public final class OctavoActivity extends Activity {
     private void openSearchPanel() {
         if (readerRoot == null || surfaceView == null
             || searchPanel != null
-            || readingPositionPrompt != null) {
+            || readingPositionPrompt != null
+            || appearanceSyncPrompt != null) {
             return;
         }
         if (appearancePanel != null) {
@@ -3514,7 +5680,8 @@ public final class OctavoActivity extends Activity {
     private void openAppearancePanel() {
         if (readerRoot == null || surfaceView == null
             || appearancePanel != null
-            || readingPositionPrompt != null) {
+            || readingPositionPrompt != null
+            || appearanceSyncPrompt != null) {
             return;
         }
         if (navigationPanel != null) {
@@ -3642,11 +5809,19 @@ public final class OctavoActivity extends Activity {
             readerBottomChrome.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (restoreFocus && focusReturn != null
+        if (restoreFocus) {
+            considerAppearanceSyncCandidate();
+        }
+        if (restoreFocus && appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && focusReturn != null
             && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
-                if (appearancePanel != null || !focusReturn.isShown()) {
+                if (appearancePanel != null
+                    || appearanceSyncPrompt != null
+                    || readingPositionPrompt != null
+                    || !focusReturn.isShown()) {
                     return;
                 }
                 focusReturn.performAccessibilityAction(
@@ -3692,10 +5867,18 @@ public final class OctavoActivity extends Activity {
             readerBottomChrome.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+        if (restoreFocus) {
+            considerAppearanceSyncCandidate();
+        }
+        if (restoreFocus && appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
-                if (navigationPanel != null || !focusReturn.isShown()) {
+                if (navigationPanel != null
+                    || appearanceSyncPrompt != null
+                    || readingPositionPrompt != null
+                    || !focusReturn.isShown()) {
                     return;
                 }
                 focusReturn.performAccessibilityAction(
@@ -3756,10 +5939,18 @@ public final class OctavoActivity extends Activity {
             readerBottomChrome.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+        if (restoreFocus) {
+            considerAppearanceSyncCandidate();
+        }
+        if (restoreFocus && appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
-                if (searchPanel != null || !focusReturn.isShown()) {
+                if (searchPanel != null
+                    || appearanceSyncPrompt != null
+                    || readingPositionPrompt != null
+                    || !focusReturn.isShown()) {
                     return;
                 }
                 if (!focusReturn.hasFocus()) {
@@ -3811,10 +6002,18 @@ public final class OctavoActivity extends Activity {
             readerBottomChrome.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (restoreFocus && focusReturn != null && focusReturn.isShown()) {
+        if (restoreFocus) {
+            considerAppearanceSyncCandidate();
+        }
+        if (restoreFocus && appearanceSyncPrompt == null
+            && readingPositionPrompt == null
+            && focusReturn != null && focusReturn.isShown()) {
             focusReturn.requestFocus();
             focusReturn.post(() -> {
-                if (bookmarksPanel != null || !focusReturn.isShown()) {
+                if (bookmarksPanel != null
+                    || appearanceSyncPrompt != null
+                    || readingPositionPrompt != null
+                    || !focusReturn.isShown()) {
                     return;
                 }
                 focusReturn.performAccessibilityAction(
@@ -4069,6 +6268,7 @@ public final class OctavoActivity extends Activity {
 
     private void releaseReader() {
         flushProgressPersistence();
+        closeAppearanceSyncPrompt(false);
         closeReadingPositionPrompt(false);
         readingPositionChoiceRetry = null;
         if (failureBanner != null
@@ -4080,6 +6280,38 @@ public final class OctavoActivity extends Activity {
         failureBannerAnnouncementDeferred = false;
         readingPositionReviewPending = false;
         readingPositionReviewInitialized = false;
+        appearanceSyncReviewPending = false;
+        appearanceSyncReviewInitialized = false;
+        OctavoAppearanceSyncStore.Pending durableAppearancePending =
+            appearanceSyncStore == null ? null
+                : appearanceSyncStore.pending();
+        if (durableAppearancePending == null) {
+            appearanceSyncPendingLoaded = false;
+            appearanceSyncRollbackRequested = false;
+            appearanceSyncRetryDescriptor = null;
+        } else {
+            appearanceSyncPending = durableAppearancePending;
+            appearanceSyncRetryDescriptor =
+                AppearanceSyncRetryDescriptor.pending(
+                    appearanceSyncRollbackRequested
+                        ? APPEARANCE_RETRY_ROLLBACK
+                        : APPEARANCE_RETRY_FORWARD,
+                    durableAppearancePending);
+        }
+        appearanceSyncAwaitingExplicitRetry = false;
+        appearanceSyncUnstagedRollbackRequested = false;
+        appearanceSyncUnstagedOrigin = null;
+        appearanceSyncCandidate = null;
+        if (durableAppearancePending == null) {
+            appearanceSyncPending = null;
+        }
+        appearanceSyncRetry = null;
+        appearanceReceiptSurface = null;
+        latestAppearanceReceipt = null;
+        consumedAppearanceReceiptSurface = null;
+        consumedAppearanceReceiptProfile = null;
+        consumedAppearanceReceiptGeneration = -1;
+        consumedAppearanceReceiptFrame = -1;
         hasPresentedReadingPosition = false;
         presentedReadingSpineIndex = 0;
         presentedReadingByteOffset = 0;
@@ -4169,9 +6401,10 @@ public final class OctavoActivity extends Activity {
         layout.bottomMargin = dp(72);
         readerRoot.addView(banner, layout);
         failureBanner = banner;
-        if (readingPositionPrompt != null) {
+        if (readingPositionPrompt != null
+            || appearanceSyncPrompt != null) {
             failureBannerAnnouncementDeferred = true;
-            obscureFailureBannerForReadingPositionPrompt();
+            obscureFailureBannerForModalPrompt();
         } else {
             banner.setImportantForAccessibility(
                 View.IMPORTANT_FOR_ACCESSIBILITY_YES);
@@ -4411,6 +6644,115 @@ public final class OctavoActivity extends Activity {
         return readingPositionCandidate;
     }
 
+    boolean simulateRemoteAppearanceForTesting(String deviceId,
+                                                long sequence,
+                                                OctavoAppearance remote) {
+        try {
+            return mergeSimulatedRemoteAppearanceForTesting(
+                OctavoAppearancePortable.simulatedRemoteBytes(
+                    deviceId, sequence, remote));
+        } catch (IOException | RuntimeException exception) {
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                "The simulated remote reading settings are invalid.",
+                this::considerAppearanceSyncCandidate);
+            return false;
+        }
+    }
+
+    boolean mergeSimulatedRemoteAppearanceForTesting(byte[] bytes) {
+        if (appearanceSyncStore == null) {
+            return false;
+        }
+        OctavoAppearanceSyncStore.PortableMergeResult result =
+            appearanceSyncStore.mergePortableBytes(bytes);
+        if (!result.succeeded()) {
+            byte[] retryBytes = bytes == null ? null : bytes.clone();
+            showAppearanceSyncFailure(
+                "Reading settings update needs attention",
+                appearanceSyncStore.lastError(),
+                () -> mergeSimulatedRemoteAppearanceForTesting(
+                    retryBytes));
+            return false;
+        }
+        if (result == OctavoAppearanceSyncStore.PortableMergeResult.MERGED) {
+            boolean promptWasVisible = appearanceSyncPrompt != null;
+            OctavoSurfaceView.AppearancePresentationReceipt receipt =
+                currentAppearanceReceipt();
+            if (appearanceSyncStore.pending() == null
+                && appearanceSyncCandidate != null
+                && (receipt == null
+                    || !appearanceSyncCandidateIsCurrent(
+                        appearanceSyncCandidate, receipt.profile))) {
+                closeAppearanceSyncPrompt(false);
+            }
+            if (receipt != null
+                && appearanceSyncStore.pending() == null) {
+                finishAppearanceConvergence(receipt);
+            }
+            if (promptWasVisible && appearanceSyncPrompt == null) {
+                restoreAppearanceSyncFocusAfterClose();
+            }
+        }
+        return true;
+    }
+
+    OctavoAppearanceSyncPrompt appearanceSyncPromptForTesting() {
+        return appearanceSyncPrompt;
+    }
+
+    OctavoAppearanceSyncStore appearanceSyncStoreForTesting() {
+        return appearanceSyncStore;
+    }
+
+    OctavoAppearanceSyncStore.Candidate
+        pendingAppearanceCandidateForTesting() {
+        return appearanceSyncCandidate;
+    }
+
+    OctavoAppearanceSyncStore.Candidate
+        pendingAppearanceSyncCandidateForTesting() {
+        return appearanceSyncCandidate;
+    }
+
+    OctavoAppearanceSyncStore.Pending
+        pendingAppearanceTransactionForTesting() {
+        return appearanceSyncStore == null ? null
+            : appearanceSyncStore.pending();
+    }
+
+    boolean appearanceSyncAwaitingExplicitRetryForTesting() {
+        return appearanceSyncAwaitingExplicitRetry;
+    }
+
+    boolean appearanceSyncRollbackRequestedForTesting() {
+        return appearanceSyncRollbackRequested;
+    }
+
+    boolean appearanceSyncStageUncertainForTesting() {
+        return appearanceSyncStageUncertain;
+    }
+
+    boolean appearanceSyncAbandonAfterReloadForTesting() {
+        return appearanceSyncAbandonAfterReload;
+    }
+
+    boolean appearanceSyncReviewPendingForTesting() {
+        return appearanceSyncReviewPending;
+    }
+
+    boolean appearanceSyncReviewInitializedForTesting() {
+        return appearanceSyncReviewInitialized;
+    }
+
+    int appearanceSyncPromptMotionDurationForTesting() {
+        return appearanceSyncPromptMotionDuration();
+    }
+
+    void processAppearancePresentationReceiptForTesting() {
+        processAppearancePresentationReceipt();
+    }
+
     long[] currentReadingPageForTesting() {
         return !hasPresentedReadingPosition
             ? null
@@ -4500,8 +6842,12 @@ public final class OctavoActivity extends Activity {
         flushAppearancePersistence();
     }
 
-    void queuePresentedAppearancePersistenceForTesting() {
-        persistPresentedAppearance(appearance);
+    void stagePresentedAppearanceForLifecyclePersistenceForTesting() {
+        if (appearancePersistencePosted) {
+            getWindow().getDecorView().removeCallbacks(persistAppearance);
+            appearancePersistencePosted = false;
+        }
+        pendingAppearancePersistence = appearance;
     }
 
     boolean setChromeVisibleForTesting(boolean visible) {

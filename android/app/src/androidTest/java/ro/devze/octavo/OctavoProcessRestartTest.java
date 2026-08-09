@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.os.SystemClock;
+import android.view.View;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -35,7 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Two independently invokable halves of the Port 8 process-restart probe.
+ * Two independently invokable halves of the process-restart probe. Port 11
+ * extends the retained Port 8 evidence with an interrupted appearance-sync
+ * apply whose O1SS recovery must cross the real process boundary.
  *
  * The ordinary connected suite excludes this class.
  * scripts/android_port7_process_restart.ps1 remains the compatible driver and runs
@@ -57,6 +60,8 @@ public final class OctavoProcessRestartTest {
         "process_restart_expected.v3";
     private static final String EVIDENCE_TEMPORARY_FILE =
         "process_restart_expected.v3.tmp";
+    private static final String APPEARANCE_REMOTE_DEVICE_ID =
+        "71717171717171717171717171717171";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -110,6 +115,7 @@ public final class OctavoProcessRestartTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);
@@ -376,6 +382,23 @@ public final class OctavoProcessRestartTest {
                                       .ORANGE.wireId,
                                   expectedAppearance,
                                   expectedProgress));
+
+            awaitAppearanceSyncLocal(scenario, expectedAppearance);
+            OctavoAppearance interruptedTarget =
+                interruptedAppearanceTarget(expectedAppearance);
+            scenario.onActivity(activity -> assertTrue(
+                activity.simulateRemoteAppearanceForTesting(
+                    APPEARANCE_REMOTE_DEVICE_ID, 1,
+                    interruptedTarget)));
+            awaitAppearanceSyncChoice(scenario, interruptedTarget);
+            scenario.onActivity(activity -> {
+                assertTrue(surface(activity)
+                    .forcePrePresentFailuresForTesting(5));
+                activity.appearanceSyncPromptForTesting()
+                    .useSettingsForTesting().performClick();
+            });
+            awaitAppearanceApplyPendingRetry(
+                scenario, expectedAppearance, interruptedTarget);
         }
     }
 
@@ -386,6 +409,31 @@ public final class OctavoProcessRestartTest {
         assertEquals(
             expected.appearance,
             new OctavoAppearanceStore(context).load());
+        OctavoAppearance interruptedTarget =
+            interruptedAppearanceTarget(expected.appearance);
+        OctavoAppearanceSyncStore recoveredSync =
+            new OctavoAppearanceSyncStore(context);
+        assertSame(OctavoAppearanceSyncStore.LoadStatus.LOADED,
+                   recoveredSync.load());
+        OctavoAppearancePortable.Lane recoveredLocal =
+            recoveredSync.localLane();
+        assertNotNull(recoveredLocal);
+        assertEquals(expected.appearance,
+                     recoveredLocal.profile.toAppearance());
+        OctavoAppearanceSyncStore.Pending recoveredPending =
+            recoveredSync.pending();
+        assertNotNull(recoveredPending);
+        assertSame(OctavoAppearanceSyncStore.PendingKind.REMOTE,
+                   recoveredPending.kind);
+        assertEquals(APPEARANCE_REMOTE_DEVICE_ID,
+                     recoveredPending.remoteDeviceId);
+        assertEquals(1, recoveredPending.remoteSequence);
+        assertEquals(expected.appearance,
+                     recoveredPending.originAppearance());
+        assertEquals(interruptedTarget,
+                     recoveredPending.targetAppearance());
+        assertSame(OctavoAppearanceSyncStore.PendingRecovery.ORIGIN_DURABLE,
+                   recoveredSync.pendingRecovery(expected.appearance));
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
@@ -546,7 +594,160 @@ public final class OctavoProcessRestartTest {
                 assertSame(expected.progressDisplay,
                            activity.progressStoreForTesting().current());
             });
+
+            awaitAppearanceApplyPendingRetry(
+                scenario, expected.appearance, interruptedTarget);
+            scenario.onActivity(activity ->
+                activity.appearanceSyncPromptForTesting()
+                    .retryForTesting().performClick());
+            awaitAppearanceSyncApplied(scenario, interruptedTarget);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView view = surface(activity);
+                long[] position = view.readingPositionForTesting();
+                assertValidPosition(position);
+                assertEquals(expected.spineIndex, position[1]);
+                assertEquals(expected.byteOffset, position[2]);
+                long[] presented = view.nativeStateForTesting();
+                assertAnchorInsidePage(
+                    presented, expected.spineIndex, expected.byteOffset);
+            });
         }
+    }
+
+    private static OctavoAppearance interruptedAppearanceTarget(
+        OctavoAppearance origin) {
+        return origin.withTheme(
+            (origin.themeId() + 1) % OctavoAppearance.THEME_COUNT);
+    }
+
+    private static void awaitAppearanceSyncLocal(
+        ActivityScenario<OctavoActivity> scenario,
+        OctavoAppearance expected) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoAppearancePortable.Lane local =
+                    activity.appearanceSyncStoreForTesting().localLane();
+                ready.set(local != null
+                    && expected.equals(local.profile.toAppearance())
+                    && activity.pendingAppearanceTransactionForTesting()
+                       == null
+                    && activity
+                        .appearanceSyncReviewInitializedForTesting());
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("O1SS did not qualify the exact presented local profile");
+    }
+
+    private static void awaitAppearanceSyncChoice(
+        ActivityScenario<OctavoActivity> scenario,
+        OctavoAppearance expectedTarget) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoAppearanceSyncPrompt prompt =
+                    activity.appearanceSyncPromptForTesting();
+                OctavoAppearanceSyncStore.Candidate candidate =
+                    activity.pendingAppearanceSyncCandidateForTesting();
+                ready.set(prompt != null && prompt.isShown()
+                    && candidate != null
+                    && APPEARANCE_REMOTE_DEVICE_ID.equals(
+                        candidate.deviceId)
+                    && candidate.sequence == 1
+                    && expectedTarget.equals(
+                        candidate.targetAppearance())
+                    && prompt.useSettingsForTesting().isEnabled()
+                    && prompt.keepMineForTesting().isEnabled());
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("8vo did not offer the restart appearance candidate");
+    }
+
+    private static void awaitAppearanceApplyPendingRetry(
+        ActivityScenario<OctavoActivity> scenario,
+        OctavoAppearance expectedOrigin,
+        OctavoAppearance expectedTarget) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoAppearanceSyncStore store =
+                    activity.appearanceSyncStoreForTesting();
+                OctavoAppearanceSyncStore.Pending pending =
+                    store.pending();
+                OctavoAppearancePortable.Lane local = store.localLane();
+                OctavoAppearanceSyncPrompt prompt =
+                    activity.appearanceSyncPromptForTesting();
+                ready.set(pending != null
+                    && pending.kind
+                       == OctavoAppearanceSyncStore.PendingKind.REMOTE
+                    && pending.hasOriginLane
+                    && APPEARANCE_REMOTE_DEVICE_ID.equals(
+                        pending.remoteDeviceId)
+                    && pending.remoteSequence == 1
+                    && expectedOrigin.equals(
+                        pending.originAppearance())
+                    && expectedTarget.equals(
+                        pending.targetAppearance())
+                    && local != null
+                    && expectedOrigin.equals(
+                        local.profile.toAppearance())
+                    && activity
+                        .appearanceSyncAwaitingExplicitRetryForTesting()
+                    && prompt != null && prompt.isShown()
+                    && prompt.retryForTesting().getVisibility()
+                       == View.VISIBLE
+                    && prompt.retryForTesting().isEnabled());
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The durable O1SS APPLY_PENDING state did not expose Retry");
+    }
+
+    private static void awaitAppearanceSyncApplied(
+        ActivityScenario<OctavoActivity> scenario,
+        OctavoAppearance expectedTarget) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> ready =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoSurfaceView.AppearancePresentationReceipt receipt =
+                    surface(activity)
+                        .currentAppearancePresentationReceipt();
+                OctavoAppearancePortable.Lane local =
+                    activity.appearanceSyncStoreForTesting().localLane();
+                ready.set(receipt != null && receipt.strictResumeSettled
+                    && expectedTarget.equals(receipt.profile)
+                    && local != null
+                    && expectedTarget.equals(
+                        local.profile.toAppearance())
+                    && activity.pendingAppearanceTransactionForTesting()
+                       == null
+                    && activity.appearanceSyncPromptForTesting() == null
+                    && !activity
+                        .appearanceSyncAwaitingExplicitRetryForTesting()
+                    && activity.appearanceStoreForTesting()
+                        .hasCanonicalCurrentRecord(expectedTarget));
+            });
+            if (ready.get()) {
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The restarted O1SS APPLY_PENDING state did not finalize");
     }
 
     private static OctavoAppearance extremeAppearance() {

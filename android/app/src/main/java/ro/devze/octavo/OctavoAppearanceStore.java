@@ -20,6 +20,14 @@ import java.util.zip.CRC32;
  * migration, and removal semantics receive a separate contract.
  */
 final class OctavoAppearanceStore {
+    enum LoadStatus {
+        MISSING,
+        CURRENT,
+        LEGACY,
+        MIGRATION_PENDING,
+        CORRUPT
+    }
+
     private static final int STORE_MAGIC = 0x4F375354; // "O7ST"
     /*
      * Versions 1 and 2 predate preference-origin metadata. Version 1 used an
@@ -57,6 +65,7 @@ final class OctavoAppearanceStore {
     private long missingFallbackCount;
     private long corruptFallbackCount;
     private boolean pendingMigration;
+    private LoadStatus loadStatus = LoadStatus.MISSING;
 
     OctavoAppearanceStore(Context context) {
         this(requireFilesDirectory(context));
@@ -75,6 +84,7 @@ final class OctavoAppearanceStore {
         pendingMigration = false;
         if (!appearanceFile.exists()) {
             current = OctavoAppearance.defaults();
+            loadStatus = LoadStatus.MISSING;
             missingFallbackCount += 1;
             return current;
         }
@@ -92,10 +102,15 @@ final class OctavoAppearanceStore {
                 pendingMigration = true;
             }
             current = loaded;
+            loadStatus = pendingMigration
+                ? LoadStatus.MIGRATION_PENDING
+                : decoded.storeVersion == STORE_VERSION
+                    ? LoadStatus.CURRENT : LoadStatus.LEGACY;
             loadSuccessCount += 1;
         } catch (IOException | RuntimeException exception) {
             current = OctavoAppearance.defaults();
             pendingMigration = false;
+            loadStatus = LoadStatus.CORRUPT;
             loadFailureCount += 1;
             corruptFallbackCount += 1;
         }
@@ -127,6 +142,7 @@ final class OctavoAppearanceStore {
 
         current = candidate;
         pendingMigration = false;
+        loadStatus = LoadStatus.CURRENT;
         saveSuccessCount += 1;
         return true;
     }
@@ -137,6 +153,29 @@ final class OctavoAppearanceStore {
 
     synchronized boolean hasPendingMigration() {
         return pendingMigration;
+    }
+
+    synchronized LoadStatus loadStatus() {
+        return loadStatus;
+    }
+
+    /**
+     * Verifies canonical current-version bytes without substituting an
+     * in-memory default for a missing, corrupt, or legacy record.
+     */
+    synchronized boolean hasCanonicalCurrentRecord(
+        OctavoAppearance expected) {
+        if (expected == null) {
+            return false;
+        }
+        try {
+            DecodedRecord decoded = decode(readBounded(appearanceFile));
+            return decoded != null
+                && decoded.storeVersion == STORE_VERSION
+                && expected.equals(decoded.appearance);
+        } catch (IOException | RuntimeException exception) {
+            return false;
+        }
     }
 
     synchronized boolean recoveredFromCorruption() {

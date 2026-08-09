@@ -84,6 +84,7 @@ public final class OctavoAppearanceTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }
 
@@ -753,7 +754,7 @@ public final class OctavoAppearanceTest {
             scenario.onActivity(activity ->
                 assertTrue(activity.openFixtureForTesting()));
             awaitInitialPage(scenario);
-            awaitVisibleAppearanceSaveFailure(scenario, 1);
+            awaitVisibleAppearanceSyncSaveFailure(scenario, 1);
             assertArrayEquals(
                 legacyRecord,
                 readAppearanceRecord(files));
@@ -769,13 +770,30 @@ public final class OctavoAppearanceTest {
                     activity.appearanceStoreForTesting()
                         .saveFailureCountForTesting());
                 assertEquals(
-                    "Appearance changed, but could not be saved",
+                    "The settings appeared, but their local record could "
+                        + "not be saved. Retry is safe.",
                     activity.lastOpenErrorForTesting());
+                assertTrue(
+                    activity.appearanceSyncAwaitingExplicitRetryForTesting());
             });
 
             assertTrue(files.temporaryFileForTesting().isDirectory());
             assertTrue(files.temporaryFileForTesting().delete());
             moveToNextPresentedPage(scenario);
+            scenario.onActivity(activity -> {
+                assertEquals(
+                    0,
+                    activity.appearanceStoreForTesting()
+                        .saveSuccessCountForTesting());
+                assertEquals(
+                    1,
+                    activity.appearanceStoreForTesting()
+                        .saveFailureCountForTesting());
+                OctavoAppearanceSyncPrompt prompt =
+                    activity.appearanceSyncPromptForTesting();
+                assertNotNull(prompt);
+                assertTrue(prompt.retryForTesting().performClick());
+            });
             assertEquals(1, awaitSaveSuccessCount(scenario, 1));
             scenario.onActivity(activity -> {
                 assertFalse(activity.appearanceStoreForTesting()
@@ -788,6 +806,9 @@ public final class OctavoAppearanceTest {
                     1,
                     activity.appearanceStoreForTesting()
                         .saveFailureCountForTesting());
+                assertFalse(
+                    activity.appearanceSyncAwaitingExplicitRetryForTesting());
+                assertNull(activity.appearanceSyncPromptForTesting());
             });
 
             byte[] published = readAppearanceRecord(files);
@@ -895,7 +916,8 @@ public final class OctavoAppearanceTest {
 
             OctavoAppearanceStore.clearForTesting(context);
             scenario.onActivity(activity ->
-                activity.queuePresentedAppearancePersistenceForTesting());
+                activity
+                    .stagePresentedAppearanceForLifecyclePersistenceForTesting());
             scenario.moveToState(Lifecycle.State.CREATED);
             assertEquals(
                 "onPause did not flush the last presented appearance",
@@ -953,7 +975,8 @@ public final class OctavoAppearanceTest {
                             View parent, View child) {
                         }
                     });
-                activity.queuePresentedAppearancePersistenceForTesting();
+                activity
+                    .stagePresentedAppearanceForLifecyclePersistenceForTesting();
             });
             scenario.moveToState(Lifecycle.State.CREATED);
             assertTrue(files.temporaryFileForTesting().isDirectory());
@@ -991,7 +1014,8 @@ public final class OctavoAppearanceTest {
 
             OctavoAppearanceStore.clearForTesting(context);
             scenario.onActivity(activity ->
-                activity.queuePresentedAppearancePersistenceForTesting());
+                activity
+                    .stagePresentedAppearanceForLifecyclePersistenceForTesting());
         }
         assertEquals(
             "Activity destruction did not flush the last presented appearance",
@@ -6116,21 +6140,23 @@ public final class OctavoAppearanceTest {
             .getInt(Integer.BYTES);
     }
 
-    private static void awaitVisibleAppearanceSaveFailure(
+    private static void awaitVisibleAppearanceSyncSaveFailure(
         ActivityScenario<OctavoActivity> scenario,
         long expectedFailureCount) {
         String expectedMessage =
-            "Appearance changed, but could not be saved";
+            "The settings appeared, but their local record could not be "
+                + "saved. Retry is safe.";
         for (int attempt = 0; attempt < 120; ++attempt) {
             AtomicReference<Boolean> observed =
                 new AtomicReference<>(false);
             scenario.onActivity(activity -> {
-                View candidate = activity.findViewById(
-                    R.id.octavo_reader_failure);
+                OctavoAppearanceSyncPrompt prompt =
+                    activity.appearanceSyncPromptForTesting();
                 boolean visible =
-                    candidate instanceof TextView
+                    prompt != null
                     && expectedMessage.contentEquals(
-                        ((TextView)candidate).getText());
+                        prompt.statusForTesting().getText())
+                    && prompt.retryForTesting().isShown();
                 observed.set(
                     visible
                     && expectedMessage.equals(

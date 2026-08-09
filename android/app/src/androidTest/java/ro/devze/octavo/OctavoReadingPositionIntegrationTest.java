@@ -62,6 +62,7 @@ public final class OctavoReadingPositionIntegrationTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);

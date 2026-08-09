@@ -93,7 +93,8 @@ now includes the accepted local bookmark slice and an emulator- and physical-
 qualified local multi-color highlight slice. The local note/draft/conflict
 slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
 34 automation. The inset, marker appearance, and marker-tap-to-editor behavior
-are physically accepted. Google Drive remains disconnected:
+are physically accepted. The seventh appearance-only synchronization slice is
+accepted on API 36. Google Drive remains disconnected:
 
 The fourth local slice adds the distinct actor-neutral `O1AP` annotation
 container and hardened offline join without a provider, account, network
@@ -119,6 +120,19 @@ MiB heap, portable/store/note regressions 8/8, 8/8, and 3/3, and all 134
 ordinary tests in 264.678 seconds. The crash buffer is empty. Only
 `emulator-5554` was addressed; the iQOO was never targeted and was disconnected
 before the final matrix. Google Drive remains disconnected.
+
+The seventh appearance-only slice passes the exact dependency pins and dual-ABI
+debug/instrumentation build. On API 36 `emulator-5554`, the four new recovery
+cases pass 4/4 in 17.709 seconds, the complete focused matrix passes 41/41 in
+81.376 seconds, and the loaded-pending pair passes 2/2 in an isolated
+9.765-second run. The corrected legacy appearance matrix passes 36/36 in
+126.493 seconds after its corrected pair passed 2/2 in 9.457 seconds. The
+external seed passes 1/1 in 5.692 seconds, the force-stop leaves no process,
+and fresh-process verification passes 1/1 in 3.744 seconds. The ordinary
+matrix passes 200/200 in 532.465 seconds after excluding only the two
+external-process probe methods;
+the crash/fatal buffers are empty. The iQOO and every other physical device were
+not targeted for this appearance-sync slice.
 
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
@@ -210,6 +224,16 @@ contained only expected force stops.
   requires descriptor sync and a same-directory atomic replace; failure
   preserves the old bytes, keeps migration pending, reports a visible
   appearance-save failure, and retries after a later successful presentation.
+- `OctavoAppearancePortable` owns canonical bounded `O1PF` whole-profile lanes,
+  exact semantic conversion, clock-free per-device merge, stale replay,
+  equivocation, recognizable-future retention, and deterministic simulated
+  remote bytes.
+- `OctavoAppearanceSyncStore` owns the independent private atomic `O1SS`
+  appearance-device identity, review epochs, decisions, one staged local or
+  remote presentation transaction, recovery, visible typed failures, and
+  portable export. It does not reuse annotation/position state or include the
+  Port 8 progress-display choice. This seventh-slice local implementation is
+  accepted on API 36.
 - `OctavoAppearancePanel` owns the scrollable, host-themed reader-preference
   sheet, complete option labels, 48dp targets, and initial modal focus.
 - `OctavoFixture` stages the packaged deterministic sample, Alpha, and Beta
@@ -743,9 +767,12 @@ Drive remains disconnected. Both targets pass the 24/24 focused position
 matrix, external force-stop recovery, and the 158/158 ordinary matrix with
 empty crash/fatal buffers. The physical gate also closed touch-mode action
 focus and restored the accepted APK/private-data baseline exactly. Durable
-Unicode-aware indexing, annotation
-search/export, concrete provider
-transport, and the remaining portable record families remain deferred. Spatial
+Unicode-aware indexing, annotation search/export, concrete provider transport,
+and the separate progress-choice, catalog, and transfer portable families
+remain deferred. The seventh appearance-only local slice adds canonical `O1PF`
+whole-profile lanes plus private atomic `O1SS` decisions and staged
+presentation recovery and is accepted on API 36. It still connects no provider
+or transport. Spatial
 previews and advanced scrubbing also remain deferred. See
 [`../docs/android_port11.md`](../docs/android_port11.md) for the current
 annotation/storage/merge boundary,
@@ -753,6 +780,8 @@ annotation/storage/merge boundary,
 for the disconnected annotation coordination boundary,
 [`../docs/android_port11_position_sync.md`](../docs/android_port11_position_sync.md)
 for the separate reading-position/confirmation boundary,
+[`../docs/android_port11_preference_sync.md`](../docs/android_port11_preference_sync.md)
+for the appearance-only portable profile/review-transaction boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,

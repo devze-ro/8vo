@@ -313,6 +313,24 @@ bytes, keeps migration pending, visibly reports the save failure, and retries
 after a later successfully accepted presentation. There is no non-atomic
 fallback.
 
+Port 11's seventh independent local slice adds an appearance-only portable
+boundary around that existing global record. Canonical bounded `O1PF` lanes
+carry complete semantic profiles under a stable appearance-device identity;
+private atomic `O1SS` state owns review epochs, decisions, one staged
+presentation transaction, recovery, and one bounded recognizable-future slot.
+Local or accepted remote state becomes a lane only after the exact target has
+been successfully presented and the corresponding canonical `O7ST` save is
+proved. Clock-free per-device merge, stale replay, equivocation, capacity, and
+failure results remain explicit. This local implementation is accepted on API
+36 and uses only deterministic simulated remote bytes. Exact dependency pins
+and the dual-ABI build pass; the final focused and ordinary matrices pass 41/41
+in 81.376 seconds and 200/200 in 532.465 seconds, respectively, with external
+force-stop recovery and empty crash/fatal buffers. Only `emulator-5554` was
+targeted; no physical device was targeted.
+It neither includes the separate Port 8 progress-display choice nor connects a
+provider, account, permission, worker, clock, OAuth flow, Google dependency, or
+Drive transport.
+
 Windows application data lives under `%LOCALAPPDATA%\8vo`. Migration from
 the former `lectern0` directory is handled by the Windows host and is designed
 to be safe and idempotent. Android uses its package-private files directory.
@@ -519,10 +537,15 @@ appearances, embedded fonts, complete publication accessibility, full Unicode
 shaping, and concrete synchronization transport remain deferred. Port 11 now
 includes local bookmark, multi-color highlight, note/storage/merge, and
 disconnected deterministic annotation coordination without connecting Drive.
+Its position family is independently qualified, and its seventh appearance-only
+family is accepted on API 36. Progress choice, catalog/transfer records, and
+concrete transport remain separate later work.
 The current bounded contracts are in
 [`android_port11.md`](android_port11.md),
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
 [`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md),
+[`android_port11_position_sync.md`](android_port11_position_sync.md),
+[`android_port11_preference_sync.md`](android_port11_preference_sync.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and

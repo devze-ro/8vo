@@ -595,6 +595,63 @@ public final class OctavoAppearanceStoreTest {
     }
 
     @Test
+    public void loadStatusAndCanonicalVerificationNeverTrustFallbacks()
+        throws IOException {
+        OctavoAppearance expected = OctavoAppearance.defaults()
+            .withTheme(OctavoAppearance.THEME_WARM_DARK)
+            .withFontSizeSp(21);
+
+        OctavoAppearanceStore missing =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(OctavoAppearance.defaults(), missing.load());
+        assertEquals(OctavoAppearanceStore.LoadStatus.MISSING,
+                     missing.loadStatus());
+        assertFalse(missing.hasCanonicalCurrentRecord(
+            OctavoAppearance.defaults()));
+
+        assertTrue(missing.save(expected));
+        assertEquals(OctavoAppearanceStore.LoadStatus.CURRENT,
+                     missing.loadStatus());
+        assertTrue(missing.hasCanonicalCurrentRecord(expected));
+        assertFalse(missing.hasCanonicalCurrentRecord(
+            expected.withTheme(OctavoAppearance.THEME_PAPER)));
+
+        byte[] current = readFile(missing.appearanceFileForTesting());
+        byte[] legacy = retagRecordWithChecksum(
+            current, OctavoAppearanceStore.legacyStoreVersionForTesting());
+        writeFile(missing.appearanceFileForTesting(), legacy);
+        OctavoAppearanceStore retainedLegacy =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(expected, retainedLegacy.load());
+        assertEquals(OctavoAppearanceStore.LoadStatus.LEGACY,
+                     retainedLegacy.loadStatus());
+        assertFalse(retainedLegacy.hasCanonicalCurrentRecord(expected));
+
+        OctavoAppearance migratable = expected.withFontSizeSp(18);
+        writeFile(
+            missing.appearanceFileForTesting(),
+            OctavoAppearanceStore.legacyRecordForTesting(migratable));
+        OctavoAppearanceStore migration =
+            new OctavoAppearanceStore(testFilesDirectory);
+        OctavoAppearance migrated = migratable.withFontSizeSp(16);
+        assertEquals(migrated, migration.load());
+        assertEquals(OctavoAppearanceStore.LoadStatus.MIGRATION_PENDING,
+                     migration.loadStatus());
+        assertFalse(migration.hasCanonicalCurrentRecord(migrated));
+
+        byte[] corrupt = current.clone();
+        corrupt[corrupt.length - 1] ^= 0x55;
+        writeFile(missing.appearanceFileForTesting(), corrupt);
+        OctavoAppearanceStore rejected =
+            new OctavoAppearanceStore(testFilesDirectory);
+        assertEquals(OctavoAppearance.defaults(), rejected.load());
+        assertEquals(OctavoAppearanceStore.LoadStatus.CORRUPT,
+                     rejected.loadStatus());
+        assertFalse(rejected.hasCanonicalCurrentRecord(
+            OctavoAppearance.defaults()));
+    }
+
+    @Test
     public void previousSchemaAndTransitionalFontsMigrateFieldWise()
         throws IOException {
         assertEquals(2,

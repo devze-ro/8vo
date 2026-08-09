@@ -48,6 +48,7 @@ public final class OctavoHighlightIntegrationTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }

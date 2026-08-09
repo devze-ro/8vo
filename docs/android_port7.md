@@ -1,8 +1,8 @@
 # Android Port 7: premium reader appearance foundation
 
 Status: post-feedback implementation candidate on
-`android/port7-premium-reader-appearance`. The current source adds the smaller
-14sp default, publication punctuation coverage, full-measure ordinary prose
+`android/port7-premium-reader-appearance`. The current source adds the refined
+16sp default, publication punctuation coverage, full-measure ordinary prose
 justification with hard-line safety, hidden-on-entry chrome, single-tap
 appearance access, swipe navigation, and staged migration durability described
 below. It consumes Reader0 `0.6.0-dev`/API 6 at
@@ -86,7 +86,7 @@ silently added to the Port 6 book records.
 | --- | --- | --- | --- |
 | Theme | Paper, Sepia, Dusk, Warm dark, OLED, High contrast | Paper | None |
 | Font family | Literary system serif, Clear system sans serif | Literary | Rebuild |
-| Font size | 14, 16, 18, 21, 24, or 28sp | 14sp | Rebuild |
+| Font size | 14, 16, 18, 21, 24, or 28sp | 16sp | Rebuild |
 | Line spacing | 1150, 1250, 1300, or 1500 permille | 1250, Classic | Rebuild |
 | Margins/content width | Wide 720, Balanced 860, Focused 960 permille | Balanced | Rebuild |
 | Alignment | Publisher or Ragged right | Publisher | Host rendering policy |
@@ -176,11 +176,11 @@ The single global record is `<files>/port7/appearance.v1`. It contains a fixed
 store header, version, field count, the stable appearance configuration, and a
 CRC32 checksum. The current version-3 record is 60 bytes and is rejected if it
 differs from the exact shape; reads remain capped at 256 bytes. A missing,
-corrupt, or new record uses the new 14sp default; subsequent successful saves
+corrupt, or new record uses the current 16sp default; subsequent successful saves
 publish version 3.
 
 Compatibility is explicit. Loading a valid version-1 18sp default, version-2
-16sp default, or transitional version-2 18sp value returns a 14sp in-memory
+16sp default, or transitional version-2 18sp value returns a 16sp in-memory
 appearance while preserving every other valid field and marks migration
 pending. Load is non-mutating: the valid version-1/version-2 bytes remain exact.
 The transitional value is a bounded pre-origin ambiguity: before explicit
@@ -191,7 +191,7 @@ record. Version-2 21/24/28sp choices and every valid version-3 record remain
 exact. Because neither older schema could represent 14sp, a version-1 or
 version-2 record retagged with that value is rejected.
 
-The Activity publishes the pending v3/14sp appearance only after the first
+The Activity publishes the pending v3/16sp appearance only after the first
 successfully accepted reader frame. A library-only launch therefore cannot
 rewrite appearance state. Publication writes one fixed same-directory temporary
 file, flushes and synchronizes its file descriptor, then requires
@@ -516,9 +516,9 @@ called complete:
   Accessibility passed 1/1 in 4.881 seconds of instrumentation time and 5.587
   seconds wall time; scale was restored to `1.0`. The crash buffer was empty.
 - The passing appearance-store and appearance cases prove non-mutating v1/v2
-  load, v3/14sp publication only after the first successfully accepted reader
-  frame, visible pending state after atomic-save failure, and retry after a later
-  successful presentation.
+  load, historical v3/14sp publication only after the first successfully
+  accepted reader frame, visible pending state after atomic-save failure, and
+  retry after a later successful presentation.
 - The fresh pretest backup was 9,141,760 bytes with SHA-256
   `245FA5B9B3E73E7DC9B1DFC5DCE1DDAEFE80F514C4DB9E8F3BA550280C7F9A1`.
   After the suite, all 63 files compared byte-exact; the catalog, appearance,

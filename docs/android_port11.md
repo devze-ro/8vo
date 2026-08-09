@@ -7,7 +7,9 @@ actor-neutral portable bytes plus the deterministic offline join, and the fifth
 qualifies disconnected annotation coordination. The sixth, independent local
 slice implements and API 36/API 34-qualifies provider-neutral reading positions
 and Kindle-style confirmation without extending the annotation record or
-coordinator families. Google Drive remains disconnected.
+coordinator families. The seventh, appearance-only local slice is accepted on
+API 36 with canonical `O1PF` whole-profile lanes and private atomic `O1SS`
+review transactions. Google Drive remains disconnected.
 
 ## Boundary
 
@@ -311,6 +313,13 @@ bounded `O1RP` lanes and private `O1RS` decisions are independent of `O1AP`,
 `O1AN`, and `O1AS`; this local slice uses simulated remote bytes and adds no
 provider, account, permission, worker, clock, or Drive connection.
 
+The frozen provider-neutral global-appearance boundary is specified in
+[`android_port11_preference_sync.md`](android_port11_preference_sync.md). Its
+bounded `O1PF` whole-profile lanes and private `O1SS` review/transaction state
+are independent of the annotation and position families. This seventh slice is
+appearance-only: the Port 8 progress-display choice requires a later portable
+family rather than a two-store partial transaction.
+
 ## Offline gates before Drive
 
 Annotation provider work may begin only after deterministic tests prove canonical
@@ -324,9 +333,11 @@ ordinary Port 7-10 regression matrix before a physical device is requested.
 The fourth local slice closes the annotation wire/join gate on API 36. The
 fifth backend-only slice closes the disconnected conditional-coordination and
 durable retry/review gate. The sixth local slice closes only the separate
-position wire/merge/presentation-confirmation gate. None closes catalog,
-preference, transfer, concrete-provider, authorization, encryption, or provider
-threat-model gates, and none authorizes a Drive connection.
+position wire/merge/presentation-confirmation gate. The seventh closes the
+appearance-only wire/store/review/presentation gate on API 36. None closes
+progress-choice, catalog, transfer, concrete-provider,
+authorization, encryption, or provider-threat-model gates, and none authorizes
+a Drive connection.
 
 The later Drive adapter will use `drive.appdata` only for hidden manifests and
 portable state and `drive.file` only for EPUBs the user approves in a visible
@@ -436,6 +447,25 @@ the user explicitly deferred hands-on iQOO TalkBack/large-text review. No
 provider, account, network permission, worker, clock, Google dependency, OAuth,
 Drive API, cloud resource, signing key, or Play Console state was added or
 mutated.
+
+On 2026-08-09, the seventh appearance-only `O1PF`/`O1SS` slice passes its exact
+dependency pins and dual-ABI debug/instrumentation build. On API 36
+`emulator-5554`, the four new recovery cases pass 4/4 in 17.709 seconds, the
+complete focused matrix passes 41/41 in 81.376 seconds, and the deterministic
+loaded-pending pair passes 2/2 in an isolated 9.765-second run. The corrected
+legacy appearance regression passes 36/36 in 126.493 seconds after its
+corrected pair passed 2/2 in 9.457 seconds. The external seed passes 1/1 in
+5.692 seconds, force-stop is confirmed with no surviving process, and the
+fresh-process verification passes 1/1 in 3.744 seconds. The ordinary matrix,
+excluding only the two external-process probe methods, passes 200/200 in
+532.465 seconds, and the crash/fatal buffers are empty.
+
+That final API 36 evidence accepts the local wire/store/presentation,
+lifecycle, automated accessibility, and recovery boundary. Only
+`emulator-5554` was targeted; the iQOO and every other physical device were not
+targeted. The slice still uses deterministic simulated remote bytes and adds no
+provider, account, network permission, worker, clock, Google dependency, OAuth
+flow, or Drive connection.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

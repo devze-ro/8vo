@@ -40,6 +40,7 @@ public final class OctavoBootstrapTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }
     private static long[] state(ActivityScenario<OctavoActivity> scenario) {

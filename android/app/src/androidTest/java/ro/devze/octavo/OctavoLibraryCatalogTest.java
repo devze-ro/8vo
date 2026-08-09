@@ -60,6 +60,7 @@ public final class OctavoLibraryCatalogTest {
         OctavoLibraryStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
         OctavoAnnotationStore.clearForTesting(context);
     }
 

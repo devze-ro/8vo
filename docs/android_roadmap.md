@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-08. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-09. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -481,11 +481,28 @@ are still pending.
   tests, and empty crash/fatal buffers on both API 36 x86_64 and API 34 ARM64.
   The physical gate also found and closed touch-mode action focus, then restored
   the accepted APKs and 32-file private manifest exactly; and
+- the seventh independent local slice is accepted on API 36 for the existing
+  global reader appearance only. It adds canonical bounded `O1PF`
+  whole-profile lanes, private atomic `O1SS` decision/review transactions,
+  clock-free merge and replay rules, successful-presentation staging, and
+  deterministic simulated remote bytes. Exact pins and the dual-ABI build pass;
+  API 36 passes the isolated recovery cases 4/4 in 17.709 seconds, the complete
+  focused matrix 41/41 in 81.376 seconds, the isolated loaded-pending pair 2/2
+  in 9.765 seconds, the corrected legacy appearance regression 36/36 in 126.493
+  seconds and its isolated corrected pair 2/2 in 9.457 seconds, the external
+  seed 1/1 in 5.692 seconds, confirmed force-stop with no process, fresh-process
+  verification 1/1 in 3.744 seconds, and
+  the ordinary matrix 200/200 in 532.465 seconds with empty crash/fatal buffers.
+  Only `emulator-5554` was targeted; the iQOO and other physical devices were
+  not targeted.
+  The Port 8 Chapter/Page/Location/Percentage choice remains a separate later
+  portable family; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
   closed through deterministic coordination and the independent position gate
-  is closed through local confirmation, but the concrete Drive adapter,
-  catalog, preferences, transfer manifests, provider trust/
-  encryption UX, and explicit authorization remain before cloud work.
+  is closed through local confirmation. The accepted appearance-only local gate
+  does not authorize transport; progress choice, catalog, transfer manifests,
+  provider trust/encryption UX, and explicit authorization remain before cloud
+  work.
 
 ### Annotations workspace
 
@@ -509,7 +526,9 @@ are still pending.
   immutable Reader0 anchors, tombstones, opposite-frontier join, exact bounds,
   and two golden fixtures as non-regression gates; specify the broader sync
   threat model before any cloud claim;
-- synchronize settings, positions, annotations, and catalog metadata first;
+- synchronize each separately qualified appearance, progress-choice, position,
+  annotation, and catalog family first rather than inventing one generic
+  settings record;
 - make book-file synchronization explicit and optional;
 - use least-privilege Google authorization, observable queue/progress/error
   states, retry, metered-network policy, and deterministic conflict tests; and
@@ -526,6 +545,10 @@ The disconnected coordination contract is
 [`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md).
 The separate provider-neutral reading-position and confirmation contract is
 [`android_port11_position_sync.md`](android_port11_position_sync.md).
+The appearance-only portable profile and private review-transaction contract is
+[`android_port11_preference_sync.md`](android_port11_preference_sync.md); its
+local implementation is accepted on API 36 and does not include the Port 8
+progress-display choice.
 Desktop remains a future peer over those records, not a database-file copy, and
 a second provider may motivate only the minimum proven transport seam after
 Drive works.
