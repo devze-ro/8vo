@@ -24,6 +24,9 @@ empty-crash, visual, physical touch, and audible TalkBack gates pass. Its exact
   verified after an explicit Launcher restart. The same-spine cross-page follow-
   up now passes complete API 36 emulator and API 34 physical qualification,
   including loupe-quality touch review and bounded audible TalkBack actions.
+Port 11's ninth independent local slice now has an accepted API 36 catalog and
+managed-transfer gate; concrete providers, accounts, network permissions,
+security decisions, and physical-device acceptance remain later work.
 
 This roadmap turns `android_product_vision.md` and
 `android_feature_parity.md` into independently testable vertical slices. It is
@@ -509,13 +512,31 @@ are still pending.
   1/1 in 5.126 seconds around a confirmed empty process. The ordinary matrix
   passes 238/238 in 438.899 seconds and crash/fatal buffers are empty. Only the
   emulator was targeted; no physical device, provider, permission, network,
-  worker, account, OAuth, Google dependency, or Drive connection was added; and
+  worker, account, OAuth, Google dependency, or Drive connection was added;
+- the ninth independent local slice is accepted on API 36 for provider-neutral
+  `O1LC` catalog discovery and private `O1LS` review, exact per-book `O1BM`
+  manifests, and the private `O1BQ` managed-transfer and cleanup queue. It keeps
+  all four formats separate from every other `O1` family and the Port 6 local
+  catalog. Android compilation is green; catalog focus passes 80/80 in 1m53s,
+  preserved appearance/position/progress/structural coverage passes 47/47 in
+  2m36s, and the ordinary matrix passes 313/313 in 8m53s. External restart passes
+  seed 1/1 in 4.564 seconds, actual force-stop/no-process, and fresh verification
+  1/1 in 3.293 seconds. The 130%-system-text/disabled-animation selection passes
+  21/21 in 63.351 seconds and restores font plus all animation scales to `1.0`.
+  Offer Back durably records **Not now**; retained working/retry Back only hides
+  the modal, preserves exact state, and leaves a nonmodal reopen action. Late
+  transfer recovery runs Reader0 first, followed by attempt-bound 4 MiB fused
+  SHA-256 and Port 6 catalog commit steps. The final crash/fatal buffers are
+  empty. No physical device, provider, Drive/account path, network permission,
+  security decision, worker, cloud resource, or Play Console operation was part
+  of this gate; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
   closed through deterministic coordination and the independent position gate
   is closed through local confirmation. The accepted appearance-only local gate
-  and the accepted progress-choice local gate do not authorize transport;
-  catalog, transfer manifests, provider trust/encryption UX, and explicit
-  authorization remain before cloud work.
+  and the accepted progress-choice and catalog/managed-transfer local gates do
+  not authorize transport; concrete provider behavior, provider trust/encryption
+  UX, account binding, permissions, and explicit authorization remain before
+  cloud work.
 
 ### Annotations workspace
 
@@ -564,7 +585,11 @@ local implementation is accepted on API 36. The separately accepted global
 progress-display-choice contract is
 [`android_port11_progress_sync.md`](android_port11_progress_sync.md); `O1PC`,
 `O1PS`, and `O8PG` are not annotation, position, appearance, catalog, provider,
-or transport records.
+or transport records. The separately accepted provider-neutral catalog and
+managed-transfer contract is
+[`android_port11_catalog_transfer.md`](android_port11_catalog_transfer.md);
+`O1LC`, `O1LS`, `O1BM`, and `O1BQ` remain distinct from every earlier family and
+do not connect a provider.
 Desktop remains a future peer over those records, not a database-file copy, and
 a second provider may motivate only the minimum proven transport seam after
 Drive works.

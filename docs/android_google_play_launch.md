@@ -8,9 +8,10 @@ Portable annotation-v1 bytes, the hardened offline join, and the disconnected
 conditional sync coordinator now pass their API 36 offline qualification;
 the independent position family is API 36/API 34-qualified. The seventh
 appearance-only `O1PF`/`O1SS` and eighth progress-choice `O1PC`/`O1PS` local
-slices are accepted on API 36. Catalog/transfer families, Google Drive
-synchronization, and remaining bounded UI polish are still required launch
-gates.
+slices are accepted on API 36. The ninth provider-neutral catalog/managed-
+transfer local slice is also accepted on API 36. Google Drive integration,
+provider/account/network/permission and security decisions, physical-device
+qualification, and remaining bounded UI polish are still required launch gates.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
 mutation, or publication.
@@ -134,11 +135,12 @@ used in the listing.
   Appearance-only `O1PF`/`O1SS` is independently accepted on API 36. The global
   progress-display choice is independently accepted locally as canonical
   `O1PC`, private atomic `O1PS`, and separate product-local `O8PG`; it is not a
-  generic settings or sync record. Library identity, managed-book transfer, and
-  cloud-deletion state each still require a separate
-  versioned, bounded format and explicit merge policy; no generic operation log
-  is implied. Every family must remain device-clock-independent where causality
-  is required, idempotent, bounded, and safe to retry.
+  generic settings or sync record. Library identity and managed-book transfer
+  are now independently accepted locally as canonical `O1LC`, private `O1LS`,
+  exact `O1BM`, and private `O1BQ`; cloud-deletion state still requires a
+  separate versioned, bounded format and explicit merge policy. No generic
+  operation log is implied. Every family must remain device-clock-independent
+  where causality is required, idempotent, bounded, and safe to retry.
 - Keep local state authoritative while offline. Queue local changes durably;
   never block reading, annotation editing, or app startup on authorization or
   network access. A remote failure must be visible without rolling back a
@@ -199,6 +201,26 @@ in 5.126 seconds around a confirmed force-stop with no process. The ordinary
 matrix passes 238/238 in 438.899 seconds and crash/fatal buffers are empty. Only
 the emulator was targeted; no physical device, provider, network permission,
 worker, account, OAuth flow, Google dependency, or Drive connection was used.
+
+The independent provider-neutral catalog and managed-transfer boundary is
+[`android_port11_catalog_transfer.md`](android_port11_catalog_transfer.md).
+Android compilation is green. On API 36 `emulator-5554`, the focused catalog
+matrix passes 80/80 in 1m53s, the preserved appearance/position/progress/
+structural matrix passes 47/47 in 2m36s, and the ordinary matrix passes 313/313
+in 8m53s. The external seed passes 1/1 in 4.564 seconds, actual force-stop leaves
+no process, and fresh-process verification passes 1/1 in 3.293 seconds. At 130%
+system text with animations disabled, the selected matrix passes 21/21 in
+63.351 seconds; font plus all animation scales are restored and read back at
+`1.0`. The final crash/fatal buffers are empty.
+
+This gate keeps `O1LC`, `O1LS`, `O1BM`, and `O1BQ` distinct from all other `O1`
+families and Port 6. Offer Back is durable **Not now** for the exact review epoch;
+Back from retained work/retry only defers its UI, preserves exact durable state,
+and exposes a nonmodal reopen action. Late managed recovery is Reader0-first and
+then uses exact-attempt-bound 4 MiB fused SHA-256 and Port 6 catalog commit
+steps. No physical device, provider, Drive/account path, network permission,
+security/encryption decision, worker, cloud resource, or Play Console operation
+was part of this gate; each remains explicitly deferred.
 
 ### Bounded UI polish
 
@@ -281,6 +303,13 @@ worker, account, OAuth flow, Google dependency, or Drive connection was used.
   catalog state, appearance, progress choice, and reading positions stay app-
   private. This becomes predecessor evidence once the bounded Drive adapter adds
   network access; the final manifest, SDK, and data-flow audit must be repeated.
+- The accepted Port 11 catalog/managed-transfer slice also adds no Android
+  permission, provider component, production network dependency, account SDK,
+  or background worker. Its catalog, manifest, queue, staged bytes, managed
+  copies, and reconciliation state remain bounded and app-private. This remains
+  local predecessor evidence until a separately authorized Drive adapter is
+  implemented and the final permission, SDK, privacy, and threat-model audits
+  repeat.
 - `allowBackup` is false, imports and catalogs are bounded, failures remain
   visible, and managed-copy removal does not delete the provider-owned original.
 - Both packaged ABIs are 64-bit: `arm64-v8a` and `x86_64`.
@@ -401,8 +430,12 @@ Qualification is ordered and stops on the first failed gate:
    accepted `android_port11_position_sync.md` gate. The appearance-only family
    must retain the accepted API 36 gate in `android_port11_preference_sync.md`.
    The progress-choice family must independently retain the accepted API 36
-   `android_port11_progress_sync.md` gate; `O1PC`, `O1PS`, and `O8PG` remain
-   separate and are not a generic sync framework.
+    `android_port11_progress_sync.md` gate; `O1PC`, `O1PS`, and `O8PG` remain
+    separate and are not a generic sync framework. The catalog/managed-transfer
+    family must retain the accepted API 36
+    `android_port11_catalog_transfer.md` gate; `O1LC`, `O1LS`, `O1BM`, and
+    `O1BQ` likewise remain separate, and no local simulated result may be called
+    provider success.
 3. Qualify Google Drive against test accounts and at least two devices: explicit
    authorization, least-privilege scopes, first sync, offline convergence,
    conflicts, interruption/retry, quota, revocation, account switching,

@@ -27,6 +27,10 @@ import android.window.OnBackInvokedDispatcher;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -114,6 +118,33 @@ public final class OctavoActivity extends Activity {
         "octavo.port11.progress_rollback_epoch_retry";
     private static final String STATE_PROGRESS_ABANDON_AFTER_RELOAD =
         "octavo.port11.progress_abandon_after_reload";
+    private static final String STATE_LIBRARY_REVIEW_EPOCH_ACTIVE =
+        "octavo.port11.library_review_epoch_active";
+    private static final String STATE_LIBRARY_CATALOG_REVIEW_DEFERRED =
+        "octavo.port11.library_catalog_review_deferred";
+    private static final String STATE_LIBRARY_IDENTITY_RECORD_OPENED =
+        "octavo.port11.library_identity_record_opened";
+    private static final String STATE_LIBRARY_REVIEW_EPOCH_RETRY =
+        "octavo.port11.library_review_epoch_retry";
+    private static final String STATE_LIBRARY_REVIEW_EPOCH_BEFORE_RETRY =
+        "octavo.port11.library_review_epoch_before_retry";
+    private static final String STATE_LIBRARY_DISCOVERY_RETRY_KEY =
+        "octavo.port11.library_discovery_retry_key";
+    private static final String STATE_LIBRARY_FOCUS_BOOK_KEY =
+        "octavo.port11.library_focus_book_key";
+    private static final String STATE_LIBRARY_FOCUS_REMOVE =
+        "octavo.port11.library_focus_remove";
+    private static final String STATE_LIBRARY_SUPPRESSED_REVIEW =
+        "octavo.port11.library_suppressed_review";
+    private static final String STATE_LIBRARY_ATTENTION_DEFERRED =
+        "octavo.port11.library_attention_deferred";
+    private static final int LIBRARY_IDENTITY_MODE_NONE = 0;
+    private static final int LIBRARY_IDENTITY_MODE_OPEN = 1;
+    private static final int LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION = 2;
+    private static final int LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION = 3;
+    private static final int LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION = 4;
+    private static final String LIBRARY_FOCUS_ADD =
+        "octavo.library.focus.add";
     private static final int POSITION_RETRY_MARK_GO = 1;
     private static final int POSITION_RETRY_STAY = 2;
     private static final int POSITION_RETRY_DISMISS = 3;
@@ -615,6 +646,9 @@ public final class OctavoActivity extends Activity {
     }
 
     private OctavoLibraryStore libraryStore;
+    private File libraryFixture;
+    private OctavoLibrarySyncStore librarySyncStore;
+    private OctavoBookTransferStore bookTransferStore;
     private OctavoAppearanceStore appearanceStore;
     private OctavoAppearanceSyncStore appearanceSyncStore;
     private OctavoAppearance appearance;
@@ -625,6 +659,49 @@ public final class OctavoActivity extends Activity {
     private OctavoNoteDraftStore noteDraftStore;
     private OctavoReadingPositionStore readingPositionStore;
     private LinearLayout libraryRoot;
+    private TextView libraryIdentityStatus;
+    private TextView libraryCatalogStatus;
+    private OctavoLibrarySyncPrompt librarySyncPrompt;
+    private OctavoLibrarySyncStore.StagedPortable libraryPromptStaged;
+    private Runnable libraryPromptRetry;
+    private Runnable libraryPromptCancel;
+    private OctavoLibrarySyncStore.Candidate libraryCatalogOffer;
+    private String libraryCatalogOfferManifestSha256;
+    private byte[] libraryCatalogManifestBytes;
+    private String libraryCatalogManifestDigest;
+    private boolean libraryReviewEpochActive;
+    private boolean libraryReviewEpochRetryPending;
+    private long libraryReviewEpochBeforeRetry = -1;
+    private boolean libraryCatalogReviewDeferred;
+    private String transientTransferReader0Title;
+    private String libraryTransferCatalogRetryMessage;
+    private boolean libraryTransferExplicitRetryRequired;
+    private String libraryDiscoveryStatus;
+    private String libraryDiscoveryRetryBookKey;
+    private boolean libraryDiscoveryDerivedThisActivity;
+    private String libraryFocusBookKey;
+    private boolean libraryFocusRemove;
+    private View libraryRowFocusReturn;
+    private boolean librarySuppressedReviewRequested;
+    private boolean libraryAttentionDeferred;
+    private String libraryImportAssociationStatus;
+    private OctavoLibraryStore.Book pendingImportAssociationBook;
+    private OctavoLibraryStore.Book rejectedStagedImportCleanupBook;
+    private OctavoLibraryStore.Book pendingLibraryIdentityBook;
+    private int pendingLibraryIdentityMode = LIBRARY_IDENTITY_MODE_NONE;
+    private boolean pendingLibraryIdentityRecordOpened;
+    private OctavoLibrarySyncStore.LocalReconciliation
+        pendingLibraryIdentityLocalReconciliation;
+    private long pendingLibraryIdentityTransferAttemptSequence;
+    private String pendingLibraryIdentityTransferAttemptId;
+    private OctavoBookTransferStore.Phase pendingLibraryIdentityTransferPhase;
+    private boolean pendingLibraryRestorePositionReview;
+    private boolean pendingLibraryRestoreAppearanceReview;
+    private boolean pendingLibraryRestoreProgressReview;
+    private ReadingPositionChoiceRetry pendingLibraryReadingPositionRetry;
+    private boolean libraryIdentityVerificationPosted;
+    private final Runnable libraryIdentityVerification =
+        this::continueLibraryIdentityVerification;
     private FrameLayout systemBarRoot;
     private View statusBarScrim;
     private View navigationBarScrim;
@@ -908,13 +985,49 @@ public final class OctavoActivity extends Activity {
         chromeVisible = savedInstanceState != null
             && savedInstanceState.getBoolean(STATE_CHROME_VISIBLE, false);
         applyWindowAppearance();
+        libraryReviewEpochActive = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_REVIEW_EPOCH_ACTIVE, false);
+        libraryCatalogReviewDeferred = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_CATALOG_REVIEW_DEFERRED, false);
+        libraryReviewEpochRetryPending = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_REVIEW_EPOCH_RETRY, false);
+        libraryReviewEpochBeforeRetry = savedInstanceState == null
+            ? -1 : savedInstanceState.getLong(
+                STATE_LIBRARY_REVIEW_EPOCH_BEFORE_RETRY, -1);
+        libraryDiscoveryRetryBookKey = savedInstanceState == null
+            ? null : savedInstanceState.getString(
+                STATE_LIBRARY_DISCOVERY_RETRY_KEY);
+        libraryFocusBookKey = savedInstanceState == null
+            ? null : savedInstanceState.getString(
+                STATE_LIBRARY_FOCUS_BOOK_KEY);
+        libraryFocusRemove = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_FOCUS_REMOVE, false);
+        librarySuppressedReviewRequested = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_SUPPRESSED_REVIEW, false);
+        libraryAttentionDeferred = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_ATTENTION_DEFERRED, false);
+        librarySyncStore = new OctavoLibrarySyncStore(this);
+        librarySyncStore.load();
+        bookTransferStore = new OctavoBookTransferStore(this);
+        bookTransferStore.load();
+        libraryTransferExplicitRetryRequired =
+            bookTransferStore.intentCount() != 0;
         libraryStore = new OctavoLibraryStore(this);
-        File fixture = new File(OctavoFixture.install(this));
-        libraryStore.loadCatalog(fixture);
+        libraryFixture = new File(OctavoFixture.install(this));
+        libraryStore.loadCatalog(libraryFixture);
 
         String restoreKey = savedInstanceState == null
             ? null
             : savedInstanceState.getString(STATE_ACTIVE_BOOK_KEY);
+        boolean restoreIdentityRecordOpened = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_IDENTITY_RECORD_OPENED, false);
         boolean restoreReviewPending = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_POSITION_REVIEW_PENDING, false);
@@ -924,23 +1037,33 @@ public final class OctavoActivity extends Activity {
         boolean restoreProgressReviewPending = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_PROGRESS_REVIEW_PENDING, false);
+        pendingLibraryRestorePositionReview = restoreReviewPending;
+        pendingLibraryRestoreAppearanceReview =
+            restoreAppearanceReviewPending;
+        pendingLibraryRestoreProgressReview = restoreProgressReviewPending;
+        pendingLibraryReadingPositionRetry =
+            ReadingPositionChoiceRetry.restore(savedInstanceState);
         OctavoLibraryStore.Book restoreBook =
             restoreKey == null ? null : libraryStore.findBook(restoreKey);
         boolean readerRestored = restoreBook != null
-            && showReader(restoreBook, false);
+            && showReader(restoreBook, restoreIdentityRecordOpened);
         if (!readerRestored) {
-            showLibrary();
-        } else {
+            showLibrary(!libraryReviewEpochActive
+                && !libraryReviewEpochRetryPending);
+        } else if (activeBook != null && !restoreIdentityRecordOpened) {
             readingPositionReviewPending = restoreReviewPending;
             appearanceSyncReviewPending =
                 restoreAppearanceReviewPending;
             progressSyncReviewPending = restoreProgressReviewPending;
             ReadingPositionChoiceRetry restoredRetry =
-                ReadingPositionChoiceRetry.restore(savedInstanceState);
+                pendingLibraryReadingPositionRetry;
             if (restoredRetry != null
                 && activeBook.key.equals(restoredRetry.bookDigest)) {
                 readingPositionChoiceRetry = restoredRetry;
             }
+            pendingLibraryReadingPositionRetry = null;
+        } else if (activeBook != null) {
+            pendingLibraryReadingPositionRetry = null;
         }
         if (appearanceResetAfterCorruption) {
             showOpenFailure(
@@ -960,14 +1083,58 @@ public final class OctavoActivity extends Activity {
         reportAppearanceSyncLoadStatus(appearanceSyncLoadStatus);
         reportProgressSyncLoadStatus(
             progressSyncLoadStatus, progressLoadStatus);
+        if (hasText(libraryStore.lastError())) {
+            showOpenFailure(libraryStore.lastError());
+        }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle state) {
         if (activeBook != null) {
             state.putString(STATE_ACTIVE_BOOK_KEY, activeBook.key);
+        } else if (pendingLibraryIdentityMode
+                       == LIBRARY_IDENTITY_MODE_OPEN
+                   && pendingLibraryIdentityBook != null
+                   && !libraryStore.isStagedImport(
+                       pendingLibraryIdentityBook)
+                   && libraryStore.findBook(
+                       pendingLibraryIdentityBook.key) != null) {
+            state.putString(
+                STATE_ACTIVE_BOOK_KEY, pendingLibraryIdentityBook.key);
+            state.putBoolean(
+                STATE_LIBRARY_IDENTITY_RECORD_OPENED,
+                pendingLibraryIdentityRecordOpened);
         }
         state.putBoolean(STATE_CHROME_VISIBLE, chromeVisible);
+        state.putBoolean(
+            STATE_LIBRARY_REVIEW_EPOCH_ACTIVE,
+            libraryReviewEpochActive && libraryRoot != null);
+        state.putBoolean(
+            STATE_LIBRARY_CATALOG_REVIEW_DEFERRED,
+            libraryCatalogReviewDeferred && libraryRoot != null);
+        state.putBoolean(
+            STATE_LIBRARY_REVIEW_EPOCH_RETRY,
+            libraryReviewEpochRetryPending);
+        state.putLong(
+            STATE_LIBRARY_REVIEW_EPOCH_BEFORE_RETRY,
+            libraryReviewEpochBeforeRetry);
+        if (hasText(libraryDiscoveryRetryBookKey)) {
+            state.putString(
+                STATE_LIBRARY_DISCOVERY_RETRY_KEY,
+                libraryDiscoveryRetryBookKey);
+        }
+        if (hasText(libraryFocusBookKey)) {
+            state.putString(
+                STATE_LIBRARY_FOCUS_BOOK_KEY, libraryFocusBookKey);
+            state.putBoolean(
+                STATE_LIBRARY_FOCUS_REMOVE, libraryFocusRemove);
+        }
+        state.putBoolean(
+            STATE_LIBRARY_SUPPRESSED_REVIEW,
+            librarySuppressedReviewRequested && libraryRoot != null);
+        state.putBoolean(
+            STATE_LIBRARY_ATTENTION_DEFERRED,
+            libraryAttentionDeferred && libraryRoot != null);
         state.putBoolean(
             STATE_POSITION_REVIEW_PENDING,
             readingPositionReviewPending);
@@ -1097,7 +1264,13 @@ public final class OctavoActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (appearanceSyncPrompt != null) {
+        if (librarySyncPrompt != null) {
+            if (librarySyncPrompt.handleBack()) {
+                return;
+            }
+            deferLibraryAttention();
+            return;
+        } else if (appearanceSyncPrompt != null) {
             dismissAppearanceSyncForBack();
         } else if (readingPositionPrompt != null) {
             dismissReadingPositionForBack();
@@ -1133,7 +1306,7 @@ public final class OctavoActivity extends Activity {
                    && surfaceView.canReturnInHistory()) {
             surfaceView.requestHistoryNavigation(false);
         } else if (surfaceView != null) {
-            showLibrary();
+            showLibrary(true);
         } else {
             super.onBackPressed();
         }
@@ -1143,6 +1316,7 @@ public final class OctavoActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityResumed = true;
+        scheduleLibraryIdentityVerification();
         if (surfaceView != null) {
             surfaceView.hostResumed();
         }
@@ -1160,6 +1334,10 @@ public final class OctavoActivity extends Activity {
     @Override
     protected void onPause() {
         activityResumed = false;
+        if (libraryRoot != null) {
+            libraryRoot.removeCallbacks(libraryIdentityVerification);
+        }
+        libraryIdentityVerificationPosted = false;
         if (surfaceView != null) {
             surfaceView.hostPaused();
         }
@@ -1171,6 +1349,9 @@ public final class OctavoActivity extends Activity {
     @Override
     protected void onDestroy() {
         flushAppearancePersistence();
+        if (libraryStore != null) {
+            libraryStore.cancelBookIdentityVerification();
+        }
         releaseReader();
         super.onDestroy();
     }
@@ -1199,13 +1380,23 @@ public final class OctavoActivity extends Activity {
             showOpenFailure("Unable to import the selected EPUB");
             return false;
         }
-        boolean alreadyCataloged =
-            libraryStore.findBook(candidate.key) != null;
         if (!showReader(candidate, true)) {
-            if (!alreadyCataloged) {
-                libraryStore.discardUncataloged(candidate);
+            boolean retainedAssociation =
+                libraryStore.hasPendingImportAssociation(
+                    candidate.key, candidate.byteCount);
+            boolean cleanupComplete = retainedAssociation
+                || discardRejectedLibraryOpen(candidate);
+            if (retainedAssociation) {
+                showOpenFailure(nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The validated EPUB needs Library association Retry"));
+            } else if (!cleanupComplete) {
+                showOpenFailure(nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The rejected EPUB staging file needs cleanup Retry"));
+            } else {
+                showOpenFailure("The selected file is not a readable EPUB");
             }
-            showOpenFailure("The selected file is not a readable EPUB");
             return false;
         }
         lastOpenError = null;
@@ -1215,11 +1406,65 @@ public final class OctavoActivity extends Activity {
     private boolean showReader(OctavoLibraryStore.Book requested,
                                boolean recordOpened) {
         long readerEntryStartedMillis = SystemClock.uptimeMillis();
+        boolean stagedImport = libraryStore.isStagedImport(requested);
         OctavoLibraryStore.Book current =
             libraryStore.findBook(requested.key);
-        OctavoLibraryStore.Book target = current == null ? requested : current;
+        // A picker repair owns exact fixed staging bytes. Prefer them over an
+        // existing same-digest O6 row until Reader0 validates and the import
+        // journal atomically replaces the managed destination.
+        OctavoLibraryStore.Book target = stagedImport
+            ? requested : current == null ? requested : current;
+        OctavoLibraryStore.IdentityCheckStatus identityStatus =
+            libraryStore.verifyBookIdentityStep(
+                target, 4 * 1024 * 1024);
+        if (identityStatus == OctavoLibraryStore.IdentityCheckStatus.PENDING) {
+            pendingLibraryIdentityBook = target;
+            pendingLibraryIdentityMode = LIBRARY_IDENTITY_MODE_OPEN;
+            pendingLibraryIdentityRecordOpened = recordOpened;
+            pendingLibraryIdentityLocalReconciliation = null;
+            if (libraryRoot == null) {
+                showLibrary();
+            } else {
+                updateLibraryIdentityStatus(
+                    "Verifying EPUB identity before opening");
+            }
+            scheduleLibraryIdentityVerification();
+            return true;
+        }
+        if (identityStatus != OctavoLibraryStore.IdentityCheckStatus.VERIFIED) {
+            return false;
+        }
+
+        if (stagedImport) {
+            OctavoManagedEpubValidator.Result validated =
+                OctavoManagedEpubValidator.validate(
+                    this, target.file, appearance);
+            if (!validated.valid) {
+                libraryImportAssociationStatus =
+                    "Reader validation rejected the staged EPUB";
+                return false;
+            }
+            try {
+                target = libraryStore.publishReader0ValidatedImport(target);
+            } catch (IOException | RuntimeException exception) {
+                libraryImportAssociationStatus = nonemptyMessage(
+                    libraryStore.lastError(),
+                    "Managed EPUB publication needs Retry");
+                return false;
+            }
+            if (target == null) {
+                libraryImportAssociationStatus =
+                    "Managed EPUB publication needs Retry";
+                return false;
+            }
+            pendingImportAssociationBook = target;
+            current = libraryStore.findBook(target.key);
+        }
+        boolean pendingImportAssociation =
+            libraryStore.hasPendingImportAssociation(
+                target.key, target.byteCount);
         OctavoLibraryStore.Session session =
-            current == null
+            current == null || pendingImportAssociation
                 ? new OctavoLibraryStore.Session(target)
                 : libraryStore.sessionFor(target);
         if (session == null) {
@@ -1260,15 +1505,41 @@ public final class OctavoActivity extends Activity {
             return false;
         }
         String readerTitle = replacement.documentTitleForTesting();
+        boolean catalogPersistenceBlocked = false;
         if (recordOpened
             && !libraryStore.recordOpened(target, readerTitle)) {
-            replacement.release();
-            return false;
+            if (pendingImportAssociation
+                || current == null || !libraryStore.mutationBlocked()) {
+                replacement.release();
+                return false;
+            }
+            catalogPersistenceBlocked = true;
         }
         target = libraryStore.findBook(target.key);
         if (target == null) {
             replacement.release();
             return false;
+        }
+        String discoveryFailure = null;
+        boolean importAssociationComplete = true;
+        if (pendingImportAssociation) {
+            importAssociationComplete =
+                libraryStore.completeImportedCatalogAssociation(target);
+            if (importAssociationComplete) {
+                pendingImportAssociationBook = null;
+                libraryImportAssociationStatus = null;
+            } else {
+                discoveryFailure = nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The book opened, but its Library association needs Retry");
+            }
+        }
+        if (target.imported && importAssociationComplete) {
+            if (!recordLocalDiscovery(target)) {
+                discoveryFailure = nonemptyMessage(
+                    librarySyncStore.lastError(),
+                    "The book opened, but Library discovery needs Retry");
+            }
         }
 
         if (surfaceView != null || readerRoot != null || activeBook != null) {
@@ -1280,6 +1551,14 @@ public final class OctavoActivity extends Activity {
             OctavoDesignTokens.forAppearance(appearance).readerPage);
         surfaceView = replacement;
         activeBook = target;
+        pendingLibraryIdentityBook = null;
+        pendingLibraryIdentityMode = LIBRARY_IDENTITY_MODE_NONE;
+        pendingLibraryIdentityRecordOpened = false;
+        pendingLibraryIdentityLocalReconciliation = null;
+        libraryFocusBookKey = null;
+        libraryFocusRemove = false;
+        libraryRowFocusReturn = null;
+        libraryReviewEpochActive = false;
         readingPositionReviewPending = recordOpened;
         readingPositionReviewInitialized = false;
         appearanceSyncReviewPending = recordOpened;
@@ -1288,6 +1567,10 @@ public final class OctavoActivity extends Activity {
         progressSyncReviewInitialized = false;
         hasPresentedReadingPosition = false;
         libraryRoot = null;
+        librarySyncPrompt = null;
+        libraryPromptStaged = null;
+        libraryPromptRetry = null;
+        libraryPromptCancel = null;
         readerRoot = root;
         installReaderEntryCover();
         setContentView(windowRoot, matchParentLayout());
@@ -1296,7 +1579,372 @@ public final class OctavoActivity extends Activity {
         if (activityResumed) {
             replacement.hostResumed();
         }
+        if (catalogPersistenceBlocked) {
+            showOpenFailure(libraryStore.lastError() == null
+                ? "The book opened, but Library metadata is read-only"
+                : libraryStore.lastError());
+        }
+        if (discoveryFailure != null) {
+            showOpenFailure(discoveryFailure);
+        }
         return true;
+    }
+
+    private void scheduleLibraryIdentityVerification() {
+        if (!activityResumed
+            || libraryRoot == null
+            || pendingLibraryIdentityBook == null
+            || libraryIdentityVerificationPosted) {
+            return;
+        }
+        libraryIdentityVerificationPosted = true;
+        libraryRoot.post(libraryIdentityVerification);
+    }
+
+    private void continueLibraryIdentityVerification() {
+        libraryIdentityVerificationPosted = false;
+        if (!activityResumed || pendingLibraryIdentityBook == null) {
+            return;
+        }
+        OctavoLibraryStore.Book target = pendingLibraryIdentityBook;
+        int mode = pendingLibraryIdentityMode;
+        if (mode == LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION) {
+            continueTransferFinalizationIdentityVerification(target);
+            return;
+        }
+        OctavoLibraryStore.IdentityCheckStatus status =
+            libraryStore.verifyBookIdentityStep(
+                target, 4 * 1024 * 1024);
+        if (status == OctavoLibraryStore.IdentityCheckStatus.PENDING) {
+            if (mode == LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION) {
+                libraryImportAssociationStatus =
+                    "Verifying exact managed EPUB identity";
+            } else if (mode
+                       == LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION) {
+                libraryDiscoveryStatus = "Verification in progress";
+            }
+            updateLibraryIdentityStatus(mode
+                == LIBRARY_IDENTITY_MODE_OPEN
+                    ? "Verifying EPUB identity before opening"
+                    : "Verifying exact Library EPUB identity");
+            scheduleLibraryIdentityVerification();
+            return;
+        }
+
+        boolean recordOpened = pendingLibraryIdentityRecordOpened;
+        OctavoLibrarySyncStore.LocalReconciliation localReconciliation =
+            pendingLibraryIdentityLocalReconciliation;
+        if (status != OctavoLibraryStore.IdentityCheckStatus.VERIFIED) {
+            clearPendingLibraryIdentityOperation();
+            pendingLibraryReadingPositionRetry = null;
+            if (mode == LIBRARY_IDENTITY_MODE_OPEN) {
+                discardRejectedLibraryOpen(target);
+            } else if (mode
+                       == LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION) {
+                pendingImportAssociationBook = target;
+                libraryImportAssociationStatus =
+                    "Exact managed EPUB identity verification failed";
+            } else if (mode
+                       == LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION) {
+                libraryDiscoveryStatus =
+                    "Exact local EPUB verification failed";
+            }
+            showLibrary();
+            showOpenFailure(
+                "The EPUB did not match its recorded content identity");
+            return;
+        }
+
+        if (mode == LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION) {
+            clearPendingLibraryIdentityOperation();
+            boolean associated =
+                completePendingImportAssociationAfterIdentity(target);
+            showLibrary();
+            if (!associated) {
+                showOpenFailure(nonemptyMessage(
+                    firstNonemptyMessage(
+                        libraryStore.lastError(),
+                        libraryImportAssociationStatus),
+                    "The validated EPUB still needs Library association Retry"));
+            }
+            return;
+        }
+
+        if (mode == LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION) {
+            clearPendingLibraryIdentityOperation();
+            boolean published = completeLocalPublicationAfterIdentity(
+                target, localReconciliation);
+            showLibrary();
+            if (!published) {
+                showOpenFailure(nonemptyMessage(
+                    firstNonemptyMessage(
+                        librarySyncStore.lastError(),
+                        libraryDiscoveryStatus),
+                    "Local Library discovery still needs Retry"));
+            }
+            return;
+        }
+
+        clearPendingLibraryIdentityOperation();
+        if (!showReader(target, recordOpened) || activeBook == null) {
+            pendingLibraryReadingPositionRetry = null;
+            boolean cleanupComplete =
+                discardRejectedLibraryOpen(target);
+            showLibrary();
+            showOpenFailure(cleanupComplete
+                ? "Unable to open the verified Library book"
+                : nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The rejected EPUB staging file needs cleanup Retry"));
+            return;
+        }
+        if (!recordOpened) {
+            readingPositionReviewPending =
+                pendingLibraryRestorePositionReview;
+            appearanceSyncReviewPending =
+                pendingLibraryRestoreAppearanceReview;
+            progressSyncReviewPending =
+                pendingLibraryRestoreProgressReview;
+            ReadingPositionChoiceRetry restoredRetry =
+                pendingLibraryReadingPositionRetry;
+            if (restoredRetry != null
+                && activeBook.key.equals(restoredRetry.bookDigest)) {
+                readingPositionChoiceRetry = restoredRetry;
+            }
+        }
+        pendingLibraryReadingPositionRetry = null;
+    }
+
+    private void continueTransferFinalizationIdentityVerification(
+        OctavoLibraryStore.Book target) {
+        long attemptSequence =
+            pendingLibraryIdentityTransferAttemptSequence;
+        String attemptId = pendingLibraryIdentityTransferAttemptId;
+        OctavoBookTransferStore.Phase phase =
+            pendingLibraryIdentityTransferPhase;
+        String readerTitle = transientTransferReader0Title;
+        if (!exactPendingTransferFinalization(
+                target, attemptSequence, attemptId, phase)) {
+            libraryStore.cancelBookIdentityVerification();
+            clearPendingLibraryIdentityOperation();
+            transientTransferReader0Title = null;
+            libraryTransferExplicitRetryRequired =
+                bookTransferStore.intentCount() != 0;
+            libraryTransferCatalogRetryMessage =
+                "The retained transfer changed between verification steps; "
+                    + "its exact current state needs explicit Retry";
+            showLibrary();
+            showOpenFailure(libraryTransferCatalogRetryMessage);
+            return;
+        }
+        OctavoLibraryStore.TransferredBookStepStatus status =
+            libraryStore.verifyAndRecordTransferredBookStep(
+                target, readerTitle, 4 * 1024 * 1024);
+        if (status
+            == OctavoLibraryStore.TransferredBookStepStatus.PENDING) {
+            updateLibraryIdentityStatus(
+                "Verifying downloaded EPUB and publishing its Library record");
+            scheduleLibraryIdentityVerification();
+            return;
+        }
+
+        boolean convertedToRepair = status
+                == OctavoLibraryStore.TransferredBookStepStatus
+                    .IDENTITY_FAILED
+            && convertPublishedTransferToRepairCleanup(
+                target.key, target.byteCount,
+                attemptSequence, attemptId, phase);
+        boolean finalized = status
+                == OctavoLibraryStore.TransferredBookStepStatus.COMPLETED
+            && completeTransferFinalizationAfterCatalogRecord(
+                attemptSequence, attemptId, phase);
+        if (convertedToRepair || finalized) {
+            libraryTransferExplicitRetryRequired = false;
+            libraryTransferCatalogRetryMessage = null;
+        } else {
+            libraryTransferExplicitRetryRequired = true;
+            if (status
+                == OctavoLibraryStore.TransferredBookStepStatus
+                    .CATALOG_RETRY) {
+                libraryTransferCatalogRetryMessage = nonemptyMessage(
+                    libraryStore.lastError(),
+                    "Publishing the local Library catalog needs Retry");
+                recordTransferCatalogRetry(attemptSequence, attemptId, phase);
+            } else if (status
+                       == OctavoLibraryStore.TransferredBookStepStatus.STALE) {
+                libraryTransferCatalogRetryMessage =
+                    "The retained transfer changed; publishing its local "
+                        + "Library record needs explicit Retry";
+            } else if (status
+                       == OctavoLibraryStore.TransferredBookStepStatus
+                           .COMPLETED) {
+                libraryTransferCatalogRetryMessage = nonemptyMessage(
+                    firstNonemptyMessage(
+                        librarySyncStore.lastError(),
+                        bookTransferStore.lastError()),
+                    "The local Library record is complete; private transfer "
+                        + "reconciliation needs Retry");
+            } else if (!convertedToRepair) {
+                libraryTransferCatalogRetryMessage =
+                    "The exact EPUB repair transition needs Retry";
+            }
+        }
+        clearPendingLibraryIdentityOperation();
+        transientTransferReader0Title = null;
+        showLibrary();
+        if (!convertedToRepair && !finalized) {
+            showOpenFailure(nonemptyMessage(
+                firstNonemptyMessage(
+                    libraryTransferCatalogRetryMessage,
+                    libraryStore.lastError(),
+                    bookTransferStore.lastError(),
+                    librarySyncStore.lastError()),
+                "The downloaded EPUB still needs completion Retry"));
+        }
+    }
+
+    private boolean exactPendingTransferFinalization(
+        OctavoLibraryStore.Book expected,
+        long expectedAttemptSequence,
+        String expectedAttemptId,
+        OctavoBookTransferStore.Phase expectedPhase) {
+        OctavoBookTransferStore.ActiveJob active =
+            bookTransferStore.activeJob();
+        return expected != null && hasText(expectedAttemptId)
+            && (expectedPhase
+                    == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                || expectedPhase
+                    == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)
+            && active != null
+            && active.direction
+               == OctavoBookTransferStore.Direction.DOWNLOAD
+            && active.durableDirection
+               == OctavoBookTransferStore.DurableDirection.FORWARD
+            && active.phase == expectedPhase
+            && active.attemptSequence == expectedAttemptSequence
+            && active.attemptId.equals(expectedAttemptId)
+            && active.digest.equals(expected.key)
+            && active.byteCount == expected.byteCount
+            && (expectedPhase
+                    != OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED
+                || librarySyncStore.decision(active.digest)
+                   == OctavoLibrarySyncStore.Decision.DOWNLOADED);
+    }
+
+    private void clearPendingLibraryIdentityOperation() {
+        pendingLibraryIdentityBook = null;
+        pendingLibraryIdentityMode = LIBRARY_IDENTITY_MODE_NONE;
+        pendingLibraryIdentityRecordOpened = false;
+        pendingLibraryIdentityLocalReconciliation = null;
+        pendingLibraryIdentityTransferAttemptSequence = 0;
+        pendingLibraryIdentityTransferAttemptId = null;
+        pendingLibraryIdentityTransferPhase = null;
+    }
+
+    private boolean completePendingImportAssociationAfterIdentity(
+        OctavoLibraryStore.Book pending) {
+        if (pending == null
+            || !libraryStore.hasPendingImportAssociation(
+                pending.key, pending.byteCount)) {
+            pendingImportAssociationBook = null;
+            libraryImportAssociationStatus =
+                "The pending import changed before association";
+            return false;
+        }
+        pendingImportAssociationBook = pending;
+        OctavoManagedEpubValidator.Result validated =
+            OctavoManagedEpubValidator.validate(
+                this, pending.file, appearance);
+        if (!validated.valid) {
+            libraryImportAssociationStatus =
+                "Reader validation rejected the managed EPUB";
+            return false;
+        }
+        if (!libraryStore.recordValidatedPendingImport(
+                pending, validated.title)) {
+            libraryImportAssociationStatus = nonemptyMessage(
+                libraryStore.lastError(),
+                "The validated EPUB needs durable Library association Retry");
+            return false;
+        }
+        OctavoLibraryStore.Book associated =
+            libraryStore.findBook(pending.key);
+        if (associated == null
+            || associated.byteCount != pending.byteCount
+            || !libraryStore.completeImportedCatalogAssociation(associated)) {
+            libraryImportAssociationStatus = nonemptyMessage(
+                libraryStore.lastError(),
+                "The EPUB import journal needs completion Retry");
+            return false;
+        }
+        pendingImportAssociationBook = null;
+        libraryImportAssociationStatus = null;
+        if (!recordLocalDiscovery(associated)) {
+            libraryDiscoveryStatus =
+                "Local discovery publication needs Retry";
+        }
+        return true;
+    }
+
+    private boolean completeLocalPublicationAfterIdentity(
+        OctavoLibraryStore.Book book,
+        OctavoLibrarySyncStore.LocalReconciliation expected) {
+        if (book == null || !book.imported || book.repairRequired
+            || !book.identityVerified) {
+            libraryDiscoveryStatus = "Exact local EPUB is unavailable";
+            return false;
+        }
+        OctavoManagedEpubValidator.Result validated =
+            OctavoManagedEpubValidator.validate(
+                this, book.file, appearance);
+        if (!validated.valid) {
+            libraryDiscoveryStatus = "Reader validation failed";
+            return false;
+        }
+        if (expected == null) {
+            if (librarySyncStore.decision(book.key)
+                == OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+                if (book.key.equals(libraryDiscoveryRetryBookKey)) {
+                    libraryDiscoveryRetryBookKey = null;
+                }
+                libraryDiscoveryStatus = null;
+                return true;
+            }
+            boolean discovered = recordLocalDiscovery(book);
+            libraryDiscoveryStatus = discovered
+                ? null : "Local discovery publication needs Retry";
+            return discovered;
+        }
+        OctavoLibrarySyncStore.LocalReconciliation current =
+            librarySyncStore.localReconciliation();
+        if (current == null || !current.sameIdentity(expected)
+            || current.kind
+               != OctavoLibrarySyncStore.LocalReconciliationKind.PUBLICATION
+            || !current.digest.equals(book.key)
+            || current.byteCount != book.byteCount) {
+            libraryDiscoveryStatus =
+                "Local discovery identity changed before publication";
+            return false;
+        }
+        boolean finalized = librarySyncStore.finalizeLocalReconciliation(
+            current, true).succeeded();
+        if (finalized && book.key.equals(libraryDiscoveryRetryBookKey)) {
+            libraryDiscoveryRetryBookKey = null;
+        } else if (!finalized) {
+            libraryDiscoveryRetryBookKey = book.key;
+        }
+        libraryDiscoveryStatus = finalized
+            ? null : "Local discovery publication needs Retry";
+        return finalized;
+    }
+
+    private void updateLibraryIdentityStatus(String message) {
+        if (libraryIdentityStatus == null) {
+            return;
+        }
+        libraryIdentityStatus.setText(message);
+        libraryIdentityStatus.setContentDescription(message);
+        libraryIdentityStatus.setVisibility(View.VISIBLE);
     }
 
     private FrameLayout createReaderRoot(OctavoSurfaceView replacement,
@@ -1324,7 +1972,7 @@ public final class OctavoActivity extends Activity {
             tokens.onLibraryReturn);
         library.setId(R.id.octavo_reader_library);
         library.setContentDescription(getString(R.string.library));
-        library.setOnClickListener(view -> showLibrary());
+        library.setOnClickListener(view -> showLibrary(true));
         top.addView(library, chromeButtonLayout());
 
         TextView title = new TextView(this);
@@ -8593,9 +9241,47 @@ public final class OctavoActivity extends Activity {
     }
 
     private void showLibrary() {
-        releaseReader();
+        showLibrary(false);
+    }
+
+    private void showLibrary(boolean beginReviewEpoch) {
+        if (surfaceView != null || readerRoot != null || activeBook != null) {
+            releaseReader();
+        }
+        if (libraryReviewEpochRetryPending
+            && libraryReviewEpochBeforeRetry == Long.MAX_VALUE
+            && librarySyncStore.reviewEpoch() == Long.MAX_VALUE) {
+            libraryReviewEpochActive = true;
+            libraryReviewEpochRetryPending = false;
+            libraryReviewEpochBeforeRetry = -1;
+        }
+        if (beginReviewEpoch) {
+            libraryCatalogReviewDeferred = false;
+            long priorEpoch = librarySyncStore.reviewEpoch();
+            OctavoLibrarySyncStore.MutationResult reviewed =
+                librarySyncStore.beginReviewEpoch(true);
+            if (reviewed.succeeded()) {
+                libraryReviewEpochActive = true;
+                libraryReviewEpochRetryPending = false;
+                libraryReviewEpochBeforeRetry = -1;
+            } else if (reviewed
+                       == OctavoLibrarySyncStore.MutationResult.EXHAUSTED
+                       && priorEpoch == Long.MAX_VALUE) {
+                // Long.MAX_VALUE is a settled terminal epoch. NONE records
+                // remain reviewable there, while records dismissed at MAX
+                // remain suppressed; there is no next epoch to reconcile.
+                libraryReviewEpochActive = true;
+                libraryReviewEpochRetryPending = false;
+                libraryReviewEpochBeforeRetry = -1;
+            } else {
+                libraryReviewEpochActive = false;
+                libraryReviewEpochRetryPending = true;
+                libraryReviewEpochBeforeRetry = priorEpoch;
+            }
+        }
         chromeVisible = false;
         activeBook = null;
+        libraryRowFocusReturn = null;
         applyWindowAppearance();
         OctavoDesignTokens tokens =
             OctavoDesignTokens.forAppearance(appearance);
@@ -8621,11 +9307,61 @@ public final class OctavoActivity extends Activity {
         addButton.setTextColor(tokens.onAccent);
         addButton.setBackgroundTintList(
             ColorStateList.valueOf(tokens.accent));
-        addButton.setOnClickListener(view ->
+        addButton.setOnClickListener(view -> {
+            libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+            libraryFocusRemove = false;
             startActivityForResult(createOpenDocumentIntent(),
-                                   REQUEST_ADD_EPUB));
+                                   REQUEST_ADD_EPUB);
+        });
         header.addView(addButton, wrapLayout());
         root.addView(header, matchParentWidthLayout());
+
+        OctavoLibraryPortable.Descriptor suppressedHeaderEntry =
+            suppressedLibraryCatalogDescriptor(
+                availableLibraryCatalogManifest());
+        if (!librarySuppressedReviewRequested
+            && suppressedHeaderEntry != null
+            && canStartLibraryCatalogDownload()) {
+            Button suppressed = new Button(this);
+            suppressed.setText("Review synchronized EPUB");
+            suppressed.setContentDescription(
+                "Review a suppressed synchronized EPUB");
+            suppressed.setAllCaps(false);
+            suppressed.setMinHeight(
+                dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            suppressed.setTextColor(tokens.chromeText);
+            suppressed.setBackgroundTintList(
+                ColorStateList.valueOf(tokens.buttonSurface));
+            suppressed.setOnClickListener(view -> {
+                libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+                libraryFocusRemove = false;
+                librarySuppressedReviewRequested = true;
+                showLibrary();
+            });
+            root.addView(suppressed, matchParentWidthLayout());
+        }
+
+        if (libraryAttentionDeferred
+            && !retainedLibraryAttentionAvailable()) {
+            libraryAttentionDeferred = false;
+        }
+        if (libraryAttentionDeferred) {
+            Button attention = new Button(this);
+            attention.setText("Review pending Library attention");
+            attention.setContentDescription(
+                "Review pending Library transfer or recovery attention");
+            attention.setAllCaps(false);
+            attention.setMinHeight(
+                dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            attention.setTextColor(tokens.chromeText);
+            attention.setBackgroundTintList(
+                ColorStateList.valueOf(tokens.buttonSurface));
+            attention.setOnClickListener(view -> {
+                libraryAttentionDeferred = false;
+                showLibrary();
+            });
+            root.addView(attention, matchParentWidthLayout());
+        }
 
         TextView summary = new TextView(this);
         int importedCount = Math.max(0, libraryStore.bookCount() - 1);
@@ -8639,16 +9375,84 @@ public final class OctavoActivity extends Activity {
         summary.setTextColor(tokens.textSecondary);
         root.addView(summary, matchParentWidthLayout());
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        LinearLayout list = new LinearLayout(this);
-        list.setId(R.id.octavo_library_list);
-        list.setOrientation(LinearLayout.VERTICAL);
-        for (OctavoLibraryStore.Book book : libraryStore.books()) {
-            list.addView(createBookRow(book), matchParentWidthLayout());
+        String libraryError = firstNonemptyMessage(
+            libraryCatalogDurableAttentionMessage(),
+            libraryStore.lastError(),
+            librarySyncStore.lastError(),
+            bookTransferStore.lastError());
+        if (hasText(libraryError)) {
+            TextView libraryStatus = new TextView(this);
+            libraryStatus.setText(libraryError);
+            libraryStatus.setContentDescription(libraryError);
+            libraryStatus.setTextColor(tokens.error);
+            libraryStatus.setAccessibilityLiveRegion(
+                View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            libraryStatus.setPadding(0, 0, 0, dp(12));
+            root.addView(libraryStatus, matchParentWidthLayout());
         }
-        scroll.addView(list, matchParentWidthLayout());
-        root.addView(scroll, surfaceLayout());
+        if (librarySyncStore.reviewEpoch() == Long.MAX_VALUE) {
+            TextView terminalReviewStatus = new TextView(this);
+            String terminalMessage =
+                "Library review is at its final epoch. Undecided books "
+                    + "remain available; previously deferred books stay "
+                    + "suppressed.";
+            terminalReviewStatus.setText(terminalMessage);
+            terminalReviewStatus.setContentDescription(terminalMessage);
+            terminalReviewStatus.setTextColor(tokens.textSecondary);
+            terminalReviewStatus.setPadding(0, 0, 0, dp(12));
+            root.addView(
+                terminalReviewStatus, matchParentWidthLayout());
+        }
+
+        TextView identityStatus = new TextView(this);
+        identityStatus.setTextColor(tokens.textSecondary);
+        identityStatus.setAccessibilityLiveRegion(
+            View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        identityStatus.setPadding(0, 0, 0, dp(12));
+        identityStatus.setVisibility(
+            pendingLibraryIdentityBook == null ? View.GONE : View.VISIBLE);
+        if (pendingLibraryIdentityBook != null) {
+            identityStatus.setText("Verifying EPUB identity before opening");
+            identityStatus.setContentDescription(
+                "Verifying EPUB identity before opening");
+        }
+        root.addView(identityStatus, matchParentWidthLayout());
+        libraryIdentityStatus = identityStatus;
+
+        libraryCatalogOffer = null;
+        libraryCatalogOfferManifestSha256 = null;
+        librarySyncPrompt = null;
+        libraryPromptStaged = null;
+        libraryPromptRetry = null;
+        libraryPromptCancel = null;
+        View catalogPanel = createLibraryCatalogPanel(tokens);
+        boolean catalogModal = librarySyncPrompt != null;
+        if (catalogPanel != null) {
+            root.addView(
+                catalogPanel,
+                catalogModal ? surfaceLayout() : matchParentWidthLayout());
+        }
+        if (!catalogModal) {
+            ScrollView scroll = new ScrollView(this);
+            scroll.setFillViewport(true);
+            LinearLayout list = new LinearLayout(this);
+            list.setId(R.id.octavo_library_list);
+            list.setOrientation(LinearLayout.VERTICAL);
+            for (OctavoLibraryStore.Book book : libraryStore.books()) {
+                list.addView(createBookRow(book), matchParentWidthLayout());
+            }
+            scroll.addView(list, matchParentWidthLayout());
+            root.addView(scroll, surfaceLayout());
+        } else {
+            addButton.setEnabled(false);
+            for (int index = 0; index < root.getChildCount(); ++index) {
+                View sibling = root.getChildAt(index);
+                if (sibling != catalogPanel) {
+                    sibling.setImportantForAccessibility(
+                        View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+                }
+            }
+        }
 
         libraryRoot = root;
         FrameLayout windowRoot = createSystemBarFrame(
@@ -8657,6 +9461,2461 @@ public final class OctavoActivity extends Activity {
             tokens.librarySurface);
         setContentView(windowRoot, matchParentLayout());
         windowRoot.requestApplyInsets();
+        if (librarySyncPrompt != null) {
+            View focus = librarySyncPrompt.preferredInitialFocus();
+            focus.post(() -> {
+                if (librarySyncPrompt == null || !focus.isShown()) {
+                    return;
+                }
+                focus.requestFocus();
+                focus.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+            });
+        } else if ((pendingLibraryIdentityBook == null
+                    || libraryAttentionDeferred)
+                   && hasText(libraryFocusBookKey)) {
+            View focus = libraryRowFocusReturn == null
+                ? addButton : libraryRowFocusReturn;
+            String expectedFocusKey = libraryFocusBookKey;
+            focus.post(() -> {
+                if (librarySyncPrompt != null || !focus.isShown()
+                    || !expectedFocusKey.equals(libraryFocusBookKey)) {
+                    return;
+                }
+                focus.requestFocus();
+                focus.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+                libraryFocusBookKey = null;
+                libraryFocusRemove = false;
+                libraryRowFocusReturn = null;
+            });
+        }
+        scheduleLibraryIdentityVerification();
+    }
+
+    private View createLibraryCatalogPanel(OctavoDesignTokens tokens) {
+        libraryCatalogStatus = null;
+        if (libraryAttentionDeferred
+            && retainedLibraryAttentionAvailable()) {
+            return null;
+        }
+        libraryAttentionDeferred = false;
+        if (pendingLibraryIdentityBook != null
+            && pendingLibraryIdentityMode
+               == LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION) {
+            return createPendingImportAssociationPanel(
+                pendingLibraryIdentityBook, true);
+        }
+        if (pendingLibraryIdentityBook != null
+            && pendingLibraryIdentityMode
+               == LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION) {
+            return createLocalPublicationWorkingPanel(
+                pendingLibraryIdentityBook);
+        }
+        if (pendingLibraryIdentityBook != null
+            && pendingLibraryIdentityMode
+               == LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION) {
+            return createTransferFinalizationWorkingPanel(
+                pendingLibraryIdentityBook);
+        }
+        if (pendingLibraryIdentityBook != null) {
+            return null;
+        }
+        if (rejectedStagedImportCleanupBook != null
+            && libraryStore.isStagedImport(
+                rejectedStagedImportCleanupBook)) {
+            return createRejectedStagedImportCleanupPanel(
+                rejectedStagedImportCleanupBook);
+        }
+        rejectedStagedImportCleanupBook = null;
+        OctavoLibraryStore.Book pendingImport =
+            currentPendingImportAssociationBook();
+        if (pendingImport != null) {
+            return createPendingImportAssociationPanel(
+                pendingImport, false);
+        }
+        // A durable cleanup intent owns its local row/file crash boundary.
+        // Let it advance before any O1LS marker (including an unrelated one)
+        // can mask the only explicit cleanup Retry surface.
+        if (!bookTransferStore.cleanupJobs().isEmpty()) {
+            return createLibraryTransferPanel(tokens);
+        }
+        OctavoLibrarySyncStore.LocalReconciliation local =
+            librarySyncStore.localReconciliation();
+        if (local != null) {
+            return createLocalLibraryReconciliationPanel(tokens, local);
+        }
+        OctavoLibraryStore.Book discoveryRetry =
+            currentLocalDiscoveryRetryBook();
+        if (discoveryRetry != null) {
+            return createLocalDiscoveryRetryPanel(discoveryRetry);
+        }
+        if (bookTransferStore.activeJob() != null) {
+            return createLibraryTransferPanel(tokens);
+        }
+        OctavoLibrarySyncStore.TransferReconciliation reconciliation =
+            librarySyncStore.transferReconciliation();
+        if (reconciliation != null) {
+            return createLibraryTransferReconciliationPanel(
+                tokens, reconciliation);
+        }
+        if (libraryReviewEpochRetryPending) {
+            return createLibraryReviewEpochRetryPanel(tokens);
+        }
+
+        OctavoLibrarySyncStore.StagedPortable staged =
+            librarySyncStore.stagedPortable();
+        if (staged != null
+            && staged.kind == OctavoLibrarySyncStore.StagedKind.CURRENT
+            && !libraryCatalogReviewDeferred) {
+            OctavoLibraryPortable.DecodeResult decoded =
+                OctavoLibraryPortable.decode(staged.bytes());
+            if (decoded.status == OctavoLibraryPortable.DecodeStatus.READY) {
+                return createLibraryCatalogReviewPanel(
+                    tokens, staged, decoded.snapshot().descriptorCount());
+            }
+        }
+
+        if (bookTransferStore.intentCount() != 0) {
+            return createLibraryTransferPanel(tokens);
+        }
+        OctavoBookManifest availableManifest =
+            availableLibraryCatalogManifest();
+        if (libraryCatalogRepairDownloadNeeded(availableManifest)
+            && canStartLibraryCatalogDownload()) {
+            return createLibraryRepairDownloadPanel(availableManifest);
+        }
+        OctavoLibraryPortable.Descriptor suppressed =
+            suppressedLibraryCatalogDescriptor(availableManifest);
+        boolean suppressedReady = suppressed != null
+            && canStartLibraryCatalogDownload();
+        if (librarySuppressedReviewRequested && suppressedReady) {
+            return createSuppressedLibraryCatalogPanel(suppressed);
+        }
+        if (librarySuppressedReviewRequested && !suppressedReady) {
+            librarySuppressedReviewRequested = false;
+        }
+        OctavoLibrarySyncStore.Candidate offer = eligibleLibraryCatalogOffer();
+        if (offer == null) {
+            return null;
+        }
+        libraryCatalogOffer = offer;
+        return createLibraryCatalogOfferPanel(tokens, offer);
+    }
+
+    private boolean retainedLibraryAttentionAvailable() {
+        if (pendingLibraryIdentityBook != null
+            || (rejectedStagedImportCleanupBook != null
+                && libraryStore.isStagedImport(
+                    rejectedStagedImportCleanupBook))
+            || currentPendingImportAssociationBook() != null
+            || !bookTransferStore.cleanupJobs().isEmpty()
+            || librarySyncStore.localReconciliation() != null
+            || bookTransferStore.activeJob() != null
+            || bookTransferStore.intentCount() != 0
+            || librarySyncStore.transferReconciliation() != null
+            || libraryReviewEpochRetryPending) {
+            return true;
+        }
+        if (hasText(libraryDiscoveryRetryBookKey)
+            && currentLocalDiscoveryRetryBook() != null) {
+            return true;
+        }
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        return libraryCatalogRepairDownloadNeeded(manifest)
+            || (librarySuppressedReviewRequested
+                && suppressedLibraryCatalogDescriptor(manifest) != null);
+    }
+
+    private void deferLibraryAttention() {
+        if (librarySyncPrompt == null
+            || !retainedLibraryAttentionAvailable()) {
+            return;
+        }
+        if (pendingLibraryIdentityBook != null) {
+            OctavoLibraryStore.Book pending = pendingLibraryIdentityBook;
+            int mode = pendingLibraryIdentityMode;
+            OctavoLibrarySyncStore.LocalReconciliation local =
+                pendingLibraryIdentityLocalReconciliation;
+            if (libraryRoot != null) {
+                libraryRoot.removeCallbacks(libraryIdentityVerification);
+            }
+            libraryIdentityVerificationPosted = false;
+            libraryStore.cancelBookIdentityVerification();
+            clearPendingLibraryIdentityOperation();
+            transientTransferReader0Title = null;
+            if (mode == LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION) {
+                libraryTransferExplicitRetryRequired = true;
+                libraryTransferCatalogRetryMessage =
+                    "Retained transfer verification needs explicit Retry";
+            } else if (mode
+                       == LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION) {
+                pendingImportAssociationBook = pending;
+                libraryImportAssociationStatus =
+                    "Imported EPUB association was deferred; Retry when ready";
+            } else if (mode
+                       == LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION) {
+                if (local == null) {
+                    libraryDiscoveryRetryBookKey = pending.key;
+                }
+                libraryDiscoveryStatus =
+                    "Local Library discovery was deferred; Retry when ready";
+            }
+        }
+        libraryAttentionDeferred = true;
+        libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+        libraryFocusRemove = false;
+        showLibrary();
+    }
+
+    private OctavoLibraryPortable.Descriptor
+        suppressedLibraryCatalogDescriptor(OctavoBookManifest manifest) {
+        if (manifest == null) {
+            return null;
+        }
+        OctavoLibrarySyncStore.Decision decision =
+            librarySyncStore.decision(manifest.digest);
+        if (decision != OctavoLibrarySyncStore.Decision.IGNORED
+            && decision
+               != OctavoLibrarySyncStore.Decision.LOCAL_REMOVED) {
+            return null;
+        }
+        OctavoLibraryPortable.Descriptor descriptor =
+            librarySyncStore.snapshot().descriptor(manifest.digest);
+        if (descriptor == null
+            || descriptor.byteCount != manifest.byteCount) {
+            return null;
+        }
+        OctavoLibraryStore.Book local =
+            libraryStore.findBook(descriptor.digest);
+        if (local != null
+            && (!local.imported || !local.repairRequired)) {
+            return null;
+        }
+        return descriptor;
+    }
+
+    private View createSuppressedLibraryCatalogPanel(
+        OctavoLibraryPortable.Descriptor descriptor) {
+        OctavoLibrarySyncStore.Decision expectedDecision =
+            librarySyncStore.decision(descriptor.digest);
+        long expectedEpoch = librarySyncStore.reviewEpoch();
+        String expectedManifestSha256 =
+            sha256Hex(libraryCatalogManifestBytes);
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            expectedDecision == OctavoLibrarySyncStore.Decision.IGNORED
+                ? "Hidden synchronized EPUB"
+                : "EPUB removed from this device",
+            "EPUB - " + humanReadableByteCount(descriptor.byteCount)
+                + " - " + shortDigest(descriptor.digest)
+                + " - Make this exact EPUB available for Download again",
+            false);
+        libraryPromptRetry = () -> {
+            boolean exact = reloadTransferStoresForExplicitRetry()
+                && exactSuppressedLibraryCatalogAction(
+                    descriptor, expectedDecision, expectedEpoch,
+                    expectedManifestSha256);
+            boolean prepared = false;
+            if (exact) {
+                OctavoLibraryStore.Book local =
+                    libraryStore.findBook(descriptor.digest);
+                if (local == null) {
+                    prepared = librarySyncStore.resetForExplicitDownload(
+                        descriptor.digest).succeeded();
+                } else {
+                    OctavoBookTransferStore.CleanupOutcome staged =
+                        bookTransferStore.stageRepairManagedCleanup(
+                            local.key, local.byteCount);
+                    prepared = staged.result.succeeded()
+                        && retryRepairManagedCleanup(
+                            staged.attemptSequence);
+                }
+            }
+            librarySuppressedReviewRequested = false;
+            showLibrary();
+            if (!prepared) {
+                showOpenFailure(nonemptyMessage(
+                    firstNonemptyMessage(
+                        librarySyncStore.lastError(),
+                        bookTransferStore.lastError(),
+                        libraryStore.lastError()),
+                    "The suppressed EPUB changed before it could be re-offered"));
+            }
+        };
+        return prompt;
+    }
+
+    private boolean exactSuppressedLibraryCatalogAction(
+        OctavoLibraryPortable.Descriptor expected,
+        OctavoLibrarySyncStore.Decision expectedDecision,
+        long expectedEpoch,
+        String expectedManifestSha256) {
+        if (expected == null || expectedDecision == null
+            || expectedEpoch != librarySyncStore.reviewEpoch()
+            || !hasText(expectedManifestSha256)
+            || !expectedManifestSha256.equals(
+                sha256Hex(libraryCatalogManifestBytes))
+            || !canStartLibraryCatalogDownload()
+            || librarySyncStore.decision(expected.digest)
+               != expectedDecision) {
+            return false;
+        }
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        OctavoLibraryPortable.Descriptor current =
+            librarySyncStore.snapshot().descriptor(expected.digest);
+        return manifest != null && current != null
+            && manifest.digest.equals(expected.digest)
+            && manifest.byteCount == expected.byteCount
+            && current.sameIdentity(expected)
+            && suppressedLibraryCatalogDescriptor(manifest) != null;
+    }
+
+    private View createRejectedStagedImportCleanupPanel(
+        OctavoLibraryStore.Book staged) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            "Rejected EPUB cleanup needs Retry",
+            "EPUB - " + humanReadableByteCount(staged.byteCount)
+                + " - " + shortDigest(staged.key)
+                + " - Clear the fixed local import staging file",
+            false);
+        libraryPromptRetry = () -> {
+            boolean cleared = libraryStore.discardUncataloged(staged);
+            if (cleared) {
+                rejectedStagedImportCleanupBook = null;
+            }
+            showLibrary();
+            if (!cleared) {
+                showOpenFailure(nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The rejected EPUB staging file still needs cleanup Retry"));
+            }
+        };
+        return prompt;
+    }
+
+    private OctavoLibraryStore.Book currentLocalDiscoveryRetryBook() {
+        if (!hasText(libraryDiscoveryRetryBookKey)) {
+            if (libraryDiscoveryDerivedThisActivity) {
+                return null;
+            }
+            OctavoLibrarySyncStore.LoadStatus status =
+                librarySyncStore.loadStatus();
+            boolean mutableQuietState =
+                !librarySyncLoadBlocked(status)
+                && status
+                   != OctavoLibrarySyncStore.LoadStatus
+                       .CORRUPT_QUARANTINED
+                && librarySyncStore.stagedPortable() == null
+                && librarySyncStore.transferReconciliation() == null
+                && librarySyncStore.localReconciliation() == null
+                && bookTransferStore.retainedIntentCount() == 0;
+            if (!mutableQuietState) {
+                return null;
+            }
+            libraryDiscoveryDerivedThisActivity = true;
+            OctavoLibraryPortable.Snapshot snapshot =
+                librarySyncStore.snapshot();
+            for (OctavoLibraryStore.Book candidate
+                     : libraryStore.books()) {
+                if (candidate.imported && !candidate.repairRequired
+                    && snapshot.descriptor(candidate.key) == null) {
+                    libraryDiscoveryRetryBookKey = candidate.key;
+                    libraryDiscoveryStatus =
+                        "Local discovery needs explicit Retry";
+                    break;
+                }
+            }
+            if (!hasText(libraryDiscoveryRetryBookKey)) {
+                return null;
+            }
+        }
+        OctavoLibraryStore.Book book =
+            libraryStore.findBook(libraryDiscoveryRetryBookKey);
+        if (book == null || !book.imported || book.repairRequired
+            || librarySyncStore.decision(libraryDiscoveryRetryBookKey)
+               == OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+            libraryDiscoveryRetryBookKey = null;
+            return null;
+        }
+        return book;
+    }
+
+    private View createLocalDiscoveryRetryPanel(
+        OctavoLibraryStore.Book book) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            "Local Library discovery needs Retry",
+            "EPUB - " + humanReadableByteCount(book.byteCount)
+                + " - " + shortDigest(book.key)
+                + " - " + nonemptyMessage(
+                    libraryDiscoveryStatus,
+                    "Publish this validated local EPUB to the synchronized Library"),
+            false);
+        libraryPromptRetry = () -> {
+            boolean completed = reloadLibrarySyncForExplicitRetry()
+                && retryLocalDiscovery(book);
+            showLibrary();
+            if (!completed && !"Verification in progress".equals(
+                    libraryDiscoveryStatus)) {
+                showOpenFailure(nonemptyMessage(
+                    librarySyncStore.lastError(),
+                    "Local Library discovery still needs Retry"));
+            }
+        };
+        return prompt;
+    }
+
+    private boolean retryLocalDiscovery(OctavoLibraryStore.Book expected) {
+        OctavoLibraryStore.Book current =
+            currentLocalDiscoveryRetryBook();
+        if (expected == null || current == null
+            || !current.key.equals(expected.key)
+            || current.byteCount != expected.byteCount) {
+            return false;
+        }
+        if (!current.identityVerified) {
+            pendingLibraryIdentityBook = current;
+            pendingLibraryIdentityMode =
+                LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION;
+            pendingLibraryIdentityRecordOpened = false;
+            pendingLibraryIdentityLocalReconciliation = null;
+            libraryDiscoveryStatus = "Verification in progress";
+            return false;
+        }
+        return completeLocalPublicationAfterIdentity(current, null);
+    }
+
+    private boolean libraryCatalogRepairDownloadNeeded(
+        OctavoBookManifest manifest) {
+        if (manifest == null
+            || librarySyncStore.decision(manifest.digest)
+               != OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+            return false;
+        }
+        OctavoLibraryStore.Book local =
+            libraryStore.findBook(manifest.digest);
+        return local == null
+            || (local.imported && local.repairRequired);
+    }
+
+    private View createLibraryRepairDownloadPanel(
+        OctavoBookManifest expectedManifest) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            "Downloaded EPUB needs repair",
+            "EPUB - "
+                + humanReadableByteCount(expectedManifest.byteCount)
+                + " - " + shortDigest(expectedManifest.digest)
+                + " - Make an explicit repair download available",
+            false);
+        libraryPromptRetry = () -> {
+            boolean retryReady = reloadTransferStoresForExplicitRetry();
+            OctavoBookManifest current =
+                availableLibraryCatalogManifest();
+            boolean exact = retryReady && current != null
+                && current.digest.equals(expectedManifest.digest)
+                && current.byteCount == expectedManifest.byteCount
+                && libraryCatalogRepairDownloadNeeded(current)
+                && canStartLibraryCatalogDownload();
+            boolean prepared = false;
+            if (exact) {
+                OctavoLibraryStore.Book local =
+                    libraryStore.findBook(current.digest);
+                if (local == null) {
+                    prepared = librarySyncStore.resetForExplicitDownload(
+                        current.digest).succeeded();
+                } else if (local.imported && local.repairRequired
+                           && local.key.equals(current.digest)) {
+                    OctavoBookTransferStore.CleanupOutcome staged =
+                        bookTransferStore.stageRepairManagedCleanup(
+                            local.key, local.byteCount);
+                    prepared = staged.result.succeeded()
+                        && retryRepairManagedCleanup(
+                            staged.attemptSequence);
+                }
+            }
+            showLibrary();
+            if (!prepared) {
+                showOpenFailure(nonemptyMessage(
+                    firstNonemptyMessage(
+                        bookTransferStore.lastError(),
+                        librarySyncStore.lastError(),
+                        libraryStore.lastError()),
+                    "The repair download could not be made available"));
+            }
+        };
+        return prompt;
+    }
+
+    private OctavoLibraryStore.Book currentPendingImportAssociationBook() {
+        if (libraryStore.loadStatus()
+            != OctavoLibraryStore.LoadStatus.IMPORT_ASSOCIATION_PENDING) {
+            if (pendingImportAssociationBook != null
+                && !libraryStore.hasPendingImportAssociation(
+                    pendingImportAssociationBook.key,
+                    pendingImportAssociationBook.byteCount)) {
+                pendingImportAssociationBook = null;
+            }
+            return null;
+        }
+        if (pendingImportAssociationBook != null
+            && libraryStore.hasPendingImportAssociation(
+                pendingImportAssociationBook.key,
+                pendingImportAssociationBook.byteCount)) {
+            return pendingImportAssociationBook;
+        }
+        pendingImportAssociationBook = libraryStore.pendingImportedBook();
+        return pendingImportAssociationBook;
+    }
+
+    private View createPendingImportAssociationPanel(
+        OctavoLibraryStore.Book pending,
+        boolean working) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        String identity = "EPUB - "
+            + humanReadableByteCount(pending.byteCount)
+            + " - " + shortDigest(pending.key);
+        if (working) {
+            prompt.showWorking(
+                "Verifying imported EPUB",
+                identity + " - " + nonemptyMessage(
+                    libraryImportAssociationStatus,
+                    "Verifying exact managed EPUB identity"),
+                false);
+        } else {
+            prompt.showRetryableFailure(
+                "Imported EPUB needs Library association",
+                identity + " - " + nonemptyMessage(
+                    libraryImportAssociationStatus,
+                    "Retry exact identity and Reader validation"),
+                true);
+            prompt.cancelForTesting().setText("Discard");
+            prompt.cancelForTesting().setContentDescription(
+                "Discard this pending imported EPUB from this device");
+            libraryPromptRetry = () -> {
+                boolean started = retryPendingImportAssociation(pending);
+                showLibrary();
+                if (!started) {
+                    showOpenFailure(nonemptyMessage(
+                        firstNonemptyMessage(
+                            libraryStore.lastError(),
+                            libraryImportAssociationStatus),
+                        "The imported EPUB still needs Library association Retry"));
+                }
+            };
+            libraryPromptCancel = () -> {
+                boolean discarded = discardPendingImportAssociation(pending);
+                showLibrary();
+                if (!discarded) {
+                    showOpenFailure(nonemptyMessage(
+                        libraryStore.lastError(),
+                        "The pending imported EPUB still needs Discard Retry"));
+                }
+            };
+        }
+        return prompt;
+    }
+
+    private View createLocalPublicationWorkingPanel(
+        OctavoLibraryStore.Book book) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showWorking(
+            "Verifying local EPUB",
+            "EPUB - " + humanReadableByteCount(book.byteCount)
+                + " - " + shortDigest(book.key)
+                + " - " + nonemptyMessage(
+                    libraryDiscoveryStatus,
+                    "Verifying exact local EPUB identity"),
+            false);
+        return prompt;
+    }
+
+    private View createTransferFinalizationWorkingPanel(
+        OctavoLibraryStore.Book book) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showWorking(
+            "Verifying downloaded EPUB",
+            "EPUB - " + humanReadableByteCount(book.byteCount)
+                + " - " + shortDigest(book.key)
+                + " - Re-proving exact managed bytes before completion",
+            false);
+        return prompt;
+    }
+
+    private boolean retryPendingImportAssociation(
+        OctavoLibraryStore.Book expected) {
+        if (!reloadLibraryStoreForExplicitRetry()) {
+            return false;
+        }
+        OctavoLibraryStore.Book pending =
+            currentPendingImportAssociationBook();
+        if (expected == null || pending == null
+            || !pending.key.equals(expected.key)
+            || pending.byteCount != expected.byteCount) {
+            libraryImportAssociationStatus =
+                "The pending import changed before Retry";
+            return false;
+        }
+        OctavoLibraryStore.Book associated =
+            libraryStore.findBook(pending.key);
+        if (associated != null
+            && associated.byteCount == pending.byteCount
+            && libraryStore.completeImportedCatalogAssociation(associated)) {
+            pendingImportAssociationBook = null;
+            libraryImportAssociationStatus = null;
+            if (!recordLocalDiscovery(associated)) {
+                libraryDiscoveryStatus =
+                    "Local discovery publication needs Retry";
+            }
+            return true;
+        }
+        pendingLibraryIdentityBook = pending;
+        pendingLibraryIdentityMode =
+            LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION;
+        pendingLibraryIdentityRecordOpened = false;
+        pendingLibraryIdentityLocalReconciliation = null;
+        libraryImportAssociationStatus =
+            "Verifying exact managed EPUB identity";
+        return true;
+    }
+
+    private boolean discardPendingImportAssociation(
+        OctavoLibraryStore.Book expected) {
+        if (!reloadLibraryStoreForExplicitRetry()) {
+            return false;
+        }
+        OctavoLibraryStore.Book pending =
+            currentPendingImportAssociationBook();
+        if (expected == null || pending == null
+            || !pending.key.equals(expected.key)
+            || pending.byteCount != expected.byteCount
+            || !libraryStore.discardPendingImportAssociation(pending)) {
+            return false;
+        }
+        pendingImportAssociationBook = null;
+        libraryImportAssociationStatus = null;
+        libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+        libraryFocusRemove = false;
+        return true;
+    }
+
+    private OctavoLibrarySyncPrompt newLibrarySyncPrompt() {
+        if (!hasText(libraryFocusBookKey)) {
+            libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+            libraryFocusRemove = false;
+        }
+        final OctavoLibrarySyncPrompt[] owner =
+            new OctavoLibrarySyncPrompt[1];
+        OctavoLibrarySyncPrompt prompt = new OctavoLibrarySyncPrompt(
+            this,
+            appearance,
+            new OctavoLibrarySyncPrompt.Listener() {
+                private boolean current() {
+                    return owner[0] != null
+                        && librarySyncPrompt == owner[0]
+                        && libraryRoot != null;
+                }
+
+                @Override
+                public void onApproveCatalog() {
+                    if (current()) {
+                        approveLibraryCatalog(libraryPromptStaged);
+                    }
+                }
+
+                @Override
+                public void onDeferCatalog() {
+                    if (current()) {
+                        deferLibraryCatalogReview();
+                    }
+                }
+
+                @Override
+                public void onDownload() {
+                    if (current()) {
+                        downloadLibraryCatalogOffer();
+                    }
+                }
+
+                @Override
+                public void onDismissOffer() {
+                    if (current()) {
+                        dismissLibraryCatalogOffer();
+                    }
+                }
+
+                @Override
+                public void onIgnoreOffer() {
+                    if (current()) {
+                        ignoreLibraryCatalogOffer();
+                    }
+                }
+
+                @Override
+                public void onRetry() {
+                    if (current() && libraryPromptRetry != null) {
+                        libraryPromptRetry.run();
+                    }
+                }
+
+                @Override
+                public void onCancel() {
+                    if (current() && libraryPromptCancel != null) {
+                        libraryPromptCancel.run();
+                    }
+                }
+            });
+        owner[0] = prompt;
+        librarySyncPrompt = prompt;
+        libraryCatalogStatus = prompt.statusForTesting();
+        return prompt;
+    }
+
+    private View createLibraryReviewEpochRetryPanel(
+        OctavoDesignTokens tokens) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            "Library review needs reconciliation",
+            nonemptyMessage(
+                librarySyncStore.lastError(),
+                "No book offer will be shown until the exact Library review "
+                    + "state is reloaded and reconciled."),
+            false);
+        libraryPromptRetry = () -> {
+            boolean resolved = retryLibraryReviewEpoch();
+            showLibrary();
+            if (!resolved) {
+                showOpenFailure(nonemptyMessage(
+                    librarySyncStore.lastError(),
+                    "Library review reconciliation still needs Retry"));
+            }
+        };
+        return prompt;
+    }
+
+    private boolean retryLibraryReviewEpoch() {
+        if (!libraryReviewEpochRetryPending
+            || libraryReviewEpochBeforeRetry < 0) {
+            return false;
+        }
+        librarySyncStore.load();
+        long reloaded = librarySyncStore.reviewEpoch();
+        if (libraryReviewEpochBeforeRetry == Long.MAX_VALUE) {
+            if (reloaded != Long.MAX_VALUE) {
+                return false;
+            }
+            libraryReviewEpochRetryPending = false;
+            libraryReviewEpochBeforeRetry = -1;
+            libraryReviewEpochActive = true;
+            return true;
+        }
+        long candidateEpoch = libraryReviewEpochBeforeRetry + 1;
+        if (reloaded == candidateEpoch) {
+            libraryReviewEpochRetryPending = false;
+            libraryReviewEpochBeforeRetry = -1;
+            libraryReviewEpochActive = true;
+            return true;
+        }
+        if (reloaded != libraryReviewEpochBeforeRetry) {
+            return false;
+        }
+        OctavoLibrarySyncStore.MutationResult retried =
+            librarySyncStore.beginReviewEpoch(true);
+        if (!retried.succeeded()) {
+            return false;
+        }
+        libraryReviewEpochRetryPending = false;
+        libraryReviewEpochBeforeRetry = -1;
+        libraryReviewEpochActive = true;
+        return true;
+    }
+
+    private View createLocalLibraryReconciliationPanel(
+        OctavoDesignTokens tokens,
+        OctavoLibrarySyncStore.LocalReconciliation reconciliation) {
+        boolean publication = reconciliation.kind
+            == OctavoLibrarySyncStore.LocalReconciliationKind.PUBLICATION;
+        OctavoLibraryStore.Book removable = publication
+            ? libraryStore.findBook(reconciliation.digest) : null;
+        boolean canRemove = removable != null && removable.imported
+            && !removable.repairRequired
+            && removable.byteCount == reconciliation.byteCount;
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        String message = "EPUB - "
+            + humanReadableByteCount(reconciliation.byteCount)
+            + " - " + shortDigest(reconciliation.digest);
+        if (publication && hasText(libraryDiscoveryStatus)) {
+            message += " - " + libraryDiscoveryStatus;
+        }
+        prompt.showRetryableFailure(
+            publication
+                ? "Local Library discovery needs Retry"
+                : "Local removal suppression needs Retry",
+            message,
+            canRemove);
+        if (canRemove) {
+            prompt.cancelForTesting().setText("Remove from this device");
+            prompt.cancelForTesting().setContentDescription(
+                "Remove this EPUB from this device");
+        }
+        libraryPromptRetry = () -> {
+            boolean resolved = reloadTransferStoresForExplicitRetry()
+                && retryLocalLibraryReconciliation(reconciliation);
+            showLibrary();
+            if (!resolved && !"Verification in progress".equals(
+                    libraryDiscoveryStatus)) {
+                showOpenFailure(nonemptyMessage(
+                    librarySyncStore.lastError(),
+                    "Local Library reconciliation still needs Retry"));
+            }
+        };
+        if (canRemove) {
+            libraryPromptCancel = () -> {
+                OctavoLibrarySyncStore.LocalReconciliation current =
+                    librarySyncStore.localReconciliation();
+                OctavoLibraryStore.Book currentBook =
+                    libraryStore.findBook(reconciliation.digest);
+                boolean exact = current != null
+                    && current.kind
+                       == OctavoLibrarySyncStore.LocalReconciliationKind
+                           .PUBLICATION
+                    && current.sameIdentity(reconciliation)
+                    && currentBook != null && currentBook.imported
+                    && !currentBook.repairRequired
+                    && currentBook.byteCount == reconciliation.byteCount;
+                boolean removed = false;
+                if (exact) {
+                    libraryFocusBookKey = currentBook.key;
+                    libraryFocusRemove = true;
+                    removed = removeImportedBook(currentBook);
+                }
+                showLibrary();
+                if (!removed) {
+                    showOpenFailure(nonemptyMessage(
+                        firstNonemptyMessage(
+                            bookTransferStore.lastError(),
+                            libraryStore.lastError(),
+                            librarySyncStore.lastError()),
+                        "Removing this EPUB from this device still needs Retry"));
+                }
+            };
+        }
+        return prompt;
+    }
+
+    private boolean retryLocalLibraryReconciliation(
+        OctavoLibrarySyncStore.LocalReconciliation expected) {
+        OctavoLibrarySyncStore.LocalReconciliation current =
+            librarySyncStore.localReconciliation();
+        if (expected == null || current == null
+            || !current.sameIdentity(expected)) {
+            return false;
+        }
+        if (current.kind
+            == OctavoLibrarySyncStore.LocalReconciliationKind.REMOVAL) {
+            OctavoBookTransferStore.CleanupJob cleanup =
+                cleanupJob(current.digest, current.byteCount);
+            if (cleanup == null) {
+                OctavoBookTransferStore.CleanupOutcome staged =
+                    bookTransferStore.stageManagedCleanup(
+                        current.digest, current.byteCount);
+                if (!staged.result.succeeded()) {
+                    return false;
+                }
+                cleanup = cleanupJob(staged.attemptSequence);
+            }
+            if (cleanup == null) {
+                return false;
+            }
+            libraryDiscoveryStatus = null;
+            return retryManagedCleanup(cleanup.attemptSequence);
+        }
+
+        OctavoLibraryStore.Book book =
+            libraryStore.findBook(current.digest);
+        if (book == null || !book.imported
+            || book.byteCount != current.byteCount
+            || book.repairRequired) {
+            libraryDiscoveryStatus = "Exact local EPUB is unavailable";
+            return false;
+        }
+        if (!book.identityVerified) {
+            pendingLibraryIdentityBook = book;
+            pendingLibraryIdentityMode =
+                LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION;
+            pendingLibraryIdentityRecordOpened = false;
+            pendingLibraryIdentityLocalReconciliation = current;
+            libraryDiscoveryStatus = "Verification in progress";
+            return false;
+        }
+        return completeLocalPublicationAfterIdentity(book, current);
+    }
+
+    private View createLibraryCatalogReviewPanel(
+        OctavoDesignTokens tokens,
+        OctavoLibrarySyncStore.StagedPortable staged,
+        int entryCount) {
+        libraryPromptStaged = staged;
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showCatalogApproval(entryCount, staged.sha256);
+        return prompt;
+    }
+
+    private View createLibraryCatalogOfferPanel(
+        OctavoDesignTokens tokens,
+        OctavoLibrarySyncStore.Candidate candidate) {
+        libraryCatalogOfferManifestSha256 =
+            sha256Hex(libraryCatalogManifestBytes);
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showOffer(candidate.digest, candidate.byteCount);
+        return prompt;
+    }
+
+    private void approveLibraryCatalog(
+        OctavoLibrarySyncStore.StagedPortable expected) {
+        OctavoLibrarySyncStore.StagedPortable current =
+            librarySyncStore.stagedPortable();
+        if (current == null || expected == null
+            || !current.sha256.equals(expected.sha256)) {
+            showLibrary();
+            showOpenFailure("The Library catalog review changed");
+            return;
+        }
+        OctavoLibrarySyncStore.PortableMergeResult result =
+            librarySyncStore.approveStagedPortable(expected.sha256);
+        showLibrary();
+        if (!result.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                librarySyncStore.lastError(),
+                "The Library catalog could not be approved"));
+        }
+    }
+
+    private void deferLibraryCatalogReview() {
+        libraryCatalogReviewDeferred = true;
+        showLibrary();
+    }
+
+    private void dismissLibraryCatalogOffer() {
+        OctavoLibrarySyncStore.Candidate candidate = libraryCatalogOffer;
+        String manifestSha256 = libraryCatalogOfferManifestSha256;
+        if (!exactInstalledLibraryCatalogOffer(
+                candidate, manifestSha256)) {
+            libraryCatalogOffer = null;
+            libraryCatalogOfferManifestSha256 = null;
+            showLibrary();
+            showOpenFailure("The Library offer changed before Not now");
+            return;
+        }
+        OctavoLibrarySyncStore.MutationResult result =
+            librarySyncStore.dismiss(candidate);
+        libraryCatalogOffer = null;
+        libraryCatalogOfferManifestSha256 = null;
+        showLibrary();
+        if (!result.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                librarySyncStore.lastError(),
+                "The Library offer could not be deferred"));
+        }
+    }
+
+    private void ignoreLibraryCatalogOffer() {
+        OctavoLibrarySyncStore.Candidate candidate = libraryCatalogOffer;
+        String manifestSha256 = libraryCatalogOfferManifestSha256;
+        if (!exactInstalledLibraryCatalogOffer(
+                candidate, manifestSha256)) {
+            libraryCatalogOffer = null;
+            libraryCatalogOfferManifestSha256 = null;
+            showLibrary();
+            showOpenFailure("The Library offer changed before hiding it");
+            return;
+        }
+        OctavoLibrarySyncStore.MutationResult result =
+            librarySyncStore.ignore(candidate);
+        libraryCatalogOffer = null;
+        libraryCatalogOfferManifestSha256 = null;
+        showLibrary();
+        if (!result.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                librarySyncStore.lastError(),
+                "The Library offer could not be ignored"));
+        }
+    }
+
+    private OctavoLibrarySyncStore.Candidate eligibleLibraryCatalogOffer() {
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        if (manifest == null || !canStartLibraryCatalogDownload()) {
+            return null;
+        }
+        List<OctavoLibrarySyncStore.Candidate> candidates =
+            librarySyncStore.reviewCandidates(locallyPresentBookDigests());
+        for (OctavoLibrarySyncStore.Candidate candidate : candidates) {
+            if (candidate.digest.equals(manifest.digest)
+                && candidate.byteCount == manifest.byteCount
+                && libraryCatalogCandidateHasSafeLocalState(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private boolean exactInstalledLibraryCatalogOffer(
+        OctavoLibrarySyncStore.Candidate expected,
+        String expectedManifestSha256) {
+        if (expected == null || !hasText(expectedManifestSha256)
+            || !expectedManifestSha256.equals(
+                sha256Hex(libraryCatalogManifestBytes))
+            || !canStartLibraryCatalogDownload()) {
+            return false;
+        }
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        if (manifest == null
+            || !manifest.digest.equals(expected.digest)
+            || manifest.byteCount != expected.byteCount) {
+            return false;
+        }
+        for (OctavoLibrarySyncStore.Candidate current
+                 : librarySyncStore.reviewCandidates(
+                     locallyPresentBookDigests())) {
+            if (current.sameIdentity(expected)
+                && current.decision == expected.decision
+                && current.kind == expected.kind
+                && libraryCatalogCandidateHasSafeLocalState(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean canStartLibraryCatalogDownload() {
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        OctavoLibraryStore.Book manifestLocal = manifest == null
+            ? null : libraryStore.findBook(manifest.digest);
+        boolean repairOccupiesExistingSlot = manifestLocal != null
+            && manifestLocal.imported
+            && manifestLocal.repairRequired;
+        if (!libraryReviewEpochActive
+            || libraryReviewEpochRetryPending
+            || libraryStore.mutationBlocked()
+            || (libraryStore.bookCount() >= 64
+                && !repairOccupiesExistingSlot)
+            || librarySyncStore.stagedPortable() != null
+            || librarySyncStore.transferReconciliation() != null
+            || librarySyncStore.localReconciliation() != null
+            || bookTransferStore.retainedIntentCount() != 0
+            || librarySyncStore.loadStatus()
+               == OctavoLibrarySyncStore.LoadStatus.CORRUPT_QUARANTINED
+            || bookTransferStore.loadStatus()
+               == OctavoBookTransferStore.LoadStatus.CORRUPT_QUARANTINED
+            || bookTransferStore.futureManifestAttention()
+               != OctavoBookTransferStore.Attention.NONE) {
+            return false;
+        }
+        OctavoLibrarySyncStore.LoadStatus syncStatus =
+            librarySyncStore.loadStatus();
+        if (librarySyncLoadBlocked(syncStatus)) {
+            return false;
+        }
+        OctavoBookTransferStore.LoadStatus transferStatus =
+            bookTransferStore.loadStatus();
+        return !bookTransferLoadBlocked(transferStatus)
+            && transferStatus
+                   != OctavoBookTransferStore.LoadStatus
+                       .MANAGED_RECONCILE_REQUIRED;
+    }
+
+    private String libraryCatalogDurableAttentionMessage() {
+        if (librarySyncStore.loadStatus()
+            == OctavoLibrarySyncStore.LoadStatus.CORRUPT_QUARANTINED) {
+            return "A quarantined synchronized-Library state requires explicit recovery attention.";
+        }
+        if (bookTransferStore.loadStatus()
+            == OctavoBookTransferStore.LoadStatus.CORRUPT_QUARANTINED) {
+            return "A quarantined book-transfer state requires explicit recovery attention.";
+        }
+        OctavoBookTransferStore.Attention future =
+            bookTransferStore.futureManifestAttention();
+        if (future
+            == OctavoBookTransferStore.Attention.FUTURE_MANIFEST_CONFLICT) {
+            return "A conflicting newer book manifest was retained for explicit review.";
+        }
+        if (future
+            == OctavoBookTransferStore.Attention.FUTURE_MANIFEST_RETAINED) {
+            return "A newer book manifest was retained for explicit review.";
+        }
+        return null;
+    }
+
+    private static boolean librarySyncLoadBlocked(
+        OctavoLibrarySyncStore.LoadStatus status) {
+        return status
+                == OctavoLibrarySyncStore.LoadStatus.INITIAL_PUBLISH_FAILED
+            || status == OctavoLibrarySyncStore.LoadStatus.CORRUPT_BLOCKED
+            || status == OctavoLibrarySyncStore.LoadStatus.OVERBOUND_BLOCKED
+            || status
+                == OctavoLibrarySyncStore.LoadStatus.FUTURE_VERSION_BLOCKED
+            || status
+                == OctavoLibrarySyncStore.LoadStatus
+                    .PUBLISH_UNCERTAIN_BLOCKED;
+    }
+
+    private static boolean bookTransferLoadBlocked(
+        OctavoBookTransferStore.LoadStatus status) {
+        return status
+                == OctavoBookTransferStore.LoadStatus.CORRUPT_BLOCKED
+            || status
+                == OctavoBookTransferStore.LoadStatus.OVERBOUND_BLOCKED
+            || status
+                == OctavoBookTransferStore.LoadStatus
+                    .FUTURE_VERSION_BLOCKED
+            || status
+                == OctavoBookTransferStore.LoadStatus
+                    .PART_RECONCILE_BLOCKED
+            || status
+                == OctavoBookTransferStore.LoadStatus
+                    .PUBLISH_UNCERTAIN_BLOCKED;
+    }
+
+    private boolean reloadLibrarySyncForExplicitRetry() {
+        if (!reloadLibraryStoreForExplicitRetry()) {
+            return false;
+        }
+        if (librarySyncLoadBlocked(librarySyncStore.loadStatus())) {
+            librarySyncStore.load();
+        }
+        return !librarySyncLoadBlocked(librarySyncStore.loadStatus());
+    }
+
+    private boolean reloadLibraryStoreForExplicitRetry() {
+        if (libraryStore.mutationBlocked()) {
+            if (libraryFixture == null || !libraryFixture.isFile()) {
+                return false;
+            }
+            libraryStore.reloadCatalog(libraryFixture);
+            pendingImportAssociationBook = null;
+            rejectedStagedImportCleanupBook = null;
+        }
+        return !libraryStore.mutationBlocked();
+    }
+
+    private boolean reloadTransferStoresForExplicitRetry() {
+        if (!reloadLibrarySyncForExplicitRetry()) {
+            return false;
+        }
+        if (bookTransferLoadBlocked(bookTransferStore.loadStatus())) {
+            bookTransferStore.load();
+        }
+        return !bookTransferLoadBlocked(bookTransferStore.loadStatus());
+    }
+
+    private boolean explicitlyRetryLibraryTransfer() {
+        if (!reloadTransferStoresForExplicitRetry()) {
+            return false;
+        }
+        OctavoBookTransferStore.ActiveJob active =
+            bookTransferStore.activeJob();
+        if (active == null
+            && (bookTransferStore.intentCount() != 0
+                || librarySyncStore.transferReconciliation() == null)) {
+            return false;
+        }
+        boolean advanced = resumeLibraryTransfer();
+        if (advanced) {
+            libraryTransferExplicitRetryRequired = false;
+        }
+        return advanced || transferFinalizationIdentityInstalled();
+    }
+
+    private boolean transferFinalizationIdentityInstalled() {
+        return pendingLibraryIdentityBook != null
+            && pendingLibraryIdentityMode
+               == LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION
+            && pendingLibraryIdentityTransferAttemptSequence > 0
+            && hasText(pendingLibraryIdentityTransferAttemptId)
+            && pendingLibraryIdentityTransferPhase != null;
+    }
+
+    private boolean libraryCatalogCandidateHasSafeLocalState(
+        OctavoLibrarySyncStore.Candidate candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        OctavoLibraryStore.Book local =
+            libraryStore.findBook(candidate.digest);
+        if (local == null) {
+            return true;
+        }
+        // A same-length row is not exact presence until its incremental
+        // identity gate succeeds. Defer the offer while verification is
+        // outstanding; a typed repair row may be replaced by the download.
+        return local.imported && local.repairRequired
+            && local.key.equals(candidate.digest);
+    }
+
+    private OctavoBookManifest availableLibraryCatalogManifest() {
+        if (libraryCatalogManifestBytes == null) {
+            return null;
+        }
+        OctavoBookManifest.DecodeResult decoded =
+            OctavoBookManifest.decode(libraryCatalogManifestBytes);
+        if (decoded.status != OctavoBookManifest.DecodeStatus.READY) {
+            return null;
+        }
+        OctavoBookManifest manifest = decoded.manifest();
+        return manifest.digest.equals(libraryCatalogManifestDigest)
+            ? manifest : null;
+    }
+
+    private OctavoLibrarySyncStore.LocalReconciliation
+        cleanupSuppressionBlocker(
+            OctavoBookTransferStore.CleanupJob cleanup) {
+        if (cleanup == null
+            || cleanup.purpose
+               != OctavoBookTransferStore.CleanupPurpose.LOCAL_REMOVE
+            || cleanup.phase
+               != OctavoBookTransferStore.CleanupPhase
+                   .AWAITING_SYNC_SUPPRESSION) {
+            return null;
+        }
+        OctavoLibrarySyncStore.LocalReconciliation local =
+            librarySyncStore.localReconciliation();
+        return local == null
+                || (local.digest.equals(cleanup.digest)
+                    && local.byteCount == cleanup.byteCount)
+            ? null : local;
+    }
+
+    private View createLibraryTransferPanel(OctavoDesignTokens tokens) {
+        List<OctavoBookTransferStore.CleanupJob> cleanups =
+            bookTransferStore.cleanupJobs();
+        if (!cleanups.isEmpty()) {
+            OctavoBookTransferStore.CleanupJob job = cleanups.get(0);
+            OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+            boolean repair = job.purpose
+                == OctavoBookTransferStore.CleanupPurpose.REPAIR_REPLACE;
+            boolean uncataloged = job.purpose
+                == OctavoBookTransferStore.CleanupPurpose.UNCATALOGED;
+            boolean locallyRemoved = job.phase
+                == OctavoBookTransferStore.CleanupPhase
+                    .AWAITING_SYNC_SUPPRESSION
+                && libraryStore.findBook(job.digest) == null;
+            OctavoLibrarySyncStore.LocalReconciliation localBlocker =
+                cleanupSuppressionBlocker(job);
+            OctavoLibraryStore.Book blockerBook = localBlocker != null
+                    && localBlocker.kind
+                       == OctavoLibrarySyncStore.LocalReconciliationKind
+                           .PUBLICATION
+                ? libraryStore.findBook(localBlocker.digest) : null;
+            boolean canRemoveBlocker = blockerBook != null
+                && blockerBook.imported && !blockerBook.repairRequired
+                && blockerBook.byteCount == localBlocker.byteCount;
+            prompt.showRetryableFailure(
+                localBlocker != null
+                    ? "Cleanup is waiting for Library reconciliation"
+                    : repair
+                    ? "EPUB repair cleanup needs Retry"
+                    : locallyRemoved && !uncataloged
+                    ? "Synchronized Library suppression needs Retry"
+                    : "Local cleanup needs attention",
+                localBlocker != null
+                    ? "Removed EPUB - "
+                        + humanReadableByteCount(job.byteCount)
+                        + " - " + shortDigest(job.digest)
+                        + " - First resolve retained Library marker - "
+                        + shortDigest(localBlocker.digest)
+                    : repair
+                    ? "EPUB - " + humanReadableByteCount(job.byteCount)
+                        + " - " + shortDigest(job.digest)
+                        + " - Remove the corrupt local bytes before repair download"
+                    : locallyRemoved && !uncataloged
+                    ? "Removed from this device; synchronized-library "
+                        + "suppression needs Retry. EPUB - "
+                        + humanReadableByteCount(job.byteCount)
+                        + " - " + shortDigest(job.digest)
+                    : "EPUB - " + humanReadableByteCount(job.byteCount)
+                        + " - " + shortDigest(job.digest)
+                        + " - Retry removal from this device",
+                canRemoveBlocker);
+            if (canRemoveBlocker) {
+                prompt.cancelForTesting().setText("Remove from this device");
+                prompt.cancelForTesting().setContentDescription(
+                    "Remove the blocking EPUB from this device");
+            }
+            libraryPromptRetry = () -> {
+                boolean retryReady = reloadTransferStoresForExplicitRetry();
+                boolean completed;
+                if (retryReady && localBlocker != null) {
+                    OctavoLibrarySyncStore.LocalReconciliation current =
+                        librarySyncStore.localReconciliation();
+                    boolean blockerResolved = current != null
+                        && current.sameIdentity(localBlocker)
+                        && retryLocalLibraryReconciliation(current);
+                    completed = blockerResolved
+                        && retryCleanupByPurpose(job.attemptSequence);
+                } else {
+                    completed = retryReady
+                        && retryCleanupByPurpose(job.attemptSequence);
+                }
+                showLibrary();
+                if (!completed
+                    && !"Verification in progress".equals(
+                        libraryDiscoveryStatus)
+                    && !(job.purpose
+                         == OctavoBookTransferStore.CleanupPurpose.LOCAL_REMOVE
+                         && localRemovalBoundaryComplete(
+                             job.attemptSequence))) {
+                    showOpenFailure(nonemptyMessage(
+                        firstNonemptyMessage(
+                            bookTransferStore.lastError(),
+                            librarySyncStore.lastError(),
+                            libraryStore.lastError()),
+                        "Removing this EPUB still needs Retry"));
+                }
+            };
+            if (canRemoveBlocker) {
+                libraryPromptCancel = () -> {
+                    boolean retryReady =
+                        reloadTransferStoresForExplicitRetry();
+                    OctavoLibrarySyncStore.LocalReconciliation current =
+                        librarySyncStore.localReconciliation();
+                    OctavoLibraryStore.Book currentBook =
+                        libraryStore.findBook(localBlocker.digest);
+                    boolean exact = retryReady && current != null
+                        && current.kind
+                           == OctavoLibrarySyncStore.LocalReconciliationKind
+                               .PUBLICATION
+                        && current.sameIdentity(localBlocker)
+                        && currentBook != null && currentBook.imported
+                        && !currentBook.repairRequired
+                        && currentBook.byteCount == localBlocker.byteCount;
+                    boolean removed = false;
+                    if (exact) {
+                        libraryFocusBookKey = currentBook.key;
+                        libraryFocusRemove = true;
+                        removed = removeImportedBook(currentBook);
+                    }
+                    showLibrary();
+                    if (!removed) {
+                        showOpenFailure(nonemptyMessage(
+                            firstNonemptyMessage(
+                                bookTransferStore.lastError(),
+                                libraryStore.lastError(),
+                                librarySyncStore.lastError()),
+                            "The blocking EPUB still needs removal Retry"));
+                    }
+                };
+            }
+            return prompt;
+        }
+
+        OctavoBookTransferStore.ActiveJob job =
+            bookTransferStore.activeJob();
+        if (job == null) {
+            if (bookTransferStore.intentCount() == 0) {
+                return null;
+            }
+            OctavoLibrarySyncPrompt blocked = newLibrarySyncPrompt();
+            blocked.showRetryableFailure(
+                "Book transfer needs attention",
+                nonemptyMessage(
+                    bookTransferStore.lastError(),
+                    "A queued transfer cannot be activated safely"),
+                false);
+            libraryPromptRetry = () -> {
+                boolean advanced = explicitlyRetryLibraryTransfer();
+                showLibrary();
+                if (!advanced) {
+                    showOpenFailure(nonemptyMessage(
+                        bookTransferStore.lastError(),
+                        "The queued transfer still needs explicit recovery"));
+                }
+            };
+            return blocked;
+        }
+
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        boolean reconciled = exactLibraryTransferReconciliation(job)
+            || ((job.phase
+                    == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                 || job.phase
+                    == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)
+                && librarySyncStore.decision(job.digest)
+                   == OctavoLibrarySyncStore.Decision.DOWNLOADED);
+        String status = reconciled
+            ? transferStatus(job)
+            : "EPUB - " + humanReadableByteCount(job.byteCount)
+                + " - " + shortDigest(job.digest)
+                + " - Download setup needs reconciliation Retry";
+        if (libraryTransferExplicitRetryRequired) {
+            status += " - Retained transfer needs explicit Retry";
+        }
+        boolean progress = job.direction
+                == OctavoBookTransferStore.Direction.DOWNLOAD
+            && job.durableDirection
+               == OctavoBookTransferStore.DurableDirection.FORWARD
+            && !job.retryRequired
+            && job.attention == OctavoBookTransferStore.Attention.NONE
+            && !libraryTransferExplicitRetryRequired
+            && reconciled
+            && (job.phase == OctavoBookTransferStore.Phase.STAGED
+                || job.phase
+                   == OctavoBookTransferStore.Phase.TRANSFERRING)
+            && job.completedPrefix < job.chunkCount;
+        boolean cancellable = job.durableDirection
+                == OctavoBookTransferStore.DurableDirection.FORWARD
+            && (job.direction
+                    == OctavoBookTransferStore.Direction.DOWNLOAD
+                ? (job.phase
+                        != OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                    && job.phase
+                        != OctavoBookTransferStore.Phase
+                            .LOCAL_CATALOG_LINKED)
+                : (job.phase == OctavoBookTransferStore.Phase.STAGED
+                    || job.phase
+                       == OctavoBookTransferStore.Phase.TRANSFERRING
+                    || job.phase
+                       == OctavoBookTransferStore.Phase.BYTES_VERIFIED));
+        if (progress) {
+            long completedBytes = Math.min(
+                job.byteCount,
+                (long)job.completedPrefix * 4L * 1024L * 1024L);
+            prompt.showTransferProgress(
+                job.digest, job.byteCount, completedBytes,
+                job.completedPrefix, job.chunkCount);
+        } else {
+            prompt.showRetryableFailure(
+                job.direction == OctavoBookTransferStore.Direction.DOWNLOAD
+                    ? "Book download needs attention"
+                    : "Book transfer needs attention",
+                status,
+                cancellable);
+        }
+        libraryPromptRetry = () -> {
+            boolean advanced = explicitlyRetryLibraryTransfer();
+            showLibrary();
+            if (!advanced
+                && pendingLibraryIdentityMode
+                   != LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION) {
+                showOpenFailure(nonemptyMessage(
+                    firstNonemptyMessage(
+                        bookTransferStore.lastError(),
+                        librarySyncStore.lastError(),
+                        libraryStore.lastError()),
+                    "The book transfer still needs Retry"));
+            }
+        };
+        if (cancellable) {
+            libraryPromptCancel = () -> {
+                boolean cancelled = cancelLibraryTransfer();
+                showLibrary();
+                if (!cancelled) {
+                    showOpenFailure(nonemptyMessage(
+                        bookTransferStore.lastError(),
+                        "Cancellation cleanup needs Retry"));
+                }
+            };
+        }
+        return prompt;
+    }
+
+    private View createLibraryTransferReconciliationPanel(
+        OctavoDesignTokens tokens,
+        OctavoLibrarySyncStore.TransferReconciliation reconciliation) {
+        OctavoLibrarySyncPrompt prompt = newLibrarySyncPrompt();
+        prompt.showRetryableFailure(
+            "Book download needs reconciliation",
+            "EPUB - " + humanReadableByteCount(reconciliation.byteCount)
+                + " - " + shortDigest(reconciliation.digest),
+            false);
+        libraryPromptRetry = () -> {
+            boolean reconciled = reloadTransferStoresForExplicitRetry()
+                && retryLibraryTransferReconciliation(reconciliation);
+            showLibrary();
+            if (!reconciled) {
+                showOpenFailure(nonemptyMessage(
+                    librarySyncStore.lastError(),
+                    "The book download still needs reconciliation"));
+            }
+        };
+        return prompt;
+    }
+
+    private String transferStatus(OctavoBookTransferStore.ActiveJob job) {
+        String identity = "EPUB - " + humanReadableByteCount(job.byteCount)
+            + " - " + shortDigest(job.digest);
+        if (job.durableDirection
+            == OctavoBookTransferStore.DurableDirection.CANCEL) {
+            return identity + " - Cancellation cleanup needs Retry";
+        }
+        if (job.direction != OctavoBookTransferStore.Direction.DOWNLOAD) {
+            return identity + " - Waiting for its explicit caller";
+        }
+        if ((job.phase == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+             || job.phase
+                == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)
+            && hasText(libraryTransferCatalogRetryMessage)) {
+            return identity + " - " + libraryTransferCatalogRetryMessage;
+        }
+        if (job.attention != OctavoBookTransferStore.Attention.NONE) {
+            return identity + " - " + transferAttentionMessage(
+                job.attention);
+        }
+        if (job.retryRequired) {
+            return identity + " - Durable transfer state needs Retry";
+        }
+        if (job.phase == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+            || job.phase
+               == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED) {
+            if (libraryStore.mutationBlocked()) {
+                return identity + " - " + nonemptyMessage(
+                    libraryStore.lastError(),
+                    "The local Library catalog is blocked; publication needs Retry");
+            }
+            if (libraryStore.findBook(job.digest) == null
+                && libraryStore.bookCount() >= 64) {
+                return identity
+                    + " - The Library is full; publication needs Retry";
+            }
+        }
+        if (job.phase == OctavoBookTransferStore.Phase.STAGED
+            || job.phase == OctavoBookTransferStore.Phase.TRANSFERRING) {
+            return String.format(
+                Locale.ROOT,
+                "%s - %d of %d chunks verified",
+                identity, job.completedPrefix, job.chunkCount);
+        }
+        if (job.phase == OctavoBookTransferStore.Phase.BYTES_VERIFIED) {
+            return identity + " - Exact bytes verified - Reader check pending";
+        }
+        if (job.phase == OctavoBookTransferStore.Phase.READER0_VALIDATED) {
+            return identity + " - Reader-validated - Local publication pending";
+        }
+        if (job.phase == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED) {
+            return identity + " - Managed EPUB published - Library link pending";
+        }
+        if (job.phase
+            == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED) {
+            return identity + " - Download completion needs Retry";
+        }
+        return identity + " - Transfer needs Retry";
+    }
+
+    private static String transferAttentionMessage(
+        OctavoBookTransferStore.Attention attention) {
+        if (attention == OctavoBookTransferStore.Attention.RETRY_CHUNK) {
+            return "The next exact chunk needs Retry";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.PREFIX_REPAIRED) {
+            return "A staged prefix was repaired; exact transfer Retry is required";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.EXTRA_TRUNCATED) {
+            return "Unexpected staged bytes were removed; Retry is required";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.CANCEL_CLEANUP) {
+            return "Cancellation cleanup needs Retry";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.MANAGED_RECONCILE_REQUIRED) {
+            return "Managed publication needs reconciliation Retry";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.READER0_REJECTED) {
+            return "Reader validation rejected these bytes";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.CATALOG_LINK_FAILED) {
+            return "The local Library link needs Retry";
+        }
+        if (attention
+                == OctavoBookTransferStore.Attention
+                    .FUTURE_MANIFEST_RETAINED
+            || attention
+                == OctavoBookTransferStore.Attention
+                    .FUTURE_MANIFEST_CONFLICT) {
+            return "A newer transfer manifest was retained for explicit review";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.MANAGED_DESTINATION_CONFLICT) {
+            return "The managed destination conflicts with these exact bytes";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.COMPLETE_HASH_MISMATCH) {
+            return "The complete staged EPUB failed exact identity verification";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.REMOTE_OBJECT_MISMATCH) {
+            return "The simulated remote object failed exact verification";
+        }
+        if (attention
+            == OctavoBookTransferStore.Attention.UPLOAD_SOURCE_REQUIRED) {
+            return "The explicit upload source must be provided again";
+        }
+        return "Book transfer needs explicit Retry";
+    }
+
+    private boolean downloadLibraryCatalogOffer() {
+        OctavoLibrarySyncStore.Candidate candidate = libraryCatalogOffer;
+        String promptManifestSha256 =
+            libraryCatalogOfferManifestSha256;
+        OctavoBookManifest manifest = availableLibraryCatalogManifest();
+        if (candidate == null || manifest == null
+            || !candidate.digest.equals(manifest.digest)
+            || candidate.byteCount != manifest.byteCount
+            || !exactInstalledLibraryCatalogOffer(
+                candidate, promptManifestSha256)) {
+            showLibrary();
+            showOpenFailure("The Library offer changed before Download");
+            return false;
+        }
+        OctavoBookTransferStore.StageOutcome staged =
+            bookTransferStore.stageDownload(libraryCatalogManifestBytes);
+        if (!staged.result.succeeded() || !staged.active) {
+            showLibrary();
+            showOpenFailure(nonemptyMessage(
+                bookTransferStore.lastError(),
+                "The download could not be durably queued"));
+            return false;
+        }
+        // This attempt was durably created by the current, still-explicit
+        // Download action. Only jobs reconstructed by a later Activity load
+        // must stop again at the explicit-Retry gate.
+        libraryTransferExplicitRetryRequired = false;
+        OctavoBookTransferStore.ActiveJob job =
+            bookTransferStore.activeJob();
+        if (job == null || job.attemptSequence != staged.attemptSequence
+            || !job.attemptId.equals(staged.attemptId)
+            || !job.digest.equals(candidate.digest)
+            || job.byteCount != candidate.byteCount
+            || !ensureLibraryTransferReconciliation(job, candidate)) {
+            showLibrary();
+            showOpenFailure(nonemptyMessage(
+                librarySyncStore.lastError(),
+                "The queued download needs reconciliation Retry"));
+            return false;
+        }
+        transientTransferReader0Title = null;
+        libraryCatalogOffer = null;
+        libraryCatalogOfferManifestSha256 = null;
+        showLibrary();
+        return true;
+    }
+
+    private boolean ensureLibraryTransferReconciliation(
+        OctavoBookTransferStore.ActiveJob job,
+        OctavoLibrarySyncStore.Candidate knownCandidate) {
+        if (job == null
+            || job.direction != OctavoBookTransferStore.Direction.DOWNLOAD) {
+            return false;
+        }
+        String manifestHash = hexBytes(job.manifestHash());
+        OctavoLibrarySyncStore.TransferReconciliation current =
+            librarySyncStore.transferReconciliation();
+        if (current != null) {
+            return exactLibraryTransferReconciliation(job);
+        }
+        OctavoLibrarySyncStore.Candidate candidate = knownCandidate;
+        if (candidate == null) {
+            for (OctavoLibrarySyncStore.Candidate value
+                     : librarySyncStore.reviewCandidates(
+                         locallyPresentBookDigests())) {
+                if (value.digest.equals(job.digest)
+                    && value.byteCount == job.byteCount) {
+                    candidate = value;
+                    break;
+                }
+            }
+        }
+        return candidate != null
+            && librarySyncStore.reconcileTransferAttempt(
+                candidate, job.attemptId, manifestHash).succeeded();
+    }
+
+    private boolean exactLibraryTransferReconciliation(
+        OctavoBookTransferStore.ActiveJob job) {
+        if (job == null) {
+            return false;
+        }
+        OctavoLibrarySyncStore.TransferReconciliation current =
+            librarySyncStore.transferReconciliation();
+        return current != null
+            && current.digest.equals(job.digest)
+            && current.byteCount == job.byteCount
+            && current.attemptId.equals(job.attemptId)
+            && current.manifestSha256.equals(
+                hexBytes(job.manifestHash()));
+    }
+
+    private boolean resumeLibraryTransfer() {
+        for (int transition = 0; transition < 12; ++transition) {
+            OctavoBookTransferStore.ActiveJob job =
+                bookTransferStore.activeJob();
+            if (job == null) {
+                OctavoLibrarySyncStore.TransferReconciliation pending =
+                    librarySyncStore.transferReconciliation();
+                return pending == null
+                    || retryLibraryTransferReconciliation(pending);
+            }
+            if (job.direction != OctavoBookTransferStore.Direction.DOWNLOAD) {
+                return false;
+            }
+            if (job.durableDirection
+                == OctavoBookTransferStore.DurableDirection.CANCEL) {
+                return cancelLibraryTransfer();
+            }
+            if (!ensureLibraryTransferReconciliation(job, null)
+                && librarySyncStore.decision(job.digest)
+                   != OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+                return false;
+            }
+
+            if (job.phase == OctavoBookTransferStore.Phase.STAGED
+                || job.phase == OctavoBookTransferStore.Phase.TRANSFERRING) {
+                if (job.phase == OctavoBookTransferStore.Phase.TRANSFERRING
+                    && job.completedPrefix == job.chunkCount) {
+                    if (!bookTransferStore.finishDownload(
+                            job.callbackToken).succeeded()) {
+                        return false;
+                    }
+                    continue;
+                }
+                // The raw next chunk remains caller-owned. Retry never
+                // invents a provider or advances bytes by itself.
+                return true;
+            }
+
+            if (job.phase == OctavoBookTransferStore.Phase.BYTES_VERIFIED) {
+                File staging =
+                    bookTransferStore.stagedDownloadForReader0(job);
+                OctavoManagedEpubValidator.Result validated =
+                    OctavoManagedEpubValidator.validate(
+                        this, staging, appearance);
+                if (!validated.valid) {
+                    bookTransferStore.recordReader0Rejected(
+                        job.callbackToken);
+                    transientTransferReader0Title = null;
+                    return false;
+                }
+                transientTransferReader0Title = validated.title;
+                if (!bookTransferStore.markReader0Validated(
+                        job.callbackToken).succeeded()) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (job.phase
+                == OctavoBookTransferStore.Phase.READER0_VALIDATED) {
+                if (!hasText(transientTransferReader0Title)) {
+                    File staging =
+                        bookTransferStore.stagedDownloadForReader0(job);
+                    OctavoManagedEpubValidator.Result validated =
+                        OctavoManagedEpubValidator.validate(
+                            this, staging, appearance);
+                    if (!validated.valid) {
+                        // publishManaged performs the exact durable hash
+                        // check and retains a typed mismatch if bytes moved.
+                        bookTransferStore.publishManaged(
+                            job.callbackToken,
+                            libraryStore.documentDirectoryForTesting());
+                        return false;
+                    }
+                    transientTransferReader0Title = validated.title;
+                }
+                OctavoBookTransferStore.MutationResult published =
+                    bookTransferStore.loadStatus()
+                        == OctavoBookTransferStore.LoadStatus
+                            .MANAGED_RECONCILE_REQUIRED
+                    ? bookTransferStore.reconcileManagedPublication(
+                        job.callbackToken,
+                        libraryStore.documentDirectoryForTesting())
+                    : bookTransferStore.publishManaged(
+                        job.callbackToken,
+                        libraryStore.documentDirectoryForTesting());
+                if (!published.succeeded()) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (job.phase
+                == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED) {
+                return beginTransferFinalizationIdentity(job);
+            }
+
+            if (job.phase
+                == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED) {
+                if (librarySyncStore.decision(job.digest)
+                    != OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+                    return false;
+                }
+                return beginTransferFinalizationIdentity(job);
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private boolean beginTransferFinalizationIdentity(
+        OctavoBookTransferStore.ActiveJob job) {
+        if (job == null
+            || job.direction != OctavoBookTransferStore.Direction.DOWNLOAD
+            || job.durableDirection
+               != OctavoBookTransferStore.DurableDirection.FORWARD
+            || (job.phase
+                    != OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                && job.phase
+                    != OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)) {
+            return false;
+        }
+        OctavoLibraryStore.TransferredBookOutcome outcome =
+            libraryStore.transferredBookForIdentityVerification(
+                job.digest, job.byteCount);
+        if (outcome.status
+                == OctavoLibraryStore.TransferredBookStatus
+                    .BYTES_UNAVAILABLE
+            || outcome.status
+                == OctavoLibraryStore.TransferredBookStatus
+                    .LOCAL_CONFLICT) {
+            boolean converted = convertPublishedTransferToRepairCleanup(
+                job.digest, job.byteCount,
+                job.attemptSequence, job.attemptId, job.phase);
+            if (!converted) {
+                libraryTransferExplicitRetryRequired = true;
+            }
+            return converted;
+        }
+        if (outcome.status
+            != OctavoLibraryStore.TransferredBookStatus.READY) {
+            retainTransferCatalogRetry(job, outcome.status);
+            return false;
+        }
+
+        OctavoManagedEpubValidator.Result validated =
+            OctavoManagedEpubValidator.validate(
+                this, outcome.book.file, appearance);
+        if (!validated.valid) {
+            transientTransferReader0Title = null;
+            boolean converted = convertPublishedTransferToRepairCleanup(
+                job.digest, job.byteCount,
+                job.attemptSequence, job.attemptId, job.phase);
+            if (!converted) {
+                libraryTransferExplicitRetryRequired = true;
+            }
+            return converted;
+        }
+        transientTransferReader0Title = validated.title;
+        libraryTransferCatalogRetryMessage = null;
+        pendingLibraryIdentityBook = outcome.book;
+        pendingLibraryIdentityMode =
+            LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION;
+        pendingLibraryIdentityRecordOpened = false;
+        pendingLibraryIdentityLocalReconciliation = null;
+        pendingLibraryIdentityTransferAttemptSequence =
+            job.attemptSequence;
+        pendingLibraryIdentityTransferAttemptId = job.attemptId;
+        pendingLibraryIdentityTransferPhase = job.phase;
+        return false;
+    }
+
+    private void retainTransferCatalogRetry(
+        OctavoBookTransferStore.ActiveJob expected,
+        OctavoLibraryStore.TransferredBookStatus status) {
+        transientTransferReader0Title = null;
+        libraryTransferExplicitRetryRequired = true;
+        if (status
+            == OctavoLibraryStore.TransferredBookStatus.CATALOG_FULL) {
+            libraryTransferCatalogRetryMessage =
+                "The Library is full; publishing this downloaded EPUB needs Retry";
+        } else if (status
+                   == OctavoLibraryStore.TransferredBookStatus
+                       .CATALOG_BLOCKED) {
+            libraryTransferCatalogRetryMessage = nonemptyMessage(
+                libraryStore.lastError(),
+                "The local Library catalog is blocked; publication needs Retry");
+        } else {
+            libraryTransferCatalogRetryMessage =
+                "Local Library publication preflight changed; explicit Retry is required";
+        }
+        recordTransferCatalogRetry(
+            expected.attemptSequence, expected.attemptId, expected.phase);
+    }
+
+    private void recordTransferCatalogRetry(
+        long expectedAttemptSequence,
+        String expectedAttemptId,
+        OctavoBookTransferStore.Phase expectedPhase) {
+        OctavoBookTransferStore.ActiveJob current =
+            bookTransferStore.activeJob();
+        if (expectedPhase
+                != OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+            || current == null
+            || current.phase != expectedPhase
+            || current.attemptSequence != expectedAttemptSequence
+            || !current.attemptId.equals(expectedAttemptId)) {
+            return;
+        }
+        bookTransferStore.recordLocalCatalogLinkFailed(
+            current.callbackToken);
+    }
+
+    private boolean completeTransferFinalizationAfterCatalogRecord(
+        long expectedAttemptSequence,
+        String expectedAttemptId,
+        OctavoBookTransferStore.Phase expectedPhase) {
+        OctavoBookTransferStore.ActiveJob job =
+            bookTransferStore.activeJob();
+        OctavoLibraryStore.Book associated = job == null
+            ? null : libraryStore.findBook(job.digest);
+        if (job == null
+            || job.direction != OctavoBookTransferStore.Direction.DOWNLOAD
+            || job.durableDirection
+               != OctavoBookTransferStore.DurableDirection.FORWARD
+            || (expectedPhase
+                    != OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                && expectedPhase
+                    != OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)
+            || job.phase != expectedPhase
+            || job.attemptSequence != expectedAttemptSequence
+            || !job.attemptId.equals(expectedAttemptId)
+            || associated == null || !associated.imported
+            || associated.repairRequired
+            || !associated.identityVerified
+            || associated.byteCount != job.byteCount
+            || (expectedPhase
+                    == OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED
+                && librarySyncStore.decision(job.digest)
+                   != OctavoLibrarySyncStore.Decision.DOWNLOADED)) {
+            return false;
+        }
+        if (expectedPhase
+            == OctavoBookTransferStore.Phase.MANAGED_PUBLISHED) {
+            OctavoLibrarySyncStore.TransferReconciliation transfer =
+                librarySyncStore.transferReconciliation();
+            if (transfer != null) {
+                if (!exactLibraryTransferReconciliation(job)
+                    || !librarySyncStore.completeDownloaded(
+                        transfer, true).succeeded()) {
+                    return false;
+                }
+            } else if (librarySyncStore.decision(job.digest)
+                       != OctavoLibrarySyncStore.Decision.DOWNLOADED) {
+                return false;
+            }
+            if (!bookTransferStore.markLocalCatalogLinked(
+                    job.callbackToken).succeeded()) {
+                return false;
+            }
+            job = bookTransferStore.activeJob();
+            if (job == null
+                || job.phase
+                   != OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED
+                || job.attemptSequence != expectedAttemptSequence
+                || !job.attemptId.equals(expectedAttemptId)) {
+                return false;
+            }
+        }
+        boolean finalized = bookTransferStore.finalizeTransfer(
+            job.callbackToken).succeeded();
+        if (finalized) {
+            transientTransferReader0Title = null;
+        }
+        return finalized;
+    }
+
+    private boolean convertPublishedTransferToRepairCleanup(
+        String expectedDigest,
+        long expectedByteCount,
+        long expectedAttemptSequence,
+        String expectedAttemptId,
+        OctavoBookTransferStore.Phase expectedPhase) {
+        // A conversion may activate the next queued attempt. Never let its
+        // Reader0 gate inherit the prior attempt's transient title.
+        transientTransferReader0Title = null;
+        OctavoBookTransferStore.ActiveJob active =
+            bookTransferStore.activeJob();
+        if (!hasText(expectedDigest) || expectedByteCount <= 0
+            || active == null
+            || active.direction
+               != OctavoBookTransferStore.Direction.DOWNLOAD
+            || active.durableDirection
+               != OctavoBookTransferStore.DurableDirection.FORWARD
+            || (expectedPhase
+                    != OctavoBookTransferStore.Phase.MANAGED_PUBLISHED
+                && expectedPhase
+                    != OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED)
+            || active.phase != expectedPhase
+            || active.attemptSequence != expectedAttemptSequence
+            || !active.attemptId.equals(expectedAttemptId)
+            || !active.digest.equals(expectedDigest)
+            || active.byteCount != expectedByteCount) {
+            return false;
+        }
+        // The exact O1BQ attempt owns the conversion from this point. Revoke
+        // any O6 verification capability so it cannot outlive that attempt,
+        // including across a failed or uncertain cleanup publication.
+        libraryStore.cancelBookIdentityVerification();
+        byte[] expectedManifestHash = active.manifestHash();
+        OctavoBookTransferStore.CleanupOutcome converted =
+            bookTransferStore.convertPublishedDownloadToRepairCleanup(
+                active.callbackToken);
+        if (!(converted.result.succeeded()
+              || converted.result
+                 == OctavoBookTransferStore.MutationResult
+                     .PUBLISH_UNCERTAIN)
+            || converted.attemptSequence != expectedAttemptSequence) {
+            return false;
+        }
+        OctavoBookTransferStore.CleanupJob cleanup =
+            cleanupJob(expectedAttemptSequence);
+        boolean exactCleanup = cleanup != null
+            && cleanup.purpose
+               == OctavoBookTransferStore.CleanupPurpose.REPAIR_REPLACE
+            && cleanup.digest.equals(expectedDigest)
+            && cleanup.byteCount == expectedByteCount
+            && expectedAttemptId.equals(cleanup.originAttemptId)
+            && MessageDigest.isEqual(
+                expectedManifestHash, cleanup.originManifestHash());
+        if (exactCleanup) {
+            libraryTransferCatalogRetryMessage = null;
+        }
+        return exactCleanup;
+    }
+
+    private boolean retryLibraryTransferReconciliation(
+        OctavoLibrarySyncStore.TransferReconciliation expected) {
+        if (expected == null) {
+            return false;
+        }
+        OctavoBookTransferStore.ActiveJob active =
+            bookTransferStore.activeJob();
+        if (active != null) {
+            return resumeLibraryTransfer();
+        }
+        if (libraryStore.hasExactManagedBook(
+                expected.digest, expected.byteCount)) {
+            return librarySyncStore.completeDownloaded(
+                expected, true).succeeded();
+        }
+        if (bookTransferStore.intentCount() != 0) {
+            return false;
+        }
+        return librarySyncStore.releaseTransferReconciliation(
+            expected, true).succeeded();
+    }
+
+    private boolean cancelLibraryTransfer() {
+        OctavoBookTransferStore.ActiveJob active =
+            bookTransferStore.activeJob();
+        if (active == null) {
+            return false;
+        }
+        OctavoLibrarySyncStore.TransferReconciliation reconciliation =
+            librarySyncStore.transferReconciliation();
+        OctavoBookTransferStore.MutationResult cancelled =
+            bookTransferStore.cancelActive(active.callbackToken);
+        if (!cancelled.succeeded()) {
+            return false;
+        }
+        transientTransferReader0Title = null;
+        if (reconciliation != null
+            && bookTransferStore.activeJob() == null) {
+            return librarySyncStore.releaseTransferReconciliation(
+                reconciliation, true).succeeded();
+        }
+        return true;
+    }
+
+    private List<String> locallyPresentBookDigests() {
+        ArrayList<String> result = new ArrayList<>();
+        for (OctavoLibraryStore.Book book : libraryStore.books()) {
+            if (book.imported && !book.repairRequired
+                && book.identityVerified) {
+                result.add(book.key);
+            }
+        }
+        return result;
+    }
+
+    private boolean recordLocalDiscovery(OctavoLibraryStore.Book book) {
+        if (book == null || !book.imported || book.repairRequired
+            || !book.identityVerified) {
+            return false;
+        }
+        OctavoLibraryPortable.Descriptor descriptor =
+            new OctavoLibraryPortable.Descriptor(book.key, book.byteCount);
+        OctavoLibrarySyncStore.LocalReconciliation pending =
+            librarySyncStore.localReconciliation();
+        if (pending == null) {
+            OctavoLibrarySyncStore.MutationResult staged =
+                librarySyncStore.stageLocalPublication(descriptor);
+            if (!staged.succeeded()) {
+                libraryDiscoveryRetryBookKey = book.key;
+                return false;
+            }
+            pending = librarySyncStore.localReconciliation();
+        }
+        if (pending == null
+            || pending.kind
+               != OctavoLibrarySyncStore.LocalReconciliationKind.PUBLICATION
+            || !pending.descriptor().sameIdentity(descriptor)) {
+            libraryDiscoveryRetryBookKey = book.key;
+            return false;
+        }
+        boolean completed = librarySyncStore.finalizeLocalReconciliation(
+            pending, true).succeeded();
+        if (completed && book.key.equals(libraryDiscoveryRetryBookKey)) {
+            libraryDiscoveryRetryBookKey = null;
+        } else if (!completed) {
+            libraryDiscoveryRetryBookKey = book.key;
+        }
+        return completed;
+    }
+
+    private boolean finalizeLocalRemoval(
+        OctavoLibraryPortable.Descriptor descriptor) {
+        // The exact local catalog row and managed bytes are already absent at
+        // this point. Only now may O1LS replace/clear a publication marker or
+        // stage LOCAL_REMOVED suppression; an O1LS failure must not block the
+        // local removal boundary.
+        OctavoLibrarySyncStore.LocalReconciliation before =
+            librarySyncStore.localReconciliation();
+        if (librarySyncStore.decision(descriptor.digest) == null
+            && before == null) {
+            return true;
+        }
+        if (!librarySyncStore.stageLocalRemoval(descriptor).succeeded()) {
+            return false;
+        }
+        OctavoLibrarySyncStore.LocalReconciliation pending =
+            librarySyncStore.localReconciliation();
+        if (librarySyncStore.decision(descriptor.digest) == null) {
+            return pending == null;
+        }
+        if (pending == null
+            || pending.kind
+               != OctavoLibrarySyncStore.LocalReconciliationKind.REMOVAL
+            || !pending.descriptor().sameIdentity(descriptor)) {
+            return false;
+        }
+        return librarySyncStore.finalizeLocalReconciliation(
+            pending, true).succeeded();
+    }
+
+    private boolean removeImportedBook(OctavoLibraryStore.Book book) {
+        if (book == null || !book.imported
+            || libraryStore.findBook(book.key) == null) {
+            return false;
+        }
+        OctavoBookTransferStore.CleanupJob existing =
+            cleanupJob(book.key, book.byteCount);
+        long attemptSequence;
+        if (existing != null) {
+            if (existing.purpose
+                != OctavoBookTransferStore.CleanupPurpose.LOCAL_REMOVE) {
+                return false;
+            }
+            attemptSequence = existing.attemptSequence;
+        } else {
+            OctavoBookTransferStore.CleanupOutcome staged =
+                bookTransferStore.stageManagedCleanup(
+                    book.key, book.byteCount);
+            if (!staged.result.succeeded()) {
+                return false;
+            }
+            attemptSequence = staged.attemptSequence;
+        }
+        return retryManagedCleanup(attemptSequence)
+            || localRemovalBoundaryComplete(attemptSequence);
+    }
+
+    private boolean retryCleanupByPurpose(long attemptSequence) {
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(attemptSequence);
+        if (job == null) {
+            return false;
+        }
+        if (job.purpose
+            == OctavoBookTransferStore.CleanupPurpose.REPAIR_REPLACE) {
+            return retryRepairManagedCleanup(attemptSequence);
+        }
+        if (job.purpose
+            == OctavoBookTransferStore.CleanupPurpose.UNCATALOGED) {
+            return retryUncatalogedManagedCleanup(attemptSequence);
+        }
+        return retryManagedCleanup(attemptSequence);
+    }
+
+    private boolean retryRepairManagedCleanup(long attemptSequence) {
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(attemptSequence);
+        if (job == null
+            || job.purpose
+               != OctavoBookTransferStore.CleanupPurpose.REPAIR_REPLACE) {
+            return false;
+        }
+        OctavoLibraryStore.Book local =
+            libraryStore.findBook(job.digest);
+        byte[] repairOriginManifestHash = job.originManifestHash();
+        boolean convertedRepair = hasText(job.originAttemptId)
+            && job.originAttemptId.length() == 32
+            && repairOriginManifestHash != null
+            && repairOriginManifestHash.length == 32;
+        if (job.phase
+            == OctavoBookTransferStore.CleanupPhase.AWAITING_CATALOG_UNLINK) {
+            if (local != null) {
+                if (!local.imported
+                    || (!local.repairRequired && !convertedRepair)
+                    || local.byteCount != job.byteCount
+                    || !libraryStore.removeBookRecordOnly(job.digest)) {
+                    return false;
+                }
+            }
+            if (!bookTransferStore.markCleanupCatalogUnlinked(
+                    job.callbackToken).succeeded()) {
+                return false;
+            }
+            job = cleanupJob(attemptSequence);
+            if (job == null) {
+                return false;
+            }
+        } else if (local != null) {
+            return false;
+        }
+        if (job.phase
+            == OctavoBookTransferStore.CleanupPhase.READY_TO_DELETE) {
+            if (!bookTransferStore.deleteManagedForCleanup(
+                    job.callbackToken,
+                    libraryStore.documentDirectoryForTesting()).succeeded()) {
+                return false;
+            }
+            job = cleanupJob(attemptSequence);
+            if (job == null) {
+                return false;
+            }
+        }
+        if (job.phase
+            != OctavoBookTransferStore.CleanupPhase
+                .AWAITING_SYNC_SUPPRESSION) {
+            return false;
+        }
+        OctavoLibrarySyncStore.TransferReconciliation transfer =
+            librarySyncStore.transferReconciliation();
+        if (transfer != null) {
+            OctavoBookTransferStore.ActiveJob active =
+                bookTransferStore.activeJob();
+            byte[] originManifestHash = job.originManifestHash();
+            if (!transfer.digest.equals(job.digest)
+                || transfer.byteCount != job.byteCount
+                || (active != null && active.digest.equals(job.digest))
+                || !hasText(job.originAttemptId)
+                || originManifestHash == null
+                || !transfer.attemptId.equals(job.originAttemptId)
+                || !transfer.manifestSha256.equals(
+                    hexBytes(originManifestHash))
+                || !librarySyncStore.releaseTransferReconciliation(
+                    transfer, true).succeeded()) {
+                return false;
+            }
+        }
+        if (!librarySyncStore.resetForExplicitDownload(
+                job.digest).succeeded()) {
+            return false;
+        }
+        return bookTransferStore.finalizeManagedCleanup(
+            job.callbackToken, true).succeeded();
+    }
+
+    private boolean retryUncatalogedManagedCleanup(long attemptSequence) {
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(attemptSequence);
+        if (job == null
+            || job.purpose
+               != OctavoBookTransferStore.CleanupPurpose.UNCATALOGED) {
+            return false;
+        }
+        if (job.phase
+            == OctavoBookTransferStore.CleanupPhase.READY_TO_DELETE) {
+            if (!bookTransferStore.deleteManagedForCleanup(
+                    job.callbackToken,
+                    libraryStore.documentDirectoryForTesting()).succeeded()) {
+                return false;
+            }
+            job = cleanupJob(attemptSequence);
+            if (job == null) {
+                return false;
+            }
+        }
+        return job.phase
+                == OctavoBookTransferStore.CleanupPhase
+                    .AWAITING_SYNC_SUPPRESSION
+            && bookTransferStore.finalizeManagedCleanup(
+                job.callbackToken, true).succeeded();
+    }
+
+    private boolean retryManagedCleanup(long attemptSequence) {
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(attemptSequence);
+        if (job == null
+            || job.purpose
+               != OctavoBookTransferStore.CleanupPurpose.LOCAL_REMOVE) {
+            return false;
+        }
+        OctavoLibraryStore.Book local = libraryStore.findBook(job.digest);
+        if (job.phase
+            == OctavoBookTransferStore.CleanupPhase.AWAITING_CATALOG_UNLINK) {
+            if (local != null
+                && (!local.imported || local.byteCount != job.byteCount)) {
+                return false;
+            }
+            if (local != null && !libraryStore.removeBookRecordOnly(job.digest)) {
+                return false;
+            }
+            OctavoBookTransferStore.MutationResult unlinked =
+                bookTransferStore.markCleanupCatalogUnlinked(
+                    job.callbackToken);
+            if (!unlinked.succeeded()) {
+                return false;
+            }
+            job = cleanupJob(attemptSequence);
+            if (job == null) {
+                return false;
+            }
+        } else if (local != null) {
+            return false;
+        }
+
+        if (job.phase == OctavoBookTransferStore.CleanupPhase.READY_TO_DELETE) {
+            OctavoBookTransferStore.MutationResult deleted =
+                bookTransferStore.deleteManagedForCleanup(
+                    job.callbackToken,
+                    libraryStore.documentDirectoryForTesting());
+            if (!deleted.succeeded()) {
+                return false;
+            }
+            job = cleanupJob(attemptSequence);
+            if (job == null) {
+                return false;
+            }
+        }
+        if (job.phase
+            != OctavoBookTransferStore.CleanupPhase
+                .AWAITING_SYNC_SUPPRESSION) {
+            return false;
+        }
+        boolean suppression = finalizeLocalRemoval(
+            new OctavoLibraryPortable.Descriptor(
+                job.digest, job.byteCount));
+        if (!suppression) {
+            // Keep the exact O1BQ cleanup intent until the private
+            // LOCAL_REMOVED suppression is durable and retryable.
+            return false;
+        }
+        return bookTransferStore.finalizeManagedCleanup(
+            job.callbackToken, true).succeeded();
+    }
+
+    private OctavoBookTransferStore.CleanupJob cleanupJob(
+        long attemptSequence) {
+        for (OctavoBookTransferStore.CleanupJob job
+                 : bookTransferStore.cleanupJobs()) {
+            if (job.attemptSequence == attemptSequence) {
+                return job;
+            }
+        }
+        return null;
+    }
+
+    private OctavoBookTransferStore.CleanupJob cleanupJob(
+        String digest,
+        long byteCount) {
+        for (OctavoBookTransferStore.CleanupJob job
+                 : bookTransferStore.cleanupJobs()) {
+            if (job.digest.equals(digest)
+                && job.byteCount == byteCount) {
+                return job;
+            }
+        }
+        return null;
+    }
+
+    private boolean localRemovalBoundaryComplete(long attemptSequence) {
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(attemptSequence);
+        File managed = job == null
+            ? null : libraryStore.managedFile(job.digest);
+        return job != null
+            && job.phase
+               == OctavoBookTransferStore.CleanupPhase
+                   .AWAITING_SYNC_SUPPRESSION
+            && libraryStore.findBook(job.digest) == null
+            && managed != null && !managed.exists();
+    }
+
+    private boolean discardUncatalogedWithDurableCleanup(
+        OctavoLibraryStore.Book book) {
+        if (book != null && libraryStore.isStagedImport(book)) {
+            boolean discarded = libraryStore.discardUncataloged(book);
+            rejectedStagedImportCleanupBook = discarded ? null : book;
+            return discarded;
+        }
+        if (book != null
+            && libraryStore.hasPendingImportAssociation(
+                book.key, book.byteCount)) {
+            // The Port 6 import journal owns bytes after its first durable
+            // publication marker. Preserve them for exact association Retry.
+            return false;
+        }
+        if (book == null || !book.imported
+            || libraryStore.findBook(book.key) != null) {
+            return false;
+        }
+        OctavoBookTransferStore.CleanupOutcome staged =
+            bookTransferStore.stageUncatalogedManagedCleanup(
+                book.key, book.byteCount);
+        if (!staged.result.succeeded()) {
+            return false;
+        }
+        OctavoBookTransferStore.CleanupJob job =
+            cleanupJob(staged.attemptSequence);
+        if (job == null) {
+            return false;
+        }
+        if (!bookTransferStore.deleteManagedForCleanup(
+                job.callbackToken,
+                libraryStore.documentDirectoryForTesting()).succeeded()) {
+            return false;
+        }
+        job = cleanupJob(staged.attemptSequence);
+        return job != null
+            && bookTransferStore.finalizeManagedCleanup(
+                job.callbackToken, true).succeeded();
+    }
+
+    private boolean discardRejectedLibraryOpen(
+        OctavoLibraryStore.Book book) {
+        if (book == null) {
+            return false;
+        }
+        if (libraryStore.hasPendingImportAssociation(
+                book.key, book.byteCount)) {
+            return true;
+        }
+        if (libraryStore.isStagedImport(book)) {
+            boolean discarded = libraryStore.discardUncataloged(book);
+            rejectedStagedImportCleanupBook = discarded ? null : book;
+            return discarded;
+        }
+        if (libraryStore.findBook(book.key) != null) {
+            return true;
+        }
+        return discardUncatalogedWithDurableCleanup(book);
     }
 
     private View createBookRow(OctavoLibraryStore.Book book) {
@@ -8673,7 +11932,9 @@ public final class OctavoActivity extends Activity {
         row.addView(title, matchParentWidthLayout());
 
         TextView status = new TextView(this);
-        String progress = book.hasPosition
+        String progress = book.repairRequired
+            ? "Repair required"
+            : book.hasPosition
             ? "Resume available"
             : "Not started";
         status.setText(book.imported
@@ -8693,30 +11954,51 @@ public final class OctavoActivity extends Activity {
         open.setBackgroundTintList(
             ColorStateList.valueOf(tokens.buttonSurface));
         open.setContentDescription("Open " + book.title);
+        open.setEnabled(!book.repairRequired);
         open.setOnClickListener(view -> {
+            libraryFocusBookKey = book.key;
+            libraryFocusRemove = false;
             if (!showReader(book, true)) {
+                showLibrary();
                 showOpenFailure("Unable to open the library book");
             }
         });
         actions.addView(open, wrapLayout());
+        if (book.key.equals(libraryFocusBookKey)
+            && !libraryFocusRemove) {
+            libraryRowFocusReturn = open;
+        }
 
         if (book.imported) {
             Button remove = new Button(this);
-            remove.setText(R.string.remove);
+            remove.setText("Remove from this device");
             remove.setAllCaps(false);
             remove.setMinHeight(dp(OctavoDesignTokens.TOUCH_TARGET_DP));
             remove.setTextColor(tokens.error);
             remove.setBackgroundTintList(
                 ColorStateList.valueOf(tokens.buttonSurface));
-            remove.setContentDescription("Remove " + book.title);
+            remove.setContentDescription(
+                "Remove " + book.title + " from this device");
             remove.setOnClickListener(view -> {
-                if (libraryStore.removeBook(book.key)) {
+                libraryFocusBookKey = book.key;
+                libraryFocusRemove = true;
+                if (removeImportedBook(book)) {
                     showLibrary();
                 } else {
-                    showOpenFailure("Unable to remove the library book");
+                    showLibrary();
+                    showOpenFailure(nonemptyMessage(
+                        firstNonemptyMessage(
+                            bookTransferStore.lastError(),
+                            librarySyncStore.lastError(),
+                            libraryStore.lastError()),
+                        "Removing this book needs Retry"));
                 }
             });
             actions.addView(remove, wrapLayout());
+            if (book.key.equals(libraryFocusBookKey)
+                && libraryFocusRemove) {
+                libraryRowFocusReturn = remove;
+            }
         }
         row.addView(actions, matchParentWidthLayout());
 
@@ -9040,6 +12322,70 @@ public final class OctavoActivity extends Activity {
         return intent;
     }
 
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private static String nonemptyMessage(String value,
+                                          String fallback) {
+        return hasText(value) ? value : fallback;
+    }
+
+    private static String firstNonemptyMessage(String... values) {
+        if (values != null) {
+            for (String value : values) {
+                if (hasText(value)) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String shortDigest(String digest) {
+        return digest == null || digest.length() < 8
+            ? "unknown identity" : digest.substring(0, 8) + "...";
+    }
+
+    private static String humanReadableByteCount(long byteCount) {
+        if (byteCount < 1024) {
+            return String.format(Locale.ROOT, "%d B", byteCount);
+        }
+        if (byteCount < 1024L * 1024L) {
+            return String.format(
+                Locale.ROOT, "%.1f KiB", byteCount / 1024.0);
+        }
+        return String.format(
+            Locale.ROOT, "%.1f MiB", byteCount / (1024.0 * 1024.0));
+    }
+
+    private static String hexBytes(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
+        char[] result = new char[bytes.length * 2];
+        final char[] digits = "0123456789abcdef".toCharArray();
+        for (int index = 0; index < bytes.length; ++index) {
+            int value = bytes[index] & 0xFF;
+            result[index * 2] = digits[value >>> 4];
+            result[index * 2 + 1] = digits[value & 0x0F];
+        }
+        return new String(result);
+    }
+
+    private static String sha256Hex(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
+        try {
+            return hexBytes(
+                MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(
+                "SHA-256 is unavailable", exception);
+        }
+    }
+
     private int dp(int value) {
         return Math.max(value,
                         Math.round(getResources().getDisplayMetrics().density
@@ -9113,15 +12459,14 @@ public final class OctavoActivity extends Activity {
     }
 
     boolean removeBookForTesting(String key) {
-        boolean removed = libraryStore.removeBook(key);
-        if (removed) {
-            showLibrary();
-        }
+        OctavoLibraryStore.Book book = libraryStore.findBook(key);
+        boolean removed = book != null && removeImportedBook(book);
+        showLibrary();
         return removed;
     }
 
     void closeBookForTesting() {
-        showLibrary();
+        showLibrary(true);
     }
 
     boolean libraryVisibleForTesting() {
@@ -9138,6 +12483,209 @@ public final class OctavoActivity extends Activity {
 
     OctavoLibraryStore libraryStoreForTesting() {
         return libraryStore;
+    }
+
+    OctavoLibrarySyncStore librarySyncStoreForTesting() {
+        return librarySyncStore;
+    }
+
+    OctavoBookTransferStore bookTransferStoreForTesting() {
+        return bookTransferStore;
+    }
+
+    OctavoLibrarySyncPrompt librarySyncPromptForTesting() {
+        return librarySyncPrompt;
+    }
+
+    OctavoLibrarySyncStore.PortableStageResult
+        stagePortableLibraryCatalogForTesting(byte[] bytes) {
+        OctavoLibrarySyncStore.PortableStageResult result =
+            librarySyncStore.stagePortableBytes(bytes);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    String stagedPortableLibraryDigestForTesting() {
+        OctavoLibrarySyncStore.StagedPortable staged =
+            librarySyncStore.stagedPortable();
+        return staged == null ? null : staged.sha256;
+    }
+
+    OctavoLibrarySyncStore.PortableMergeResult
+        approvePortableLibraryCatalogForTesting(String exactDigestEcho) {
+        OctavoLibrarySyncStore.PortableMergeResult result =
+            librarySyncStore.approveStagedPortable(exactDigestEcho);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean setAvailableBookManifestForTesting(byte[] bytes) {
+        OctavoBookManifest.DecodeResult decoded =
+            OctavoBookManifest.decode(bytes);
+        if (decoded.status != OctavoBookManifest.DecodeStatus.READY) {
+            return false;
+        }
+        OctavoBookManifest manifest = decoded.manifest();
+        libraryCatalogManifestBytes = bytes.clone();
+        libraryCatalogManifestDigest = manifest.digest;
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return true;
+    }
+
+    OctavoLibrarySyncStore.Candidate libraryCatalogOfferForTesting() {
+        return libraryCatalogOffer;
+    }
+
+    String libraryCatalogOfferManifestSha256ForTesting() {
+        return libraryCatalogOfferManifestSha256;
+    }
+
+    boolean downloadLibraryCatalogOfferForTesting() {
+        return downloadLibraryCatalogOffer();
+    }
+
+    boolean acceptNextLibraryDownloadChunkForTesting(
+        int index,
+        InputStream callerOwnedChunk) {
+        OctavoBookTransferStore.ActiveJob job =
+            bookTransferStore.activeJob();
+        if (libraryTransferExplicitRetryRequired || job == null
+            || !ensureLibraryTransferReconciliation(job, null)) {
+            return false;
+        }
+        OctavoBookTransferStore.MutationResult accepted =
+            bookTransferStore.acceptNextDownloadChunk(
+                job.callbackToken, index, callerOwnedChunk);
+        if (!accepted.succeeded()) {
+            if (libraryRoot != null) {
+                showLibrary();
+            }
+            return false;
+        }
+        OctavoBookTransferStore.ActiveJob updated =
+            bookTransferStore.activeJob();
+        boolean result = updated != null
+            && updated.completedPrefix == updated.chunkCount
+            ? resumeLibraryTransfer()
+                || transferFinalizationIdentityInstalled()
+            : true;
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean retryLibraryTransferForTesting() {
+        boolean result = explicitlyRetryLibraryTransfer();
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean libraryTransferExplicitRetryRequiredForTesting() {
+        return libraryTransferExplicitRetryRequired;
+    }
+
+    boolean cancelLibraryTransferForTesting() {
+        boolean result = cancelLibraryTransfer();
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean retryManagedCleanupForTesting(long attemptSequence) {
+        boolean result = reloadTransferStoresForExplicitRetry()
+            && retryCleanupByPurpose(attemptSequence);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean retryPendingImportAssociationForTesting() {
+        OctavoLibraryStore.Book pending =
+            currentPendingImportAssociationBook();
+        boolean result = pending != null
+            && retryPendingImportAssociation(pending);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean discardPendingImportAssociationForTesting() {
+        OctavoLibraryStore.Book pending =
+            currentPendingImportAssociationBook();
+        boolean result = pending != null
+            && discardPendingImportAssociation(pending);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return result;
+    }
+
+    boolean verifyNextLibraryDiscoveryForTesting() {
+        OctavoLibrarySyncStore.LocalReconciliation pending =
+            librarySyncStore.localReconciliation();
+        if (pending != null) {
+            boolean result = reloadTransferStoresForExplicitRetry()
+                && retryLocalLibraryReconciliation(pending);
+            if (libraryRoot != null) {
+                showLibrary();
+            }
+            return result;
+        }
+        for (OctavoLibraryStore.Book book : libraryStore.books()) {
+            OctavoLibrarySyncStore.Decision decision =
+                librarySyncStore.decision(book.key);
+            if (!book.imported || book.repairRequired
+                || (decision
+                        == OctavoLibrarySyncStore.Decision.DOWNLOADED
+                    && book.identityVerified)) {
+                continue;
+            }
+            if (!book.identityVerified) {
+                pendingLibraryIdentityBook = book;
+                pendingLibraryIdentityMode =
+                    LIBRARY_IDENTITY_MODE_LOCAL_PUBLICATION;
+                pendingLibraryIdentityRecordOpened = false;
+                pendingLibraryIdentityLocalReconciliation = null;
+                libraryDiscoveryStatus = "Verification in progress";
+                if (libraryRoot != null) {
+                    showLibrary();
+                }
+                return false;
+            }
+            boolean result =
+                completeLocalPublicationAfterIdentity(book, null);
+            if (libraryRoot != null) {
+                showLibrary();
+            }
+            return result;
+        }
+        libraryDiscoveryStatus = null;
+        return true;
+    }
+
+    String libraryDiscoveryStatusForTesting() {
+        return libraryDiscoveryStatus;
+    }
+
+    String libraryImportAssociationStatusForTesting() {
+        return libraryImportAssociationStatus;
+    }
+
+    String libraryCatalogStatusForTesting() {
+        return libraryCatalogStatus == null
+            ? null : libraryCatalogStatus.getText().toString();
     }
 
     OctavoAppearance appearanceForTesting() {
