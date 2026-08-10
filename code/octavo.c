@@ -2,6 +2,7 @@
 #include "octavo_library.h"
 #include "octavo_reader_justification.h"
 #include "reader0.h"
+#include "octavo_pdf.h"
 #include "ui0.h"
 #include "octavo_theme.h"
 #include "readerview0.h"
@@ -28,8 +29,8 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "octavo requires Presentation Engine API 1"
 #endif
-#if READER0_API_VERSION != 7
-#  error "octavo requires Reader0 API 7"
+#if READER0_API_VERSION != 9
+#  error "octavo requires Reader0 API 9"
 #endif
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"
@@ -505,7 +506,23 @@ typedef enum OctavoPresentationIdentityKind
   OctavoPresentationIdentity_None,
   OctavoPresentationIdentity_Library,
   OctavoPresentationIdentity_Page,
+  OctavoPresentationIdentity_PdfPage,
 } OctavoPresentationIdentityKind;
+
+typedef enum OctavoDocumentKind
+{
+  OctavoDocument_None,
+  OctavoDocument_EPUB,
+  OctavoDocument_PDF,
+} OctavoDocumentKind;
+
+typedef enum OctavoMoveResult
+{
+  OctavoMoveResult_Ok,
+  OctavoMoveResult_Boundary,
+  OctavoMoveResult_NotOpen,
+  OctavoMoveResult_Error,
+} OctavoMoveResult;
 
 /* Pointer-free subset of the canonical Reader0 page range retained for
    presentation identity and frame validation. */
@@ -535,7 +552,9 @@ typedef struct OctavoPresentationIdentity
 typedef struct OctavoApp
 {
   Arena *arena;
+  OctavoDocumentKind document_kind;
   EpubReader reader;
+  OctavoPdf pdf;
   EpubReaderFrameStorage frame_storage;
   EpubReaderFrame frame;
   EpubReaderFrameStorage *adjacent_frame_storage;
@@ -927,8 +946,9 @@ typedef struct OctavoPageRepeatWin32Probe
 } OctavoPageRepeatWin32Probe;
 
 FUNCTION void octavo_library_update_progress(OctavoApp *app);
+FUNCTION void octavo_app_release(OctavoApp *app);
 FUNCTION B32 octavo_close_book(OctavoApp *app);
-FUNCTION B32 octavo_pick_epub(OctavoApp *app);
+FUNCTION B32 octavo_pick_document(OctavoApp *app);
 FUNCTION B32 octavo_locate_library_entry(OctavoApp *app, U64 entry_id);
 FUNCTION void octavo_schedule_adjacent_warm(OctavoApp *app);
 FUNCTION void octavo_cancel_adjacent_warm(OctavoApp *app);
@@ -983,6 +1003,73 @@ octavo_copy_cstr(char *dst, U64 cap, const char *src)
     }
   }
   dst[size] = 0;
+}
+
+FUNCTION B32
+octavo_path_has_extension(const char *path, const char *extension)
+{
+  if (!path || !extension) return 0;
+  U64 path_size = strlen(path);
+  U64 extension_size = strlen(extension);
+  return path_size > extension_size &&
+    _stricmp(path + path_size - extension_size, extension) == 0;
+}
+
+FUNCTION B32
+octavo_path_is_epub(const char *path)
+{
+  return octavo_path_has_extension(path, ".epub");
+}
+
+FUNCTION B32
+octavo_path_is_pdf(const char *path)
+{
+  return octavo_path_has_extension(path, ".pdf");
+}
+
+FUNCTION B32
+octavo_document_is_open(const OctavoApp *app)
+{
+  if (!app) return 0;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return epub_reader_is_open(&app->reader);
+  if (app->document_kind == OctavoDocument_PDF)
+    return octavo_pdf_is_open(&app->pdf);
+  return 0;
+}
+
+FUNCTION B32
+octavo_document_invariants_hold(const OctavoApp *app)
+{
+  if (!app || !epub_reader_invariants_hold(&app->reader) ||
+      !octavo_pdf_invariants_hold(&app->pdf))
+  {
+    return 0;
+  }
+  B32 epub_open = epub_reader_is_open(&app->reader);
+  B32 pdf_open = octavo_pdf_is_open(&app->pdf);
+  if (epub_open && pdf_open) return 0;
+  if (app->document_kind == OctavoDocument_None)
+    return !epub_open && !pdf_open;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return epub_open && !pdf_open;
+  if (app->document_kind == OctavoDocument_PDF)
+    return pdf_open && !epub_open;
+  return 0;
+}
+
+FUNCTION void
+octavo_path_title(const char *path, char *title, U64 title_cap)
+{
+  if (!title || title_cap == 0) return;
+  title[0] = 0;
+  if (!path) return;
+  const char *name = path;
+  for (const char *at = path; *at; at += 1)
+    if (*at == '\\' || *at == '/') name = at + 1;
+  octavo_copy_cstr(title, title_cap, name);
+  char *dot = strrchr(title, '.');
+  if (dot && dot != title) *dot = 0;
 }
 
 FUNCTION void
@@ -2203,21 +2290,21 @@ octavo_library_record_open_document(OctavoApp *app,
                                           app->library_selected_entry_id);
 }
 
-FUNCTION void
+FUNCTION B32
 octavo_library_hydrate_startup_entry(OctavoApp *app)
 {
   if (!app || !app->persistence_enabled || app->library.entry_count == 0)
-    return;
+    return 1;
   OctavoLibraryEntry *entry = octavo_library_catalog_find_id(
     &app->library, app->library_selected_entry_id);
   if (!entry || entry->runtime_missing)
-    return;
+    return 1;
   B32 metadata_inspected =
     (entry->metadata_flags & OctavoLibraryMetadata_Inspected) != 0;
   B32 thumbnail_current =
     !(entry->metadata_flags & OctavoLibraryMetadata_Cover) ||
     octavo_library_thumbnail_load(app, entry) != 0;
-  if (metadata_inspected && thumbnail_current) return;
+  if (metadata_inspected && thumbnail_current) return 1;
 
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result = epub_reader_open(
@@ -2227,11 +2314,17 @@ octavo_library_hydrate_startup_entry(OctavoApp *app)
   {
     (void)octavo_library_refresh_open_document_metadata(app, entry);
     B32 changed = 0;
-    (void)epub_reader_close(&app->reader, &changed);
+    EpubReaderResult close_result = epub_reader_close(&app->reader, &changed);
+    if (close_result != EpubReaderResult_Ok ||
+        epub_reader_is_open(&app->reader))
+    {
+      return 0;
+    }
     octavo_image_cache_reset(&app->image_cache);
     (void)octavo_save_library(app);
   }
   (void)transition;
+  return 1;
 }
 
 FUNCTION void
@@ -2505,8 +2598,29 @@ octavo_recover_failed_open_to_library(OctavoApp *app)
   if (!app) return 0;
   octavo_cancel_location_warm(app);
   B32 changed = 0;
+  EpubReaderResult epub_close_result = EpubReaderResult_Ok;
+  PdfReaderResult pdf_close_result = PdfReaderResult_Ok;
   if (epub_reader_is_open(&app->reader))
-    (void)epub_reader_close(&app->reader, &changed);
+    epub_close_result = epub_reader_close(&app->reader, &changed);
+  if (octavo_pdf_is_open(&app->pdf))
+    pdf_close_result = octavo_pdf_close(&app->pdf);
+
+  B32 epub_open = epub_reader_is_open(&app->reader);
+  B32 pdf_open = octavo_pdf_is_open(&app->pdf);
+  if (epub_close_result != EpubReaderResult_Ok ||
+      pdf_close_result != PdfReaderResult_Ok || epub_open || pdf_open)
+  {
+    /* Never publish None while a concrete reader is still owned. If one
+       close succeeded, make the remaining owner explicit; if both backends
+       refused teardown, retain the prior owner and surface a hard error. */
+    if (epub_open && !pdf_open) app->document_kind = OctavoDocument_EPUB;
+    if (pdf_open && !epub_open) app->document_kind = OctavoDocument_PDF;
+    app->document_state = ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open cleanup failed: reader remains owned");
+    return 0;
+  }
+
+  app->document_kind = OctavoDocument_None;
   app->current_path[0] = 0;
   app->annotations_path[0] = 0;
   app->document_state = ReaderViewLoad_Error;
@@ -2526,13 +2640,38 @@ octavo_recover_failed_open_to_library(OctavoApp *app)
     OctavoHostControl_LibraryAdd;
   app->host_focus_visible = 1;
   octavo_complete_document_mutation(app, 1);
-  return !epub_reader_is_open(&app->reader);
+  return octavo_document_invariants_hold(app);
 }
 
 FUNCTION B32
-octavo_open_path(OctavoApp *app, const char *path)
+octavo_abandon_epub_candidate(OctavoApp *app, B32 preserve_pdf)
+{
+  if (!app) return 0;
+  B32 changed = 0;
+  EpubReaderResult close_result = EpubReaderResult_Ok;
+  if (epub_reader_is_open(&app->reader))
+    close_result = epub_reader_close(&app->reader, &changed);
+  if (close_result != EpubReaderResult_Ok ||
+      epub_reader_is_open(&app->reader))
+  {
+    app->document_state = ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open cleanup failed: EPUB remains owned");
+    return 0;
+  }
+  if (preserve_pdf && octavo_pdf_is_open(&app->pdf))
+  {
+    app->document_kind = OctavoDocument_PDF;
+    app->document_state = ReaderViewLoad_Ready;
+    return octavo_document_invariants_hold(app);
+  }
+  return octavo_recover_failed_open_to_library(app);
+}
+
+FUNCTION B32
+octavo_open_epub_path(OctavoApp *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
+  OctavoDocumentKind previous_kind = app->document_kind;
   if (!octavo_begin_document_mutation(app)) return 0;
   octavo_cancel_location_warm(app);
   octavo_cancel_adjacent_warm(app);
@@ -2555,7 +2694,7 @@ octavo_open_path(OctavoApp *app, const char *path)
   B32 has_catalog_position = restore_entry != 0;
   app->document_state = ReaderViewLoad_Loading;
   octavo_set_statusf(app, "Opening EPUB...");
-  if (app->current_path[0])
+  if (previous_kind == OctavoDocument_EPUB && app->current_path[0])
   {
     (void)octavo_save_state(app);
     (void)octavo_save_annotations(app);
@@ -2576,9 +2715,10 @@ octavo_open_path(OctavoApp *app, const char *path)
       previous_document_id != epub_reader_document_id(&app->reader) ||
       previous_document_generation != app->reader.document_generation;
     if (reader_changed)
-      (void)octavo_recover_failed_open_to_library(app);
+      (void)octavo_abandon_epub_candidate(
+        app, previous_kind == OctavoDocument_PDF);
     else
-      app->document_state = reader_was_open ?
+      app->document_state = octavo_document_is_open(app) ?
         ReaderViewLoad_Ready : ReaderViewLoad_Error;
     app->library_locate_entry_id = 0;
     return 0;
@@ -2586,20 +2726,13 @@ octavo_open_path(OctavoApp *app, const char *path)
   if (!epub_reader_refresh_active_spine(&app->reader) ||
       !octavo_update_layout_inputs(app))
   {
-    (void)octavo_recover_failed_open_to_library(app);
+    (void)octavo_abandon_epub_candidate(
+      app, previous_kind == OctavoDocument_PDF);
     octavo_set_statusf(app, "Open failed: layout");
     app->library_locate_entry_id = 0;
     return 0;
   }
 
-  octavo_image_cache_reset(&app->image_cache);
-  octavo_copy_cstr(app->current_path,
-                     ARRAY_COUNT(app->current_path),
-                     normalized_path);
-  octavo_set_annotations_path(app, normalized_path);
-  octavo_load_annotations(app);
-  reader_view_state_reset_document(&app->reader_view_state,
-                                   (UI0U64)epub_reader_document_id(&app->reader));
   B32 restored = 0;
   if (has_catalog_position)
   {
@@ -2627,12 +2760,36 @@ octavo_open_path(OctavoApp *app, const char *path)
                                         app->layout_config,
                                         &reused))
     {
-      (void)octavo_recover_failed_open_to_library(app);
+      (void)octavo_abandon_epub_candidate(
+        app, previous_kind == OctavoDocument_PDF);
       octavo_set_statusf(app, "Open failed: pagination");
       app->library_locate_entry_id = 0;
       return 0;
     }
   }
+
+  /* Pagination is part of the EPUB candidate transaction. Keep the previous
+     PDF live through every fallible candidate step, and close it only at the
+     final publication boundary. */
+  if (previous_kind == OctavoDocument_PDF)
+  {
+    if (octavo_pdf_close(&app->pdf) != PdfReaderResult_Ok)
+    {
+      B32 abandoned = octavo_abandon_epub_candidate(app, 1);
+      if (abandoned)
+        octavo_set_statusf(app, "Open failed: could not close PDF");
+      return 0;
+    }
+  }
+  app->document_kind = OctavoDocument_EPUB;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_copy_cstr(app->current_path,
+                     ARRAY_COUNT(app->current_path),
+                     normalized_path);
+  octavo_set_annotations_path(app, normalized_path);
+  octavo_load_annotations(app);
+  reader_view_state_reset_document(&app->reader_view_state,
+                                   (UI0U64)epub_reader_document_id(&app->reader));
   app->document_state = ReaderViewLoad_Ready;
   B32 frame_captured = octavo_capture_frame(app);
   octavo_complete_document_mutation(app, 1);
@@ -2662,13 +2819,131 @@ octavo_open_path(OctavoApp *app, const char *path)
   octavo_schedule_state_save(app);
   app->first_reader_present_pending = app->window != 0;
   if (frame_captured) octavo_schedule_adjacent_warm(app);
-  return 1;
+  return octavo_document_invariants_hold(app);
 }
 
 FUNCTION B32
-octavo_close_book(OctavoApp *app)
+octavo_open_pdf_path(OctavoApp *app, const char *path)
 {
-  if (!app || !epub_reader_is_open(&app->reader)) return 0;
+  if (!app || !path || !path[0]) return 0;
+  if (!octavo_begin_document_mutation(app)) return 0;
+  OctavoDocumentKind previous_kind = app->document_kind;
+  char normalized_path[OctavoLibraryPathCap] = {0};
+  if (!octavo_library_normalize_path(path, normalized_path,
+                                     ARRAY_COUNT(normalized_path)))
+  {
+    octavo_set_statusf(app, "Open failed: path encoding");
+    return 0;
+  }
+  octavo_stop_page_repeat(app);
+  octavo_cancel_location_warm(app);
+  octavo_cancel_adjacent_warm(app);
+  octavo_invalidate_adjacent_page(app);
+  app->document_state = ReaderViewLoad_Loading;
+  octavo_set_statusf(app, "Opening PDF...");
+  if (previous_kind == OctavoDocument_EPUB && app->current_path[0])
+  {
+    (void)octavo_save_state(app);
+    (void)octavo_save_annotations(app);
+  }
+
+  B32 pdf_was_open = octavo_pdf_is_open(&app->pdf);
+  PdfReaderResult result = octavo_pdf_open(
+    &app->pdf, str8_from_cstr(normalized_path));
+  if (result != PdfReaderResult_Ok)
+  {
+    B32 pdf_is_open = octavo_pdf_is_open(&app->pdf);
+    if (previous_kind != OctavoDocument_PDF && !pdf_was_open && pdf_is_open)
+    {
+      PdfReaderResult close_result = octavo_pdf_close(&app->pdf);
+      pdf_is_open = octavo_pdf_is_open(&app->pdf);
+      if (close_result != PdfReaderResult_Ok || pdf_is_open)
+      {
+        app->document_kind = previous_kind == OctavoDocument_EPUB ?
+          OctavoDocument_EPUB : OctavoDocument_PDF;
+        app->document_state = ReaderViewLoad_Error;
+        octavo_set_statusf(app, "Open cleanup failed: PDF remains owned");
+        return 0;
+      }
+    }
+    if (previous_kind == OctavoDocument_PDF && !pdf_is_open)
+    {
+      app->document_kind = OctavoDocument_None;
+      app->current_path[0] = 0;
+    }
+    app->document_state = octavo_document_is_open(app) ?
+      ReaderViewLoad_Ready : ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open failed: %s", pdf_reader_result_code(result));
+    app->library_locate_entry_id = 0;
+    return 0;
+  }
+  if (previous_kind == OctavoDocument_EPUB)
+  {
+    B32 changed = 0;
+    if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok)
+    {
+      PdfReaderResult close_result = octavo_pdf_close(&app->pdf);
+      if (close_result == PdfReaderResult_Ok &&
+          !octavo_pdf_is_open(&app->pdf))
+      {
+        app->document_kind = OctavoDocument_EPUB;
+        app->document_state = ReaderViewLoad_Ready;
+        octavo_set_statusf(app, "Open failed: could not close EPUB");
+      }
+      else
+      {
+        app->document_state = ReaderViewLoad_Error;
+        octavo_set_statusf(app, "Open cleanup failed: both readers remain owned");
+      }
+      return 0;
+    }
+  }
+
+  app->document_kind = OctavoDocument_PDF;
+  app->document_state = ReaderViewLoad_Ready;
+  octavo_copy_cstr(app->current_path, ARRAY_COUNT(app->current_path),
+                   normalized_path);
+  app->annotations_path[0] = 0;
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_clear_annotations(app);
+  U64 document_key = u64_hash_str8(str8_from_cstr(normalized_path)) ^
+                     app->pdf.frame.document_generation;
+  reader_view_state_reset_document(&app->reader_view_state,
+                                   document_key ? document_key : 1);
+  app->host_focus_control = OctavoHostControl_None;
+  app->host_focus_visible = 0;
+  app->host_pointer_armed = OctavoHostControl_None;
+  app->host_exit_pointer_armed = 0;
+  octavo_set_statusf(app, "Opened PDF | page %u/%u",
+                     app->pdf.frame.page_index + 1,
+                     app->pdf.frame.page_count);
+  app->library_locate_entry_id = 0;
+  octavo_complete_document_mutation(app, 1);
+  return octavo_document_invariants_hold(app);
+}
+
+FUNCTION B32
+octavo_open_path(OctavoApp *app, const char *path)
+{
+  if (octavo_path_is_epub(path)) return octavo_open_epub_path(app, path);
+  if (octavo_path_is_pdf(path)) return octavo_open_pdf_path(app, path);
+  if (app) octavo_set_statusf(app, "Open failed: unsupported file type");
+  return 0;
+}
+
+FUNCTION B32
+octavo_close_epub_book(OctavoApp *app)
+{
+  if (!app || app->document_kind != OctavoDocument_EPUB ||
+      !epub_reader_is_open(&app->reader)) return 0;
   if (!octavo_begin_document_mutation(app)) return 0;
   octavo_stop_page_repeat(app);
   octavo_cancel_location_warm(app);
@@ -2679,6 +2954,7 @@ octavo_close_book(OctavoApp *app)
   B32 changed = 0;
   if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok || !changed)
     return 0;
+  app->document_kind = OctavoDocument_None;
   app->current_path[0] = 0;
   app->annotations_path[0] = 0;
   app->document_state = ReaderViewLoad_Empty;
@@ -2706,8 +2982,56 @@ octavo_close_book(OctavoApp *app)
   return 1;
 }
 
+FUNCTION B32
+octavo_close_pdf_book(OctavoApp *app)
+{
+  if (!app || app->document_kind != OctavoDocument_PDF ||
+      !octavo_pdf_is_open(&app->pdf)) return 0;
+  if (!octavo_begin_document_mutation(app)) return 0;
+  octavo_stop_page_repeat(app);
+  octavo_cancel_location_warm(app);
+  octavo_cancel_adjacent_warm(app);
+  octavo_invalidate_adjacent_page(app);
+  if (octavo_pdf_close(&app->pdf) != PdfReaderResult_Ok) return 0;
+  app->document_kind = OctavoDocument_None;
+  app->current_path[0] = 0;
+  app->annotations_path[0] = 0;
+  app->document_state = ReaderViewLoad_Empty;
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_clear_annotations(app);
+  reader_view_state_init(&app->reader_view_state);
+  app->reader_view_ready = 0;
+  app->host_focus_control = app->library.entry_count > 0 ?
+    (OctavoHostControlIdentity)OctavoHostControl_LibraryBookBase :
+    OctavoHostControl_LibraryAdd;
+  app->host_focus_visible = 1;
+  app->host_pointer_armed = OctavoHostControl_None;
+  octavo_library_set_summary_status(app);
+  octavo_complete_document_mutation(app, 1);
+  return 1;
+}
+
+FUNCTION B32
+octavo_close_book(OctavoApp *app)
+{
+  if (!app) return 0;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return octavo_close_epub_book(app);
+  if (app->document_kind == OctavoDocument_PDF)
+    return octavo_close_pdf_book(app);
+  return 0;
+}
+
 FUNCTION EpubReaderResult
-octavo_move_page(OctavoApp *app, S32 direction)
+octavo_move_epub_page(OctavoApp *app, S32 direction)
 {
   if (!app || !epub_reader_is_open(&app->reader))
   {
@@ -2762,6 +3086,49 @@ octavo_move_page(OctavoApp *app, S32 direction)
                        (unsigned)app->frame.section_count);
   octavo_schedule_adjacent_warm(app);
   return EpubReaderResult_Ok;
+}
+
+FUNCTION OctavoMoveResult
+octavo_move_page(OctavoApp *app, S32 direction)
+{
+  if (!app || !octavo_document_is_open(app))
+  {
+    if (app) octavo_set_statusf(app, "Open a book first");
+    return OctavoMoveResult_NotOpen;
+  }
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_move_epub_page(app, direction);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    if (result == EpubReaderResult_NotOpen) return OctavoMoveResult_NotOpen;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_move_page(&app->pdf, direction);
+    if (result == PdfReaderResult_PageOutOfRange)
+    {
+      octavo_set_statusf(app, direction < 0 ?
+        "Beginning of document" : "End of document");
+      return OctavoMoveResult_Boundary;
+    }
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "Page move failed: %s",
+                         pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "Page %u/%u",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
 }
 
 FUNCTION EpubReaderResult
@@ -3159,7 +3526,7 @@ octavo_navigate_to_location(OctavoApp *app,
 }
 
 FUNCTION EpubReaderResult
-octavo_move_history(OctavoApp *app, B32 forward)
+octavo_move_epub_history(OctavoApp *app, B32 forward)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
   if (!octavo_begin_document_mutation(app))
@@ -3185,7 +3552,7 @@ octavo_move_history(OctavoApp *app, B32 forward)
 }
 
 FUNCTION EpubReaderResult
-octavo_seek_location(OctavoApp *app, U64 location_index)
+octavo_seek_epub_location(OctavoApp *app, U64 location_index)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
   U32 spine_index = 0;
@@ -3198,6 +3565,77 @@ octavo_seek_location(OctavoApp *app, U64 location_index)
   (void)location_count;
   return octavo_navigate_to_location(app, spine_index, byte_offset,
                                        EpubReaderNavigationReason_Location);
+}
+
+FUNCTION OctavoMoveResult
+octavo_move_history(OctavoApp *app, B32 forward)
+{
+  if (!app || !octavo_document_is_open(app)) return OctavoMoveResult_NotOpen;
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_move_epub_history(app, forward);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    if (result == EpubReaderResult_NotOpen) return OctavoMoveResult_NotOpen;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_move_history(&app->pdf, forward);
+    if (result == PdfReaderResult_PageOutOfRange)
+    {
+      octavo_set_statusf(app, forward ? "No forward history" : "No back history");
+      return OctavoMoveResult_Boundary;
+    }
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "%s failed: %s", forward ? "Forward" : "Back",
+                         pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "%s | page %u/%u", forward ? "Forward" : "Back",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
+}
+
+FUNCTION OctavoMoveResult
+octavo_seek_location(OctavoApp *app, U64 location_index)
+{
+  if (!app || !octavo_document_is_open(app)) return OctavoMoveResult_NotOpen;
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_seek_epub_location(app, location_index);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_seek_page(&app->pdf, location_index);
+    if (result == PdfReaderResult_PageOutOfRange)
+      return OctavoMoveResult_Boundary;
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "Seek failed: %s", pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "Page %u/%u",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
 }
 
 FUNCTION B32
@@ -4016,43 +4454,73 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
 {
   if (!app) { return; }
   ReaderViewProjection projection = {0};
-  B32 open = app->document_state == ReaderViewLoad_Ready &&
-             epub_reader_is_open(&app->reader) && app->frame.ready &&
-             app->frame.document_open;
-  projection.document_key = open ? (UI0U64)app->frame.document_id : 0;
+  B32 epub_open = app->document_kind == OctavoDocument_EPUB &&
+    app->document_state == ReaderViewLoad_Ready &&
+    epub_reader_is_open(&app->reader) && app->frame.ready &&
+    app->frame.document_open;
+  B32 pdf_open = app->document_kind == OctavoDocument_PDF &&
+    app->document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app->pdf);
+  B32 open = epub_open || pdf_open;
+  B32 pdf_document = app->document_kind == OctavoDocument_PDF;
+  if (epub_open)
+    projection.document_key = (UI0U64)app->frame.document_id;
+  else if (pdf_open)
+  {
+    U64 pdf_key = u64_hash_str8(str8_from_cstr(app->current_path)) ^
+                  app->pdf.frame.document_generation;
+    projection.document_key = pdf_key ? pdf_key : 1;
+  }
   projection.features = ReaderViewFeature_Open |
                         ReaderViewFeature_Paging |
                         ReaderViewFeature_History |
-                        ReaderViewFeature_Contents |
-                        ReaderViewFeature_Find |
                         ReaderViewFeature_Progress |
-                        ReaderViewFeature_ReadingSettings |
-                        ReaderViewFeature_Bookmark |
-                        ReaderViewFeature_Annotations |
-                        ReaderViewFeature_SelectionTools |
-                        ReaderViewFeature_Fullscreen |
-                        ReaderViewFeature_Lookup |
-                        ReaderViewFeature_Export;
+                        ReaderViewFeature_Fullscreen;
+  if (!pdf_document)
+  {
+    projection.features |= ReaderViewFeature_Contents |
+                           ReaderViewFeature_Find |
+                           ReaderViewFeature_ReadingSettings |
+                           ReaderViewFeature_Bookmark |
+                           ReaderViewFeature_Annotations |
+                           ReaderViewFeature_SelectionTools |
+                           ReaderViewFeature_Lookup |
+                           ReaderViewFeature_Export;
+  }
   projection.document_flags = ReaderViewDocument_CanOpen |
                               ReaderViewDocument_CanToggleFullscreen;
   if (open)
   {
     projection.document_flags |= ReaderViewDocument_Open;
-    if (app->reader.active_spine_index > 0 || app->frame.page_index > 1)
-      projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
-    if (app->reader.active_spine_index + 1 < app->layout_key.spine_count ||
-        app->frame.page_count == 0 ||
-        app->frame.page_index < app->frame.page_count)
-      projection.document_flags |= ReaderViewDocument_CanGoNextPage;
-    if (app->frame.history_back_count > 0)
-      projection.document_flags |= ReaderViewDocument_CanGoBack;
-    if (app->frame.history_forward_count > 0)
-      projection.document_flags |= ReaderViewDocument_CanGoForward;
-    S32 bookmark_index = octavo_current_bookmark_index(app);
-    if (bookmark_index >= 0)
+    if (pdf_open)
     {
-      projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
-      projection.current_bookmark_key = app->bookmarks[bookmark_index].id;
+      if (app->pdf.frame.can_move_previous)
+        projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
+      if (app->pdf.frame.can_move_next)
+        projection.document_flags |= ReaderViewDocument_CanGoNextPage;
+      if (app->pdf.frame.can_history_back)
+        projection.document_flags |= ReaderViewDocument_CanGoBack;
+      if (app->pdf.frame.can_history_forward)
+        projection.document_flags |= ReaderViewDocument_CanGoForward;
+    }
+    else
+    {
+      if (app->reader.active_spine_index > 0 || app->frame.page_index > 1)
+        projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
+      if (app->reader.active_spine_index + 1 < app->layout_key.spine_count ||
+          app->frame.page_count == 0 ||
+          app->frame.page_index < app->frame.page_count)
+        projection.document_flags |= ReaderViewDocument_CanGoNextPage;
+      if (app->frame.history_back_count > 0)
+        projection.document_flags |= ReaderViewDocument_CanGoBack;
+      if (app->frame.history_forward_count > 0)
+        projection.document_flags |= ReaderViewDocument_CanGoForward;
+      S32 bookmark_index = octavo_current_bookmark_index(app);
+      if (bookmark_index >= 0)
+      {
+        projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
+        projection.current_bookmark_key = app->bookmarks[bookmark_index].id;
+      }
     }
   }
   if (app->fullscreen.active)
@@ -4076,21 +4544,34 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
   app->document_title[0] = 0;
   if (open)
   {
-    octavo_copy_cstr(app->document_title,
-                      ARRAY_COUNT(app->document_title),
-                      octavo_current_section_label(app));
+    if (pdf_open)
+      octavo_path_title(app->current_path, app->document_title,
+                        ARRAY_COUNT(app->document_title));
+    else
+      octavo_copy_cstr(app->document_title,
+                        ARRAY_COUNT(app->document_title),
+                        octavo_current_section_label(app));
   }
   projection.document_title = octavo_reader_view_text(app->document_title);
   app->reader_view_projection = projection;
 
-  octavo_prepare_reader_view_settings(app);
-  app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
-    .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
-    .items = app->reader_view_settings,
-    .count = READER_VIEW_SETTING_CAP,
-  };
+  if (!pdf_document)
+  {
+    octavo_prepare_reader_view_settings(app);
+    app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
+      .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
+      .items = app->reader_view_settings,
+      .count = READER_VIEW_SETTING_CAP,
+    };
+  }
+  else
+  {
+    app->reader_view_projection.settings.status =
+      octavo_reader_view_status(ReaderViewLoad_Unavailable,
+                                "Reading settings are not available for PDF yet");
+  }
 
-  if (open)
+  if (epub_open)
   {
     EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
     if (location.available && location.location_count > 0)
@@ -4128,6 +4609,29 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
     octavo_prepare_reader_view_find(app);
     octavo_prepare_reader_view_right_rows(app);
     octavo_prepare_reader_view_selection(app);
+  }
+  else if (pdf_open)
+  {
+    (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                      "Page %u of %u", app->pdf.frame.page_index + 1,
+                      app->pdf.frame.page_count);
+    app->reader_view_projection.progress = (ReaderViewProgressProjection){
+      .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
+      .location_index = app->pdf.frame.page_index,
+      .location_count = app->pdf.frame.page_count,
+      .page_index = app->pdf.frame.page_index,
+      .page_count = app->pdf.frame.page_count,
+      .chapter = octavo_reader_view_text(app->document_title),
+      .label = octavo_reader_view_text(app->progress_label),
+      .can_seek = app->pdf.frame.page_count > 0,
+    };
+    ReaderViewSurfaceStatus unavailable = octavo_reader_view_status(
+      ReaderViewLoad_Unavailable, "Not available for PDF yet");
+    app->reader_view_projection.toc.status = unavailable;
+    app->reader_view_projection.find.status = unavailable;
+    app->reader_view_projection.find.active_index = -1;
+    app->reader_view_projection.right.status = unavailable;
+    app->reader_view_projection.selection.status = unavailable;
   }
   else
   {
@@ -4855,8 +5359,17 @@ octavo_app_init(OctavoApp *app,
     app->arena = 0;
     return 0;
   }
+  if (!octavo_pdf_init(&app->pdf))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
   if (!octavo_image_cache_init(&app->image_cache))
   {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
@@ -4864,13 +5377,23 @@ octavo_app_init(OctavoApp *app,
   }
   if (!octavo_library_thumbnail_cache_init(&app->library_thumbnail_cache))
   {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
     octavo_image_cache_release(&app->image_cache);
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
     return 0;
   }
-  octavo_library_hydrate_startup_entry(app);
+  if (!octavo_library_hydrate_startup_entry(app))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    octavo_library_thumbnail_cache_release(&app->library_thumbnail_cache);
+    octavo_image_cache_release(&app->image_cache);
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
 
   if (graphical)
   {
@@ -4884,6 +5407,11 @@ octavo_app_init(OctavoApp *app,
     octavo_prewarm_reader_text_pipeline(app);
   }
   octavo_library_set_summary_status(app);
+  if (!octavo_document_invariants_hold(app))
+  {
+    octavo_app_release(app);
+    return 0;
+  }
   return 1;
 }
 
@@ -4891,6 +5419,13 @@ FUNCTION void
 octavo_app_release(OctavoApp *app)
 {
   if (!app) { return; }
+  /* Reader0 teardown is fallible while a PDF cancel token is live. Nothing
+     else in the host may be destroyed until that ownership boundary closes. */
+  if (!octavo_pdf_release(&app->pdf))
+  {
+    octavo_set_statusf(app, "PDF release failed: ownership invariant");
+    return;
+  }
   octavo_cancel_location_warm(app);
   octavo_cancel_adjacent_warm(app);
   if (app->accessibility) octavo_accessibility_destroy(app->accessibility);
@@ -5915,7 +6450,7 @@ octavo_adapt_ui0_draw(OctavoApp *app)
 FUNCTION B32
 octavo_library_active(const OctavoApp *app)
 {
-  return app && !epub_reader_is_open(&app->reader);
+  return app && app->document_kind == OctavoDocument_None;
 }
 
 FUNCTION UI0Rect
@@ -6512,7 +7047,7 @@ octavo_host_control_invoke(OctavoApp *app,
     case OctavoHostControlAction_CloseBook:
       return octavo_close_book(app);
     case OctavoHostControlAction_AddBooks:
-      return octavo_pick_epub(app);
+      return octavo_pick_document(app);
     case OctavoHostControlAction_OpenBook:
     {
       OctavoLibraryEntry *entry =
@@ -6816,7 +7351,7 @@ octavo_draw_host_exit_slot(OctavoApp *app)
 }
 
 FUNCTION B32
-octavo_pick_epub_paths(OctavoApp *app,
+octavo_pick_document_paths(OctavoApp *app,
                          B32 allow_multiple,
                          char paths[OctavoLibraryImportPathCap]
                                    [OctavoLibraryPathCap],
@@ -6828,7 +7363,8 @@ octavo_pick_epub_paths(OctavoApp *app,
   OPENFILENAMEW dialog = {0};
   dialog.lStructSize = sizeof(dialog);
   dialog.hwndOwner = app->window;
-  dialog.lpstrFilter = L"EPUB Books\0*.epub\0All Files\0*.*\0";
+  dialog.lpstrFilter =
+    L"EPUB and PDF Documents\0*.epub;*.pdf\0EPUB Books\0*.epub\0PDF Documents\0*.pdf\0All Files\0*.*\0";
   dialog.lpstrFile = selection;
   dialog.nMaxFile = ARRAY_COUNT(selection);
   dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER |
@@ -6861,7 +7397,7 @@ octavo_pick_epub_paths(OctavoApp *app,
 }
 
 FUNCTION B32
-octavo_pick_epub_impl(OctavoApp *app)
+octavo_pick_document_impl(OctavoApp *app)
 {
   if (!app) return 0;
   app->native_picker_request_count += 1;
@@ -6874,7 +7410,19 @@ octavo_pick_epub_impl(OctavoApp *app)
   char paths[OctavoLibraryImportPathCap][OctavoLibraryPathCap] = {0};
   U32 path_count = 0;
   B32 library_was_active = octavo_library_active(app);
-  if (!octavo_pick_epub_paths(app, 1, paths, &path_count)) return 0;
+  if (!octavo_pick_document_paths(app, 1, paths, &path_count)) return 0;
+  U32 pdf_count = 0;
+  for (U32 index = 0; index < path_count; index += 1)
+    if (octavo_path_is_pdf(paths[index])) pdf_count += 1;
+  if (pdf_count > 0)
+  {
+    if (path_count != 1)
+    {
+      octavo_set_statusf(app, "Open one PDF at a time");
+      return 0;
+    }
+    return octavo_open_path(app, paths[0]);
+  }
   app->library_import_in_progress = 1;
   if (app->window)
   {
@@ -6884,7 +7432,8 @@ octavo_pick_epub_impl(OctavoApp *app)
   U32 imported = 0;
   for (U32 index = 0; index < path_count; index += 1)
     if (octavo_open_path(app, paths[index])) imported += 1;
-  if (library_was_active && epub_reader_is_open(&app->reader))
+  if (library_was_active && app->document_kind == OctavoDocument_EPUB &&
+      epub_reader_is_open(&app->reader))
     (void)octavo_close_book(app);
   else if (!library_was_active && imported > 1)
     (void)octavo_open_path(app, paths[0]);
@@ -6897,18 +7446,22 @@ octavo_pick_epub_impl(OctavoApp *app)
 }
 
 FUNCTION B32
-octavo_pick_epub(OctavoApp *app)
+octavo_pick_document(OctavoApp *app)
 {
   if (!octavo_begin_document_mutation(app)) return 0;
-  B32 was_open = epub_reader_is_open(&app->reader);
+  OctavoDocumentKind previous_kind = app->document_kind;
+  B32 was_open = octavo_document_is_open(app);
   DocDocumentId document_id = epub_reader_document_id(&app->reader);
   U64 document_generation = app->reader.document_generation;
+  U64 pdf_document_generation = app->pdf.reader.document_generation;
   app->page_action_internal_dispatch = 1;
-  B32 result = octavo_pick_epub_impl(app);
+  B32 result = octavo_pick_document_impl(app);
   app->page_action_internal_dispatch = 0;
-  B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
+  B32 reader_changed = previous_kind != app->document_kind ||
+    was_open != octavo_document_is_open(app) ||
     document_id != epub_reader_document_id(&app->reader) ||
-    document_generation != app->reader.document_generation;
+    document_generation != app->reader.document_generation ||
+    pdf_document_generation != app->pdf.reader.document_generation;
   octavo_complete_document_mutation(
     app, !app->suppress_native_picker && reader_changed);
   return result;
@@ -6922,7 +7475,12 @@ octavo_locate_library_entry_impl(OctavoApp *app, U64 entry_id)
   if (!entry || !app->window) return 0;
   char paths[OctavoLibraryImportPathCap][OctavoLibraryPathCap] = {0};
   U32 count = 0;
-  if (!octavo_pick_epub_paths(app, 0, paths, &count) || count != 1) return 0;
+  if (!octavo_pick_document_paths(app, 0, paths, &count) || count != 1) return 0;
+  if (!octavo_path_is_epub(paths[0]))
+  {
+    octavo_set_statusf(app, "Locate requires an EPUB file");
+    return 0;
+  }
   char normalized[OctavoLibraryPathCap] = {0};
   if (!octavo_library_normalize_path(paths[0], normalized,
                                        ARRAY_COUNT(normalized)))
@@ -7228,11 +7786,35 @@ octavo_capture_presentation_identity(const OctavoApp *app,
   if (out) MemoryZeroStruct(out);
   if (!app || !out) return 0;
   out->frame_generation = app->page_action_frame_generation;
-  if (!epub_reader_is_open(&app->reader))
+  if (app->document_kind == OctavoDocument_None)
   {
     out->kind = OctavoPresentationIdentity_Library;
     return 1;
   }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_pdf_is_open(&app->pdf) ||
+        app->pdf.frame.document_generation == 0 ||
+        app->pdf.frame.generation == 0 || app->pdf.frame.page_count == 0)
+    {
+      return 0;
+    }
+    out->kind = OctavoPresentationIdentity_PdfPage;
+    out->document_generation = app->pdf.frame.document_generation;
+    /* PDF page identity is independent of host viewport geometry. */
+    out->layout_generation = 1;
+    out->frame_capture_generation = app->pdf.render_generation;
+    out->reader_frame_generation = app->pdf.frame.generation;
+    out->page = (OctavoCanonicalPageIdentity){
+      .spine_index = app->pdf.frame.page_index,
+      .spine_page_index = app->pdf.frame.page_index,
+      .spine_page_count = app->pdf.frame.page_count,
+      .first_byte = app->pdf.frame.page_index,
+      .one_past_last_byte = (U64)app->pdf.frame.page_index + 1,
+    };
+    return 1;
+  }
+  if (!epub_reader_is_open(&app->reader)) return 0;
   if (!app->reader.has_current_page || app->reader.document_id == 0 ||
       app->reader.document_generation == 0 ||
       app->reader.current_page.spine_page_count == 0 ||
@@ -7271,6 +7853,12 @@ octavo_capture_rendered_presentation_identity(
 {
   if (!octavo_capture_presentation_identity(app, out)) return 0;
   if (out->kind == OctavoPresentationIdentity_Library) return 1;
+  if (out->kind == OctavoPresentationIdentity_PdfPage)
+  {
+    return app->pdf.bgra_pixels != 0 &&
+      app->pdf.rendered_reader_generation == app->pdf.frame.generation &&
+      app->pdf.render_generation > 0;
+  }
   return out->frame_capture_generation > 0 &&
     out->reader_frame_generation != 0 &&
     octavo_frame_matches_canonical_page(
@@ -7886,7 +8474,8 @@ octavo_start_page_repeat(OctavoApp *app,
                            WPARAM key,
                            S32 direction)
 {
-  if (!app || !app->window || direction == 0) return;
+  if (!app || app->document_kind != OctavoDocument_EPUB ||
+      !app->window || direction == 0) return;
   octavo_stop_page_repeat(app);
   octavo_begin_page_repeat(app, key, direction);
 }
@@ -7927,13 +8516,13 @@ octavo_page_repeat_step(OctavoApp *app,
   OctavoCanonicalPageIdentity before_page =
     octavo_canonical_page_identity(app->reader.current_page);
   app->page_action_internal_dispatch = 1;
-  EpubReaderResult result = octavo_move_page(
+  OctavoMoveResult result = octavo_move_page(
     app, app->page_repeat_direction);
   app->page_action_internal_dispatch = 0;
   B32 reader_changed = app->reader.has_current_page &&
     (!had_page || !octavo_canonical_page_identity_equal(
       before_page, octavo_canonical_page_identity(app->reader.current_page)));
-  if (result != EpubReaderResult_Ok)
+  if (result != OctavoMoveResult_Ok)
   {
     octavo_stop_page_repeat(app);
     if (reader_changed)
@@ -8006,14 +8595,14 @@ octavo_page_repeat_note_presented_frame(OctavoApp *app, B32 complete)
     OctavoCanonicalPageIdentity before_page =
       octavo_canonical_page_identity(app->reader.current_page);
     app->page_action_internal_dispatch = 1;
-    EpubReaderResult result = octavo_move_page(app, direction);
+    OctavoMoveResult result = octavo_move_page(app, direction);
     app->page_action_internal_dispatch = 0;
     B32 reader_changed = app->reader.has_current_page &&
       (!had_page || !octavo_canonical_page_identity_equal(
         before_page,
         octavo_canonical_page_identity(app->reader.current_page)));
     octavo_page_action_clear_pending(app);
-    if (result == EpubReaderResult_Ok)
+    if (result == OctavoMoveResult_Ok)
     {
       octavo_page_action_note_emitted(app);
       if (arm_repeat) octavo_start_page_repeat(app, key, direction);
@@ -8101,9 +8690,9 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
   else if (!editing && app->reader_view_state.focus_id != 0 &&
            (key == VK_LEFT || key == VK_RIGHT))
   {
-    EpubReaderResult move =
+    OctavoMoveResult move =
       octavo_move_page(app, key == VK_LEFT ? -1 : 1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (!editing && app->reader_view_state.focus_id != 0 &&
@@ -8135,8 +8724,8 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
            app->host_focus_control == OctavoHostControl_None &&
            (key == VK_LEFT || key == VK_PRIOR))
   {
-    EpubReaderResult move = octavo_move_page(app, -1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, -1);
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_SPACE &&
@@ -8148,8 +8737,8 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
            app->host_focus_control == OctavoHostControl_None &&
            (key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE))
   {
-    EpubReaderResult move = octavo_move_page(app, 1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, 1);
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_TAB)
@@ -8453,9 +9042,25 @@ octavo_apply_reader_view_action(OctavoApp *app,
                                   const ReaderViewAction *action)
 {
   if (!app || !action) return;
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    B32 supported = action->kind == ReaderViewAction_Open ||
+      action->kind == ReaderViewAction_PreviousPage ||
+      action->kind == ReaderViewAction_NextPage ||
+      action->kind == ReaderViewAction_HistoryBack ||
+      action->kind == ReaderViewAction_HistoryForward ||
+      action->kind == ReaderViewAction_SeekLocation ||
+      action->kind == ReaderViewAction_ToggleFullscreen ||
+      action->kind == ReaderViewAction_None;
+    if (!supported)
+    {
+      octavo_set_statusf(app, "Action is not available for PDF yet");
+      return;
+    }
+  }
   switch (action->kind)
   {
-    case ReaderViewAction_Open: (void)octavo_pick_epub(app); break;
+    case ReaderViewAction_Open: (void)octavo_pick_document(app); break;
     case ReaderViewAction_PreviousPage: (void)octavo_move_page(app, -1); break;
     case ReaderViewAction_NextPage: (void)octavo_move_page(app, 1); break;
     case ReaderViewAction_HistoryBack: (void)octavo_move_history(app, 0); break;
@@ -10506,6 +11111,53 @@ octavo_draw_reader_page(OctavoApp *app)
                        page.h,
                        page_color);
 
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    MemoryZeroStruct(&app->presentation_frame);
+    app->presentation_hash = 0;
+    if (app->document_state != ReaderViewLoad_Ready ||
+        !octavo_pdf_is_open(&app->pdf))
+    {
+      return;
+    }
+    PdfReaderResult result = octavo_pdf_render_fit(
+      &app->pdf, body_w, body_h);
+    if (result != PdfReaderResult_Ok || !app->pdf.bgra_pixels ||
+        app->pdf.raster_width == 0 || app->pdf.raster_height == 0)
+    {
+      app->document_state = ReaderViewLoad_Error;
+      octavo_set_statusf(app, "PDF render failed: %s",
+                         pdf_reader_result_code(result));
+      app->presentation_complete = 0;
+      return;
+    }
+    S32 raster_width = (S32)app->pdf.raster_width;
+    S32 raster_height = (S32)app->pdf.raster_height;
+    S32 raster_x = body_x + (body_w - raster_width) / 2;
+    S32 raster_y = body_y + (body_h - raster_height) / 2;
+    if (!draw_push_sprite_clipped_sampled(
+          &app->draw_commands, DrawLayer_World,
+          app->pdf.bgra_pixels, raster_width, raster_height,
+          raster_width, DrawSpriteSampleKind_Nearest,
+          raster_x, raster_y, raster_width, raster_height,
+          body_x, body_y, body_w, body_h))
+    {
+      app->presentation_complete = 0;
+      return;
+    }
+    U64 hash_values[] = {
+      app->pdf.frame.document_generation,
+      app->pdf.frame.generation,
+      app->pdf.render_generation,
+      app->pdf.frame.page_index,
+      app->pdf.raster_width,
+      app->pdf.raster_height,
+    };
+    app->presentation_hash = u64_hash_bytes(hash_values,
+                                             sizeof(hash_values));
+    return;
+  }
+
   if (!app->frame.ready || !app->frame.document_open)
   {
     MemoryZeroStruct(&app->presentation_frame);
@@ -11239,7 +11891,7 @@ octavo_frame_presentation_is_complete(const OctavoApp *app)
   {
     return 0;
   }
-  if (epub_reader_is_open(&app->reader) &&
+  if (octavo_document_is_open(app) &&
       (!app->reader_view_ready ||
        app->reader_view_frame.error_flags != ReaderViewFrameError_None))
   {
@@ -11538,7 +12190,7 @@ octavo_run_library_smoke(const char *epub_path, const char *output_prefix)
   octavo_copy_cstr(app.saved.path, ARRAY_COUNT(app.saved.path), epub_path);
   octavo_migrate_saved_state_to_library(&app);
   app.library_selected_entry_id = app.library.entries[0].entry_id;
-  octavo_library_hydrate_startup_entry(&app);
+  if (!octavo_library_hydrate_startup_entry(&app)) goto fail;
   OctavoLibraryEntry *hydrated = app.library.entries;
   OctavoLibraryThumbnail *hydrated_thumbnail =
     octavo_library_thumbnail_load(&app, hydrated);
@@ -12019,7 +12671,7 @@ octavo_reader_view_parity_focus(OctavoApp *app,
   {
     U32 before_spine = app->reader.active_spine_index;
     U64 before_byte = app->reader.view_byte_offset;
-    if (octavo_move_page(app, 1) != EpubReaderResult_Ok) return 0;
+    if (octavo_move_page(app, 1) != OctavoMoveResult_Ok) return 0;
     octavo_render_to_buffer(app, buffer);
     octavo_apply_reader_view_actions(app);
     if (app->reader.active_spine_index == before_spine &&
@@ -12652,7 +13304,8 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         S32 repeat_direction = 0;
         B32 page_action_candidate = !control && !alt &&
           octavo_page_direction_for_key(app, w_param, &repeat_direction);
-        B32 repeat_candidate = page_action_candidate && !shift;
+        B32 repeat_candidate = page_action_candidate && !shift &&
+          app->document_kind == OctavoDocument_EPUB;
         B32 repeat_handled = 0;
         if (octavo_page_repeat_consume_cancelled_keydown(app,
                                                            w_param,
@@ -12703,7 +13356,7 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         if (w_param == 'O' && control)
         {
-          (void)octavo_pick_epub(app);
+          (void)octavo_pick_document(app);
         }
         else if (w_param == 'F' && control &&
                  epub_reader_is_open(&app->reader))
@@ -12718,7 +13371,7 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)octavo_set_fullscreen(app, !app->fullscreen.active);
         }
-        else if (w_param == VK_ESCAPE && epub_reader_is_open(&app->reader))
+        else if (w_param == VK_ESCAPE && octavo_document_is_open(app))
         {
           octavo_reader_view_escape(app);
         }
@@ -12849,7 +13502,7 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           case 0:
             app->suppress_native_picker = 1;
-            (void)octavo_pick_epub(app);
+            (void)octavo_pick_document(app);
             app->suppress_native_picker = 0;
             break;
           case 1: (void)octavo_move_history(app, 0); break;
@@ -13130,7 +13783,7 @@ octavo_run_headless(const char *path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       fprintf(stderr, "octavo_host_smoke result=fail reason=forward\n");
       octavo_app_release(&app);
@@ -13156,9 +13809,9 @@ octavo_run_headless(const char *path)
     return 1;
   }
 
-  if (!crossed || octavo_move_page(&app, -1) != EpubReaderResult_Ok ||
+  if (!crossed || octavo_move_page(&app, -1) != OctavoMoveResult_Ok ||
       app.reader.active_spine_index != start_spine ||
-      octavo_move_page(&app, 1) != EpubReaderResult_Ok ||
+      octavo_move_page(&app, 1) != OctavoMoveResult_Ok ||
       app.reader.current_page.spine_index != cross_page.spine_index ||
       app.reader.current_page.first_byte != cross_page.first_byte ||
       !octavo_capture_frame(&app))
@@ -13212,8 +13865,8 @@ octavo_run_render_smoke(const char *path, const char *bmp_path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    EpubReaderResult move = octavo_move_page(&app, 1);
-    if (move != EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(&app, 1);
+    if (move != OctavoMoveResult_Ok)
     {
       fprintf(stderr, "octavo_visual_smoke result=fail reason=forward\n");
       octavo_app_release(&app);
@@ -13353,7 +14006,7 @@ octavo_run_image_smoke(const char *path,
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       break;
     }
@@ -13694,7 +14347,7 @@ octavo_run_reader_image_fit_smoke(const char *epub_path,
   for (U32 case_index = 1; case_index < CaseCount; case_index += 1)
   {
     if (case_index > 1 &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       fprintf(stderr,
               "octavo_reader_image_fit result=fail reason=maps_page case=%u\n",
@@ -17642,7 +18295,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
 
   for (U32 page = 0; page < 8 && app.frame.visible_text.size < 32; page += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
     octavo_render_to_buffer(&app, &buffer);
   }
   if (app.frame.visible_text.size < 32) goto cleanup;
@@ -17690,7 +18343,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   checkpoint = 2;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_render_to_buffer(&app, &buffer);
   const ReaderViewSemanticNode *annotations =
     octavo_reader_view_semantic_control(
@@ -17745,7 +18398,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   checkpoint = 4;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_render_to_buffer(&app, &buffer);
   ReaderViewKey note_key =
     octavo_reader_view_parity_right_key(&app, ReaderViewRightRow_Note);
@@ -17850,15 +18503,15 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   {
     U32 probe_spine = app.reader.active_spine_index;
     U64 probe_byte = app.reader.view_byte_offset;
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) break;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) break;
     B32 moved = app.reader.active_spine_index != probe_spine ||
                 app.reader.view_byte_offset != probe_byte;
-    if (octavo_move_page(&app, -1) != EpubReaderResult_Ok) break;
+    if (octavo_move_page(&app, -1) != OctavoMoveResult_Ok) break;
     stable_font_page = moved &&
       app.reader.active_spine_index == probe_spine &&
       app.reader.view_byte_offset == probe_byte;
     if (!stable_font_page &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
       break;
   }
   if (!stable_font_page ||
@@ -20311,7 +20964,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
   SourceReaderPageRange failure_after_page = {0};
   EpubReaderNavigationStats failure_nav_before = {0};
   EpubReaderNavigationStats failure_nav_after = {0};
-  EpubReaderResult failure_move_result = EpubReaderResult_Ok;
+  OctavoMoveResult failure_move_result = OctavoMoveResult_Ok;
   U32 checkpoint = 0;
   int result = 1;
 
@@ -20371,7 +21024,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     B32 move_warm_pending_before = app.adjacent_warm_pending;
     B32 move_warm_ready_before = app.adjacent_warm_frame_ready;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = octavo_move_page(&app, 1);
+    OctavoMoveResult move = octavo_move_page(&app, 1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
@@ -20389,7 +21042,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
       first_zero_warm_pending_before = move_warm_pending_before;
       first_zero_warm_ready_before = move_warm_ready_before;
     }
-    if (move != EpubReaderResult_Ok)
+    if (move != OctavoMoveResult_Ok)
     {
       failure_step = step;
       failure_before_page = move_before_page;
@@ -20423,12 +21076,12 @@ octavo_run_page_turn_regression_smoke(const char *path,
     SourceReaderPageRange move_before_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_before = app.reader.navigation_stats;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = octavo_move_page(&app, -1);
+    OctavoMoveResult move = octavo_move_page(&app, -1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
-    if (move == EpubReaderResult_Boundary) break;
-    if (move != EpubReaderResult_Ok)
+    if (move == OctavoMoveResult_Boundary) break;
+    if (move != OctavoMoveResult_Ok)
     {
       failure_step = step;
       failure_backward = 1;
@@ -20540,7 +21193,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
   U64 deferred_emitted_before = app.page_action_emitted_count;
   U64 deferred_presented_before = app.page_action_presented_count;
   U32 deferred_overlap_before = app.page_action_overlap_count;
-  if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_page_action_note_emitted(&app);
   octavo_begin_page_repeat(&app, VK_RIGHT, 1);
   octavo_page_action_defer(&app, VK_LEFT, -1, 1);
@@ -20588,7 +21241,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     octavo_cancel_adjacent_warm(&app);
     octavo_invalidate_adjacent_page(&app);
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache) ||
-        octavo_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
+        octavo_move_page(&app, repeat_direction) != OctavoMoveResult_Ok)
       goto cleanup;
     octavo_page_action_note_emitted(&app);
 
@@ -20731,15 +21384,15 @@ octavo_run_page_turn_regression_smoke(const char *path,
         !app.adjacent_page_ready)
     {
       checkpoint = 43;
-      if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+      if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
       octavo_render_to_buffer(&app, &buffer);
       continue;
     }
     checkpoint = 44;
     U64 prepared_move_start = os_time_ticks();
-    EpubReaderResult prepared_move = octavo_move_page(&app, 1);
+    OctavoMoveResult prepared_move = octavo_move_page(&app, 1);
     U64 prepared_move_ticks = os_time_ticks() - prepared_move_start;
-    if (prepared_move != EpubReaderResult_Ok) goto cleanup;
+    if (prepared_move != OctavoMoveResult_Ok) goto cleanup;
     prepared_move_total_ticks += prepared_move_ticks;
     prepared_move_max_ticks = MAX(prepared_move_max_ticks, prepared_move_ticks);
     U64 warmed_start = os_time_ticks();
@@ -20767,7 +21420,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     pixel_exact_count += 1;
     performance_pair_count += 1;
     if (performance_pair_count < PerformancePairCount &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
       goto cleanup;
   }
   checkpoint = 50;
@@ -21281,8 +21934,8 @@ octavo_page_repeat_probe_seek_anchor(OctavoApp *app)
        index < OctavoPageRepeatProbeBoundarySearchCap;
        index += 1)
   {
-    EpubReaderResult move = octavo_move_page(app, 1);
-    if (move != EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, 1);
+    if (move != OctavoMoveResult_Ok)
     {
       fprintf(stderr,
               "octavo_page_repeat_anchor result=fail step=%u move=%d status=%s\n",
@@ -21302,7 +21955,7 @@ octavo_page_repeat_probe_seek_anchor(OctavoApp *app)
        index < OctavoPageRepeatProbeBoundaryLeadPageCount;
        index += 1)
   {
-    if (octavo_move_page(app, -1) != EpubReaderResult_Ok) return 0;
+    if (octavo_move_page(app, -1) != OctavoMoveResult_Ok) return 0;
   }
   octavo_cancel_adjacent_warm(app);
   octavo_invalidate_adjacent_page(app);
@@ -21342,14 +21995,14 @@ octavo_page_repeat_probe_build_expected(const char *path,
   U32 forward_crossings = 0;
   U32 forward_moves = 0;
   U32 backward_moves = 0;
-  EpubReaderResult last_move_result = EpubReaderResult_Ok;
+  OctavoMoveResult last_move_result = OctavoMoveResult_Ok;
   for (U32 index = 0;
        result && index < OctavoPageRepeatProbePageCount;
        index += 1)
   {
     SourceReaderPageRange before = app.reader.current_page;
     last_move_result = octavo_move_page(&app, 1);
-    result = last_move_result == EpubReaderResult_Ok;
+    result = last_move_result == OctavoMoveResult_Ok;
     if (result)
     {
       forward_moves += 1;
@@ -21366,7 +22019,7 @@ octavo_page_repeat_probe_build_expected(const char *path,
   {
     SourceReaderPageRange before = app.reader.current_page;
     last_move_result = octavo_move_page(&app, -1);
-    result = last_move_result == EpubReaderResult_Ok;
+    result = last_move_result == OctavoMoveResult_Ok;
     if (result)
     {
       backward_moves += 1;
@@ -22710,8 +23363,8 @@ octavo_win32_image_page_gate_regression(OctavoWin32 *win32,
 
   for (U32 map_index = 2; map_index <= 3; map_index += 1)
   {
-    EpubReaderResult move = octavo_move_page(&win32->app, 1);
-    if (move != EpubReaderResult_Ok ||
+    OctavoMoveResult move = octavo_move_page(&win32->app, 1);
+    if (move != OctavoMoveResult_Ok ||
         !octavo_win32_present_until_gate_clear(win32, 16) ||
         !octavo_win32_current_image_page_gate_is_exact(win32))
     {
@@ -23793,6 +24446,282 @@ octavo_run_page_repeat_win32_smoke(const char *path)
   return octavo_run_window_internal(path, 1);
 }
 
+FUNCTION int
+octavo_run_pdf_stage1_smoke(const char *pdf_path,
+                            const char *epub_path,
+                            const char *invalid_pdf_path,
+                            const char *invalid_epub_path,
+                            const char *late_failure_epub_path,
+                            const char *bmp_path)
+{
+  enum { Width = 1100, Height = 760 };
+  const char *failure = "args";
+  OctavoApp app = {0};
+  OctavoPdf release_probe = {0};
+  PdfReaderCancelToken release_probe_token = {0};
+  B32 release_probe_token_live = 0;
+  Arena *pixel_arena = 0;
+  U64 output_hash = 0;
+  U32 raster_width = 0;
+  U32 raster_height = 0;
+  U64 raster_bytes = 0;
+  B32 passed = 0;
+
+#define OCTAVO_PDF_SMOKE_REQUIRE(condition, reason) \
+  do { if (!(condition)) { failure = (reason); goto cleanup; } } while (0)
+
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_path && pdf_path[0] && epub_path && epub_path[0] &&
+    invalid_pdf_path && invalid_pdf_path[0] &&
+    invalid_epub_path && invalid_epub_path[0] &&
+    late_failure_epub_path && late_failure_epub_path[0] &&
+    bmp_path && bmp_path[0],
+    "args");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_app_init(&app, Width, Height, 1, 0), "init");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_document_invariants_hold(&app),
+                           "init-invariants");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, pdf_path), "pdf-open");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.page_count == 3 && app.pdf.frame.page_index == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-open-invariants");
+
+  octavo_prepare_reader_view_projection(&app);
+  UI0U64 expected_features = ReaderViewFeature_Open |
+    ReaderViewFeature_Paging | ReaderViewFeature_History |
+    ReaderViewFeature_Progress | ReaderViewFeature_Fullscreen;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_projection.features == expected_features &&
+    (app.reader_view_projection.document_flags & ReaderViewDocument_Open) &&
+    !(app.reader_view_projection.document_flags &
+      ReaderViewDocument_CanGoPreviousPage) &&
+    (app.reader_view_projection.document_flags &
+      ReaderViewDocument_CanGoNextPage) &&
+    app.reader_view_projection.progress.page_index == 0 &&
+    app.reader_view_projection.progress.page_count == 3 &&
+    app.reader_view_projection.progress.can_seek &&
+    app.reader_view_projection.toc.status.state == ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.find.status.state == ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.settings.status.state ==
+      ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.right.status.state ==
+      ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.selection.status.state ==
+      ReaderViewLoad_Unavailable,
+    "pdf-projection");
+
+  U64 pixel_bytes = (U64)Width * (U64)Height * sizeof(U32);
+  pixel_arena = arena_alloc(&(ArenaParams){
+    .reserve_size = pixel_bytes,
+    .commit_size = 64 * 1024,
+  });
+  U32 *pixels = pixel_arena ?
+    (U32 *)arena_push(pixel_arena, pixel_bytes, ALIGN_OF(U32)) : 0;
+  OCTAVO_PDF_SMOKE_REQUIRE(pixels != 0, "output-arena");
+  MemoryZero(pixels, pixel_bytes);
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.presentation_hash != 0 &&
+    app.pdf.bgra_pixels &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    app.pdf.raster_width > 0 && app.pdf.raster_height > 0 &&
+    app.pdf.raster_capacity_bytes <= app.pdf.arena_allocated_bytes &&
+    app.pdf.arena_allocated_bytes <= OCTAVO_PDF_RASTER_MEMORY_CAP &&
+    octavo_document_invariants_hold(&app), "pdf-render");
+  B32 found_red = 0;
+  U64 pdf_pixel_count = (U64)app.pdf.raster_width * app.pdf.raster_height;
+  for (U64 index = 0; index < pdf_pixel_count && !found_red; index += 1)
+    found_red = app.pdf.bgra_pixels[index] == 0xffff0000U;
+  OCTAVO_PDF_SMOKE_REQUIRE(found_red, "rgba-bgra-swizzle");
+  output_hash = u64_hash_bytes(pixels, pixel_bytes);
+  raster_width = app.pdf.raster_width;
+  raster_height = app.pdf.raster_height;
+  raster_bytes = app.pdf.raster_capacity_bytes;
+  OCTAVO_PDF_SMOKE_REQUIRE(output_hash != 0 &&
+                           octavo_write_bmp(bmp_path, pixels, Width, Height),
+                           "bmp");
+
+  /* A failed new render must withdraw the old publication, while retaining
+     its one bounded allocation for the next successful render. */
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, 0, Height) ==
+      PdfReaderResult_LimitExceeded && !app.pdf.bgra_pixels,
+    "render-failure-publication");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, Width, Height) == PdfReaderResult_Ok &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "render-recovery");
+
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_NextPage});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 1 &&
+                           !app.pdf.bgra_pixels, "next-page");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
+                             OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 2, "next-page-2");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
+                             OctavoMoveResult_Boundary &&
+                           app.pdf.frame.page_index == 2, "next-boundary");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_history(&app, 0) ==
+                             OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 1, "history-back");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_history(&app, 1) ==
+                             OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 2, "history-forward");
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_SeekLocation, .value = 0});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 0, "progress-seek");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, -1) ==
+                             OctavoMoveResult_Boundary,
+                           "previous-boundary");
+  U32 annotation_count = app.highlight_count + app.bookmark_count;
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_ToggleBookmark});
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 0 &&
+    annotation_count == app.highlight_count + app.bookmark_count,
+    "unsupported-action");
+
+  /* Same-kind and cross-kind failed replacements retain the exact live PDF. */
+  U64 pdf_document_generation = app.pdf.frame.document_generation;
+  U64 pdf_reader_generation = app.pdf.frame.generation;
+  char retained_pdf_path[OctavoLibraryPathCap] = {0};
+  octavo_copy_cstr(retained_pdf_path, ARRAY_COUNT(retained_pdf_path),
+                   app.current_path);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_pdf_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.generation == pdf_reader_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-pdf-failure");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_epub_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-epub-failure");
+  U64 epub_candidate_generation = app.reader.document_generation;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, late_failure_epub_path) &&
+    app.reader.document_generation > epub_candidate_generation &&
+    !epub_reader_is_open(&app.reader) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-epub-late-failure");
+
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, epub_path) &&
+                           app.document_kind == OctavoDocument_EPUB &&
+                           epub_reader_is_open(&app.reader) &&
+                           !octavo_pdf_is_open(&app.pdf) &&
+                           octavo_document_invariants_hold(&app),
+                           "pdf-epub-replacement");
+  DocDocumentId epub_document_id = epub_reader_document_id(&app.reader);
+  U64 epub_document_generation = app.reader.document_generation;
+  char retained_epub_path[OctavoLibraryPathCap] = {0};
+  octavo_copy_cstr(retained_epub_path, ARRAY_COUNT(retained_epub_path),
+                   app.current_path);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_pdf_path) &&
+    app.document_kind == OctavoDocument_EPUB &&
+    epub_reader_document_id(&app.reader) == epub_document_id &&
+    app.reader.document_generation == epub_document_generation &&
+    strcmp(app.current_path, retained_epub_path) == 0 &&
+    octavo_document_invariants_hold(&app), "epub-pdf-failure");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, pdf_path) &&
+                           app.document_kind == OctavoDocument_PDF &&
+                           !epub_reader_is_open(&app.reader) &&
+                           octavo_document_invariants_hold(&app),
+                           "epub-pdf-replacement");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_close_book(&app) &&
+                           app.document_kind == OctavoDocument_None &&
+                           octavo_document_invariants_hold(&app),
+                           "pdf-close");
+
+  /* The host wrapper refuses destructive release while a Reader0 token is
+     live, and remains fully releasable after the owned token is deinitialized. */
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_pdf_init(&release_probe), "release-probe-init");
+  Arena *probe_arena = release_probe.raster_arena;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_init(&release_probe.reader,
+                                 &release_probe_token) == PdfReaderResult_Ok,
+    "release-token-init");
+  release_probe_token_live = 1;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_pdf_release(&release_probe) &&
+    release_probe.reader.initialized &&
+    release_probe.raster_arena == probe_arena &&
+    release_probe.reader.cancel_token_count == 1,
+    "release-live-token");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_deinit(&release_probe.reader,
+                                   &release_probe_token) == PdfReaderResult_Ok,
+    "release-token-deinit");
+  release_probe_token_live = 0;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_invariants_hold(&release_probe) &&
+    octavo_pdf_release(&release_probe) && !release_probe.reader.initialized &&
+    !release_probe.raster_arena,
+    "release-token-deinit");
+  passed = 1;
+
+cleanup:
+  if (release_probe_token_live)
+  {
+    if (pdf_reader_cancel_token_deinit(&release_probe.reader,
+                                       &release_probe_token) !=
+        PdfReaderResult_Ok)
+    {
+      failure = "release-probe-token-cleanup";
+      passed = 0;
+    }
+    release_probe_token_live = 0;
+  }
+  if (release_probe.reader.initialized || release_probe.raster_arena)
+  {
+    if (!octavo_pdf_release(&release_probe))
+    {
+      failure = "release-probe-cleanup";
+      passed = 0;
+    }
+  }
+  if (pixel_arena) arena_release(pixel_arena);
+  if (app.arena)
+  {
+    octavo_app_release(&app);
+    if (app.arena || app.pdf.reader.initialized || app.pdf.raster_arena)
+    {
+      failure = "app-release";
+      passed = 0;
+    }
+  }
+  if (!passed)
+  {
+    fprintf(stderr, "octavo_pdf_stage1_smoke result=fail reason=%s\n",
+            failure);
+    return 1;
+  }
+  fprintf(stdout,
+          "octavo_pdf_stage1_smoke result=pass pages=3 raster=%ux%u "
+          "raster_bytes=%llu cap=%u rgba_to_bgra=in_place "
+          "navigation=previous,next,back,forward,seek "
+          "replacement=pdf-pdf,pdf-epub-late,epub-pdf lifecycle=verified "
+          "hash=%016llx bmp=%s\n",
+          raster_width, raster_height, (unsigned long long)raster_bytes,
+          OCTAVO_PDF_RASTER_MEMORY_CAP, (unsigned long long)output_hash,
+          bmp_path);
+  return 0;
+
+#undef OCTAVO_PDF_SMOKE_REQUIRE
+}
+
 int
 main(int argc, char **argv)
 {
@@ -23847,6 +24776,11 @@ main(int argc, char **argv)
            strcmp(argv[1], "--page-repeat-win32-smoke") == 0)
   {
     result = octavo_run_page_repeat_win32_smoke(argv[2]);
+  }
+  else if (argc == 8 && strcmp(argv[1], "--pdf-stage1-smoke") == 0)
+  {
+    result = octavo_run_pdf_stage1_smoke(
+      argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
   }
   else if (argc == 4 && strcmp(argv[1], "--library-smoke") == 0)
   {
@@ -23923,7 +24857,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: 8vo.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --data-migration-smoke | --version]\n");
+            "usage: 8vo.exe [document.epub|document.pdf | --pdf-stage1-smoke pdf epub invalid-pdf invalid-epub late-failure-epub bmp | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --data-migration-smoke | --version]\n");
     result = 2;
   }
 

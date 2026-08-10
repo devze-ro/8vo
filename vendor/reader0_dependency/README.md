@@ -3,9 +3,10 @@
 Current pinned reader0 consumer dependency:
 
 - mode: `sibling-source`
-- version: `0.7.0-dev`
-- API version: `7`
-- commit: `5fe949d88258cd96884c44b69e4f4ab6f27dc394`
+- version: `0.9.0-dev`
+- API version: `9`
+- commit: see the authoritative sibling `COMMIT` file (the coordinated final
+  pin is advanced atomically with that file)
 
 This directory contains dependency metadata, not a source snapshot. 8vo
 locates the live reader0 checkout through `OCTAVO_READER0_DIR` or
@@ -19,11 +20,12 @@ location/percentage and meaningful-page targets, semantic navigation, bounded
 navigation preparation, and the session-bounded back/forward model. 8vo retains
 host input and scheduling, presentation transactions, lifecycle policy,
 persistence, accessibility adaptation, and bounded host-owned caches.
-Reader0 API 7's presented-navigation primitive validates the actual canonical
+Reader0 API 9's EPUB-compatible presented-navigation primitive validates the actual canonical
 destination before 8vo exposes a history entry; failed or interrupted frames
 leave both the prior history and durable position authoritative.
 
-The pinned API 7 revision also exposes bounded encoded-resource extraction.
+The pinned API 9 revision also exposes bounded encoded-resource extraction and
+the concrete PDF boundary used only by the Win32 host.
 Reader0 stats the selected ZIP entry in the same opened archive and returns a
 distinct limit result before output allocation or entry decompression. Android
 uses the remaining presentation byte budget for every image request; the

@@ -13,6 +13,7 @@ if (!$SkipBuild) {
 }
 
 $tests = @(
+  "win32_octavo_pdf_stage1_smoke.ps1",
   "win32_octavo_host_smoke.ps1",
   "win32_octavo_data_migration_smoke.ps1",
   "win32_octavo_reader_view_smoke.ps1",

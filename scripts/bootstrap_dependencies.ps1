@@ -9,22 +9,37 @@ $Dependencies = @(
   [pscustomobject]@{
     Name = "ground0"
     Repository = "https://github.com/devze-ro/ground0.git"
+    ExpectedRepository = "devze-ro/ground0"
     Environment = "OCTAVO_GROUND0_DIR"
+    RecursiveSubmodules = $false
   },
   [pscustomobject]@{
     Name = "ui0"
     Repository = "https://github.com/devze-ro/ui0.git"
+    ExpectedRepository = "devze-ro/ui0"
     Environment = "OCTAVO_UI0_DIR"
+    RecursiveSubmodules = $false
   },
   [pscustomobject]@{
     Name = "readerview0"
     Repository = "https://github.com/devze-ro/readerview0.git"
+    ExpectedRepository = "devze-ro/readerview0"
     Environment = "OCTAVO_READERVIEW0_DIR"
+    RecursiveSubmodules = $false
   },
   [pscustomobject]@{
     Name = "reader0"
     Repository = "https://github.com/devze-ro/reader0.git"
+    ExpectedRepository = "devze-ro/reader0"
     Environment = "OCTAVO_READER0_DIR"
+    RecursiveSubmodules = $false
+  },
+  [pscustomobject]@{
+    Name = "mupdf"
+    Repository = "https://github.com/ArtifexSoftware/mupdf.git"
+    ExpectedRepository = "ArtifexSoftware/mupdf"
+    Environment = "OCTAVO_MUPDF_DIR"
+    RecursiveSubmodules = $true
   }
 )
 
@@ -59,12 +74,12 @@ foreach ($Dependency in $Dependencies) {
   $Checkout = Join-Path $DependencyRoot $Dependency.Name
   if (!(Test-Path -LiteralPath $Checkout -PathType Container)) {
     Write-Host "Cloning $($Dependency.Name) into $Checkout"
-    Invoke-Git @(
-      "clone",
-      "--filter=blob:none",
-      $Dependency.Repository,
-      $Checkout
-    ) | Out-Host
+    $cloneArguments = @("clone", "--filter=blob:none")
+    if ($Dependency.RecursiveSubmodules) {
+      $cloneArguments += "--recurse-submodules"
+    }
+    $cloneArguments += @($Dependency.Repository, $Checkout)
+    Invoke-Git $cloneArguments | Out-Host
   }
 
   $InsideWorkTree = (Invoke-Git @(
@@ -77,7 +92,7 @@ foreach ($Dependency in $Dependencies) {
   $Origin = (Invoke-Git @(
     "-C", $Checkout, "remote", "get-url", "origin"
   ) | Select-Object -First 1).Trim()
-  $ExpectedRepository = "devze-ro/$($Dependency.Name)"
+  $ExpectedRepository = $Dependency.ExpectedRepository
   if ($Origin -notmatch "(?i)(^|[:/])$([regex]::Escape($ExpectedRepository))(\.git)?$") {
     throw "$($Dependency.Name) origin is unexpected: $Origin"
   }
@@ -105,6 +120,14 @@ foreach ($Dependency in $Dependencies) {
   if ($CurrentCommit -ne $RequiredCommit) {
     Invoke-Git @(
       "-C", $Checkout, "checkout", "--detach", "--quiet", $RequiredCommit
+    ) | Out-Host
+  }
+
+  if ($Dependency.RecursiveSubmodules) {
+    Invoke-Git @("-C", $Checkout, "submodule", "sync", "--recursive") |
+      Out-Host
+    Invoke-Git @(
+      "-C", $Checkout, "submodule", "update", "--init", "--recursive"
     ) | Out-Host
   }
 

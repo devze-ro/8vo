@@ -88,6 +88,7 @@ $reader0 = Resolve-DependencyPath "OCTAVO_READER0_DIR" "LECTERN0_READER0_DIR" "r
 $ui0 = Resolve-DependencyPath "OCTAVO_UI0_DIR" "LECTERN0_UI0_DIR" "ui0"
 $readerview0 = Resolve-DependencyPath `
   "OCTAVO_READERVIEW0_DIR" "LECTERN0_READERVIEW0_DIR" "readerview0"
+$mupdf = Resolve-DependencyPath "OCTAVO_MUPDF_DIR" "MUPDF_DIR" "mupdf"
 $ground0 = Resolve-EnvironmentDirectory "OCTAVO_GROUND0_DIR"
 if (!$ground0) {
   foreach ($legacyName in @(
@@ -113,6 +114,22 @@ Require-Dependency "readerview0" $readerview0 (Join-Path $RepoRoot "vendor\reade
   "code\readerview0_version.h" "READERVIEW0_VERSION_STRING" "READERVIEW0_API_VERSION"
 Require-Dependency "ground0" $ground0 (Join-Path $RepoRoot "vendor\ground0_dependency") `
   "code\foundation\version.h" "ZERO_FOUNDATION_VERSION_STRING"
+
+$octavoMupdfMetadata = Join-Path $RepoRoot "vendor\mupdf_dependency"
+$reader0MupdfMetadata = Join-Path $reader0 "vendor\mupdf_dependency"
+foreach ($name in @("COMMIT", "VERSION", "SUBMODULES")) {
+  $octavoValue = (Get-Content -Raw -LiteralPath `
+    (Join-Path $octavoMupdfMetadata $name)).Trim() -replace "`r`n", "`n"
+  $reader0Value = (Get-Content -Raw -LiteralPath `
+    (Join-Path $reader0MupdfMetadata $name)).Trim() -replace "`r`n", "`n"
+  if ($octavoValue -ne $reader0Value) {
+    throw "8vo and Reader0 MuPDF $name metadata differ"
+  }
+}
+$env:READER0_MUPDF_DIR = $mupdf
+$mupdfGuard = Join-Path $reader0 "scripts\require_mupdf_dependency_current.ps1"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $mupdfGuard
+if ($LASTEXITCODE -ne 0) { throw "MuPDF dependency guard failed" }
 
 $presentationMetadata = Join-Path $RepoRoot "vendor\ground0_dependency\PRESENTATION_ENGINE_API_VERSION"
 $presentationHeader = Join-Path $ground0 "code\presentation_engine\presentation_engine.h"

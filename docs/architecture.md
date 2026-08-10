@@ -1,10 +1,12 @@
 # 8vo architecture
 
-8vo is a native reader with a format-neutral application shell. The working
-product host is Windows and EPUB is its only document backend today. The
-accepted Android host is at Port 7. Port 8 structural navigation is a candidate
-against Reader0 `0.7.0-dev` / API 7 at
-`5fe949d88258cd96884c44b69e4f4ab6f27dc394`. The corrected source closes six
+8vo is a native reader with an application shell that owns explicit concrete
+None/EPUB/PDF state rather than a generic document framework. The Windows
+product supports EPUB and bounded PDF Stage 1; Android remains EPUB-only. The
+current source consumes Reader0 `0.9.0-dev` / API 9 at the exact revision in
+`vendor/reader0_dependency`. The accepted Android host is at Port 7. Port 8
+structural navigation was originally validated against Reader0 `0.7.0-dev` /
+API 7. The corrected source closes six
 reported navigation, pagination, image-page, chapter-targeting, and top-padding
 defects and adds a prepared-frame media transaction. Earlier Port 8 emulator
 and physical-device results are predecessor evidence. The corrected API 36
@@ -30,17 +32,20 @@ formats that do not yet exist.
 ```mermaid
 flowchart TD
     app["8vo application host"]
-    reader["reader0<br/>EPUB engine"]
+    epub["reader0<br/>EPUB engine"]
+    pdf["reader0 PDF boundary<br/>audited MuPDF core (Win32)"]
     view["readerview0<br/>reader chrome"]
     ui["ui0<br/>UI toolkit"]
     foundation["ground0<br/>native foundation"]
 
-    app --> reader
+    app --> epub
+    app --> pdf
     app --> view
     app --> ui
     app --> foundation
     view --> ui
-    reader --> foundation
+    epub --> foundation
+    pdf --> foundation
     ui --> foundation
 ```
 
@@ -53,7 +58,7 @@ flowchart TD
 | Component | Owns |
 | --- | --- |
 | **8vo** | Product lifecycle and input, the library surface, commands, persistence, document selection, rendering integration, accessibility adapters, and product cache policy; concrete Win32 production and Android native reader hosts |
-| **reader0** | EPUB parsing, metadata, layout, pagination, search, selection, navigation, and canonical reader frames |
+| **reader0** | EPUB parsing, metadata, layout, pagination, search, selection, navigation, and canonical reader frames; plus the concrete PDF open/frame/page/history/render boundary used by Win32 |
 | **readerview0** | Shared reader chrome, panel and popup layout, transient interaction state, semantic records, and bounded actions |
 | **ui0** | Product-neutral controls, focus and input mechanics, layout, themes, and renderer-independent draw records |
 | **ground0** | Memory and OS primitives, files and atomic replacement, Unicode and text, fonts, presentation geometry, image decoding, draw commands, and software rendering |
@@ -83,6 +88,10 @@ mutations. Ground0 contains no reader-product policy.
 Reader0 supplies EPUB metadata and resource access, but it does not own the
 catalog. Readerview0 supplies the open-book interface, but it does not own the
 document or host persistence.
+
+The PDF Stage 1 ownership, one-raster memory transaction, exact build closure,
+and deferred features are specified in
+[win32_pdf_stage1.md](win32_pdf_stage1.md).
 
 ## Frame flow
 

@@ -1,9 +1,9 @@
 # 8vo
 
-8vo is an experimental native reader. The working application currently
-targets Windows and supports EPUB; an Android port is being developed in
-bounded milestones. Other document and comic-book formats may be explored
-later.
+8vo is an experimental native reader. The Windows application supports EPUB
+and now has a bounded Stage 1 PDF reader; an EPUB-only Android port is being
+developed in parallel milestones. Other document and comic-book formats may be
+explored later.
 
 The name `8vo` is the bibliographic abbreviation for *octavo* and is
 pronounced *octavo*.
@@ -19,8 +19,9 @@ ready for general use.
 
 ## Windows build and test
 
-Building requires 64-bit Windows, Git, PowerShell 5.1 or newer, and Visual
-Studio 2022 or Build Tools 2022 with the C++ workload and a Windows SDK.
+Building requires 64-bit Windows, Git, PowerShell 5.1 or newer, Visual Studio
+2022 or Build Tools 2022 with the C++ workload and a Windows SDK, and the exact
+MuPDF source/submodule closure pinned in `vendor/mupdf_dependency`.
 
 8vo compiles four first-party repositories from exact revisions. Bootstrap
 those revisions into the ignored local dependency directory, then build and
@@ -33,6 +34,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 
 See [DEPENDENCIES.md](DEPENDENCIES.md) for the exact pins and manual checkout
 options.
+
+The Win32 PDF Stage 1 surface opens `.pdf`, renders a fit-page premultiplied
+raster, and supports Previous/Next, Back/Forward, and direct progress seek.
+PDF search, Contents, settings, annotations, persistence/sync, and Android PDF
+are intentionally deferred. Run its deterministic product/lifecycle proof with
+`scripts\win32_octavo_pdf_stage1_smoke.ps1`.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
@@ -49,8 +56,10 @@ opening, pagination, navigation, canonical frames, and location restore; Port
 7's premium appearance, semantic reflow, immersive chrome, and accessibility
 foundation remain intact.
 
-The Port 8 candidate adds bounded Contents, Go-to, Return/Forward, and progress
-choices through Reader0 API 7. Its corrective slice also closes six reported
+The historical Port 8 candidate added bounded Contents, Go-to, Return/Forward,
+and progress choices through the then-current Reader0 API 7 surface. The
+current tree consumes Reader0 API 9's compatible EPUB surface. Port 8's
+corrective slice also closes six reported
 navigation, pagination, image-page, chapter-targeting, and top-padding defects;
 adds narrow, bounded image-only and in-flow image presentation; and hardens the
 media preparation/presentation transaction. Corrected API 36 emulator and API

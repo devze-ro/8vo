@@ -4,6 +4,24 @@ The following bundled or source-consumed components are not covered by 8vo's
 Mozilla Public License 2.0. They remain available under their original
 licenses.
 
+## MuPDF
+
+- **Project:** [MuPDF](https://mupdf.com/)
+- **Version:** 1.28.2
+- **Source revision:** `fe374accd98a43174a328fa7980d7675e06d5b0d`
+- **Use:** Reader0's audited PDF-only Win32 render core
+- **License:** GNU Affero General Public License v3, unless separately licensed
+  commercially from Artifex
+- **Complete license text:** `COPYING` in the exact pinned MuPDF checkout and
+  in the release source archive emitted by Reader0's
+  `scripts/package_mupdf_agpl_source.ps1`
+
+The PDF-enabled Win32 executable links MuPDF. A binary distributor must use
+Reader0's verified source-package workflow and satisfy the AGPL's complete
+corresponding-source and license requirements, or hold a suitable commercial
+Artifex license. Merely retaining 8vo's MPL notice is not sufficient for that
+binary.
+
 ## Gradle Wrapper
 
 - **Project:** [Gradle](https://github.com/gradle/gradle)
@@ -61,5 +79,7 @@ Unicode data files are provided under the Unicode License v3
 Exact source-file hashes and generation details are recorded in ground0's
 `third_party/unicode/README.md`.
 
-Binary distributions of 8vo must include these license texts along with the
-MPL-2.0 license and corresponding source-code availability information.
+Binary distributions of EPUB-only 8vo builds must include these license texts
+along with the MPL-2.0 license and corresponding source-code availability
+information. PDF-enabled Win32 distributions additionally follow the MuPDF
+AGPL/commercial boundary above.
