@@ -35,6 +35,7 @@ $sourceFiles = @(
   "scripts\audit_architecture.ps1",
   "scripts\audit_win32_pdf_provenance.ps1",
   "scripts\check_dependencies.ps1",
+  "scripts\require_dependencies_current.ps1",
   "scripts\win32_octavo_pdf_stage1_smoke.ps1",
   "scripts\write_win32_pdf_build_provenance.ps1",
   "vendor\reader0_dependency\COMMIT",

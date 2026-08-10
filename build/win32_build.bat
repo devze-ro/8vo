@@ -74,7 +74,7 @@ if not exist "%MUPDF_ROOT%\include\mupdf\fitz.h" (
   exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\require_dependencies_current.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\require_dependencies_current.ps1" -Target Win32Pdf
 if errorlevel 1 exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\audit_architecture.ps1"
 if errorlevel 1 exit /b 1

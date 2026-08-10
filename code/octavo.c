@@ -29,8 +29,8 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "octavo requires Presentation Engine API 1"
 #endif
-#if READER0_API_VERSION != 9
-#  error "octavo requires Reader0 API 9"
+#if READER0_API_VERSION != 10
+#  error "octavo requires Reader0 API 10"
 #endif
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"
@@ -11125,7 +11125,8 @@ octavo_draw_reader_page(OctavoApp *app)
     if (result != PdfReaderResult_Ok || !app->pdf.bgra_pixels ||
         app->pdf.raster_width == 0 || app->pdf.raster_height == 0)
     {
-      app->document_state = ReaderViewLoad_Error;
+      /* A render failure is presentation-local. The concrete PDF remains
+         open and Ready so a resize or page move can retry on the next frame. */
       octavo_set_statusf(app, "PDF render failed: %s",
                          pdf_reader_result_code(result));
       app->presentation_complete = 0;
@@ -24465,6 +24466,9 @@ octavo_run_pdf_stage1_smoke(const char *pdf_path,
   U32 raster_width = 0;
   U32 raster_height = 0;
   U64 raster_bytes = 0;
+  U32 landscape_width = 0;
+  U32 landscape_height = 0;
+  U64 landscape_bytes = 0;
   B32 passed = 0;
 
 #define OCTAVO_PDF_SMOKE_REQUIRE(condition, reason) \
@@ -24555,13 +24559,68 @@ octavo_run_pdf_stage1_smoke(const char *pdf_path,
     app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
     octavo_document_invariants_hold(&app), "render-recovery");
 
+  /* Exercise the full product draw path with a transient backend-target
+     failure. Restoring the owned target models the transient condition ending;
+     Ready must survive so both resize and navigation cause a fresh retry. */
+  U8 *owned_raster = app.pdf.rgba_pixels;
+  app.pdf.bgra_pixels = 0;
+  app.pdf.rendered_reader_generation = 0;
+  app.pdf.rgba_pixels = 0;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app.pdf) && !app.presentation_complete &&
+    !app.pdf.bgra_pixels && octavo_document_invariants_hold(&app),
+    "product-render-failure-ready");
+  app.pdf.rgba_pixels = owned_raster;
+  app.width = 820;
+  app.height = 620;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready && app.presentation_complete &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "product-render-resize-retry");
+  app.width = Width;
+  app.height = Height;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.pdf.bgra_pixels,
+    "product-render-size-restore");
+
+  owned_raster = app.pdf.rgba_pixels;
+  app.pdf.bgra_pixels = 0;
+  app.pdf.rendered_reader_generation = 0;
+  app.pdf.rgba_pixels = 0;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app.pdf) && !app.presentation_complete &&
+    !app.pdf.bgra_pixels, "product-render-navigation-ready");
+  app.pdf.rgba_pixels = owned_raster;
   octavo_apply_reader_view_action(&app,
     &(ReaderViewAction){.kind = ReaderViewAction_NextPage});
   OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 1 &&
-                           !app.pdf.bgra_pixels, "next-page");
+                           !app.pdf.bgra_pixels &&
+                           app.document_state == ReaderViewLoad_Ready,
+                           "next-page-after-render-failure");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.pdf.bgra_pixels &&
+    app.pdf.frame.page_index == 1 && octavo_document_invariants_hold(&app),
+    "product-render-navigation-retry");
   OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
-                             OctavoMoveResult_Ok &&
+                              OctavoMoveResult_Ok &&
                            app.pdf.frame.page_index == 2, "next-page-2");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, 8192, 4320) == PdfReaderResult_Ok &&
+    app.pdf.raster_width == 5792 && app.pdf.raster_height == 2896 &&
+    app.pdf.raster_capacity_bytes == 67094528 &&
+    app.pdf.raster_capacity_bytes <= OCTAVO_PDF_RASTER_MEMORY_CAP &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "landscape-8k-memory-fit");
+  landscape_width = app.pdf.raster_width;
+  landscape_height = app.pdf.raster_height;
+  landscape_bytes = app.pdf.raster_capacity_bytes;
   OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
                              OctavoMoveResult_Boundary &&
                            app.pdf.frame.page_index == 2, "next-boundary");
@@ -24711,11 +24770,14 @@ cleanup:
   fprintf(stdout,
           "octavo_pdf_stage1_smoke result=pass pages=3 raster=%ux%u "
           "raster_bytes=%llu cap=%u rgba_to_bgra=in_place "
+          "landscape8k=%ux%u landscape_bytes=%llu retry=resize,navigate "
           "navigation=previous,next,back,forward,seek "
           "replacement=pdf-pdf,pdf-epub-late,epub-pdf lifecycle=verified "
           "hash=%016llx bmp=%s\n",
           raster_width, raster_height, (unsigned long long)raster_bytes,
-          OCTAVO_PDF_RASTER_MEMORY_CAP, (unsigned long long)output_hash,
+          OCTAVO_PDF_RASTER_MEMORY_CAP, landscape_width, landscape_height,
+          (unsigned long long)landscape_bytes,
+          (unsigned long long)output_hash,
           bmp_path);
   return 0;
 

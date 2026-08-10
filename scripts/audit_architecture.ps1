@@ -22,8 +22,11 @@ $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $pdfProvenanceAuditPath = Join-Path $RepoRoot "scripts\audit_win32_pdf_provenance.ps1"
 $pdfBuildProvenancePath = Join-Path $RepoRoot "scripts\write_win32_pdf_build_provenance.ps1"
 $pdfSmokePath = Join-Path $RepoRoot "scripts\win32_octavo_pdf_stage1_smoke.ps1"
+$androidDependencySmokePath =
+  Join-Path $RepoRoot "scripts\android_dependency_guard_no_mupdf_smoke.ps1"
 $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
 $androidCMakePath = Join-Path $androidCppRoot "CMakeLists.txt"
+$androidBuildPath = Join-Path $RepoRoot "android\app\build.gradle.kts"
 $androidJniPath = Join-Path $androidCppRoot "octavo_android_jni.c"
 $androidJavaRoot =
   Join-Path $RepoRoot 'android\app\src\main\java\ro\devze\octavo'
@@ -86,8 +89,14 @@ if (!(Test-Path -LiteralPath $pdfBuildProvenancePath)) {
 if (!(Test-Path -LiteralPath $pdfSmokePath)) {
   $failures.Add("missing standalone Win32 PDF Stage 1 smoke")
 }
+if (!(Test-Path -LiteralPath $androidDependencySmokePath)) {
+  $failures.Add("missing Android no-MuPDF dependency-guard regression")
+}
 if (!(Test-Path -LiteralPath $androidCMakePath)) {
   $failures.Add("missing Android native build definition")
+}
+if (!(Test-Path -LiteralPath $androidBuildPath)) {
+  $failures.Add("missing Android application build definition")
 }
 if (!(Test-Path -LiteralPath $androidJniPath)) {
   $failures.Add("missing Android native host adapter")
@@ -130,7 +139,10 @@ if ($failures.Count -eq 0) {
   $pdfBuildProvenance =
     [System.IO.File]::ReadAllText($pdfBuildProvenancePath)
   $pdfSmoke = [System.IO.File]::ReadAllText($pdfSmokePath)
+  $androidDependencySmoke =
+    [System.IO.File]::ReadAllText($androidDependencySmokePath)
   $androidCMake = [System.IO.File]::ReadAllText($androidCMakePath)
+  $androidBuild = [System.IO.File]::ReadAllText($androidBuildPath)
   $forbiddenGround0Variable = "LECTERN0_ZERO_" + "FOUNDATION_DIR"
   $androidJni = [System.IO.File]::ReadAllText($androidJniPath)
   $androidNavigation =
@@ -440,9 +452,9 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("octavo must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 9') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 10') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 9 including author metadata and PDF")
+    $failures.Add("octavo must consume Reader0 API 10 including author metadata and PDF")
   }
   if ($pdfHeader.IndexOf('OCTAVO_PDF_RASTER_MEMORY_CAP = 64 * 1024 * 1024') -lt 0 -or
       $pdfHeader.IndexOf('U8 *rgba_pixels') -lt 0 -or
@@ -452,8 +464,19 @@ if ($failures.Count -eq 0) {
       $pdfSource.IndexOf('pixel[0] = pixel[2]') -lt 0 -or
       $pdfSource.IndexOf('pdf->bgra_pixels = (U32 *)pdf->rgba_pixels') -lt 0 -or
       $pdfSource.IndexOf('octavo_pdf_invalidate_published_raster(pdf);') -lt 0 -or
+      $pdfSource.IndexOf('width > max_pixel_count / height') -lt 0 -or
+      $pdfSource.IndexOf('sqrt((F64)max_pixel_count / page_area)') -lt 0 -or
       $pdfSource -match '(?i)\b(?:malloc|calloc|realloc|free)\s*\(') {
     $failures.Add("PDF raster ownership must remain one capped Ground0 allocation with transactional in-place RGBA-to-BGRA publication")
+  }
+  if ($app -match
+        'document_state\s*=\s*ReaderViewLoad_Error;\s*octavo_set_statusf\(app,\s*"PDF render failed' -or
+      $app.IndexOf('product-render-resize-retry') -lt 0 -or
+      $app.IndexOf('product-render-navigation-retry') -lt 0 -or
+      $app.IndexOf('landscape-8k-memory-fit') -lt 0 -or
+      $pdfSmoke.IndexOf('landscape8k=5792x2896') -lt 0 -or
+      $pdfSmoke.IndexOf('retry=resize,navigate') -lt 0) {
+    $failures.Add("PDF memory-aware fit and transient render failures must remain bounded and retryable through resize/navigation")
   }
   if ($app.IndexOf('OctavoDocument_None') -lt 0 -or
       $app.IndexOf('OctavoDocument_EPUB') -lt 0 -or
@@ -489,6 +512,12 @@ if ($failures.Count -eq 0) {
       $pdfBuildProvenance.IndexOf('executable') -lt 0 -or
       $pdfBuildProvenance.IndexOf('scripts\write_win32_pdf_build_provenance.ps1') -lt 0 -or
       $dependencyCheck.IndexOf('vendor\mupdf_dependency') -lt 0 -or
+      $dependencyCheck.IndexOf('[ValidateSet("Win32Pdf", "AndroidEpub")]') -lt 0 -or
+      $dependencyCheck.IndexOf('if ($Target -eq "Win32Pdf")') -lt 0 -or
+      $win32Build.IndexOf('-Target Win32Pdf') -lt 0 -or
+      $androidBuild.IndexOf('"AndroidEpub"') -lt 0 -or
+      $androidDependencySmoke.IndexOf('-Target "AndroidEpub"') -lt 0 -or
+      $androidDependencySmoke.IndexOf('-Target "Win32Pdf"') -lt 0 -or
       $pdfSmoke.IndexOf('--pdf-stage1-smoke') -lt 0 -or
       $pdfSmoke.IndexOf('could not remove stale PDF smoke bitmap') -lt 0 -or
       $pdfSmoke.IndexOf('repeat=2') -lt 0) {
@@ -519,7 +548,7 @@ if ($failures.Count -eq 0) {
   )
   foreach ($api in $reader0StructuralNavigationApis) {
     if ($androidNavigation.IndexOf($api) -lt 0) {
-      $failures.Add("Android EPUB structural navigation must consume Reader0 API 9 compatibility API $api")
+      $failures.Add("Android EPUB structural navigation must consume Reader0 API 10 compatibility API $api")
     }
   }
   if ($androidNavigation.IndexOf('.suppress_history = 1') -lt 0 -or
@@ -761,7 +790,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('OctavoAdjacentWarmPageCap = 4') -lt 0 -or
       $app.IndexOf('adjacent_warm_direction') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 9 EPUB navigation preparation with bounded four-page host warming")
+    $failures.Add("octavo must consume Reader0 API 10 EPUB navigation preparation with bounded four-page host warming")
   }
   $timerResolutionBegins =
     [regex]::Matches($app, 'timeBeginPeriod\s*\(\s*1\s*\)').Count
@@ -968,4 +997,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "octavo architecture audit: pass"
-Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster + readerview0/UI0 chrome + Reader0 API 9 EPUB and Win32 MuPDF core"
+Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster + readerview0/UI0 chrome + Reader0 API 10 EPUB and Win32 MuPDF core"

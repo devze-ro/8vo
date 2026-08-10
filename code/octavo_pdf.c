@@ -212,9 +212,48 @@ octavo_pdf_seek_page(OctavoPdf *pdf, U64 page_index)
 }
 
 FUNCTION B32
+octavo_pdf_geometry_for_scale(F64 page_width,
+                              F64 page_height,
+                              F32 scale,
+                              U32 max_width,
+                              U32 max_height,
+                              U64 max_pixel_count,
+                              U32 *out_width,
+                              U32 *out_height)
+{
+  if (out_width) *out_width = 0;
+  if (out_height) *out_height = 0;
+  if (!out_width || !out_height || !isfinite(page_width) ||
+      !isfinite(page_height) || page_width <= 0.0 || page_height <= 0.0 ||
+      !isfinite(scale) || scale <= 0.0f || max_width == 0 ||
+      max_height == 0 || max_pixel_count == 0)
+  {
+    return 0;
+  }
+
+  F64 scaled_width = ceil(page_width * (F64)scale);
+  F64 scaled_height = ceil(page_height * (F64)scale);
+  if (!isfinite(scaled_width) || !isfinite(scaled_height) ||
+      scaled_width < 1.0 || scaled_height < 1.0 ||
+      scaled_width > (F64)max_width || scaled_height > (F64)max_height)
+  {
+    return 0;
+  }
+
+  U64 width = (U64)scaled_width;
+  U64 height = (U64)scaled_height;
+  if (width == 0 || height == 0 || width > max_pixel_count / height)
+    return 0;
+
+  *out_width = (U32)width;
+  *out_height = (U32)height;
+  return 1;
+}
+
+FUNCTION B32
 octavo_pdf_fit_geometry(PdfReaderRect bounds,
-                        S32 content_width,
-                        S32 content_height,
+                         S32 content_width,
+                         S32 content_height,
                         F32 *out_scale,
                         U32 *out_width,
                         U32 *out_height)
@@ -232,27 +271,64 @@ octavo_pdf_fit_geometry(PdfReaderRect bounds,
   }
   U32 max_width = (U32)MIN(content_width, PDF_READER_MAX_TILE_DIMENSION);
   U32 max_height = (U32)MIN(content_height, PDF_READER_MAX_TILE_DIMENSION);
+  U64 max_pixel_count = OCTAVO_PDF_RASTER_MEMORY_CAP /
+                        PDF_READER_BYTES_PER_PIXEL_RGBA8;
+  F64 page_area = page_width * page_height;
+  if (!isfinite(page_area) || page_area <= 0.0 || max_pixel_count == 0)
+    return 0;
   F64 candidate = MIN((F64)max_width / page_width,
                       (F64)max_height / page_height);
+  candidate = MIN(candidate, sqrt((F64)max_pixel_count / page_area));
   candidate = MIN(candidate, 64.0);
   if (!isfinite(candidate) || candidate <= 0.0) return 0;
-  F32 scale = (F32)candidate;
-  for (U32 attempt = 0; attempt < 8; attempt += 1)
+
+  F32 high_scale = (F32)candidate;
+  U32 width = 0;
+  U32 height = 0;
+  if (octavo_pdf_geometry_for_scale(page_width, page_height, high_scale,
+                                    max_width, max_height, max_pixel_count,
+                                    &width, &height))
   {
-    F64 scaled_width = ceil(page_width * (F64)scale);
-    F64 scaled_height = ceil(page_height * (F64)scale);
-    if (isfinite(scaled_width) && isfinite(scaled_height) &&
-        scaled_width >= 1.0 && scaled_height >= 1.0 &&
-        scaled_width <= max_width && scaled_height <= max_height)
-    {
-      *out_scale = scale;
-      *out_width = (U32)scaled_width;
-      *out_height = (U32)scaled_height;
-      return 1;
-    }
-    scale *= 0.9999f;
+    *out_scale = high_scale;
+    *out_width = width;
+    *out_height = height;
+    return 1;
   }
-  return 0;
+
+  /* Casting the continuous limit to F32 or rounding each raster dimension up
+     can put the candidate a few pixels over the exact byte cap. The fit
+     predicate uses division before multiplication, then this bounded search
+     selects the greatest representable scale it can prove fits. */
+  F32 low_scale = high_scale * 0.5f;
+  if (!octavo_pdf_geometry_for_scale(page_width, page_height, low_scale,
+                                     max_width, max_height, max_pixel_count,
+                                     &width, &height))
+  {
+    return 0;
+  }
+  U32 low_width = width;
+  U32 low_height = height;
+  for (U32 attempt = 0; attempt < 32; attempt += 1)
+  {
+    F32 middle_scale = low_scale + (high_scale - low_scale) * 0.5f;
+    if (middle_scale <= low_scale || middle_scale >= high_scale) break;
+    if (octavo_pdf_geometry_for_scale(page_width, page_height, middle_scale,
+                                      max_width, max_height, max_pixel_count,
+                                      &width, &height))
+    {
+      low_scale = middle_scale;
+      low_width = width;
+      low_height = height;
+    }
+    else
+    {
+      high_scale = middle_scale;
+    }
+  }
+  *out_scale = low_scale;
+  *out_width = low_width;
+  *out_height = low_height;
+  return 1;
 }
 
 FUNCTION PdfReaderResult

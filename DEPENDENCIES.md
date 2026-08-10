@@ -7,10 +7,10 @@ below and must not silently advance them.
 
 | Repository | Revision | Version / API | Metadata |
 | --- | --- | --- | --- |
-| [reader0](https://github.com/devze-ro/reader0) | `bf5371735fb00e2b970f8c1138053d8abbc9fb3c` | 0.9.0-dev / API 9 | `vendor/reader0_dependency/` |
+| [reader0](https://github.com/devze-ro/reader0) | `f328b833ace33f5424446beb0638b5117c1d16c1` | 0.10.0-dev / API 10 | `vendor/reader0_dependency/` |
 | [readerview0](https://github.com/devze-ro/readerview0) | `f97f9d38cf857c2cff1f90357cf5d2e5cf40dc03` | 0.3.0-dev / API 3 | `vendor/readerview0_dependency/` |
 | [ui0](https://github.com/devze-ro/ui0) | `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
-| [ground0](https://github.com/devze-ro/ground0) | `0e64f344393c61f40c529c390106bebf57516387` | 0.4.5-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
+| [ground0](https://github.com/devze-ro/ground0) | `7abd8d136cc8cab2bd0d27f76c5bd0aa086901d5` | 0.4.6-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
 | [MuPDF](https://github.com/ArtifexSoftware/mupdf) | `fe374accd98a43174a328fa7980d7675e06d5b0d` plus exact `SUBMODULES` closure | 1.28.2 | `vendor/mupdf_dependency/` |
 
 ## Bootstrap
@@ -36,7 +36,10 @@ The build accepts explicit `OCTAVO_*_DIR` environment variables (including
 `OCTAVO_MUPDF_DIR`) and otherwise
 looks first in `local/dependencies/` and then for sibling checkouts.
 `scripts/check_dependencies.ps1` verifies each checkout's revision, version,
-API, and cleanliness before compilation.
+API, and cleanliness before compilation. `-Target Win32Pdf` additionally
+requires the exact clean MuPDF checkout and metadata closure. `-Target
+AndroidEpub` deliberately does not resolve or require MuPDF because the Android
+native target consumes only Reader0's EPUB surface.
 
 ## Licensing
 

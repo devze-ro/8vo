@@ -152,7 +152,8 @@ foreach ($Dependency in $Dependencies) {
 }
 
 & powershell -NoProfile -ExecutionPolicy Bypass `
-  -File (Join-Path $PSScriptRoot "require_dependencies_current.ps1")
+  -File (Join-Path $PSScriptRoot "require_dependencies_current.ps1") `
+  -Target Win32Pdf
 if ($LASTEXITCODE -ne 0) {
   throw "8vo dependency verification failed with exit code $LASTEXITCODE"
 }

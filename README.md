@@ -58,7 +58,7 @@ foundation remain intact.
 
 The historical Port 8 candidate added bounded Contents, Go-to, Return/Forward,
 and progress choices through the then-current Reader0 API 7 surface. The
-current tree consumes Reader0 API 9's compatible EPUB surface. Port 8's
+current tree consumes Reader0 API 10's compatible EPUB surface. Port 8's
 corrective slice also closes six reported
 navigation, pagination, image-page, chapter-targeting, and top-padding defects;
 adds narrow, bounded image-only and in-flow image presentation; and hardens the

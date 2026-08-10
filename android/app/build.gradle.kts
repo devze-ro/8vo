@@ -93,7 +93,9 @@ val checkExactDependencies by tasks.registering(Exec::class) {
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "scripts\\check_dependencies.ps1"
+        "scripts\\check_dependencies.ps1",
+        "-Target",
+        "AndroidEpub"
     )
 }
 

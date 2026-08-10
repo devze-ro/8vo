@@ -46,7 +46,7 @@ q 60 0 0 60 200 270 cm /Im1 Do Q
     "<< /Length $([Text.Encoding]::ASCII.GetByteCount($page1)) >>`nstream`n$page1`nendstream",
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>",
     "<< /Length $([Text.Encoding]::ASCII.GetByteCount($page2)) >>`nstream`n$page2`nendstream",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 4 0 R >> >> /Contents 9 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 800 400] /Resources << /Font << /F1 4 0 R >> >> /Contents 9 0 R >>",
     "<< /Length $([Text.Encoding]::ASCII.GetByteCount($page3)) >>`nstream`n$page3`nendstream",
     "<< /Type /Annot /Subtype /Link /Rect [30 40 150 120] /Border [0 0 1] /A << /S /URI /URI (https://example.invalid/stage1) >> >>",
     "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode /Length $([Text.Encoding]::ASCII.GetByteCount($imageHex)) >>`nstream`n$imageHex`nendstream"
@@ -158,6 +158,11 @@ for ($run = 1; $run -le 2; $run++) {
   if (!$pass -or !(Test-Path -LiteralPath $Bmp -PathType Leaf)) {
     $output | Write-Host
     throw "8vo PDF Stage 1 smoke run $run did not produce pass evidence"
+  }
+  if ([string]$pass -notmatch
+      'landscape8k=5792x2896 landscape_bytes=67094528 retry=resize,navigate') {
+    $output | Write-Host
+    throw "8vo PDF Stage 1 smoke run $run lacks bounded 8K/retry evidence"
   }
   $passes += [pscustomobject]@{
     Line = [string]$pass

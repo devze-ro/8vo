@@ -1,7 +1,7 @@
 # Win32 PDF Stage 1
 
 This slice adds one concrete PDF reader to the existing 8vo Win32 product. It
-uses Reader0 API 9 and Reader0's audited MuPDF 1.28.2 PDF-only core. EPUB keeps
+uses Reader0 API 10 and Reader0's audited MuPDF 1.28.2 PDF-only core. EPUB keeps
 its existing concrete `EpubReader`; the host does not introduce a generic
 document vtable or an EPUB adapter.
 
@@ -37,13 +37,22 @@ Reader0 renders one full-page `RGBA8Premultiplied` raster. 8vo reserves one
 64 MiB Ground0 arena, allocates at most one four-byte raster, and swaps the red
 and blue bytes in place for the existing BGRA sprite path. There is no second
 full-page conversion buffer and no C-runtime allocation in `octavo_pdf.c`.
+Fit geometry combines the viewport and Reader0 dimension limits with the exact
+64 MiB pixel budget. Its overflow-safe predicate checks the rounded-up integer
+dimensions by division before multiplication; if float conversion or `ceil`
+crosses the byte boundary, a bounded search lowers scale to the greatest
+representable value proven to fit. Large landscape displays therefore render
+at a memory-aware fit instead of failing solely because their native viewport
+would require a larger full-page raster.
 
 Publication is transactional. An exact cached render may reuse the published
 surface. Every cache miss withdraws the borrowed BGRA pointer and generation
 before page-info, geometry, allocation, or backend work. The pointer is
 republished only after Reader0 completes the full render and every pixel has
 been swizzled. A failed or cancelled render therefore cannot expose partial or
-stale pixels.
+stale pixels. Such a failure is presentation-local: while the concrete PDF is
+still open, document state remains Ready so the next resize or navigation frame
+can retry.
 
 ## Exact build and provenance
 
@@ -80,7 +89,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_host_sm
 The PDF smoke creates a deterministic three-page fixture with text, vector
 graphics, a raster image, and a link annotation. It runs the product twice and
 locks deterministic bitmap output, the in-place conversion, the 64 MiB cap,
-navigation/history/progress, unavailable Reader View actions, all three
+an 8192-by-4320 landscape fit, render-failure recovery through both a smaller
+resize and navigation, navigation/history/progress, unavailable Reader View actions, all three
 replacement-failure directions, explicit close/release invariants, and live
 cancel-token teardown refusal. The existing host smoke remains the focused EPUB
 regression.

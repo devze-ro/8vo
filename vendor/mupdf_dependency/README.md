@@ -1,6 +1,6 @@
 # MuPDF dependency
 
-8vo's Windows PDF target consumes MuPDF only through Reader0 API 9. The exact
+8vo's Windows PDF target consumes MuPDF only through Reader0 API 10. The exact
 clean MuPDF root and submodule closure are recorded here and must exactly match
 Reader0's own dependency metadata before the Reader0 PDF core is built or
 linked.
