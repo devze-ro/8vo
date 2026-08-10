@@ -8,8 +8,8 @@ below and must not silently advance them.
 | Repository | Revision | Version / API | Metadata |
 | --- | --- | --- | --- |
 | [reader0](https://github.com/devze-ro/reader0) | `f328b833ace33f5424446beb0638b5117c1d16c1` | 0.10.0-dev / API 10 | `vendor/reader0_dependency/` |
-| [readerview0](https://github.com/devze-ro/readerview0) | `f97f9d38cf857c2cff1f90357cf5d2e5cf40dc03` | 0.3.0-dev / API 3 | `vendor/readerview0_dependency/` |
-| [ui0](https://github.com/devze-ro/ui0) | `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
+| [readerview0](https://github.com/devze-ro/readerview0) | `a1b3f7a9b236cb9ac6cbfe68c293a1345267cc88` | 0.4.0-dev / API 4 | `vendor/readerview0_dependency/` |
+| [ui0](https://github.com/devze-ro/ui0) | `b1cf8e4fbe7e06b9799e251665bbe491ae4c22b5` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
 | [ground0](https://github.com/devze-ro/ground0) | `7abd8d136cc8cab2bd0d27f76c5bd0aa086901d5` | 0.4.6-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |
 | [MuPDF](https://github.com/ArtifexSoftware/mupdf) | `fe374accd98a43174a328fa7980d7675e06d5b0d` plus exact `SUBMODULES` closure | 1.28.2 | `vendor/mupdf_dependency/` |
 

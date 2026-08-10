@@ -245,7 +245,7 @@ public final class OctavoBootstrapTest {
         assertEquals("0.4.3-dev", OctavoNative.groundVersion());
         assertEquals("0.7.0-dev", OctavoNative.readerVersion());
         assertEquals("0.1.0-dev", OctavoNative.uiVersion());
-        assertEquals("0.3.0-dev", OctavoNative.readerViewVersion());
+        assertEquals("0.4.0-dev", OctavoNative.readerViewVersion());
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {

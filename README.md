@@ -36,7 +36,8 @@ See [DEPENDENCIES.md](DEPENDENCIES.md) for the exact pins and manual checkout
 options.
 
 The Win32 PDF Stage 1 surface opens `.pdf`, renders a fit-page premultiplied
-raster, and supports Previous/Next, Back/Forward, and direct progress seek.
+raster, and supports Previous/Next, Back/Forward, progress seek, and bounded
+direct page-number entry through Readerview0 API 4.
 PDF search, Contents, settings, annotations, persistence/sync, and Android PDF
 are intentionally deferred. Run its deterministic product/lifecycle proof with
 `scripts\win32_octavo_pdf_stage1_smoke.ps1`.

@@ -160,9 +160,11 @@ for ($run = 1; $run -le 2; $run++) {
     throw "8vo PDF Stage 1 smoke run $run did not produce pass evidence"
   }
   if ([string]$pass -notmatch
-      'landscape8k=5792x2896 landscape_bytes=67094528 retry=resize,navigate') {
+      'landscape8k=5792x2896 landscape_bytes=67094528 retry=resize,navigate' -or
+      [string]$pass -notmatch
+      'direct_page=pointer,keyboard withdrawal=can_seek epub_direct_page=absent') {
     $output | Write-Host
-    throw "8vo PDF Stage 1 smoke run $run lacks bounded 8K/retry evidence"
+    throw "8vo PDF Stage 1 smoke run $run lacks bounded 8K/retry/direct-page evidence"
   }
   $passes += [pscustomobject]@{
     Line = [string]$pass

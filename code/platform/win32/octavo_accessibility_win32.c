@@ -173,6 +173,7 @@ octavo_accessibility_role(ReaderViewSemanticRole role)
     case ReaderViewSemantic_ToggleButton: return ROLE_SYSTEM_CHECKBUTTON;
     case ReaderViewSemantic_SearchBox: return ROLE_SYSTEM_TEXT;
     case ReaderViewSemantic_TextArea: return ROLE_SYSTEM_TEXT;
+    case ReaderViewSemantic_TextBox: return ROLE_SYSTEM_TEXT;
     case ReaderViewSemantic_Slider: return ROLE_SYSTEM_SLIDER;
     case ReaderViewSemantic_Tab: return ROLE_SYSTEM_PAGETAB;
     case ReaderViewSemantic_List: return ROLE_SYSTEM_LIST;
@@ -476,7 +477,8 @@ octavo_accessibility_get_default_action(IAccessible *iface, VARIANT child,
     return node ? S_FALSE : E_INVALIDARG;
   const wchar_t *label = L"Activate";
   if (node->role == ReaderViewSemantic_SearchBox ||
-      node->role == ReaderViewSemantic_TextArea) label = L"Edit";
+      node->role == ReaderViewSemantic_TextArea ||
+      node->role == ReaderViewSemantic_TextBox) label = L"Edit";
   else if (node->role == ReaderViewSemantic_Slider) label = L"Focus";
   *out_action = SysAllocString(label);
   return *out_action ? S_OK : E_OUTOFMEMORY;

@@ -34,6 +34,8 @@ $androidBuildPath = Join-Path $RepoRoot "android\app\build.gradle.kts"
 $androidJniPath = Join-Path $androidCppRoot "octavo_android_jni.c"
 $androidJavaRoot =
   Join-Path $RepoRoot 'android\app\src\main\java\ro\devze\octavo'
+$androidBootstrapTestPath =
+  Join-Path $RepoRoot 'android\app\src\androidTest\java\ro\devze\octavo\OctavoBootstrapTest.java'
 $androidUi0ThemeSnapshotPath =
   Join-Path $androidJavaRoot 'Ui0AndroidThemeSnapshot.java'
 $androidUi0ThemeAdapterPath =
@@ -111,6 +113,9 @@ if (!(Test-Path -LiteralPath $androidBuildPath)) {
 if (!(Test-Path -LiteralPath $androidJniPath)) {
   $failures.Add("missing Android native host adapter")
 }
+if (!(Test-Path -LiteralPath $androidBootstrapTestPath -PathType Leaf)) {
+  $failures.Add("missing Android bootstrap instrumentation regression")
+}
 if (!(Test-Path -LiteralPath $androidNavigationPath)) {
   $failures.Add("missing Android structural-navigation adapter")
 }
@@ -159,6 +164,8 @@ if ($failures.Count -eq 0) {
   $androidBuild = [System.IO.File]::ReadAllText($androidBuildPath)
   $forbiddenGround0Variable = "LECTERN0_ZERO_" + "FOUNDATION_DIR"
   $androidJni = [System.IO.File]::ReadAllText($androidJniPath)
+  $androidBootstrapTest =
+    [System.IO.File]::ReadAllText($androidBootstrapTestPath)
   $androidNavigation =
     [System.IO.File]::ReadAllText($androidNavigationPath)
   $androidUi0ThemeSnapshot =
@@ -171,6 +178,13 @@ if ($failures.Count -eq 0) {
     [System.IO.File]::ReadAllText($androidLegacyEditorColorPath)
   $androidLegacyEditorTheme =
     [System.IO.File]::ReadAllText($androidLegacyEditorThemePath)
+  if ($androidBootstrapTest.IndexOf(
+        'assertEquals("0.4.0-dev", OctavoNative.readerViewVersion());') -lt 0 -or
+      $androidBootstrapTest.IndexOf(
+        'assertEquals("0.3.0-dev", OctavoNative.readerViewVersion());') -ge 0) {
+    $failures.Add(
+      'Android bootstrap instrumentation must assert the pinned Readerview0 0.4.0-dev version')
+  }
   $nativeUi0SnapshotMarkers = @(
     '#if UI0_API_VERSION != 91',
     'OCTAVO_ANDROID_UI0_SNAPSHOT_PACKET_COUNT == 154',
@@ -505,6 +519,26 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('--pdf-stage1-smoke') -lt 0) {
     $failures.Add("8vo must retain explicit EPUB/PDF ownership, picker, Reader View projection, navigation, and lifecycle smoke boundaries")
   }
+  if ($app.IndexOf('if (pdf_open)') -lt 0 -or
+      $app.IndexOf('projection.features |= ReaderViewFeature_DirectPageNumber') -lt 0 -or
+      $app.IndexOf('result.direct_page_text = text') -lt 0 -or
+      $app.IndexOf('ReaderViewSemanticControl_DirectPageInput') -lt 0 -or
+      $app.IndexOf('direct-page-native-enter-route') -lt 0 -or
+      $app.IndexOf('direct-page-keyboard-commit') -lt 0 -or
+      $app.IndexOf('direct-page-pointer-commit') -lt 0 -or
+      $app.IndexOf('direct-page-withdraw-popup-close') -lt 0 -or
+      $app.IndexOf('epub-direct-page-feature-absent') -lt 0 -or
+      $pdfSmoke.IndexOf('direct_page=pointer,keyboard') -lt 0 -or
+      $pdfSmoke.IndexOf('withdrawal=can_seek') -lt 0 -or
+      $pdfSmoke.IndexOf('epub_direct_page=absent') -lt 0) {
+    $failures.Add("Readerview0 API 4 direct-page input must stay opt-in for open PDFs, withdraw with seek ownership, and preserve EPUB behavior")
+  }
+  if ($accessibility.IndexOf(
+        'case ReaderViewSemantic_TextBox: return ROLE_SYSTEM_TEXT') -lt 0 -or
+      $accessibility.IndexOf(
+        'node->role == ReaderViewSemantic_TextBox') -lt 0) {
+    $failures.Add("the Win32 accessibility adapter must expose API 4 direct-page text as an editable text role")
+  }
   if ($androidCMake.IndexOf('octavo_pdf') -ge 0 -or
       $androidJni.IndexOf('PdfReader') -ge 0 -or
       $androidJni.IndexOf('octavo_pdf') -ge 0) {
@@ -528,6 +562,12 @@ if ($failures.Count -eq 0) {
       $pdfProvenanceAudit.IndexOf('windows_sdk_version') -lt 0 -or
       $pdfProvenanceAudit.IndexOf('Get-Command link.exe') -lt 0 -or
       $pdfBuildProvenance.IndexOf('input_sha256') -lt 0 -or
+      $pdfBuildProvenance.IndexOf(
+        'code\platform\win32\octavo_accessibility_win32.c') -lt 0 -or
+      $pdfBuildProvenance.IndexOf(
+        'vendor\readerview0_dependency\VERSION') -lt 0 -or
+      $pdfBuildProvenance.IndexOf(
+        'vendor\readerview0_dependency\API_VERSION') -lt 0 -or
       $pdfBuildProvenance.IndexOf('executable') -lt 0 -or
       $pdfBuildProvenance.IndexOf('win32-pdf-build-provenance.v2') -lt 0 -or
       $pdfBuildProvenance.IndexOf('verified_clean') -lt 0 -or
@@ -540,6 +580,9 @@ if ($failures.Count -eq 0) {
       $productSourceSmoke.IndexOf('build=precompile_reject') -lt 0 -or
       $productSourceSmoke.IndexOf('development=nonrelease_evidence') -lt 0 -or
       $dependencyCheck.IndexOf('vendor\mupdf_dependency') -lt 0 -or
+      $dependencyCheck.IndexOf('vendor\ui0_dependency') -lt 0 -or
+      $dependencyCheck.IndexOf(
+        '8vo and Readerview0 UI0 $name metadata differ') -lt 0 -or
       $dependencyCheck.IndexOf('[ValidateSet("Win32Pdf", "AndroidEpub")]') -lt 0 -or
       $dependencyCheck.IndexOf('if ($Target -eq "Win32Pdf")') -lt 0 -or
       $win32Build.IndexOf('-Target Win32Pdf') -lt 0 -or
@@ -596,19 +639,19 @@ if ($failures.Count -eq 0) {
     $failures.Add("octavo must consume UI0 API 91 canonical reader icons")
   }
   if ($app.IndexOf('#include "readerview0.h"') -lt 0 -or
-      $app.IndexOf('READERVIEW0_API_VERSION != 3') -lt 0) {
-    $failures.Add("octavo must consume Reader View API 3 through its umbrella")
+      $app.IndexOf('READERVIEW0_API_VERSION != 4') -lt 0) {
+    $failures.Add("octavo must consume Reader View API 4 through its umbrella")
   }
   if ($app.IndexOf('reader_view_build') -lt 0 -or
       $app.IndexOf('octavo_prepare_reader_view_projection') -lt 0 -or
       $app.IndexOf('octavo_apply_reader_view_actions') -lt 0) {
-    $failures.Add("octavo must project host data into Reader View API 3 and execute returned actions")
+    $failures.Add("octavo must project host data into Reader View API 4 and execute returned actions")
   }
   if ($app.IndexOf('.page_surface_rect = resolved_layout.page_surface_rect') -lt 0 -or
       $app.IndexOf('.content_rect = resolved_layout.content_rect') -lt 0 -or
       $app.IndexOf('ReaderViewContentGeometry reader_content_geometry') -lt 0 -or
       $app.IndexOf('host_toolbar_trailing_width = OctavoHostToolbarTrailingWidth') -lt 0) {
-    $failures.Add("octavo must adopt Reader View API 3 atomic layout geometry and retain the host toolbar slot")
+    $failures.Add("octavo must adopt Reader View API 4 atomic layout geometry and retain the host toolbar slot")
   }
   if ($app.IndexOf('projection.chrome_title = octavo_reader_view_text("Reader")') -lt 0 -or
       $app.IndexOf('OctavoToolbarHeight = 48') -ge 0 -or
@@ -790,7 +833,7 @@ if ($failures.Count -eq 0) {
     $failures.Add("octavo must retain settings and annotation persistence ownership")
   }
   if ($app.IndexOf('--reader-view-smoke') -lt 0) {
-    $failures.Add("octavo must retain deterministic Reader View API 3 action evidence")
+    $failures.Add("octavo must retain deterministic Reader View API 4 action evidence")
   }
   if ($app.IndexOf('--reader-view-startup-interaction-smoke') -lt 0 -or
       $app.IndexOf('octavo_host_pointer_press') -lt 0 -or

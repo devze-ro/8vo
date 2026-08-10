@@ -6,10 +6,11 @@ claim Port 8 acceptance or Google Play readiness.
 
 ## Authority and ownership
 
-- 8vo must continue to consume UI0 exactly at
-  `cadafcacdae8e63cf0d2b505f54e2a2a228c0bec`, public API 91, until an explicit
-  pin upgrade is reviewed, guarded, and validated. The newer primary UI0
-  checkout is not an implicit build input.
+- 8vo consumes UI0 exactly at
+  `b1cf8e4fbe7e06b9799e251665bbe491ae4c22b5`, public API 91. The dependency
+  guard requires this app pin to match Readerview0's reviewed nested UI0
+  metadata for both Win32 and Android EPUB builds; another checkout is not an
+  implicit build input.
 - One product-owned 8vo chrome profile must be resolved through
   `UI0TokenPatch` and `UI0ResolvedTheme`. UI0 semantic roles, state roles,
   typography roles, spacing, radii, density, component variants, and derived

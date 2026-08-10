@@ -55,6 +55,7 @@ $core = Get-Content -Raw -LiteralPath $corePath | ConvertFrom-Json
 $sourceFiles = @(
   "code\build.c",
   "code\octavo.c",
+  "code\platform\win32\octavo_accessibility_win32.c",
   "code\octavo_pdf.h",
   "code\octavo_pdf.c",
   "build\win32_build.bat",
@@ -73,6 +74,8 @@ $sourceFiles = @(
   "vendor\ground0_dependency\VERSION",
   "vendor\ui0_dependency\COMMIT",
   "vendor\readerview0_dependency\COMMIT",
+  "vendor\readerview0_dependency\VERSION",
+  "vendor\readerview0_dependency\API_VERSION",
   "vendor\mupdf_dependency\COMMIT",
   "vendor\mupdf_dependency\VERSION",
   "vendor\mupdf_dependency\SUBMODULES"

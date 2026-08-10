@@ -35,8 +35,8 @@
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"
 #endif
-#if READERVIEW0_API_VERSION != 3
-#  error "octavo requires Reader View API 3"
+#if READERVIEW0_API_VERSION != 4
+#  error "octavo requires Reader View API 4"
 #endif
 
 #include <commdlg.h>
@@ -4479,6 +4479,8 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
                         ReaderViewFeature_History |
                         ReaderViewFeature_Progress |
                         ReaderViewFeature_Fullscreen;
+  if (pdf_open)
+    projection.features |= ReaderViewFeature_DirectPageNumber;
   if (!pdf_document)
   {
     projection.features |= ReaderViewFeature_Contents |
@@ -4708,6 +4710,10 @@ octavo_reader_view_text_editing(const OctavoApp *app)
              ReaderViewLeftPanel_Find ||
            octavo_reader_view_focus_control_is(
              app, ReaderViewSemanticControl_FindInput))) ||
+         (app->reader_view_state.popup ==
+            ReaderViewPopup_DirectPageNumber &&
+          octavo_reader_view_focus_control_is(
+            app, ReaderViewSemanticControl_DirectPageInput)) ||
          (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
           octavo_reader_view_focus_is(app, ReaderViewSemantic_TextArea));
 }
@@ -4783,6 +4789,7 @@ octavo_reader_view_input(OctavoApp *app)
   text.commit_pressed = app->input.commit_pressed;
   text.transfer_buffer = &app->clipboard_transfer;
   result.find_text = text;
+  result.direct_page_text = text;
   result.note_text = (UI0TextAreaFrameInput){
     .text = text.text,
     .text_len = text.text_len,
@@ -24802,7 +24809,8 @@ octavo_run_pdf_stage1_smoke(const char *pdf_path,
   octavo_prepare_reader_view_projection(&app);
   UI0U64 expected_features = ReaderViewFeature_Open |
     ReaderViewFeature_Paging | ReaderViewFeature_History |
-    ReaderViewFeature_Progress | ReaderViewFeature_Fullscreen;
+    ReaderViewFeature_Progress | ReaderViewFeature_Fullscreen |
+    ReaderViewFeature_DirectPageNumber;
   OCTAVO_PDF_SMOKE_REQUIRE(
     app.reader_view_projection.features == expected_features &&
     (app.reader_view_projection.document_flags & ReaderViewDocument_Open) &&
@@ -24944,6 +24952,167 @@ octavo_run_pdf_stage1_smoke(const char *pdf_path,
   OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, -1) ==
                              OctavoMoveResult_Boundary,
                            "previous-boundary");
+
+  /* Exercise the application-owned input bridge and action translation, not
+     only Readerview0's package test. Pointer activation opens the PDF-only
+     editor, Enter commits its one-based draft, and the existing zero-based
+     SeekLocation action reaches Reader0. */
+  octavo_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *direct_trigger =
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_trigger != 0,
+                           "direct-page-pointer-trigger");
+  UI0Rect direct_trigger_rect = direct_trigger->rect;
+  app.input.pointer_x = direct_trigger_rect.x + direct_trigger_rect.w / 2;
+  app.input.pointer_y = direct_trigger_rect.y + direct_trigger_rect.h / 2;
+  app.input.pointer_down = 1;
+  app.input.pointer_pressed = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  app.input.pointer_down = 0;
+  app.input.pointer_released = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-pointer-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame,
+      ReaderViewSemanticControl_DirectPageInput) != 0,
+    "direct-page-input");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_reader_view_text_editing(&app),
+                           "direct-page-native-editing-route");
+  octavo_append_input_wchar(&app, L'2');
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.input.text_length == 1 && app.input.text[0] == '2',
+    "direct-page-native-text-route");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.direct_page_draft_length == 1 &&
+    app.reader_view_state.direct_page_draft[0] == '2',
+    "direct-page-keyboard-edit");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_route_keydown(&app, VK_RETURN, 0) ==
+      OctavoReaderKeyRoute_Handled,
+    "direct-page-native-enter-route");
+  octavo_render_to_buffer(&app, &buffer);
+  U64 direct_seek_value = UINT64_MAX;
+  for (UI0S32 action_index = 0;
+       action_index < app.reader_view_frame.action_count;
+       action_index += 1)
+  {
+    const ReaderViewAction *action =
+      app.reader_view_frame.actions + action_index;
+    if (action->kind == ReaderViewAction_SeekLocation)
+      direct_seek_value = action->value;
+  }
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    direct_seek_value == 1 &&
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "direct-page-keyboard-commit");
+  octavo_apply_reader_view_actions(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 1,
+                           "direct-page-keyboard-seek");
+
+  /* Reopen from keyboard focus and commit through the popup button so the
+     product bridge covers both input modes. */
+  octavo_render_to_buffer(&app, &buffer);
+  direct_trigger = octavo_reader_view_semantic_control(
+    &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_trigger != 0,
+                           "direct-page-keyboard-trigger");
+  app.reader_view_state.focus_id = direct_trigger->id;
+  app.reader_view_state.focus_visible = 1;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_route_keydown(&app, VK_RETURN, 0) ==
+      OctavoReaderKeyRoute_Handled,
+    "direct-page-native-trigger-route");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-keyboard-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_reader_view_text_editing(&app),
+                           "direct-page-native-second-editing-route");
+  octavo_append_input_wchar(&app, L'3');
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.input.text_length == 1 && app.input.text[0] == '3',
+    "direct-page-native-second-text-route");
+  octavo_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *direct_commit =
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_DirectPageCommit);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_commit != 0,
+                           "direct-page-pointer-commit-control");
+  UI0Rect direct_commit_rect = direct_commit->rect;
+  app.input.pointer_x = direct_commit_rect.x + direct_commit_rect.w / 2;
+  app.input.pointer_y = direct_commit_rect.y + direct_commit_rect.h / 2;
+  app.input.pointer_down = 1;
+  app.input.pointer_pressed = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  app.input.pointer_down = 0;
+  app.input.pointer_released = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  direct_seek_value = UINT64_MAX;
+  for (UI0S32 action_index = 0;
+       action_index < app.reader_view_frame.action_count;
+       action_index += 1)
+  {
+    const ReaderViewAction *action =
+      app.reader_view_frame.actions + action_index;
+    if (action->kind == ReaderViewAction_SeekLocation)
+      direct_seek_value = action->value;
+  }
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_seek_value == 2,
+                           "direct-page-pointer-commit");
+  octavo_apply_reader_view_actions(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 2,
+                           "direct-page-pointer-seek");
+
+  /* A host-side can_seek withdrawal must tear down stale editor state before
+     any deferred action can escape. Restore the valid Reader0 frame before
+     asking the document invariant checker to observe it. */
+  octavo_render_to_buffer(&app, &buffer);
+  direct_trigger = octavo_reader_view_semantic_control(
+    &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    direct_trigger && reader_view_accessibility_invoke(
+      &app.reader_view_state, direct_trigger->id),
+    "direct-page-withdraw-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-withdraw-popup");
+  U32 saved_pdf_page_count = app.pdf.frame.page_count;
+  U32 saved_pdf_page_index = app.pdf.frame.page_index;
+  app.pdf.frame.page_count = 0;
+  app.pdf.frame.page_index = 0;
+  B32 withdrawal_built = octavo_build_reader_view(&app);
+  app.pdf.frame.page_count = saved_pdf_page_count;
+  app.pdf.frame.page_index = saved_pdf_page_index;
+  OCTAVO_PDF_SMOKE_REQUIRE(withdrawal_built,
+                           "direct-page-withdraw-build");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "direct-page-withdraw-popup-close");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.direct_page_draft_length == 0,
+    "direct-page-withdraw-draft-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(app.reader_view_frame.action_count == 0,
+                           "direct-page-withdraw-action-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame,
+      ReaderViewSemanticControl_DirectPageTrigger) == 0,
+    "direct-page-withdraw-trigger-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_document_invariants_hold(&app),
+                           "direct-page-withdraw-invariants");
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_SeekLocation, .value = 0});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 0,
+                           "direct-page-return");
+
   U32 annotation_count = app.highlight_count + app.bookmark_count;
   octavo_apply_reader_view_action(&app,
     &(ReaderViewAction){.kind = ReaderViewAction_ToggleBookmark});
@@ -24990,6 +25159,11 @@ octavo_run_pdf_stage1_smoke(const char *pdf_path,
                            !octavo_pdf_is_open(&app.pdf) &&
                            octavo_document_invariants_hold(&app),
                            "pdf-epub-replacement");
+  octavo_prepare_reader_view_projection(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !(app.reader_view_projection.features &
+      ReaderViewFeature_DirectPageNumber),
+    "epub-direct-page-feature-absent");
   DocDocumentId epub_document_id = epub_reader_document_id(&app.reader);
   U64 epub_document_generation = app.reader.document_generation;
   char retained_epub_path[OctavoLibraryPathCap] = {0};
@@ -25080,6 +25254,8 @@ cleanup:
           "raster_bytes=%llu cap=%u rgba_to_bgra=in_place "
           "landscape8k=%ux%u landscape_bytes=%llu retry=resize,navigate "
           "navigation=previous,next,back,forward,seek "
+          "direct_page=pointer,keyboard withdrawal=can_seek "
+          "epub_direct_page=absent "
           "replacement=pdf-pdf,pdf-epub-late,epub-pdf lifecycle=verified "
           "hash=%016llx bmp=%s\n",
           raster_width, raster_height, (unsigned long long)raster_bytes,
