@@ -9,6 +9,8 @@ $buildPath = Join-Path $RepoRoot "code\build.c"
 $appPath = Join-Path $RepoRoot "code\octavo.c"
 $pdfHeaderPath = Join-Path $RepoRoot "code\octavo_pdf.h"
 $pdfSourcePath = Join-Path $RepoRoot "code\octavo_pdf.c"
+$pdfContentHeaderPath = Join-Path $RepoRoot "code\octavo_pdf_content.h"
+$pdfContentSourcePath = Join-Path $RepoRoot "code\octavo_pdf_content.c"
 $themeHeaderPath = Join-Path $RepoRoot "code\octavo_theme.h"
 $themePath = Join-Path $RepoRoot "code\octavo_theme.c"
 $libraryHeaderPath = Join-Path $RepoRoot "code\octavo_library.h"
@@ -22,6 +24,9 @@ $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $pdfProvenanceAuditPath = Join-Path $RepoRoot "scripts\audit_win32_pdf_provenance.ps1"
 $pdfBuildProvenancePath = Join-Path $RepoRoot "scripts\write_win32_pdf_build_provenance.ps1"
 $pdfSmokePath = Join-Path $RepoRoot "scripts\win32_octavo_pdf_stage1_smoke.ps1"
+$pdfContentSmokePath =
+  Join-Path $RepoRoot "scripts\win32_octavo_pdf_content_smoke.ps1"
+$publicSmokePath = Join-Path $RepoRoot "scripts\run_public_smoke.ps1"
 $productSourceGuardPath =
   Join-Path $RepoRoot "scripts\require_win32_product_source_state.ps1"
 $productSourceSmokePath =
@@ -55,6 +60,12 @@ if (!(Test-Path -LiteralPath $pdfHeaderPath)) {
 }
 if (!(Test-Path -LiteralPath $pdfSourcePath)) {
   $failures.Add("missing concrete Win32 PDF host implementation")
+}
+if (!(Test-Path -LiteralPath $pdfContentHeaderPath)) {
+  $failures.Add("missing bounded Win32 PDF content contract")
+}
+if (!(Test-Path -LiteralPath $pdfContentSourcePath)) {
+  $failures.Add("missing bounded Win32 PDF content implementation")
 }
 if (!(Test-Path -LiteralPath $themeHeaderPath)) {
   $failures.Add("missing platform-neutral 8vo theme catalog contract")
@@ -94,6 +105,12 @@ if (!(Test-Path -LiteralPath $pdfBuildProvenancePath)) {
 }
 if (!(Test-Path -LiteralPath $pdfSmokePath)) {
   $failures.Add("missing standalone Win32 PDF Stage 1 smoke")
+}
+if (!(Test-Path -LiteralPath $pdfContentSmokePath)) {
+  $failures.Add("missing standalone Win32 PDF content smoke")
+}
+if (!(Test-Path -LiteralPath $publicSmokePath)) {
+  $failures.Add("missing public smoke gate")
 }
 if (!(Test-Path -LiteralPath $productSourceGuardPath)) {
   $failures.Add("missing Win32 product source-state release guard")
@@ -139,6 +156,8 @@ if ($failures.Count -eq 0) {
   $app = [System.IO.File]::ReadAllText($appPath)
   $pdfHeader = [System.IO.File]::ReadAllText($pdfHeaderPath)
   $pdfSource = [System.IO.File]::ReadAllText($pdfSourcePath)
+  $pdfContentHeader = [System.IO.File]::ReadAllText($pdfContentHeaderPath)
+  $pdfContentSource = [System.IO.File]::ReadAllText($pdfContentSourcePath)
   $themeHeader = [System.IO.File]::ReadAllText($themeHeaderPath)
   $theme = [System.IO.File]::ReadAllText($themePath)
   $libraryHeader = [System.IO.File]::ReadAllText($libraryHeaderPath)
@@ -154,6 +173,8 @@ if ($failures.Count -eq 0) {
   $pdfBuildProvenance =
     [System.IO.File]::ReadAllText($pdfBuildProvenancePath)
   $pdfSmoke = [System.IO.File]::ReadAllText($pdfSmokePath)
+  $pdfContentSmoke = [System.IO.File]::ReadAllText($pdfContentSmokePath)
+  $publicSmoke = [System.IO.File]::ReadAllText($publicSmokePath)
   $productSourceGuard =
     [System.IO.File]::ReadAllText($productSourceGuardPath)
   $productSourceSmoke =
@@ -453,6 +474,25 @@ if ($failures.Count -eq 0) {
         '#\s*include\s+"platform/win32/os_thread_win32\.c"').Count -ne 1) {
     $failures.Add("Win32 unity must compile the concrete PDF host and Reader0 heap/thread closure exactly once")
   }
+  if ([regex]::Matches(
+        $build,
+        '#include\s+"octavo_pdf_content\.c"').Count -ne 1 -or
+      $pdfContentSource -match
+        '(?i)\b(?:malloc|calloc|realloc|free)\s*\(' -or
+      $pdfContentSource.IndexOf('pdf_reader_outline') -lt 0 -or
+      $pdfContentSource.IndexOf('pdf_reader_search_page') -lt 0 -or
+      $pdfContentSource.IndexOf('pdf_reader_page_links') -lt 0 -or
+      $pdfContentSource.IndexOf('pdf_reader_page_label') -lt 0 -or
+      $pdfContentSource.IndexOf('MultiByteToWideChar') -lt 0 -or
+      $pdfContentHeader.IndexOf(
+        'OCTAVO_PDF_CONTENT_SEARCH_ROW_CAP = 64') -lt 0 -or
+      $app.IndexOf('--pdf-content-smoke') -lt 0 -or
+      $pdfContentSmoke.IndexOf('--pdf-content-smoke') -lt 0 -or
+      $pdfContentSmoke.IndexOf('repeat=2') -lt 0 -or
+      $publicSmoke -notmatch
+        '"win32_octavo_pdf_stage1_smoke\.ps1",\s*"win32_octavo_pdf_content_smoke\.ps1"') {
+    $failures.Add("Win32 PDF content must remain concrete, arena-bounded, exact-copy, and UTF-8-safe")
+  }
   if ([regex]::Matches($build, '#include\s+"ui0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile ui0.c exactly once")
   }
@@ -574,6 +614,7 @@ if ($failures.Count -eq 0) {
       $pdfBuildProvenance.IndexOf('release_eligible') -lt 0 -or
       $pdfBuildProvenance.IndexOf('status_porcelain') -lt 0 -or
       $pdfBuildProvenance.IndexOf('scripts\write_win32_pdf_build_provenance.ps1') -lt 0 -or
+      $pdfBuildProvenance.IndexOf('scripts\run_public_smoke.ps1') -lt 0 -or
       $productSourceGuard.IndexOf('--untracked-files=all') -lt 0 -or
       $productSourceGuard.IndexOf('release-profile Win32 PDF build requires a clean 8vo tree') -lt 0 -or
       $productSourceSmoke.IndexOf('release=rejects_dirty') -lt 0 -or
