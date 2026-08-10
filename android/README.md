@@ -3,9 +3,10 @@
 This directory is the Android application root. Ports 0-7 are accepted. Port 8
 is the corrected structural-navigation foundation originally validated against
 Reader0 `0.7.0-dev` / public API 7. The current tree consumes Reader0
-`0.10.0-dev` / public API 10 at the exact revision recorded under
-`vendor/reader0_dependency`; Android remains EPUB-only and uses API 10's
-backward-compatible EPUB surface. Win32 PDF support does not enter the Android
+`0.11.0-dev` / public API 11 at the exact revision recorded under
+`vendor/reader0_dependency`; Android remains EPUB-only and uses API 11's
+backward-compatible EPUB surface. API 11's appended PDF document identity is
+not consumed by Android. Win32 PDF support does not enter the Android
 source or binary closure. Android's exact-dependency task selects the
 `AndroidEpub` guard target, which does not resolve or require a MuPDF checkout;
 the Win32 build selects `Win32Pdf` and retains the exact MuPDF requirement.
@@ -368,7 +369,7 @@ contained only expected force stops.
 - `OctavoNative` is the explicit Java/JNI boundary.
 - `octavo_android_port7_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once. The current Reader0 boundary is
-  `0.10.0-dev` / public API 10; its exact local commit is recorded under
+  `0.11.0-dev` / public API 11; its exact local commit is recorded under
   `vendor/reader0_dependency`. The historical Port 7 unity filename is retained
   because it still compiles each public package exactly once.
 - `code/octavo_reader_justification.h` provides one allocation-free publisher
@@ -563,7 +564,7 @@ The historically validated corrected Port 8 source consumed Reader0
 `0.7.0-dev` / public API 7 at
 `5fe949d88258cd96884c44b69e4f4ab6f27dc394`. That historical Reader0 revision passed its
 exact dependency/API audit, MSVC `/W4 /WX` build, core smoke, and host smoke.
-The current source instead pins Reader0 `0.10.0-dev` / API 10 through
+The current source instead pins Reader0 `0.11.0-dev` / API 11 through
 `vendor/reader0_dependency`; its Android EPUB compile/link regression must be
 rerun for the current pin and does not retroactively replace the measurements
 below.

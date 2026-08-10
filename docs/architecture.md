@@ -3,8 +3,10 @@
 8vo is a native reader with an application shell that owns explicit concrete
 None/EPUB/PDF state rather than a generic document framework. The Windows
 product supports EPUB and bounded PDF Stage 1; Android remains EPUB-only. The
-current source consumes Reader0 `0.10.0-dev` / API 10 at the exact revision in
-`vendor/reader0_dependency`. The accepted Android host is at Port 7. Port 8
+current source consumes Reader0 `0.11.0-dev` / API 11 at the exact revision in
+`vendor/reader0_dependency`. API 11 appends exact SHA-256 PDF document identity;
+this compatibility-only repin does not consume or persist it. The accepted
+Android host is at Port 7. Port 8
 structural navigation was originally validated against Reader0 `0.7.0-dev` /
 API 7. The corrected source closes six
 reported navigation, pagination, image-page, chapter-targeting, and top-padding

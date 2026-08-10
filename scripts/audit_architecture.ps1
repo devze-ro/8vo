@@ -520,9 +520,9 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("octavo must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 10') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 11') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 10 including author metadata and PDF")
+    $failures.Add("octavo must consume Reader0 API 11 including author metadata and PDF")
   }
   if ($pdfHeader.IndexOf('OCTAVO_PDF_RASTER_MEMORY_CAP = 64 * 1024 * 1024') -lt 0 -or
       $pdfHeader.IndexOf('U8 *rgba_pixels') -lt 0 -or
@@ -660,7 +660,7 @@ if ($failures.Count -eq 0) {
   )
   foreach ($api in $reader0StructuralNavigationApis) {
     if ($androidNavigation.IndexOf($api) -lt 0) {
-      $failures.Add("Android EPUB structural navigation must consume Reader0 API 10 compatibility API $api")
+      $failures.Add("Android EPUB structural navigation must consume Reader0 API 11's API 10-compatible API $api")
     }
   }
   if ($androidNavigation.IndexOf('.suppress_history = 1') -lt 0 -or
@@ -902,7 +902,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('OctavoAdjacentWarmPageCap = 4') -lt 0 -or
       $app.IndexOf('adjacent_warm_direction') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 10 EPUB navigation preparation with bounded four-page host warming")
+    $failures.Add("octavo must consume Reader0 API 11's API 10-compatible EPUB navigation preparation with bounded four-page host warming")
   }
   $timerResolutionBegins =
     [regex]::Matches($app, 'timeBeginPeriod\s*\(\s*1\s*\)').Count
@@ -1109,4 +1109,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "octavo architecture audit: pass"
-Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster + readerview0/UI0 chrome + Reader0 API 10 EPUB and Win32 MuPDF core"
+Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster + readerview0/UI0 chrome + Reader0 API 11 EPUB and Win32 MuPDF core"

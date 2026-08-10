@@ -1,9 +1,11 @@
 # Win32 PDF Stage 1
 
 This slice adds one concrete PDF reader to the existing 8vo Win32 product. It
-uses Reader0 API 10 and Reader0's audited MuPDF 1.28.2 PDF-only core. EPUB keeps
-its existing concrete `EpubReader`; the host does not introduce a generic
-document vtable or an EPUB adapter.
+uses Reader0 API 11 and Reader0's audited MuPDF 1.28.2 PDF-only core. API 11 is
+append-only over API 10's transactional PDF contract and publishes exact
+SHA-256 document identity; this compatibility-only repin does not consume that
+identity. EPUB keeps its existing concrete `EpubReader`; the host does not
+introduce a generic document vtable or an EPUB adapter.
 
 ## Product boundary
 

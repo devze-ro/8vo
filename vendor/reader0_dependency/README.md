@@ -3,8 +3,8 @@
 Current pinned reader0 consumer dependency:
 
 - mode: `sibling-source`
-- version: `0.10.0-dev`
-- API version: `10`
+- version: `0.11.0-dev`
+- API version: `11`
 - commit: see the authoritative sibling `COMMIT` file (the coordinated final
   pin is advanced atomically with that file)
 
@@ -24,12 +24,18 @@ Reader0 API 10's EPUB-compatible presented-navigation primitive validates the ac
 destination before 8vo exposes a history entry; failed or interrupted frames
 leave both the prior history and durable position authoritative.
 
-The pinned API 10 revision also exposes bounded encoded-resource extraction and
+Reader0 API 10 also exposes bounded encoded-resource extraction and
 the concrete PDF boundary used only by the Win32 host.
 Reader0 stats the selected ZIP entry in the same opened archive and returns a
 distinct limit result before output allocation or entry decompression. Android
 uses the remaining presentation byte budget for every image request; the
 Windows reader uses its existing 32 MiB encoded-resource ceiling.
+
+API 11 appends exact SHA-256 PDF document identity to successful open
+transitions, readers, and frames using Ground0's allocation-free hash path.
+This compatibility-only repin does not consume or persist that identity; 8vo's
+existing EPUB and PDF behavior continues through the previously supported
+fields.
 
 Saved catalog and legacy positions explicitly request Reader0's bounded
 six-page restore before resolving the persisted byte.
