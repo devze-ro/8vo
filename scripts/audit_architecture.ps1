@@ -22,6 +22,10 @@ $win32BuildPath = Join-Path $RepoRoot "build\win32_build.bat"
 $pdfProvenanceAuditPath = Join-Path $RepoRoot "scripts\audit_win32_pdf_provenance.ps1"
 $pdfBuildProvenancePath = Join-Path $RepoRoot "scripts\write_win32_pdf_build_provenance.ps1"
 $pdfSmokePath = Join-Path $RepoRoot "scripts\win32_octavo_pdf_stage1_smoke.ps1"
+$productSourceGuardPath =
+  Join-Path $RepoRoot "scripts\require_win32_product_source_state.ps1"
+$productSourceSmokePath =
+  Join-Path $RepoRoot "scripts\win32_pdf_product_source_state_smoke.ps1"
 $androidDependencySmokePath =
   Join-Path $RepoRoot "scripts\android_dependency_guard_no_mupdf_smoke.ps1"
 $androidCppRoot = Join-Path $RepoRoot "android\app\src\main\cpp"
@@ -89,6 +93,12 @@ if (!(Test-Path -LiteralPath $pdfBuildProvenancePath)) {
 if (!(Test-Path -LiteralPath $pdfSmokePath)) {
   $failures.Add("missing standalone Win32 PDF Stage 1 smoke")
 }
+if (!(Test-Path -LiteralPath $productSourceGuardPath)) {
+  $failures.Add("missing Win32 product source-state release guard")
+}
+if (!(Test-Path -LiteralPath $productSourceSmokePath)) {
+  $failures.Add("missing Win32 product source-state negative regression")
+}
 if (!(Test-Path -LiteralPath $androidDependencySmokePath)) {
   $failures.Add("missing Android no-MuPDF dependency-guard regression")
 }
@@ -139,6 +149,10 @@ if ($failures.Count -eq 0) {
   $pdfBuildProvenance =
     [System.IO.File]::ReadAllText($pdfBuildProvenancePath)
   $pdfSmoke = [System.IO.File]::ReadAllText($pdfSmokePath)
+  $productSourceGuard =
+    [System.IO.File]::ReadAllText($productSourceGuardPath)
+  $productSourceSmoke =
+    [System.IO.File]::ReadAllText($productSourceSmokePath)
   $androidDependencySmoke =
     [System.IO.File]::ReadAllText($androidDependencySmokePath)
   $androidCMake = [System.IO.File]::ReadAllText($androidCMakePath)
@@ -474,9 +488,12 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('product-render-resize-retry') -lt 0 -or
       $app.IndexOf('product-render-navigation-retry') -lt 0 -or
       $app.IndexOf('landscape-8k-memory-fit') -lt 0 -or
+      $app.IndexOf('octavo_page_action_abandon_failed_pdf_presentation') -lt 0 -or
+      $app.IndexOf('--pdf-presentation-recovery-win32-smoke') -lt 0 -or
       $pdfSmoke.IndexOf('landscape8k=5792x2896') -lt 0 -or
-      $pdfSmoke.IndexOf('retry=resize,navigate') -lt 0) {
-    $failures.Add("PDF memory-aware fit and transient render failures must remain bounded and retryable through resize/navigation")
+      $pdfSmoke.IndexOf('retry=resize,navigate') -lt 0 -or
+      $pdfSmoke.IndexOf('gate=real_win32 recoveries=page,history,seek,open,close') -lt 0) {
+    $failures.Add("PDF memory-aware fit and render failures must remain bounded, retryable, and escapable through the real Win32 presentation gate")
   }
   if ($app.IndexOf('OctavoDocument_None') -lt 0 -or
       $app.IndexOf('OctavoDocument_EPUB') -lt 0 -or
@@ -496,6 +513,8 @@ if ($failures.Count -eq 0) {
   if ($win32Build.IndexOf('/DREADER0_WITH_MUPDF=1') -lt 0 -or
       $win32Build.IndexOf('audit_win32_pdf_provenance.ps1') -lt 0 -or
       $win32Build.IndexOf('write_win32_pdf_build_provenance.ps1') -lt 0 -or
+      $win32Build.IndexOf('require_win32_product_source_state.ps1') -lt 0 -or
+      $win32Build.IndexOf('OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD') -lt 0 -or
       $win32Build.IndexOf('audit_mupdf_pdf_link_map.ps1') -lt 0 -or
       $win32Build.IndexOf('/INCLUDE:fz_new_search') -lt 0 -or
       $win32Build.IndexOf('/MAP:"8vo.map"') -lt 0 -or
@@ -510,7 +529,16 @@ if ($failures.Count -eq 0) {
       $pdfProvenanceAudit.IndexOf('Get-Command link.exe') -lt 0 -or
       $pdfBuildProvenance.IndexOf('input_sha256') -lt 0 -or
       $pdfBuildProvenance.IndexOf('executable') -lt 0 -or
+      $pdfBuildProvenance.IndexOf('win32-pdf-build-provenance.v2') -lt 0 -or
+      $pdfBuildProvenance.IndexOf('verified_clean') -lt 0 -or
+      $pdfBuildProvenance.IndexOf('release_eligible') -lt 0 -or
+      $pdfBuildProvenance.IndexOf('status_porcelain') -lt 0 -or
       $pdfBuildProvenance.IndexOf('scripts\write_win32_pdf_build_provenance.ps1') -lt 0 -or
+      $productSourceGuard.IndexOf('--untracked-files=all') -lt 0 -or
+      $productSourceGuard.IndexOf('release-profile Win32 PDF build requires a clean 8vo tree') -lt 0 -or
+      $productSourceSmoke.IndexOf('release=rejects_dirty') -lt 0 -or
+      $productSourceSmoke.IndexOf('build=precompile_reject') -lt 0 -or
+      $productSourceSmoke.IndexOf('development=nonrelease_evidence') -lt 0 -or
       $dependencyCheck.IndexOf('vendor\mupdf_dependency') -lt 0 -or
       $dependencyCheck.IndexOf('[ValidateSet("Win32Pdf", "AndroidEpub")]') -lt 0 -or
       $dependencyCheck.IndexOf('if ($Target -eq "Win32Pdf")') -lt 0 -or

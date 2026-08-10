@@ -736,6 +736,7 @@ typedef struct OctavoApp
   U32 page_action_presentation_retry_attempt;
   U32 page_action_presentation_retry_scheduled_count;
   U32 page_action_presentation_retry_fired_count;
+  U32 page_action_failed_pdf_recovery_count;
   U32 page_action_mutation_drop_count;
   U32 capture_frame_fail_count;
   B32 capture_frame_failed_since_mutation;
@@ -963,6 +964,8 @@ FUNCTION void octavo_cancel_page_repeat_for_focus(OctavoApp *app);
 FUNCTION void octavo_cancel_page_repeat_for_deactivation(OctavoApp *app);
 FUNCTION void octavo_cancel_page_repeat_for_mutation(OctavoApp *app);
 FUNCTION void octavo_page_action_note_emitted(OctavoApp *app);
+FUNCTION B32
+octavo_page_action_abandon_failed_pdf_presentation(OctavoApp *app);
 FUNCTION B32 octavo_begin_document_mutation(OctavoApp *app);
 FUNCTION void octavo_complete_document_mutation(OctavoApp *app,
                                                    B32 changed);
@@ -7899,7 +7902,8 @@ octavo_begin_document_mutation(OctavoApp *app)
     app->capture_frame_failed_since_mutation = 0;
     return 1;
   }
-  if (app->page_action_waiting_for_present)
+  if (app->page_action_waiting_for_present &&
+      !octavo_page_action_abandon_failed_pdf_presentation(app))
   {
     if (app->page_action_mutation_drop_count < UINT32_MAX)
       app->page_action_mutation_drop_count += 1;
@@ -8198,6 +8202,35 @@ octavo_page_action_clear_pending(OctavoApp *app)
   app->page_action_pending_arm_repeat = 0;
   app->page_action_pending_direction = 0;
   app->page_action_pending_key = 0;
+}
+
+/* A failed PDF raster transaction cannot ever satisfy the identity captured
+   for the accepted page action. Keep ordinary surface/present failures gated
+   and retryable, but let the next explicit document mutation abandon this
+   impossible PDF presentation. This cancels its retry timer and any deferred
+   directional action before the caller starts a fresh mutation. */
+FUNCTION B32
+octavo_page_action_abandon_failed_pdf_presentation(OctavoApp *app)
+{
+  if (!app || !app->window || !app->page_action_waiting_for_present ||
+      app->document_kind != OctavoDocument_PDF ||
+      app->document_state != ReaderViewLoad_Ready ||
+      !octavo_pdf_is_open(&app->pdf) ||
+      app->page_action_expected_identity.kind !=
+        OctavoPresentationIdentity_PdfPage ||
+      app->pdf.last_result == PdfReaderResult_Ok ||
+      app->pdf.bgra_pixels || app->presentation_complete)
+  {
+    return 0;
+  }
+
+  octavo_page_action_cancel_presentation_retry(app);
+  app->page_action_waiting_for_present = 0;
+  MemoryZeroStruct(&app->page_action_expected_identity);
+  octavo_page_action_clear_pending(app);
+  if (app->page_action_failed_pdf_recovery_count < UINT32_MAX)
+    app->page_action_failed_pdf_recovery_count += 1;
+  return 1;
 }
 
 FUNCTION void
@@ -13339,7 +13372,8 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
           return 0;
         }
         if (page_action_candidate && system_repeat) return 0;
-        if (page_action_candidate && app->page_action_waiting_for_present)
+        if (page_action_candidate && app->page_action_waiting_for_present &&
+            !octavo_page_action_abandon_failed_pdf_presentation(app))
         {
           if (system_repeat) return 0;
           octavo_page_action_defer(app,
@@ -23606,12 +23640,270 @@ octavo_page_repeat_win32_run_probe(
   return probe.completed;
 }
 
+FUNCTION B32
+octavo_win32_pdf_recovery_wait_for_timer(OctavoWin32 *win32,
+                                           U32 fired_before)
+{
+  if (!win32 || !win32->window) return 0;
+  ULONGLONG deadline = GetTickCount64() + 2000;
+  MSG message = {0};
+  while (GetTickCount64() < deadline)
+  {
+    DWORD wait_result = MsgWaitForMultipleObjectsEx(
+      0, 0, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    if (wait_result == WAIT_FAILED) return 0;
+    while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+    {
+      if (message.message == WM_QUIT) return 0;
+      B32 target_timer = message.hwnd == win32->window &&
+        message.message == WM_TIMER &&
+        message.wParam == OctavoPresentationRetryTimerId;
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+      if (target_timer)
+      {
+        return win32->app.page_action_presentation_retry_fired_count ==
+                 fired_before + 1 &&
+          GetUpdateRect(win32->window, 0, FALSE) != 0;
+      }
+    }
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_win32_pdf_recovery_fail_pending_frame(OctavoWin32 *win32,
+                                                U32 *out_timer_cycles)
+{
+  if (out_timer_cycles) *out_timer_cycles = 0;
+  if (!win32 || !win32->window || !out_timer_cycles ||
+      !win32->app.page_action_waiting_for_present ||
+      win32->app.page_action_expected_identity.kind !=
+        OctavoPresentationIdentity_PdfPage ||
+      !octavo_pdf_is_open(&win32->app.pdf) ||
+      !win32->app.pdf.rgba_pixels)
+  {
+    return 0;
+  }
+
+  OctavoApp *app = &win32->app;
+  U8 *owned_raster = app->pdf.rgba_pixels;
+  U32 scheduled_before = app->page_action_presentation_retry_scheduled_count;
+  U32 fired_before = app->page_action_presentation_retry_fired_count;
+  B32 passed = 1;
+  app->pdf.bgra_pixels = 0;
+  app->pdf.rendered_reader_generation = 0;
+  app->pdf.rgba_pixels = 0;
+  for (U32 cycle = 0; cycle < 2; cycle += 1)
+  {
+    if (!InvalidateRect(win32->window, 0, FALSE) ||
+        !UpdateWindow(win32->window) ||
+        !app->page_action_waiting_for_present ||
+        app->page_action_expected_identity.kind !=
+          OctavoPresentationIdentity_PdfPage ||
+        app->pdf.last_result == PdfReaderResult_Ok ||
+        app->pdf.bgra_pixels || app->presentation_complete ||
+        app->page_action_presentation_retry_scheduled_count !=
+          scheduled_before + cycle + 1 ||
+        app->page_action_presentation_retry_attempt == 0 ||
+        !octavo_win32_pdf_recovery_wait_for_timer(
+          win32, fired_before + cycle))
+    {
+      passed = 0;
+      break;
+    }
+    *out_timer_cycles += 1;
+  }
+  app->pdf.rgba_pixels = owned_raster;
+  return passed && *out_timer_cycles == 2 &&
+    app->page_action_presentation_retry_fired_count == fired_before + 2 &&
+    app->page_action_presentation_retry_scheduled_count ==
+      scheduled_before + 2 &&
+    app->page_action_waiting_for_present &&
+    GetUpdateRect(win32->window, 0, FALSE) != 0;
+}
+
+FUNCTION B32
+octavo_win32_pdf_recovery_present(OctavoWin32 *win32)
+{
+  if (!win32 || !win32->window) return 0;
+  if (GetUpdateRect(win32->window, 0, FALSE) == 0 &&
+      !InvalidateRect(win32->window, 0, FALSE))
+  {
+    return 0;
+  }
+  if (!UpdateWindow(win32->window) ||
+      win32->app.page_action_waiting_for_present ||
+      win32->app.page_action_presentation_retry_attempt != 0 ||
+      !win32->app.last_present_complete)
+  {
+    return 0;
+  }
+  if (win32->app.document_kind == OctavoDocument_PDF)
+  {
+    return win32->app.pdf.bgra_pixels &&
+      win32->app.pdf.rendered_reader_generation ==
+        win32->app.pdf.frame.generation;
+  }
+  return win32->app.document_kind == OctavoDocument_None;
+}
+
+FUNCTION B32
+octavo_win32_pdf_presentation_recovery_regression(OctavoWin32 *win32,
+                                                     const char *path)
+{
+  const char *failure = "initial";
+  if (!win32 || !win32->window || !path || !path[0] ||
+      win32->app.document_kind != OctavoDocument_PDF ||
+      win32->app.pdf.frame.page_count != 3 ||
+      !octavo_win32_pdf_recovery_present(win32))
+  {
+    fprintf(stderr,
+            "octavo_pdf_presentation_recovery_win32_smoke result=fail "
+            "reason=%s\n", failure);
+    return 0;
+  }
+
+  OctavoApp *app = &win32->app;
+  U32 recovery_before = app->page_action_failed_pdf_recovery_count;
+  U32 scheduled_before = app->page_action_presentation_retry_scheduled_count;
+  U32 fired_before = app->page_action_presentation_retry_fired_count;
+  U32 timer_cycles = 0;
+  U32 cycles = 0;
+
+#define OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(condition, reason) \
+  do { if (!(condition)) { failure = (reason); goto cleanup; } } while (0)
+
+  /* Keyboard page recovery passes through the real Win32 defer gate. */
+  SendMessageW(win32->window, WM_KEYDOWN, VK_RIGHT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 1 && app->page_action_waiting_for_present,
+    "page-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "page-failure");
+  timer_cycles += cycles;
+  SendMessageW(win32->window, WM_KEYDOWN, VK_RIGHT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 2 && app->page_action_waiting_for_present &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 1 &&
+    app->page_action_presentation_retry_attempt == 0 &&
+    octavo_win32_pdf_recovery_present(win32), "page-recovery");
+
+  /* A failed page-one presentation must not block explicit history. */
+  SendMessageW(win32->window, WM_KEYDOWN, VK_LEFT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 1 && app->page_action_waiting_for_present,
+    "history-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "history-failure");
+  timer_cycles += cycles;
+  U32 history_source = app->pdf.frame.page_index;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_move_history(app, 0) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index != history_source &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 2 &&
+    octavo_win32_pdf_recovery_present(win32), "history-recovery");
+
+  /* Seek once to create an accepted gate, fail it, then seek elsewhere. */
+  U32 seek_source = app->pdf.frame.page_index;
+  U32 first_seek = seek_source == 0 ? 1 : 0;
+  U32 recovery_seek = first_seek == 2 ? 0 : 2;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, first_seek) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index == first_seek &&
+    app->page_action_waiting_for_present, "seek-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "seek-failure");
+  timer_cycles += cycles;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, recovery_seek) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index == recovery_seek &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 3 &&
+    octavo_win32_pdf_recovery_present(win32), "seek-recovery");
+
+  /* Same-kind Open is a real transactional replacement through the gate. */
+  U32 open_failure_target = app->pdf.frame.page_index == 0 ? 1 : 0;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, open_failure_target) == OctavoMoveResult_Ok &&
+    app->page_action_waiting_for_present, "open-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "open-failure");
+  timer_cycles += cycles;
+  U64 document_generation = app->pdf.frame.document_generation;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_open_path(app, path) && app->pdf.frame.page_index == 0 &&
+    app->pdf.frame.document_generation != document_generation &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 4 &&
+    octavo_win32_pdf_recovery_present(win32), "open-recovery");
+
+  /* Close must always remain an escape from a persistently failed page. */
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_move_page(app, 1) == OctavoMoveResult_Ok &&
+    app->page_action_waiting_for_present, "close-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "close-failure");
+  timer_cycles += cycles;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_close_book(app) &&
+    app->document_kind == OctavoDocument_None &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 5 &&
+    octavo_win32_pdf_recovery_present(win32), "close-recovery");
+
+  {
+    MSG queued = {0};
+    B32 stale_retry = 0;
+    while (PeekMessageW(&queued, win32->window, WM_TIMER, WM_TIMER, PM_REMOVE))
+      if (queued.wParam == OctavoPresentationRetryTimerId) stale_retry = 1;
+    OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+      !stale_retry && timer_cycles == 10 &&
+      app->page_action_presentation_retry_scheduled_count ==
+        scheduled_before + 10 &&
+      app->page_action_presentation_retry_fired_count == fired_before + 10 &&
+      !app->page_action_waiting_for_present && !app->page_action_pending &&
+      app->page_action_presentation_retry_attempt == 0,
+      "final-gate");
+  }
+
+  fprintf(stdout,
+          "octavo_pdf_presentation_recovery_win32_smoke result=pass "
+          "gate=real_win32 recoveries=page,history,seek,open,close "
+          "recovery_count=5 timer_cycles=%u timers=%u/%u stale=0\n",
+          timer_cycles,
+          app->page_action_presentation_retry_scheduled_count -
+            scheduled_before,
+          app->page_action_presentation_retry_fired_count - fired_before);
+  return 1;
+
+cleanup:
+  fprintf(stderr,
+          "octavo_pdf_presentation_recovery_win32_smoke result=fail "
+          "reason=%s page=%u waiting=%d retry=%u last=%s cycles=%u\n",
+          failure,
+          app->document_kind == OctavoDocument_PDF ?
+            app->pdf.frame.page_index : 0,
+          app->page_action_waiting_for_present,
+          app->page_action_presentation_retry_attempt,
+          pdf_reader_result_code(app->pdf.last_result),
+          timer_cycles);
+  return 0;
+
+#undef OCTAVO_PDF_WIN32_RECOVERY_REQUIRE
+}
+
 FUNCTION int
 octavo_run_window_internal(const char *initial_path,
-                             B32 page_repeat_probe_enabled)
+                             B32 page_repeat_probe_enabled,
+                             B32 pdf_recovery_probe_enabled)
 {
   OctavoWin32 win32 = {0};
   B32 page_repeat_sandbox_ready = 0;
+  B32 probe_window = page_repeat_probe_enabled ||
+    pdf_recovery_probe_enabled;
   S32 initial_width = page_repeat_probe_enabled ?
     OctavoPageRepeatProbeWidth : 1100;
   S32 initial_height = page_repeat_probe_enabled ?
@@ -23620,7 +23912,7 @@ octavo_run_window_internal(const char *initial_path,
                          initial_width,
                          initial_height,
                          1,
-                         !page_repeat_probe_enabled))
+                         !probe_window))
   {
     return 1;
   }
@@ -23640,7 +23932,7 @@ octavo_run_window_internal(const char *initial_path,
   }
 
   DWORD window_style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
-  DWORD window_ex_style = page_repeat_probe_enabled ?
+  DWORD window_ex_style = probe_window ?
     WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE : 0;
   RECT rect = {0, 0, win32.app.width, win32.app.height};
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
@@ -23648,9 +23940,9 @@ octavo_run_window_internal(const char *initial_path,
                                  window_class.lpszClassName,
                                  L"8vo",
                                  window_style,
-                                 page_repeat_probe_enabled ? -32000 :
+                                 probe_window ? -32000 :
                                    CW_USEDEFAULT,
-                                 page_repeat_probe_enabled ? -32000 :
+                                 probe_window ? -32000 :
                                    CW_USEDEFAULT,
                                  rect.right - rect.left,
                                  rect.bottom - rect.top,
@@ -23686,6 +23978,16 @@ octavo_run_window_internal(const char *initial_path,
     DestroyWindow(win32.window);
     octavo_app_release(&win32.app);
     return 1;
+  }
+  if (pdf_recovery_probe_enabled)
+  {
+    B32 passed = octavo_win32_pdf_presentation_recovery_regression(
+      &win32, initial_path);
+    DestroyWindow(win32.window);
+    win32.window = 0;
+    win32.app.window = 0;
+    octavo_app_release(&win32.app);
+    return passed ? 0 : 1;
   }
   if (page_repeat_probe_enabled)
   {
@@ -24438,13 +24740,19 @@ octavo_run_window_internal(const char *initial_path,
 FUNCTION int
 octavo_run_window(const char *initial_path)
 {
-  return octavo_run_window_internal(initial_path, 0);
+  return octavo_run_window_internal(initial_path, 0, 0);
 }
 
 FUNCTION int
 octavo_run_page_repeat_win32_smoke(const char *path)
 {
-  return octavo_run_window_internal(path, 1);
+  return octavo_run_window_internal(path, 1, 0);
+}
+
+FUNCTION int
+octavo_run_pdf_presentation_recovery_win32_smoke(const char *path)
+{
+  return octavo_run_window_internal(path, 0, 1);
 }
 
 FUNCTION int
@@ -24838,6 +25146,12 @@ main(int argc, char **argv)
            strcmp(argv[1], "--page-repeat-win32-smoke") == 0)
   {
     result = octavo_run_page_repeat_win32_smoke(argv[2]);
+  }
+  else if (argc == 3 &&
+           strcmp(argv[1],
+                  "--pdf-presentation-recovery-win32-smoke") == 0)
+  {
+    result = octavo_run_pdf_presentation_recovery_win32_smoke(argv[2]);
   }
   else if (argc == 8 && strcmp(argv[1], "--pdf-stage1-smoke") == 0)
   {

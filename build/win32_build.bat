@@ -1,6 +1,19 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "ROOT=%%~fI"
+set "PROVENANCE_STATE_ARGS="
+if defined OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD (
+  if not "%OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD%"=="1" (
+    echo [8vo] OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD accepts only the explicit value 1.
+    exit /b 1
+  )
+  set "PROVENANCE_STATE_ARGS=-AllowDirtyDevelopment"
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\require_win32_product_source_state.ps1" -RepoRoot "%ROOT%" !PROVENANCE_STATE_ARGS!
+if errorlevel 1 exit /b 1
+
 set "PF=%ProgramFiles%"
 set "PF86=%ProgramFiles(x86)%"
 
@@ -38,8 +51,6 @@ if /I not "!PATH_LINK!"=="!SELECTED_LINK!" (
   exit /b 1
 )
 
-set "SCRIPT_DIR=%~dp0"
-for %%I in ("%SCRIPT_DIR%..") do set "ROOT=%%~fI"
 if not defined OCTAVO_READER0_DIR if defined LECTERN0_READER0_DIR if exist "%LECTERN0_READER0_DIR%\." set "OCTAVO_READER0_DIR=%LECTERN0_READER0_DIR%"
 if not defined OCTAVO_UI0_DIR if defined LECTERN0_UI0_DIR if exist "%LECTERN0_UI0_DIR%\." set "OCTAVO_UI0_DIR=%LECTERN0_UI0_DIR%"
 if not defined OCTAVO_READERVIEW0_DIR if defined LECTERN0_READERVIEW0_DIR if exist "%LECTERN0_READERVIEW0_DIR%\." set "OCTAVO_READERVIEW0_DIR=%LECTERN0_READERVIEW0_DIR%"
@@ -127,7 +138,7 @@ if errorlevel 1 (
   popd
   exit /b 1
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\write_win32_pdf_build_provenance.ps1" -RepoRoot "%ROOT%" -Reader0Dir "%OCTAVO_READER0_DIR%" -MupdfDir "%MUPDF_ROOT%" -CompilerPath "!SELECTED_CL!" -LinkerPath "!SELECTED_LINK!" -ExePath "%OUT_DIR%\%EXE_NAME%" -MapPath "%OUT_DIR%\8vo.map" -OutputPath "%OUT_DIR%\8vo_pdf.provenance.json"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\write_win32_pdf_build_provenance.ps1" -RepoRoot "%ROOT%" -Reader0Dir "%OCTAVO_READER0_DIR%" -MupdfDir "%MUPDF_ROOT%" -CompilerPath "!SELECTED_CL!" -LinkerPath "!SELECTED_LINK!" -ExePath "%OUT_DIR%\%EXE_NAME%" -MapPath "%OUT_DIR%\8vo.map" -OutputPath "%OUT_DIR%\8vo_pdf.provenance.json" !PROVENANCE_STATE_ARGS!
 if errorlevel 1 (
   echo [8vo] Final PDF artifact provenance failed.
   popd

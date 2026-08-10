@@ -173,5 +173,27 @@ for ($run = 1; $run -le 2; $run++) {
 if ($passes[0].Hash -ne $passes[1].Hash) {
   throw "8vo PDF Stage 1 bitmap is not deterministic across identical runs"
 }
+
+for ($run = 1; $run -le 2; $run++) {
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $recoveryOutput = & $Exe --pdf-presentation-recovery-win32-smoke `
+      $Pdf 2>&1
+    $recoveryExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  $recoveryPass = $recoveryOutput | Where-Object {
+    $_ -match '^octavo_pdf_presentation_recovery_win32_smoke result=pass '
+  } | Select-Object -Last 1
+  if ($recoveryExitCode -ne 0 -or !$recoveryPass -or
+      [string]$recoveryPass -notmatch
+        'gate=real_win32 recoveries=page,history,seek,open,close recovery_count=5 timer_cycles=10 timers=10/10 stale=0') {
+    $recoveryOutput | Write-Host
+    throw "8vo real-Win32 PDF recovery smoke run $run failed"
+  }
+}
 $passes[1].Line | Write-Host
-Write-Host "win32_octavo_pdf_stage1_smoke result=pass repeat=2 bmp_sha256=$($passes[1].Hash) fixture=$Pdf"
+$recoveryPass | Write-Host
+Write-Host "win32_octavo_pdf_stage1_smoke result=pass repeat=2 recovery_repeat=2 bmp_sha256=$($passes[1].Hash) fixture=$Pdf"

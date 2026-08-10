@@ -52,7 +52,11 @@ republished only after Reader0 completes the full render and every pixel has
 been swizzled. A failed or cancelled render therefore cannot expose partial or
 stale pixels. Such a failure is presentation-local: while the concrete PDF is
 still open, document state remains Ready so the next resize or navigation frame
-can retry.
+can retry. If an accepted page action's real Win32 presentation repeatedly
+fails in the PDF raster transaction, the next explicit Open, Close, page,
+history, or progress-seek mutation abandons only that impossible presentation
+identity, cancels its retry timer, and starts a fresh gated mutation. Ordinary
+surface acquisition or present failures retain the existing retry gate.
 
 ## Exact build and provenance
 
@@ -75,7 +79,14 @@ regexp, and the unsafe structured-text search object. The safe
 is not exposed in Stage 1. The build writes
 `build\win32\8vo_pdf.provenance.json`, including product/map hashes, the exact
 compiler identity, Reader0 core fingerprint, dependency pins, build flags, and
-hashes of the 8vo PDF source/build closure.
+hashes of the 8vo PDF source/build closure. The default release-profile build
+first requires the complete 8vo Git tree to be clean, then verifies it again
+while writing provenance. Provenance schema v2 records the exact commit/tree,
+verified cleanliness, release eligibility, and porcelain status evidence; the
+clean commit identity covers unity inputs beyond the individually hashed
+closure. Pre-commit qualification may set
+`OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD=1`, but that explicit override is always
+recorded as `development-nonrelease` and never as release-eligible.
 
 ## Validation
 
@@ -84,13 +95,16 @@ After a strict build:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_pdf_stage1_smoke.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_octavo_host_smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win32_pdf_product_source_state_smoke.ps1
 ```
 
 The PDF smoke creates a deterministic three-page fixture with text, vector
 graphics, a raster image, and a link annotation. It runs the product twice and
 locks deterministic bitmap output, the in-place conversion, the 64 MiB cap,
 an 8192-by-4320 landscape fit, render-failure recovery through both a smaller
-resize and navigation, navigation/history/progress, unavailable Reader View actions, all three
+resize and navigation, real-Win32 persistent-failure escape through page,
+history, seek, open, and close, navigation/history/progress, unavailable Reader
+View actions, all three
 replacement-failure directions, explicit close/release invariants, and live
 cancel-token teardown refusal. The existing host smoke remains the focused EPUB
 regression.

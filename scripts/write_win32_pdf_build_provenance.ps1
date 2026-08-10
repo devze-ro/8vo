@@ -6,7 +6,8 @@ param(
   [Parameter(Mandatory = $true)][string]$LinkerPath,
   [Parameter(Mandatory = $true)][string]$ExePath,
   [Parameter(Mandatory = $true)][string]$MapPath,
-  [Parameter(Mandatory = $true)][string]$OutputPath
+  [Parameter(Mandatory = $true)][string]$OutputPath,
+  [switch]$AllowDirtyDevelopment
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +24,31 @@ if (!(Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
   throw "provenance output directory is missing: $OutputDirectory"
 }
 
+$productCommit = (& git -C $RepoRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or !$productCommit) {
+  throw "could not resolve the 8vo product commit"
+}
+$productTree = (& git -C $RepoRoot rev-parse 'HEAD^{tree}').Trim()
+if ($LASTEXITCODE -ne 0 -or !$productTree) {
+  throw "could not resolve the 8vo product tree"
+}
+$productStatus = @(
+  & git -C $RepoRoot status --porcelain=v1 --untracked-files=all
+)
+if ($LASTEXITCODE -ne 0) {
+  throw "could not inspect the complete 8vo product source state"
+}
+$productStatus = @($productStatus | ForEach-Object { [string]$_ })
+$productVerifiedClean = $productStatus.Count -eq 0
+if (!$productVerifiedClean -and !$AllowDirtyDevelopment) {
+  throw "release provenance requires a clean 8vo product tree"
+}
+$productReleaseEligible =
+  $productVerifiedClean -and !$AllowDirtyDevelopment
+$productProfile = if ($productReleaseEligible) { "release-clean" } else {
+  "development-nonrelease"
+}
+
 $corePath = Join-Path $Reader0Dir `
   "build\mupdf-pdf-core\x64\Release\reader0_mupdf_pdf.provenance.json"
 $core = Get-Content -Raw -LiteralPath $corePath | ConvertFrom-Json
@@ -36,6 +62,8 @@ $sourceFiles = @(
   "scripts\audit_win32_pdf_provenance.ps1",
   "scripts\check_dependencies.ps1",
   "scripts\require_dependencies_current.ps1",
+  "scripts\require_win32_product_source_state.ps1",
+  "scripts\win32_pdf_product_source_state_smoke.ps1",
   "scripts\win32_octavo_pdf_stage1_smoke.ps1",
   "scripts\write_win32_pdf_build_provenance.ps1",
   "vendor\reader0_dependency\COMMIT",
@@ -77,10 +105,18 @@ $linkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath `
   $LinkerPath).Hash.ToLowerInvariant()
 
 $document = [ordered]@{
-  schema = "devze.8vo.win32-pdf-build-provenance.v1"
+  schema = "devze.8vo.win32-pdf-build-provenance.v2"
   generated_utc = [DateTime]::UtcNow.ToString("o")
   product = [ordered]@{
-    git_commit = (& git -C $RepoRoot rev-parse HEAD).Trim()
+    git_commit = $productCommit
+    git_tree = $productTree
+    source_state = [ordered]@{
+      profile = $productProfile
+      verified_clean = $productVerifiedClean
+      release_eligible = $productReleaseEligible
+      development_override = [bool]$AllowDirtyDevelopment
+      status_porcelain = @($productStatus)
+    }
     executable = [ordered]@{
       path = $ExePath
       sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath `
@@ -138,4 +174,5 @@ try {
 }
 
 Write-Host "8vo Win32 PDF artifact provenance: $OutputPath"
+Write-Host "8vo product provenance profile: $productProfile verified_clean=$($productVerifiedClean.ToString().ToLowerInvariant()) release_eligible=$($productReleaseEligible.ToString().ToLowerInvariant()) development_override=$($AllowDirtyDevelopment.ToString().ToLowerInvariant()) status_count=$($productStatus.Count)"
 Write-Host "8vo executable SHA-256: $($document.product.executable.sha256)"
