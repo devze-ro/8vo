@@ -30,11 +30,15 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.zip.CRC32;
 
 @RunWith(AndroidJUnit4.class)
 public final class OctavoLibraryCatalogTest {
@@ -58,6 +62,8 @@ public final class OctavoLibraryCatalogTest {
     public void clearPort6Library() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
@@ -367,6 +373,1390 @@ public final class OctavoLibraryCatalogTest {
         assertEquals(sha256, sha256(file));
     }
 
+    private static OctavoLibraryStore.Book importAndAssociate(
+        OctavoLibraryStore store, File source, String title) throws Exception {
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(source));
+        assertNotNull(staged);
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertTrue(store.recordOpened(managed, title));
+        assertTrue(store.completeImportedCatalogAssociation(managed));
+        return store.findBook(managed.key);
+    }
+
+    private static byte[] readAllBytesUnchecked(File file) {
+        try {
+            return Files.readAllBytes(file.toPath());
+        } catch (IOException exception) {
+            throw new AssertionError("Unable to read test evidence", exception);
+        }
+    }
+
+    private static void writeImportJournal(File file,
+                                           String key,
+                                           long byteCount,
+                                           int phase) throws IOException {
+        byte[] prefix;
+        try (java.io.ByteArrayOutputStream bytes =
+                 new java.io.ByteArrayOutputStream();
+             DataOutputStream output = new DataOutputStream(bytes)) {
+            output.writeInt(0x4F36494A);
+            output.writeInt(1);
+            output.writeInt(phase);
+            output.write(key.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            output.writeLong(byteCount);
+            output.flush();
+            prefix = bytes.toByteArray();
+        }
+        CRC32 crc = new CRC32();
+        crc.update(prefix);
+        try (FileOutputStream fileOutput =
+                 new FileOutputStream(file, false);
+             DataOutputStream output = new DataOutputStream(fileOutput)) {
+            output.write(prefix);
+            output.writeInt((int)crc.getValue());
+            output.flush();
+            fileOutput.getFD().sync();
+        }
+        assertEquals(88, file.length());
+    }
+
+    @Test
+    public void sameLengthManagedSubstitutionIsRepairedAndNeverLoadsAsDigest()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_digest_repair.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        File claimed = new File(
+            store.documentDirectoryForTesting(), ALPHA_SHA256 + ".epub");
+        copyFile(alpha, claimed);
+        try (RandomAccessFile mutation = new RandomAccessFile(claimed, "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertEquals(ALPHA_BYTE_COUNT, claimed.length());
+        assertNotEquals(ALPHA_SHA256, sha256(claimed));
+        assertFalse(store.verifyManagedFile(ALPHA_SHA256, ALPHA_BYTE_COUNT));
+
+        OctavoLibraryStore.Book imported =
+            store.importDocument(Uri.fromFile(alpha));
+        assertEquals(ALPHA_SHA256, imported.key);
+        assertTrue(store.isStagedImport(imported));
+        assertNotEquals(ALPHA_SHA256, sha256(claimed));
+        assertTrue(store.verifyBookIdentity(imported));
+        imported = store.publishReader0ValidatedImport(imported);
+        assertFalse(store.isStagedImport(imported));
+        assertTrue(store.hasPendingImportAssociation(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        assertEquals(ALPHA_SHA256, sha256(claimed));
+        assertTrue(store.recordOpened(imported, ALPHA_TITLE));
+        assertTrue(store.completeImportedCatalogAssociation(imported));
+        assertFalse(store.hasPendingImportAssociation(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        byte[] catalogBefore = Files.readAllBytes(
+            store.catalogFileForTesting().toPath());
+
+        try (RandomAccessFile mutation = new RandomAccessFile(claimed, "rw")) {
+            mutation.seek(claimed.length() - 1);
+            int last = mutation.read();
+            assertTrue(last >= 0);
+            mutation.seek(claimed.length() - 1);
+            mutation.write(last ^ 0x01);
+            mutation.getFD().sync();
+        }
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED,
+                     reopened.loadStatus());
+        assertEquals(2, reopened.bookCount());
+        assertFalse(reopened.findBook(ALPHA_SHA256).repairRequired);
+        assertFalse(reopened.verifyBookIdentity(
+            reopened.findBook(ALPHA_SHA256)));
+        assertTrue(reopened.findBook(ALPHA_SHA256).repairRequired);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+                     reopened.loadStatus());
+        assertEquals(null, reopened.sessionFor(
+            reopened.findBook(ALPHA_SHA256)));
+        assertFalse(reopened.hasExactManagedBook(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        assertFalse(reopened.recordTransferredBook(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT, ALPHA_TITLE));
+        assertFalse(Arrays.equals(
+            catalogBefore,
+            Files.readAllBytes(reopened.catalogFileForTesting().toPath())));
+
+        OctavoLibraryStore afterRestart =
+            new OctavoLibraryStore(context);
+        afterRestart.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+                     afterRestart.loadStatus());
+        assertTrue(afterRestart.findBook(ALPHA_SHA256).repairRequired);
+        assertFalse(afterRestart.verifyBookIdentity(
+            afterRestart.findBook(ALPHA_SHA256)));
+        assertFalse(afterRestart.hasExactManagedBook(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+    }
+
+    @Test
+    public void crashBeforeManagedMoveClearsOnlyFixedStagingAndJournal()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_pre_move_crash.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.isStagedImport(staged));
+        assertEquals(
+            store.documentDirectoryForTesting().getCanonicalFile(),
+            store.importStagingFileForTesting()
+                .getParentFile().getCanonicalFile());
+        assertTrue(store.importStagingFileForTesting().isFile());
+        assertFalse(store.managedFile(ALPHA_SHA256).exists());
+        writeImportJournal(store.importJournalFileForTesting(),
+                           ALPHA_SHA256,
+                           ALPHA_BYTE_COUNT,
+                           1);
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertFalse(reopened.importStagingFileForTesting().exists());
+        assertFalse(reopened.importJournalFileForTesting().exists());
+        assertFalse(reopened.managedFile(ALPHA_SHA256).exists());
+        assertEquals(1, reopened.bookCount());
+    }
+
+    @Test
+    public void definiteAtomicMoveFailureRollsBackReadyImportWithoutRestart()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_move_failure.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        File conflictingDestination = store.managedFile(ALPHA_SHA256);
+        assertTrue(conflictingDestination.mkdir());
+        File preserved = new File(conflictingDestination, "preserved");
+        try (FileOutputStream output =
+                 new FileOutputStream(preserved, false)) {
+            output.write(new byte[] {4, 5, 6});
+            output.getFD().sync();
+        }
+
+        try {
+            store.publishReader0ValidatedImport(staged);
+            fail("Non-file destination unexpectedly accepted atomic move");
+        } catch (IOException expected) {
+            assertFalse(store.mutationBlocked());
+        }
+        assertFalse(store.importJournalFileForTesting().exists());
+        assertTrue(store.isStagedImport(staged));
+        assertFalse(store.hasPendingImportAssociation(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        assertTrue(preserved.isFile());
+        assertTrue(store.discardUncataloged(staged));
+        assertFalse(store.importStagingFileForTesting().exists());
+
+        assertTrue(preserved.delete());
+        assertTrue(conflictingDestination.delete());
+        OctavoLibraryStore.Book retry =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.isStagedImport(retry));
+        assertTrue(store.discardUncataloged(retry));
+        assertFalse(store.importStagingFileForTesting().exists());
+    }
+
+    @Test
+    public void alteredRejectedStagingCannotLockOutLaterImports()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_altered_staging.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book altered =
+            store.importDocument(Uri.fromFile(alpha));
+        try (RandomAccessFile mutation = new RandomAccessFile(
+                 store.importStagingFileForTesting(), "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertFalse(store.verifyBookIdentity(altered));
+        try {
+            store.publishReader0ValidatedImport(altered);
+            fail("Altered fixed staging unexpectedly published");
+        } catch (IOException expected) {
+            assertFalse(store.mutationBlocked());
+        }
+        assertTrue(store.isStagedImport(altered));
+        assertTrue(store.discardUncataloged(altered));
+        assertFalse(store.importStagingFileForTesting().exists());
+
+        OctavoLibraryStore.Book truncated =
+            store.importDocument(Uri.fromFile(alpha));
+        try (RandomAccessFile mutation = new RandomAccessFile(
+                 store.importStagingFileForTesting(), "rw")) {
+            mutation.setLength(ALPHA_BYTE_COUNT - 1);
+            mutation.getFD().sync();
+        }
+        assertTrue(store.isStagedImport(truncated));
+        assertTrue(store.discardUncataloged(truncated));
+        assertFalse(store.importStagingFileForTesting().exists());
+        assertFalse(store.mutationBlocked());
+
+        OctavoLibraryStore.Book alreadyAbsent =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.importStagingFileForTesting().delete());
+        assertTrue(store.isStagedImport(alreadyAbsent));
+        assertTrue(store.discardUncataloged(alreadyAbsent));
+        assertFalse(store.importStagingFileForTesting().exists());
+        assertFalse(store.mutationBlocked());
+    }
+
+    @Test
+    public void crashAfterManagedMoveRequiresExplicitVerifiedAssociationRetry()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_post_move_crash.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertFalse(store.importStagingFileForTesting().exists());
+        assertTrue(store.importJournalFileForTesting().isFile());
+        assertTrue(store.hasPendingImportAssociation(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+        assertFixtureIdentity(
+            managed.file, ALPHA_BYTE_COUNT, ALPHA_SHA256);
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.IMPORT_ASSOCIATION_PENDING,
+            reopened.loadStatus());
+        assertEquals(null, reopened.findBook(ALPHA_SHA256));
+        assertTrue(reopened.importJournalFileForTesting().isFile());
+        OctavoLibraryStore.Book recovered = reopened.pendingImportedBook();
+        assertNotNull(recovered);
+        assertEquals("Imported EPUB", recovered.title);
+        assertFalse(recovered.repairRequired);
+        assertFalse(recovered.identityVerified);
+        assertFalse(reopened.importStagingFileForTesting().exists());
+        assertFixtureIdentity(
+            recovered.file, ALPHA_BYTE_COUNT, ALPHA_SHA256);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.VERIFIED,
+            reopened.verifyBookIdentityStep(recovered, 4 * 1024 * 1024));
+        assertTrue(reopened.recordValidatedPendingImport(
+            recovered, ALPHA_TITLE));
+        assertTrue(reopened.completeImportedCatalogAssociation(recovered));
+        assertNotNull(reopened.findBook(ALPHA_SHA256));
+        assertEquals(0, reopened.findBook(ALPHA_SHA256).lastOpenedTime);
+        assertFalse(reopened.importJournalFileForTesting().exists());
+        assertTrue(reopened.catalogFileForTesting().isFile());
+    }
+
+    @Test
+    public void sameLengthMutationAfterManagedMoveNeverAutoAssociates()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_pending_mutation.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        try (RandomAccessFile mutation =
+                 new RandomAccessFile(managed.file, "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertEquals(ALPHA_BYTE_COUNT, managed.file.length());
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertEquals(null, reopened.findBook(ALPHA_SHA256));
+        OctavoLibraryStore.Book pending = reopened.pendingImportedBook();
+        assertNotNull(pending);
+        assertFalse(pending.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.FAILED,
+            reopened.verifyBookIdentityStep(
+                pending, 4 * 1024 * 1024));
+        assertEquals(null, reopened.findBook(ALPHA_SHA256));
+        assertTrue(reopened.hasPendingImportAssociation(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT));
+        assertTrue(reopened.importJournalFileForTesting().isFile());
+    }
+
+    @Test
+    public void failedPendingIdentityCanBeDiscardedWithoutTouchingLibrary()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_discard_pending_alpha.epub");
+        File beta = stageAsset(
+            context, BETA_ASSET, "octavo_port6_discard_pending_beta.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book betaStaged =
+            store.importDocument(Uri.fromFile(beta));
+        assertTrue(store.verifyBookIdentity(betaStaged));
+        OctavoLibraryStore.Book betaManaged =
+            store.publishReader0ValidatedImport(betaStaged);
+        assertTrue(store.recordOpened(betaManaged, BETA_TITLE));
+        assertTrue(store.completeImportedCatalogAssociation(betaManaged));
+        byte[] betaBytes = Files.readAllBytes(betaManaged.file.toPath());
+
+        OctavoLibraryStore.Book alphaStaged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(alphaStaged));
+        OctavoLibraryStore.Book alphaManaged =
+            store.publishReader0ValidatedImport(alphaStaged);
+        try (RandomAccessFile mutation =
+                 new RandomAccessFile(alphaManaged.file, "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        OctavoLibraryStore.Book pending = reopened.pendingImportedBook();
+        assertNotNull(pending);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.FAILED,
+            reopened.verifyBookIdentityStep(pending, 4 * 1024 * 1024));
+        assertTrue(reopened.discardPendingImportAssociation(pending));
+        assertFalse(alphaManaged.file.exists());
+        assertFalse(reopened.importJournalFileForTesting().exists());
+        assertEquals(null, reopened.pendingImportedBook());
+
+        OctavoLibraryStore.Book retainedBeta =
+            reopened.findBook(BETA_SHA256);
+        assertNotNull(retainedBeta);
+        assertFalse(retainedBeta.repairRequired);
+        assertTrue(retainedBeta.file.isFile());
+        assertTrue(Arrays.equals(
+            betaBytes, Files.readAllBytes(retainedBeta.file.toPath())));
+    }
+
+    @Test
+    public void pendingDiscardRefusesHealthyAssociationAndMarksLateDamage()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_discard_late_damage.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertTrue(store.recordOpened(managed, ALPHA_TITLE));
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.IMPORT_ASSOCIATION_PENDING,
+            store.loadStatus());
+        assertFalse(store.discardPendingImportAssociation(managed));
+        assertTrue(managed.file.isFile());
+        assertTrue(store.importJournalFileForTesting().isFile());
+        assertFalse(store.findBook(ALPHA_SHA256).repairRequired);
+
+        try (RandomAccessFile damaged =
+                 new RandomAccessFile(managed.file, "rw")) {
+            damaged.setLength(ALPHA_BYTE_COUNT - 1);
+            damaged.getFD().sync();
+        }
+        assertTrue(store.discardPendingImportAssociation(managed));
+        assertFalse(managed.file.exists());
+        assertFalse(store.importJournalFileForTesting().exists());
+        OctavoLibraryStore.Book retained = store.findBook(ALPHA_SHA256);
+        assertNotNull(retained);
+        assertTrue(retained.repairRequired);
+        assertFalse(retained.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+            store.loadStatus());
+    }
+
+    @Test
+    public void pendingDiscardRetriesDeletionAndJournalClearAfterRestart()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_discard_retry_alpha.epub");
+        File beta = stageAsset(
+            context, BETA_ASSET, "octavo_port6_discard_retry_beta.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertTrue(managed.file.delete());
+        assertTrue(managed.file.mkdir());
+        File blocker = new File(managed.file, "preserved");
+        try (FileOutputStream output =
+                 new FileOutputStream(blocker, false)) {
+            output.write(new byte[] {1, 2, 3});
+            output.getFD().sync();
+        }
+        OctavoLibraryStore.Book pending = store.pendingImportedBook();
+        assertNotNull(pending);
+        assertFalse(store.discardPendingImportAssociation(pending));
+        assertTrue(blocker.isFile());
+        assertTrue(store.importJournalFileForTesting().isFile());
+
+        assertTrue(blocker.delete());
+        assertTrue(managed.file.delete());
+        OctavoLibraryStore afterDeleteFailure =
+            new OctavoLibraryStore(context);
+        afterDeleteFailure.loadCatalog(fixture);
+        OctavoLibraryStore.Book absentPending =
+            afterDeleteFailure.pendingImportedBook();
+        assertNotNull(absentPending);
+        assertTrue(afterDeleteFailure.discardPendingImportAssociation(
+            absentPending));
+        assertFalse(afterDeleteFailure.importJournalFileForTesting().exists());
+
+        OctavoLibraryStore.Book betaStaged =
+            afterDeleteFailure.importDocument(Uri.fromFile(beta));
+        assertTrue(afterDeleteFailure.verifyBookIdentity(betaStaged));
+        OctavoLibraryStore.Book betaManaged =
+            afterDeleteFailure.publishReader0ValidatedImport(betaStaged);
+        File journalTemporary =
+            afterDeleteFailure.importJournalTemporaryFileForTesting();
+        assertTrue(journalTemporary.mkdir());
+        File journalBlocker = new File(journalTemporary, "preserved");
+        try (FileOutputStream output =
+                 new FileOutputStream(journalBlocker, false)) {
+            output.write(new byte[] {4, 5, 6});
+            output.getFD().sync();
+        }
+        assertFalse(afterDeleteFailure.discardPendingImportAssociation(
+            betaManaged));
+        assertFalse(betaManaged.file.exists());
+        assertTrue(afterDeleteFailure.importJournalFileForTesting().isFile());
+
+        assertTrue(journalBlocker.delete());
+        assertTrue(journalTemporary.delete());
+        OctavoLibraryStore afterJournalFailure =
+            new OctavoLibraryStore(context);
+        afterJournalFailure.loadCatalog(fixture);
+        OctavoLibraryStore.Book journalPending =
+            afterJournalFailure.pendingImportedBook();
+        assertNotNull(journalPending);
+        assertTrue(afterJournalFailure.discardPendingImportAssociation(
+            journalPending));
+        assertFalse(afterJournalFailure.importJournalFileForTesting().exists());
+        assertFalse(afterJournalFailure.managedFile(BETA_SHA256).exists());
+    }
+
+    @Test
+    public void crashAfterCatalogAssociationClearsJournalWithoutTitleLoss()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File beta = stageAsset(
+            context, BETA_ASSET, "octavo_port6_post_catalog_crash.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(beta));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertTrue(store.recordOpened(managed, BETA_TITLE));
+        assertTrue(store.importJournalFileForTesting().isFile());
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        OctavoLibraryStore.Book recovered = reopened.findBook(BETA_SHA256);
+        assertNotNull(recovered);
+        assertEquals(BETA_TITLE, recovered.title);
+        assertFalse(reopened.importJournalFileForTesting().exists());
+        assertTrue(reopened.completeImportedCatalogAssociation(recovered));
+    }
+
+    @Test
+    public void malformedImportJournalIsPreservedAndBlocksReplacement()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_bad_import_journal.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore seed = new OctavoLibraryStore(context);
+        copyFile(alpha, seed.importStagingFileForTesting());
+        byte[] malformed = new byte[] {0x4F, 0x36, 0x49, 0x4A, 1, 2, 3};
+        try (FileOutputStream output = new FileOutputStream(
+                 seed.importJournalFileForTesting(), false)) {
+            output.write(malformed);
+            output.getFD().sync();
+        }
+
+        OctavoLibraryStore blocked = new OctavoLibraryStore(context);
+        blocked.loadCatalog(fixture);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.IMPORT_RECOVERY_BLOCKED,
+            blocked.loadStatus());
+        assertTrue(blocked.importStagingFileForTesting().isFile());
+        assertTrue(Arrays.equals(
+            malformed,
+            Files.readAllBytes(
+                blocked.importJournalFileForTesting().toPath())));
+        try {
+            blocked.importDocument(Uri.fromFile(alpha));
+            fail("Malformed journal unexpectedly allowed replacement");
+        } catch (IOException expected) {
+            assertTrue(blocked.mutationBlocked());
+        }
+        assertTrue(blocked.importStagingFileForTesting().isFile());
+        assertTrue(Arrays.equals(
+            malformed,
+            Files.readAllBytes(
+                blocked.importJournalFileForTesting().toPath())));
+    }
+
+    @Test
+    public void unclearedFixedStagingBlocksReplacementWithoutOverwrite()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_staging_block.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore seed = new OctavoLibraryStore(context);
+        File staging = seed.importStagingFileForTesting();
+        assertTrue(staging.mkdir());
+        File evidence = new File(staging, "preserved");
+        try (FileOutputStream output =
+                 new FileOutputStream(evidence, false)) {
+            output.write(new byte[] {1, 2, 3});
+            output.getFD().sync();
+        }
+
+        OctavoLibraryStore blocked = new OctavoLibraryStore(context);
+        blocked.loadCatalog(fixture);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.IMPORT_RECOVERY_BLOCKED,
+            blocked.loadStatus());
+        assertTrue(evidence.isFile());
+        try {
+            blocked.importDocument(Uri.fromFile(alpha));
+            fail("Uncleared fixed staging unexpectedly allowed replacement");
+        } catch (IOException expected) {
+            assertTrue(blocked.mutationBlocked());
+        }
+        assertTrue(evidence.isFile());
+    }
+
+    @Test
+    public void managedIdentityVerificationAdvancesInBoundedSlices()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        File managed = new File(
+            store.documentDirectoryForTesting(),
+            "bounded-identity.epub");
+        byte[] block = new byte[64 * 1024];
+        for (int index = 0; index < block.length; ++index) {
+            block[index] = (byte)(index * 31 + 7);
+        }
+        long byteCount = 8L * 1024L * 1024L;
+        try (FileOutputStream output =
+                 new FileOutputStream(managed, false)) {
+            for (long written = 0; written < byteCount;
+                 written += block.length) {
+                output.write(block);
+            }
+            output.getFD().sync();
+        }
+        String digest = sha256(managed);
+        File canonical = new File(
+            store.documentDirectoryForTesting(), digest + ".epub");
+        assertTrue(managed.renameTo(canonical));
+        OctavoLibraryStore.Book candidate =
+            new OctavoLibraryStore.Book(
+                canonical, digest, byteCount, true, false, false,
+                "Bounded verification", 0, 0, false, 0, 0);
+
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.PENDING,
+            store.verifyBookIdentityStep(candidate, 4 * 1024 * 1024));
+        assertFalse(candidate.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.VERIFIED,
+            store.verifyBookIdentityStep(candidate, 4 * 1024 * 1024));
+        assertTrue(candidate.identityVerified);
+        assertFalse(candidate.repairRequired);
+        assertTrue(canonical.delete());
+    }
+
+    @Test
+    public void validatedTransferredProjectionPersistsWithoutOpeningAgain()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_validated_projection.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore seed = new OctavoLibraryStore(context);
+        seed.loadCatalog(fixture);
+        OctavoLibraryStore.Book staged =
+            seed.importDocument(Uri.fromFile(alpha));
+        assertTrue(seed.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            seed.publishReader0ValidatedImport(staged);
+        assertTrue(seed.recordOpened(managed, ALPHA_TITLE));
+        long lastOpened = seed.findBook(ALPHA_SHA256).lastOpenedTime;
+        assertTrue(lastOpened > 0);
+        assertTrue(seed.completeImportedCatalogAssociation(managed));
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        OctavoLibraryStore.Book book = reopened.findBook(ALPHA_SHA256);
+        assertNotNull(book);
+        assertFalse(book.identityVerified);
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            reopened.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        OctavoLibraryStore.Book capability = prepared.book;
+        assertTrue(book == capability);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.COMPLETED,
+            reopened.verifyAndRecordTransferredBookStep(
+                capability, "Reader validated projection",
+                4 * 1024 * 1024));
+        assertEquals(lastOpened, book.lastOpenedTime);
+        assertEquals("Reader validated projection", book.title);
+
+        OctavoLibraryStore afterProjection =
+            new OctavoLibraryStore(context);
+        afterProjection.loadCatalog(fixture);
+        OctavoLibraryStore.Book persisted =
+            afterProjection.findBook(ALPHA_SHA256);
+        assertNotNull(persisted);
+        assertEquals("Reader validated projection", persisted.title);
+        assertEquals(lastOpened, persisted.lastOpenedTime);
+        assertFalse(persisted.identityVerified);
+    }
+
+    @Test
+    public void validatedTransferredProjectionCreatesMissingCatalogRow()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_validated_transfer.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        File managed = store.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        OctavoLibraryStore.Book pending = prepared.book;
+        assertNotNull(pending);
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+        assertFalse(pending.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.COMPLETED,
+            store.verifyAndRecordTransferredBookStep(
+                pending, ALPHA_TITLE, 4 * 1024 * 1024));
+        OctavoLibraryStore.Book created = store.findBook(ALPHA_SHA256);
+        assertNotNull(created);
+        assertTrue(created.identityVerified);
+        assertEquals(0, created.lastOpenedTime);
+        assertEquals(ALPHA_TITLE, created.title);
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertNotNull(reopened.findBook(ALPHA_SHA256));
+        assertEquals(ALPHA_TITLE, reopened.findBook(ALPHA_SHA256).title);
+        assertEquals(0, reopened.findBook(ALPHA_SHA256).lastOpenedTime);
+    }
+
+    @Test
+    public void transferredProjectionAlwaysRequiresFreshOwnedDigestProof()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_freshness.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.Book staged =
+            store.importDocument(Uri.fromFile(alpha));
+        assertTrue(store.verifyBookIdentity(staged));
+        OctavoLibraryStore.Book managed =
+            store.publishReader0ValidatedImport(staged);
+        assertTrue(store.recordOpened(managed, ALPHA_TITLE));
+        assertTrue(store.completeImportedCatalogAssociation(managed));
+        OctavoLibraryStore.Book current = store.findBook(ALPHA_SHA256);
+        assertNotNull(current);
+        assertTrue(current.identityVerified);
+
+        try (RandomAccessFile mutation =
+                 new RandomAccessFile(current.file, "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertEquals(ALPHA_BYTE_COUNT, current.file.length());
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        OctavoLibraryStore.Book capability = prepared.book;
+        assertTrue(current == capability);
+        assertFalse(capability.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.FAILED,
+            store.verifyBookIdentityStep(capability, 4 * 1024 * 1024));
+        assertTrue(current.repairRequired);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+                     store.loadStatus());
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            store.verifyAndRecordTransferredBookStep(
+                capability, ALPHA_TITLE, 4 * 1024 * 1024));
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertTrue(reopened.findBook(ALPHA_SHA256).repairRequired);
+    }
+
+    @Test
+    public void transientTransferredCapabilityRejectsMutationForgeryAndReuse()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_capability.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.LoadStatus originalStatus = store.loadStatus();
+        String originalError = store.lastError();
+        File managed = store.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+
+        OctavoLibraryStore.Book forged = new OctavoLibraryStore.Book(
+            managed, ALPHA_SHA256, ALPHA_BYTE_COUNT,
+            true, false, true, ALPHA_TITLE, 0, 0, false, 0, 0);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            store.verifyAndRecordTransferredBookStep(
+                forged, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        OctavoLibraryStore.Book capability = prepared.book;
+        assertNotNull(capability);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.VERIFIED,
+            store.verifyBookIdentityStep(capability, 4 * 1024 * 1024));
+        long verifiedModified = managed.lastModified();
+        try (RandomAccessFile mutation = new RandomAccessFile(managed, "rw")) {
+            mutation.seek(managed.length() - 1);
+            int last = mutation.read();
+            assertTrue(last >= 0);
+            mutation.seek(managed.length() - 1);
+            mutation.write(last ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertTrue(managed.setLastModified(
+            Math.max(System.currentTimeMillis(), verifiedModified + 2000)));
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.IDENTITY_FAILED,
+            store.verifyAndRecordTransferredBookStep(
+                capability, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertFalse(capability.identityVerified);
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+        assertEquals(originalStatus, store.loadStatus());
+        assertEquals(originalError, store.lastError());
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            store.verifyAndRecordTransferredBookStep(
+                capability, ALPHA_TITLE, 4 * 1024 * 1024));
+    }
+
+    @Test
+    public void failedTransferredProjectionPublishInvalidatesCapability()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_publish.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        File managed = store.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        OctavoLibraryStore.Book capability = prepared.book;
+        assertNotNull(capability);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.VERIFIED,
+            store.verifyBookIdentityStep(capability, 4 * 1024 * 1024));
+
+        File temporary = new File(
+            store.catalogFileForTesting().getParentFile(), "library.v1.tmp");
+        assertTrue(temporary.mkdir());
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.CATALOG_RETRY,
+            store.verifyAndRecordTransferredBookStep(
+                capability, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertFalse(capability.identityVerified);
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            store.verifyAndRecordTransferredBookStep(
+                capability, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertTrue(!temporary.exists() || temporary.delete());
+    }
+
+    @Test
+    public void transientTransferredDigestFailureNeverCreatesO6Repair()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_transient_bad.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.LoadStatus originalStatus = store.loadStatus();
+        File managed = store.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+        try (RandomAccessFile mutation = new RandomAccessFile(managed, "rw")) {
+            int first = mutation.read();
+            assertTrue(first >= 0);
+            mutation.seek(0);
+            mutation.write(first ^ 0x01);
+            mutation.getFD().sync();
+        }
+
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.IDENTITY_FAILED,
+            store.verifyAndRecordTransferredBookStep(
+                prepared.book, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertEquals(null, store.findBook(ALPHA_SHA256));
+        assertEquals(1, store.bookCount());
+        assertEquals(originalStatus, store.loadStatus());
+        assertEquals("The transferred EPUB failed digest verification",
+                     store.lastError());
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertEquals(null, reopened.findBook(ALPHA_SHA256));
+        assertEquals(1, reopened.bookCount());
+        assertFalse(reopened.loadStatus()
+                    == OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR);
+    }
+
+    @Test
+    public void transferredDigestLeaseRejectsMutationBetweenBoundedSlices()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.LoadStatus originalStatus = store.loadStatus();
+
+        File source = new File(
+            store.documentDirectoryForTesting(),
+            "bounded-transfer-lease-source.epub");
+        byte[] block = new byte[64 * 1024];
+        for (int index = 0; index < block.length; ++index) {
+            block[index] = (byte)(index * 29 + 13);
+        }
+        long byteCount = 9L * 1024L * 1024L;
+        try (FileOutputStream output = new FileOutputStream(source, false)) {
+            for (long written = 0; written < byteCount;
+                 written += block.length) {
+                output.write(block);
+            }
+            output.getFD().sync();
+        }
+        String digest = sha256(source);
+        File managed = store.managedFile(digest);
+        assertTrue(source.renameTo(managed));
+
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(digest, byteCount);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.PENDING,
+            store.verifyAndRecordTransferredBookStep(
+                prepared.book, "Bounded transfer lease",
+                4 * 1024 * 1024));
+        long openingModified = managed.lastModified();
+        try (RandomAccessFile mutation = new RandomAccessFile(managed, "rw")) {
+            mutation.seek(1024);
+            int prior = mutation.read();
+            assertTrue(prior >= 0);
+            mutation.seek(1024);
+            mutation.write(prior ^ 0x01);
+            mutation.getFD().sync();
+        }
+        assertTrue(managed.setLastModified(Math.max(
+            System.currentTimeMillis() + 2000,
+            openingModified + 2000)));
+        assertNotEquals(openingModified, managed.lastModified());
+
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.IDENTITY_FAILED,
+            store.verifyAndRecordTransferredBookStep(
+                prepared.book, "Bounded transfer lease",
+                4 * 1024 * 1024));
+        assertEquals(null, store.findBook(digest));
+        assertEquals(1, store.bookCount());
+        assertEquals(originalStatus, store.loadStatus());
+        assertEquals("The transferred EPUB failed digest verification",
+                     store.lastError());
+    }
+
+    @Test
+    public void uncertainRepairPublicationPreservesBlockAndReloadsRepair()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_repair_uncertain.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.Book current =
+            importAndAssociate(store, alpha, ALPHA_TITLE);
+        assertNotNull(current);
+        try (RandomAccessFile mutation =
+                 new RandomAccessFile(current.file, "rw")) {
+            mutation.seek(current.file.length() - 1);
+            int last = mutation.read();
+            assertTrue(last >= 0);
+            mutation.seek(current.file.length() - 1);
+            mutation.write(last ^ 0x01);
+            mutation.getFD().sync();
+        }
+
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        store.failNextCatalogMoveAfterReplaceForTesting();
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.CATALOG_RETRY,
+            store.verifyAndRecordTransferredBookStep(
+                prepared.book, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertTrue(current.repairRequired);
+        assertFalse(current.identityVerified);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.PUBLISH_UNCERTAIN_BLOCKED,
+            store.loadStatus());
+        assertEquals("The local Library publication outcome is uncertain",
+                     store.lastError());
+        byte[] uncertainCandidate = Files.readAllBytes(
+            store.catalogFileForTesting().toPath());
+
+        OctavoLibraryStore.TransferredBookOutcome blocked =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.CATALOG_BLOCKED,
+                     blocked.status);
+        assertEquals(null, blocked.book);
+        assertEquals("The local Library publication outcome is uncertain",
+                     store.lastError());
+        assertTrue(Arrays.equals(
+            uncertainCandidate,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+
+        store.reloadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+                     store.loadStatus());
+        assertNotNull(store.findBook(ALPHA_SHA256));
+        assertTrue(store.findBook(ALPHA_SHA256).repairRequired);
+        assertTrue(Arrays.equals(
+            uncertainCandidate,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.LOADED_WITH_REPAIR,
+                     reopened.loadStatus());
+        assertNotNull(reopened.findBook(ALPHA_SHA256));
+        assertTrue(reopened.findBook(ALPHA_SHA256).repairRequired);
+    }
+
+    @Test
+    public void identityFailurePreservesPreexistingPublicationBlock()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_block_race.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        OctavoLibraryStore.Book current =
+            importAndAssociate(store, alpha, ALPHA_TITLE);
+        OctavoLibraryStore.TransferredBookOutcome prepared =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     prepared.status);
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.PENDING,
+            store.verifyBookIdentityStep(prepared.book, 1));
+
+        store.failNextCatalogMoveAfterReplaceForTesting();
+        assertFalse(store.savePresented(current, 7, 19));
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.PUBLISH_UNCERTAIN_BLOCKED,
+            store.loadStatus());
+        String blockedError = store.lastError();
+        byte[] blockedCatalog = Files.readAllBytes(
+            store.catalogFileForTesting().toPath());
+        try (RandomAccessFile mutation =
+                 new RandomAccessFile(current.file, "rw")) {
+            mutation.seek(current.file.length() - 1);
+            int last = mutation.read();
+            assertTrue(last >= 0);
+            mutation.seek(current.file.length() - 1);
+            mutation.write(last ^ 0x01);
+            mutation.getFD().sync();
+        }
+
+        assertEquals(
+            OctavoLibraryStore.IdentityCheckStatus.FAILED,
+            store.verifyBookIdentityStep(
+                prepared.book, 4 * 1024 * 1024));
+        assertFalse(current.identityVerified);
+        assertTrue(current.repairRequired);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.PUBLISH_UNCERTAIN_BLOCKED,
+            store.loadStatus());
+        assertEquals(blockedError, store.lastError());
+        assertTrue(Arrays.equals(
+            blockedCatalog,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+    }
+
+    @Test
+    public void blockedCatalogNeverIssuesTransferredCapability()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_blocked.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore seed = new OctavoLibraryStore(context);
+        File managed = seed.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+        byte[] future = new byte[] {
+            0x4F, 0x36, 0x4C, 0x42,
+            (byte)0xFF, (byte)0xFF, (byte)0xFF, (byte)0xFF
+        };
+        try (FileOutputStream output = new FileOutputStream(
+                 seed.catalogFileForTesting(), false)) {
+            output.write(future);
+            output.getFD().sync();
+        }
+
+        OctavoLibraryStore blocked = new OctavoLibraryStore(context);
+        blocked.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.FUTURE_VERSION_BLOCKED,
+                     blocked.loadStatus());
+        OctavoLibraryStore.TransferredBookOutcome blockedOutcome =
+            blocked.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.CATALOG_BLOCKED,
+                     blockedOutcome.status);
+        assertEquals(null, blockedOutcome.book);
+        assertTrue(Arrays.equals(
+            future,
+            Files.readAllBytes(blocked.catalogFileForTesting().toPath())));
+        OctavoLibraryStore.Book forged = new OctavoLibraryStore.Book(
+            managed, ALPHA_SHA256, ALPHA_BYTE_COUNT,
+            true, false, true, ALPHA_TITLE, 0, 0, false, 0, 0);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            blocked.verifyAndRecordTransferredBookStep(
+                forged, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertEquals(OctavoLibraryStore.LoadStatus.FUTURE_VERSION_BLOCKED,
+                     blocked.loadStatus());
+        assertTrue(Arrays.equals(
+            future,
+            Files.readAllBytes(blocked.catalogFileForTesting().toPath())));
+    }
+
+    @Test
+    public void overboundCorruptCatalogPreservesBlockAndNeverIssuesCapability()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_corrupt_block.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        byte[] overbound = new byte[128 * 1024 + 1];
+        Arrays.fill(overbound, (byte)0x5A);
+        try (FileOutputStream output = new FileOutputStream(
+                 store.catalogFileForTesting(), false)) {
+            output.write(overbound);
+            output.getFD().sync();
+        }
+        copyFile(alpha, store.managedFile(ALPHA_SHA256));
+        store.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_BLOCKED,
+                     store.loadStatus());
+        String blockedError = store.lastError();
+
+        OctavoLibraryStore.TransferredBookOutcome outcome =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.CATALOG_BLOCKED,
+                     outcome.status);
+        assertEquals(null, outcome.book);
+        assertEquals(blockedError, store.lastError());
+        assertTrue(Arrays.equals(
+            overbound,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+
+        OctavoLibraryStore.Book forged = new OctavoLibraryStore.Book(
+            store.managedFile(ALPHA_SHA256),
+            ALPHA_SHA256, ALPHA_BYTE_COUNT,
+            true, false, true, ALPHA_TITLE, 0, 0, false, 0, 0);
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.STALE,
+            store.verifyAndRecordTransferredBookStep(
+                forged, ALPHA_TITLE, 4 * 1024 * 1024));
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_BLOCKED,
+                     store.loadStatus());
+        assertEquals(blockedError, store.lastError());
+        assertTrue(Arrays.equals(
+            overbound,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+    }
+
+    @Test
+    public void fullCatalogRejectsNewTransferButAllowsExactExistingProof()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        store.loadCatalog(fixture);
+        String firstDigest = null;
+        long firstBytes = 0;
+        for (int index = 0; index < 63; ++index) {
+            byte[] contents = new byte[] {
+                (byte)index, (byte)(index * 37 + 11)
+            };
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            StringBuilder keyBuilder = new StringBuilder(64);
+            for (byte value : digest.digest(contents)) {
+                keyBuilder.append(String.format(
+                    Locale.ROOT, "%02x", value & 0xFF));
+            }
+            String key = keyBuilder.toString();
+            File managed = store.managedFile(key);
+            try (FileOutputStream output =
+                     new FileOutputStream(managed, false)) {
+                output.write(contents);
+                output.getFD().sync();
+            }
+            assertTrue(store.recordTransferredBook(
+                key, contents.length, "Catalog capacity " + index));
+            if (index == 0) {
+                firstDigest = key;
+                firstBytes = contents.length;
+            }
+        }
+        assertEquals(64, store.bookCount());
+
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_transfer_full.epub");
+        copyFile(alpha, store.managedFile(ALPHA_SHA256));
+        OctavoLibraryStore.TransferredBookOutcome fullOutcome =
+            store.transferredBookForIdentityVerification(
+                ALPHA_SHA256, ALPHA_BYTE_COUNT);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.CATALOG_FULL,
+                     fullOutcome.status);
+        assertEquals(null, fullOutcome.book);
+        assertEquals(64, store.bookCount());
+
+        OctavoLibraryStore.TransferredBookOutcome existingOutcome =
+            store.transferredBookForIdentityVerification(
+                firstDigest, firstBytes);
+        assertEquals(OctavoLibraryStore.TransferredBookStatus.READY,
+                     existingOutcome.status);
+        OctavoLibraryStore.Book existing = existingOutcome.book;
+        assertNotNull(existing);
+        long savesBeforeProof = store.catalogSaveSuccessCountForTesting();
+        assertEquals(
+            OctavoLibraryStore.TransferredBookStepStatus.COMPLETED,
+            store.verifyAndRecordTransferredBookStep(
+                existing, existing.title, 4 * 1024 * 1024));
+        assertEquals(savesBeforeProof,
+                     store.catalogSaveSuccessCountForTesting());
+        assertTrue(existing.identityVerified);
+        assertEquals(64, store.bookCount());
+    }
+
+    @Test
+    public void unsignedFutureCatalogIsPreservedAndBlocksMutation()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        File catalog = store.catalogFileForTesting();
+        byte[] future;
+        try (java.io.ByteArrayOutputStream bytes =
+                 new java.io.ByteArrayOutputStream();
+             DataOutputStream output = new DataOutputStream(bytes)) {
+            output.writeInt(0x4F364C42);
+            output.writeInt(0x80000000);
+            output.flush();
+            future = bytes.toByteArray();
+        }
+        try (FileOutputStream output = new FileOutputStream(catalog, false)) {
+            output.write(future);
+            output.getFD().sync();
+        }
+
+        store.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.FUTURE_VERSION_BLOCKED,
+                     store.loadStatus());
+        assertEquals(1, store.bookCount());
+        assertFalse(store.recordTransferredBook(
+            ALPHA_SHA256, ALPHA_BYTE_COUNT, ALPHA_TITLE));
+        assertTrue(Arrays.equals(future, Files.readAllBytes(catalog.toPath())));
+
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            assertLibrary(scenario, 1);
+            AtomicBoolean opened = new AtomicBoolean(false);
+            scenario.onActivity(activity -> opened.set(
+                activity.openFixtureForTesting()));
+            assertTrue(opened.get());
+            assertNativeHealthy(awaitPresented(scenario));
+        }
+        assertTrue(Arrays.equals(future, Files.readAllBytes(catalog.toPath())));
+    }
+
+    @Test
+    public void futureCatalogPreservesPendingImportAsReadOnlyEvidence()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File alpha = stageAsset(
+            context, ALPHA_ASSET, "octavo_port6_future_pending.epub");
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        File managed = store.managedFile(ALPHA_SHA256);
+        copyFile(alpha, managed);
+        writeImportJournal(store.importJournalFileForTesting(),
+                           ALPHA_SHA256,
+                           ALPHA_BYTE_COUNT,
+                           2);
+        byte[] journal = Files.readAllBytes(
+            store.importJournalFileForTesting().toPath());
+        byte[] future;
+        try (java.io.ByteArrayOutputStream bytes =
+                 new java.io.ByteArrayOutputStream();
+             DataOutputStream output = new DataOutputStream(bytes)) {
+            output.writeInt(0x4F364C42);
+            output.writeInt(0x80000000);
+            output.flush();
+            future = bytes.toByteArray();
+        }
+        try (FileOutputStream output = new FileOutputStream(
+                 store.catalogFileForTesting(), false)) {
+            output.write(future);
+            output.getFD().sync();
+        }
+
+        store.loadCatalog(fixture);
+        assertEquals(
+            OctavoLibraryStore.LoadStatus.IMPORT_RECOVERY_BLOCKED,
+            store.loadStatus());
+        assertTrue(store.mutationBlocked());
+        assertEquals(null, store.pendingImportedBook());
+        OctavoLibraryStore.Book retainedPending =
+            new OctavoLibraryStore.Book(
+                managed, ALPHA_SHA256, ALPHA_BYTE_COUNT,
+                true, false, false, "Imported EPUB",
+                0, 0, false, 0, 0);
+        assertFalse(store.discardPendingImportAssociation(retainedPending));
+        assertTrue(Arrays.equals(
+            future,
+            Files.readAllBytes(store.catalogFileForTesting().toPath())));
+        assertTrue(Arrays.equals(
+            journal,
+            Files.readAllBytes(
+                store.importJournalFileForTesting().toPath())));
+        assertFixtureIdentity(managed, ALPHA_BYTE_COUNT, ALPHA_SHA256);
+    }
+
     @Test
     public void importsTwoBooksDeduplicatesAndRestoresIndependentPositions()
         throws IOException, NoSuchAlgorithmException {
@@ -672,6 +2062,8 @@ public final class OctavoLibraryCatalogTest {
                 assertEquals(1, store.importSuccessCountForTesting());
                 assertEquals(0, store.importFailureCountForTesting());
                 assertEquals(0, store.catalogSaveFailureCountForTesting());
+                assertFalse(store.importStagingFileForTesting().exists());
+                assertFalse(store.importJournalFileForTesting().exists());
             });
 
             AtomicBoolean fixtureOpened = new AtomicBoolean(false);
@@ -691,9 +2083,10 @@ public final class OctavoLibraryCatalogTest {
         File root = new File(context.getFilesDir(), "port6");
         assertTrue(root.isDirectory() || root.mkdirs());
         File catalog = new File(root, "library.v1");
+        byte[] invalid = new byte[] {1, 2, 3, 4, 5};
         try (FileOutputStream output =
                  new FileOutputStream(catalog, false)) {
-            output.write(new byte[] {1, 2, 3, 4, 5});
+            output.write(invalid);
             output.getFD().sync();
         }
 
@@ -705,6 +2098,14 @@ public final class OctavoLibraryCatalogTest {
                     activity.libraryStoreForTesting();
                 assertEquals(0, store.catalogLoadSuccessCountForTesting());
                 assertEquals(1, store.catalogLoadFailureCountForTesting());
+                assertEquals(
+                    OctavoLibraryStore.LoadStatus.CORRUPT_QUARANTINED,
+                    store.loadStatus());
+                assertTrue(store.catalogFileForTesting().isFile());
+                assertTrue(Arrays.equals(
+                    invalid,
+                    readAllBytesUnchecked(
+                        store.catalogQuarantineFileForTesting(1))));
                 assertEquals(OctavoFixture.SHA256,
                              store.fixtureBook().key);
             });
@@ -716,6 +2117,107 @@ public final class OctavoLibraryCatalogTest {
             assertEquals(OctavoFixture.TITLE, title(scenario));
             assertNativeHealthy(fixture);
         }
+
+        OctavoLibraryStore reopened = new OctavoLibraryStore(context);
+        reopened.loadCatalog(new File(OctavoFixture.install(context)));
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_QUARANTINED,
+                     reopened.loadStatus());
+        assertEquals(1, reopened.catalogLoadSuccessCountForTesting());
+        assertTrue(Arrays.equals(
+            invalid,
+            Files.readAllBytes(
+                reopened.catalogQuarantineFileForTesting(1).toPath())));
+    }
+
+    @Test
+    public void corruptCatalogQuarantineIsBoundedAndOverboundInputIsPreserved()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore seed = new OctavoLibraryStore(context);
+        File catalog = seed.catalogFileForTesting();
+
+        for (int slot = 1; slot <= 3; ++slot) {
+            byte[] invalid = new byte[] {
+                (byte)slot, (byte)(slot + 1), (byte)(slot + 2)
+            };
+            try (FileOutputStream output =
+                     new FileOutputStream(catalog, false)) {
+                output.write(invalid);
+                output.getFD().sync();
+            }
+            OctavoLibraryStore recovered =
+                new OctavoLibraryStore(context);
+            recovered.loadCatalog(fixture);
+            assertEquals(
+                OctavoLibraryStore.LoadStatus.CORRUPT_QUARANTINED,
+                recovered.loadStatus());
+            assertTrue(recovered.catalogFileForTesting().isFile());
+            assertTrue(Arrays.equals(
+                invalid,
+                Files.readAllBytes(
+                    recovered.catalogQuarantineFileForTesting(slot)
+                        .toPath())));
+        }
+
+        byte[] fourth = new byte[] {9, 8, 7, 6};
+        try (FileOutputStream output =
+                 new FileOutputStream(catalog, false)) {
+            output.write(fourth);
+            output.getFD().sync();
+        }
+        OctavoLibraryStore blocked = new OctavoLibraryStore(context);
+        blocked.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_BLOCKED,
+                     blocked.loadStatus());
+        assertTrue(Arrays.equals(
+            fourth, Files.readAllBytes(catalog.toPath())));
+        assertFalse(blocked.recordOpened(
+            blocked.fixtureBook(), OctavoFixture.TITLE));
+        assertTrue(Arrays.equals(
+            fourth, Files.readAllBytes(catalog.toPath())));
+
+        OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
+        fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore overboundStore =
+            new OctavoLibraryStore(context);
+        File overboundCatalog = overboundStore.catalogFileForTesting();
+        byte[] overbound = new byte[128 * 1024 + 1];
+        Arrays.fill(overbound, (byte)0x5A);
+        try (FileOutputStream output =
+                 new FileOutputStream(overboundCatalog, false)) {
+            output.write(overbound);
+            output.getFD().sync();
+        }
+        overboundStore.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_BLOCKED,
+                     overboundStore.loadStatus());
+        assertTrue(Arrays.equals(
+            overbound, Files.readAllBytes(overboundCatalog.toPath())));
+        for (int slot = 1; slot <= 3; ++slot) {
+            assertFalse(overboundStore
+                .catalogQuarantineFileForTesting(slot).exists());
+        }
+    }
+
+    @Test
+    public void nonregularQuarantineEvidenceSurvivesMissingCatalog()
+        throws Exception {
+        Context context = ApplicationProvider.getApplicationContext();
+        File fixture = new File(OctavoFixture.install(context));
+        OctavoLibraryStore store = new OctavoLibraryStore(context);
+        File evidence = store.catalogQuarantineFileForTesting(1);
+        assertTrue(evidence.mkdirs());
+        assertFalse(store.catalogFileForTesting().exists());
+
+        store.loadCatalog(fixture);
+        assertEquals(OctavoLibraryStore.LoadStatus.CORRUPT_QUARANTINED,
+                     store.loadStatus());
+        assertTrue(evidence.isDirectory());
+        assertTrue(store.catalogFileForTesting().isFile());
+        assertTrue(store.lastError().contains("quarantined"));
     }
 
     @Test

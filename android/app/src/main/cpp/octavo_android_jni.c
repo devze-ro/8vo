@@ -4558,9 +4558,7 @@ Java_ro_devze_octavo_OctavoNative_create(JNIEnv *environment,
   __android_log_print(
     ANDROID_LOG_INFO,
     "8vo",
-    "Android reader state created document=%s title=%s restore=%d strict=%d",
-    app->document_path,
-    app->document_title,
+    "Android reader state created restore=%d strict=%d",
     app->restore_requested,
     app->strict_restore_requested);
   return (jlong)(uintptr_t)app;

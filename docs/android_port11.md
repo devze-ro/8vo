@@ -13,8 +13,11 @@ review transactions. The eighth independent local slice is accepted on API 36
 for the existing global Chapter/Page/Location/Percentage progress-display
 choice, with canonical
 `O1PC` lanes, private atomic `O1PS` review transactions, and the pre-existing
-local `O8PG` record remaining three separate formats. Google Drive remains
-disconnected.
+local `O8PG` record remaining three separate formats. The ninth independent
+local slice is accepted on API 36 for provider-neutral `O1LC` catalog discovery,
+private `O1LS` review decisions, exact `O1BM` manifests, and the private `O1BQ`
+managed-transfer/cleanup queue. These remain separate from every earlier `O1`
+family and from Port 6's local catalog. Google Drive remains disconnected.
 
 ## Boundary
 
@@ -348,9 +351,10 @@ durable retry/review gate. The sixth local slice closes only the separate
 position wire/merge/presentation-confirmation gate. The seventh closes the
 appearance-only wire/store/review/presentation gate on API 36. The eighth closes
 the separate global progress-choice wire/store/review/presentation gate on API
-36. None closes catalog, transfer, concrete-provider,
-authorization, encryption, or provider-threat-model gates, and none authorizes
-a Drive connection.
+36. The ninth closes the local-only catalog-discovery and managed-transfer
+wire/store/review/restart gate on API 36. It does not close the concrete-provider,
+authorization, account binding, network, permission, encryption, or provider-
+threat-model gates, and it does not authorize a Drive connection.
 
 The later Drive adapter will use `drive.appdata` only for hidden manifests and
 portable state and `drive.file` only for EPUBs the user approves in a visible
@@ -421,9 +425,11 @@ x86_64/QEMU target:
 Only `emulator-5554` was addressed. The iQOO was never targeted and was
 disconnected by the user before the final matrix. Google Drive, OAuth, Google
 Cloud, Play Console, signing keys, and every physical-device setting remained
-untouched. The concrete Drive adapter and the still-unqualified catalog,
+untouched. The concrete Drive adapter and the then-unqualified catalog,
 transfer, provider, authorization, encryption, and provider-threat-model gates
-remain later explicitly authorized slices.
+were then later explicitly authorized slices; the catalog/transfer local gate is
+now accepted below, while every concrete-provider and security gate remains
+deferred.
 
 On 2026-08-09, the sixth local slice passes the unchanged exact dependency
 guard and architecture audit and builds debug plus instrumentation APKs for
@@ -506,6 +512,37 @@ network permission, worker, clock, Google dependency, OAuth flow, or Drive
 connection. It does not authorize the still-deferred Drive security, threat-
 model, account-binding, authorization, ownership, conditional-write, duplicate,
 switching, deletion, privacy, first-sync, reinstall, or rollback decisions.
+
+On 2026-08-10, the ninth independent catalog/managed-transfer slice passes its
+Android compile and API 36 `emulator-5554` acceptance gate. Canonical `O1LC`,
+private `O1LS`, per-book `O1BM`, and private `O1BQ` remain four distinct bounded
+formats and do not reuse annotation, position, appearance, progress-choice, or
+Port 6 records as a generic synchronization framework. The exact evidence is:
+
+- focused catalog/managed-transfer coverage passes 80/80 in 1m53s;
+- preserved appearance, reading-position, progress-choice, and structural-
+  navigation coverage passes 47/47 in 2m36s;
+- the ordinary matrix, excluding only the two externally driven restart-probe
+  methods, passes 313/313 in 8m53s;
+- the external seed passes 1/1 in 4.564 seconds, an actual force-stop leaves no
+  process, and fresh-process verification passes 1/1 in 3.293 seconds; and
+- the selected matrix at actual 130% system text with animations disabled
+  passes 21/21 in 63.351 seconds, after which font plus window, transition, and
+  animator scales are restored and read back at `1.0`.
+
+The Library distinguishes durable offer dismissal from retained work: Back on
+**Book available from another device** records exact **Not now** review-epoch
+state, while Back on working/retry/cleanup UI only defers that modal, preserves
+the exact durable attempt, stops live posted identity work, and exposes a
+nonmodal action to reopen it. Late managed-publication recovery validates with
+Reader0 first, then executes attempt-bound 4 MiB fused SHA-256 and Port 6 catalog
+commit steps so the final identity proof and catalog association have no
+callback gap.
+
+The final crash and fatal buffers are empty. No physical device, provider, Drive
+or account path, network permission, security/encryption decision, worker, cloud
+resource, or Play Console state was used or changed. Those concrete-provider
+and launch security gates remain explicitly deferred.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

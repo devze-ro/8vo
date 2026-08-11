@@ -44,6 +44,8 @@ public final class OctavoBookmarkIntegrationTest {
     public void clearDurableState() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);

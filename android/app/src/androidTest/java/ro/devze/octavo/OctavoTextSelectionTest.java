@@ -43,6 +43,8 @@ public final class OctavoTextSelectionTest {
     public void clearDurableTestState() {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);

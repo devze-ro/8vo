@@ -102,7 +102,8 @@ slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
 34 automation. The inset, marker appearance, and marker-tap-to-editor behavior
 are physically accepted. The seventh appearance-only synchronization slice is
 accepted on API 36. The eighth independent global progress-display-choice slice
-is also accepted on API 36. Google Drive remains disconnected:
+is also accepted on API 36. The ninth independent provider-neutral catalog and
+managed-transfer slice is accepted on API 36. Google Drive remains disconnected:
 
 The fourth local slice adds the distinct actor-neutral `O1AP` annotation
 container and hardened offline join without a provider, account, network
@@ -156,6 +157,28 @@ verification passes 1/1 in 5.126 seconds. The ordinary matrix passes 238/238 in
 438.899 seconds, and crash/fatal buffers are empty. Only `emulator-5554` was
 targeted; no physical device, provider, permission, network, worker, account,
 OAuth flow, Google dependency, or Drive connection was used.
+
+The ninth catalog/managed-transfer slice keeps canonical add-only `O1LC`, private
+atomic `O1LS` review/reconciliation, exact per-book `O1BM`, and private atomic
+`O1BQ` transfer/cleanup state separate from every earlier `O1` family and the
+Port 6 local catalog. Android compilation is green. On API 36 `emulator-5554`,
+focused catalog coverage passes 80/80 in 1m53s, preserved appearance/position/
+progress/structural coverage passes 47/47 in 2m36s, and ordinary coverage passes
+313/313 in 8m53s. External restart passes seed 1/1 in 4.564 seconds, actual
+force-stop with no process, and fresh verification 1/1 in 3.293 seconds. At 130%
+system text with animations disabled, the selected matrix passes 21/21 in
+63.351 seconds; font plus window, transition, and animator scales are restored
+and read back at `1.0`. The final crash/fatal buffers are empty.
+
+On the Library offer, Back is durable **Not now** for the exact review epoch.
+Back from retained transfer, cleanup, or retry work is instead a transient UI
+defer: it stops live posted identity work without mutating durable state, exposes
+Library rows and Add EPUB, and leaves a nonmodal action that reopens the exact
+work. Late managed-publication recovery validates Reader0 first, then performs
+attempt-bound 4 MiB fused SHA-256/Port 6 commit steps with no hash-to-catalog
+callback gap. No physical device, provider, Drive/account path, network
+permission, security/encryption decision, worker, cloud resource, or Play
+Console operation was part of this local acceptance.
 
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
@@ -223,8 +246,26 @@ contained only expected force stops.
   The Library installs its 16dp outer gutter synchronously, then adds any real
   system left/right inset delivered by the window.
 - `OctavoLibraryStore` owns the bounded versioned catalog, streams distinct
-  imports into SHA-256-keyed app-private storage, atomically saves per-book
-  successfully presented positions, and removes only managed copies.
+  imports through fixed staging and incremental SHA-256 into journaled,
+  atomically published app-private storage, atomically saves per-book
+  successfully presented positions, and removes only managed copies. Its fused
+  late-transfer verifier publishes the exact Port 6 association in the final
+  bounded identity step after Reader0 validation.
+- `OctavoLibraryPortable` owns canonical bounded add-only `O1LC` catalog bytes,
+  exact digest/byte-count descriptors, union merge, equivocation rejection, and
+  deterministic simulated input. It contains no title, path, availability, or
+  upload approval.
+- `OctavoLibrarySyncStore` owns private atomic `O1LS` staged-catalog approval,
+  review epochs, per-entry decisions, exact transfer/local reconciliation, and
+  typed durable attention.
+- `OctavoBookManifest` owns canonical bounded `O1BM` complete/chunk identity for
+  one exact EPUB. `OctavoBookTransferStore` independently owns private atomic
+  `O1BQ` attempt ordering, sequential progress, publication state, cancellation,
+  and purpose-bound cleanup/repair. Neither is a provider session record.
+- `OctavoManagedEpubValidator` isolates Reader0 EPUB/title validation from a real
+  reader session. `OctavoLibrarySyncPrompt` owns the single accessible catalog,
+  offer, progress, retained-work, and Retry modal; deferred retained work is
+  reopened from nonmodal Library attention without changing durable bytes.
 - `OctavoAppearance` is the immutable global-only preference contract:
   theme, system family, size, spacing, width, supported alignment,
   publisher-color policy, and reduced motion.
@@ -807,7 +848,10 @@ matrix, external force-stop recovery, and the 158/158 ordinary matrix with
 empty crash/fatal buffers. The physical gate also closed touch-mode action
 focus and restored the accepted APK/private-data baseline exactly. Durable
 Unicode-aware indexing, annotation search/export, concrete provider transport,
-and the separate catalog and transfer portable families remain deferred. The
+provider/account/network/permission integration, launch security/encryption
+decisions, and catalog/transfer physical-device qualification remain deferred.
+The separate catalog and transfer portable families themselves are now accepted
+locally on API 36. The
 seventh appearance-only local slice adds canonical `O1PF`
 whole-profile lanes plus private atomic `O1SS` decisions and staged
 presentation recovery and is accepted on API 36. It still connects no provider
@@ -826,6 +870,8 @@ for the separate reading-position/confirmation boundary,
 for the appearance-only portable profile/review-transaction boundary,
 [`../docs/android_port11_progress_sync.md`](../docs/android_port11_progress_sync.md)
 for the progress-choice portable/private/local-file boundary,
+[`../docs/android_port11_catalog_transfer.md`](../docs/android_port11_catalog_transfer.md)
+for the provider-neutral catalog/managed-transfer boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,

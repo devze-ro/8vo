@@ -18,6 +18,10 @@ and user subjective/manual acceptance remain pending.
 Port 7's Reader0, companion re10, exact 8vo guard/build, final emulator and
 iQOO 36/36 matrices, ProcessRestart, 130% accessibility, crash, backup/restore,
 and hands-on reader-quality closure remain accepted evidence.
+Port 11's ninth local slice adds an API 36-accepted provider-neutral discovery
+catalog and managed EPUB transfer/cleanup boundary. It remains disconnected
+from providers, accounts, networks, permissions, cloud resources, and Play
+Console state; physical-device and launch-security qualification are deferred.
 It compiles the same exact shared sources, starts on an 8vo-owned bounded
 library, opens its deterministic sample or multiple digest-keyed imported
 EPUBs through Reader0, presents canonical borderless styled pages with
@@ -74,8 +78,13 @@ mutations. Ground0 contains no reader-product policy.
 8vo has two top-level surfaces:
 
 - **Library** is owned entirely by 8vo. It stores a bounded, versioned catalog,
-  imports and removes local books, and opens the native file picker. Cover and
-  thumbnail policy remains future library work.
+  imports and removes local books, opens the native file picker, and hosts the
+  separate provider-neutral catalog-review and managed-transfer projections.
+  A foreign-book offer's Back action durably records exact **Not now** state for
+  its review epoch. Back from retained transfer, cleanup, or Retry UI only
+  defers that modal: exact durable state remains unchanged, Library rows and Add
+  EPUB become accessible, and a nonmodal attention action reopens the work.
+  Cover and thumbnail policy remains future library work.
 - **Reader** combines Reader0's canonical document frame with Readerview0's
   portable control/semantic projection. On Android, Port 7 asks Readerview0 for
   a distraction-free, borderless page over the full native viewport and draws
@@ -255,6 +264,37 @@ join-limit and uncertain-write state survive restart. A later concrete Drive
 host must prove semantically equivalent atomic conditional operations before it
 may execute these commands. The adopted boundary is
 [`android_port11_sync_coordinator.md`](android_port11_sync_coordinator.md).
+
+The ninth Port 11 local catalog/managed-transfer slice is also product-owned but
+uses four independent formats. Canonical add-only `O1LC` contains only exact EPUB
+digest/byte-count descriptors. Private atomic `O1LS` owns staged-catalog review,
+per-entry decisions, and exact reconciliation. Canonical per-book `O1BM` owns
+complete and sequential chunk hashes. Private atomic `O1BQ` owns one active
+attempt, bounded queued intents, partial-file progress, and durable cleanup
+purposes. None is an annotation, position, appearance, progress-choice, Port 6,
+provider-session, or generic operation-log record. Each independently uses
+bounded candidate validation, descriptor synchronization, and mandatory same-
+directory atomic replacement; cross-file atomicity is never claimed.
+
+Local picker import streams into fixed staging, proves SHA-256 incrementally,
+asks Reader0 to validate, journals the exact managed publication, uses a same-
+directory atomic move, creates the real reader from the managed book, and only
+then records the Port 6 association and local `O1LC` discovery. Restart recovery
+never auto-opens the book or advances last-opened state. Download publication
+similarly proves manifest chunks and complete identity, validates through
+Reader0, atomically publishes managed bytes, durably associates Port 6, records
+`O1LS DOWNLOADED`, and finally removes the exact `O1BQ` intent.
+
+At late `MANAGED_PUBLISHED` or `LOCAL_CATALOG_LINKED` recovery, Reader0 validates
+the exact managed book first and the title exists only in the live operation.
+The Activity then posts attempt-bound 4 MiB steps; every step revalidates the
+direction, phase, sequence, attempt ID, digest, byte count, and manifest hash.
+The final SHA-256 proof and Port 6 association/title publication are fused in one
+store step, so there is no hash-to-catalog callback gap and no second full hash.
+Identity failure can become only an exact origin-bound `REPAIR_REPLACE` cleanup;
+catalog-full, blocked, stale, or uncertain publication retains visible Retry and
+does not destroy managed bytes. The complete local contract is
+[`android_port11_catalog_transfer.md`](android_port11_catalog_transfer.md).
 
 The Port 11 Android highlight projection remains product-owned. Java copies a
 bounded record-ID-sorted list of Reader0 spine/UTF-8 byte ranges and four
@@ -577,8 +617,10 @@ shaping, and concrete synchronization transport remain deferred. Port 11 now
 includes local bookmark, multi-color highlight, note/storage/merge, and
 disconnected deterministic annotation coordination without connecting Drive.
 Its position family is independently qualified, and its seventh appearance-only
-family and eighth progress-choice family are accepted on API 36. Catalog/
-transfer records and concrete transport remain separate later work.
+family, eighth progress-choice family, and ninth provider-neutral catalog/
+managed-transfer family are accepted on API 36. Concrete provider transport,
+account/network/permission integration, physical-device qualification, and
+launch security remain separate later work.
 The current bounded contracts are in
 [`android_port11.md`](android_port11.md),
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
@@ -586,6 +628,7 @@ The current bounded contracts are in
 [`android_port11_position_sync.md`](android_port11_position_sync.md),
 [`android_port11_preference_sync.md`](android_port11_preference_sync.md),
 [`android_port11_progress_sync.md`](android_port11_progress_sync.md),
+[`android_port11_catalog_transfer.md`](android_port11_catalog_transfer.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and
@@ -613,6 +656,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 Detailed historical decisions and regression evidence are retained in the
 [engineering archive](archive/README.md). They are not part of the current
 architectural contract.
+
+The 2026-08-10 Port 11 catalog/managed-transfer candidate is compile-green and
+passes its API 36 acceptance gate: focused catalog 80/80 in 1m53s; preserved
+appearance, reading-position, progress-choice, and structural navigation 47/47
+in 2m36s; ordinary 313/313 in 8m53s; external-process seed 1/1 in 4.564 seconds,
+actual force-stop with no surviving process, and fresh verification 1/1 in 3.293
+seconds; and selected 130%-system-text/disabled-animation coverage 21/21 in
+63.351 seconds. Font and all animation scales were restored and read back at
+`1.0`. The final crash/fatal buffers are empty. This was an emulator-only local
+qualification: physical-device, provider, Drive/account, network/permission,
+security/encryption, worker, cloud, and Play Console work remains explicitly
+deferred.
 
 The current Port 8 Reader0 boundary is `0.7.0-dev` / public API 7. Its exact
 local commit `5fe949d88258cd96884c44b69e4f4ab6f27dc394` is pinned in

@@ -28,9 +28,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,7 +43,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * Two independently invokable halves of the process-restart probe. Port 11
  * extends the retained Port 8 evidence with interrupted appearance and
  * progress-display applies whose O1SS and O1PS recovery must cross the real
- * process boundary.
+ * process boundary, plus an exact O1LC/O1LS/O1BQ download stopped at
+ * LOCAL_CATALOG_LINKED until the fresh process receives explicit Retry.
  *
  * The ordinary connected suite excludes this class.
  * scripts/android_port7_process_restart.ps1 remains the compatible driver and runs
@@ -54,17 +59,23 @@ import java.util.concurrent.atomic.AtomicReference;
 @ExternalProcessRestartProbe
 public final class OctavoProcessRestartTest {
     private static final int EVIDENCE_MAGIC = 0x4F385052; // "O8PR"
-    private static final int EVIDENCE_VERSION = 4;
-    private static final int EVIDENCE_FILE_CAP = 512;
+    private static final int EVIDENCE_VERSION = 5;
+    private static final int EVIDENCE_FILE_CAP = 1024;
     private static final String EVIDENCE_DIRECTORY = "port8";
     private static final String EVIDENCE_FILE =
-        "process_restart_expected.v4";
+        "process_restart_expected.v5";
     private static final String EVIDENCE_TEMPORARY_FILE =
-        "process_restart_expected.v4.tmp";
+        "process_restart_expected.v5.tmp";
     private static final String APPEARANCE_REMOTE_DEVICE_ID =
         "71717171717171717171717171717171";
     private static final String PROGRESS_REMOTE_DEVICE_ID =
         "72727272727272727272727272727272";
+    private static final String TRANSFER_ASSET =
+        "port6/octavo_port6_alpha.epub";
+    private static final long TRANSFER_BYTE_COUNT = 44_190L;
+    private static final String TRANSFER_DIGEST =
+        "dd92f87fa70ea37f761cb9348d5f7b2939afea2661f9f4fe16828ac6ca041f80";
+    private static final String TRANSFER_TITLE = "Port 6 Alpha Book";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -72,6 +83,26 @@ public final class OctavoProcessRestartTest {
 
     private interface SearchCondition {
         boolean matches(OctavoSearch search);
+    }
+
+    private static final class ExpectedTransfer {
+        final String digest;
+        final long byteCount;
+        final String attemptId;
+        final String manifestHash;
+        final String phase;
+
+        ExpectedTransfer(String digest,
+                         long byteCount,
+                         String attemptId,
+                         String manifestHash,
+                         String phase) {
+            this.digest = digest;
+            this.byteCount = byteCount;
+            this.attemptId = attemptId;
+            this.manifestHash = manifestHash;
+            this.phase = phase;
+        }
     }
 
     private static final class ExpectedState {
@@ -90,6 +121,7 @@ public final class OctavoProcessRestartTest {
         final long progressOriginLocalSequence;
         final long progressPendingLocalSequence;
         final long progressReviewEpoch;
+        final ExpectedTransfer transfer;
 
         ExpectedState(String bookKey,
                       long originSpineIndex,
@@ -105,7 +137,8 @@ public final class OctavoProcessRestartTest {
                       OctavoProgressDisplay interruptedProgressDisplay,
                       long progressOriginLocalSequence,
                       long progressPendingLocalSequence,
-                      long progressReviewEpoch) {
+                      long progressReviewEpoch,
+                      ExpectedTransfer transfer) {
             this.bookKey = bookKey;
             this.originSpineIndex = originSpineIndex;
             this.originByteOffset = originByteOffset;
@@ -124,6 +157,7 @@ public final class OctavoProcessRestartTest {
             this.progressPendingLocalSequence =
                 progressPendingLocalSequence;
             this.progressReviewEpoch = progressReviewEpoch;
+            this.transfer = transfer;
         }
     }
 
@@ -131,6 +165,8 @@ public final class OctavoProcessRestartTest {
     public void seedDurableReaderState() throws IOException {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);
@@ -139,6 +175,16 @@ public final class OctavoProcessRestartTest {
         OctavoAnnotationStore.clearForTesting(context);
         OctavoNoteDraftStore.clearForTesting(context);
         clearEvidence(context);
+
+        File transferSource = stageAsset(
+            context, TRANSFER_ASSET,
+            "process-restart-transfer-alpha.epub");
+        assertEquals(TRANSFER_BYTE_COUNT, transferSource.length());
+        assertEquals(TRANSFER_DIGEST, sha256(transferSource));
+        byte[] transferManifest =
+            OctavoBookManifest.build(transferSource).encode();
+        byte[] transferCatalog = portable(
+            TRANSFER_DIGEST, TRANSFER_BYTE_COUNT);
 
         OctavoAppearance expectedAppearance = extremeAppearance();
         OctavoProgressDisplay expectedProgress = OctavoProgressDisplay.LOCATION;
@@ -485,6 +531,24 @@ public final class OctavoProcessRestartTest {
             awaitAppearanceApplyPendingRetry(
                 scenario, expectedAppearance, interruptedTarget);
 
+            AtomicReference<ExpectedTransfer> transferCutpoint =
+                new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                try {
+                    transferCutpoint.set(seedCatalogTransferCutpoint(
+                        activity, transferSource,
+                        transferManifest, transferCatalog));
+                } catch (IOException exception) {
+                    throw new AssertionError(exception);
+                }
+                assertEquals(bookKey.get(),
+                             activity.activeBookKeyForTesting());
+            });
+            assertNotNull(transferCutpoint.get());
+            awaitReadingPosition(
+                scenario, position.get()[1], position.get()[2],
+                "The isolated transfer validation changed the reader anchor");
+
             writeEvidence(
                 context,
                 new ExpectedState(bookKey.get(),
@@ -503,7 +567,8 @@ public final class OctavoProcessRestartTest {
                                   progressPending.get()
                                       .originLocalSequence,
                                   progressPending.get().localSequence,
-                                  progressPending.get().reviewEpoch));
+                                  progressPending.get().reviewEpoch,
+                                  transferCutpoint.get()));
         }
     }
 
@@ -563,6 +628,7 @@ public final class OctavoProcessRestartTest {
         assertSame(OctavoProgressSyncStore.PendingRecovery.ORIGIN_DURABLE,
             recoveredProgressSync.pendingRecovery(
                 expected.progressDisplay));
+        assertDurableTransferCutpoint(context, expected);
 
         try (ActivityScenario<OctavoActivity> scenario =
                  ActivityScenario.launch(OctavoActivity.class)) {
@@ -573,6 +639,22 @@ public final class OctavoProcessRestartTest {
                 assertNull(activity.activeBookKeyForTesting());
                 assertEquals(expected.appearance,
                              activity.appearanceForTesting());
+                assertActivityTransferCutpoint(activity, expected);
+                assertReaderAnchorInLibrary(activity, expected);
+            });
+
+            AtomicReference<Boolean> transferRetry =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> transferRetry.set(
+                activity.retryLibraryTransferForTesting()));
+            assertTrue(
+                "The retained catalog transfer did not accept explicit Retry",
+                transferRetry.get());
+            awaitCatalogTransferFinalized(scenario, expected);
+            scenario.onActivity(activity -> {
+                assertTrue(activity.libraryVisibleForTesting());
+                assertNull(activity.activeBookKeyForTesting());
+                assertReaderAnchorInLibrary(activity, expected);
                 assertTrue(activity.openBookForTesting(expected.bookKey));
             });
 
@@ -806,6 +888,267 @@ public final class OctavoProcessRestartTest {
                     presented, expected.spineIndex, expected.byteOffset);
             });
         }
+    }
+
+    private static ExpectedTransfer seedCatalogTransferCutpoint(
+        OctavoActivity activity,
+        File source,
+        byte[] manifestBytes,
+        byte[] catalogBytes) throws IOException {
+        OctavoLibrarySyncStore sync =
+            activity.librarySyncStoreForTesting();
+        assertEquals(
+            OctavoLibrarySyncStore.PortableStageResult.STAGED_CURRENT,
+            sync.stagePortableBytes(catalogBytes));
+        OctavoLibrarySyncStore.StagedPortable stagedCatalog =
+            sync.stagedPortable();
+        assertNotNull(stagedCatalog);
+        assertEquals(
+            OctavoLibrarySyncStore.PortableMergeResult.MERGED,
+            sync.approveStagedPortable(stagedCatalog.sha256));
+        List<OctavoLibrarySyncStore.Candidate> candidates =
+            sync.reviewCandidates(Collections.emptyList());
+        assertEquals(1, candidates.size());
+        OctavoLibrarySyncStore.Candidate candidate = candidates.get(0);
+        assertEquals(TRANSFER_DIGEST, candidate.digest);
+        assertEquals(TRANSFER_BYTE_COUNT, candidate.byteCount);
+
+        OctavoBookTransferStore transfer =
+            activity.bookTransferStoreForTesting();
+        assertEquals(0, transfer.intentCount());
+        OctavoBookTransferStore.StageOutcome staged =
+            transfer.stageDownload(manifestBytes);
+        assertTrue(staged.result.succeeded());
+        OctavoBookTransferStore.ActiveJob active = transfer.activeJob();
+        assertNotNull(active);
+        assertEquals(
+            OctavoLibrarySyncStore.MutationResult.UPDATED,
+            sync.reconcileTransferAttempt(
+                candidate, active.attemptId,
+                hex(active.manifestHash())));
+        try (FileInputStream chunk = new FileInputStream(source)) {
+            assertEquals(
+                OctavoBookTransferStore.MutationResult.UPDATED,
+                transfer.acceptNextDownloadChunk(
+                    active.callbackToken, 0, chunk));
+        }
+        active = transfer.activeJob();
+        assertNotNull(active);
+        assertEquals(
+            OctavoBookTransferStore.MutationResult.UPDATED,
+            transfer.finishDownload(active.callbackToken));
+
+        active = transfer.activeJob();
+        assertNotNull(active);
+        File readerCandidate = transfer.stagedDownloadForReader0(active);
+        OctavoManagedEpubValidator.Result readerValidated =
+            OctavoManagedEpubValidator.validate(
+                activity, readerCandidate,
+                activity.appearanceForTesting());
+        assertTrue(readerValidated.valid);
+        assertEquals(TRANSFER_TITLE, readerValidated.title);
+        assertEquals(
+            OctavoBookTransferStore.MutationResult.UPDATED,
+            transfer.markReader0Validated(active.callbackToken));
+
+        active = transfer.activeJob();
+        assertNotNull(active);
+        assertEquals(
+            OctavoBookTransferStore.MutationResult.UPDATED,
+            transfer.publishManaged(
+                active.callbackToken,
+                activity.libraryStoreForTesting()
+                    .documentDirectoryForTesting()));
+        active = transfer.activeJob();
+        assertNotNull(active);
+        assertEquals(OctavoBookTransferStore.Phase.MANAGED_PUBLISHED,
+                     active.phase);
+        assertTrue(activity.libraryStoreForTesting().recordTransferredBook(
+            active.digest, active.byteCount, readerValidated.title));
+        OctavoLibrarySyncStore.TransferReconciliation reconciliation =
+            sync.transferReconciliation();
+        assertNotNull(reconciliation);
+        assertEquals(active.attemptId, reconciliation.attemptId);
+        assertEquals(hex(active.manifestHash()),
+                     reconciliation.manifestSha256);
+        assertEquals(
+            OctavoLibrarySyncStore.MutationResult.UPDATED,
+            sync.completeDownloaded(reconciliation, true));
+        assertEquals(
+            OctavoLibrarySyncStore.Decision.DOWNLOADED,
+            sync.decision(active.digest));
+        assertEquals(
+            OctavoBookTransferStore.MutationResult.UPDATED,
+            transfer.markLocalCatalogLinked(active.callbackToken));
+
+        OctavoBookTransferStore.ActiveJob linked = transfer.activeJob();
+        assertNotNull(linked);
+        assertEquals(
+            OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED,
+            linked.phase);
+        assertEquals(TRANSFER_DIGEST, linked.digest);
+        assertEquals(TRANSFER_BYTE_COUNT, linked.byteCount);
+        assertEquals(staged.attemptId, linked.attemptId);
+        assertEquals(sha256(manifestBytes), hex(linked.manifestHash()));
+        OctavoLibraryPortable.Descriptor descriptor =
+            sync.snapshot().descriptor(linked.digest);
+        assertNotNull(descriptor);
+        assertEquals(linked.byteCount, descriptor.byteCount);
+        assertNull(sync.transferReconciliation());
+        assertEquals(1, transfer.intentCount());
+        return new ExpectedTransfer(
+            linked.digest,
+            linked.byteCount,
+            linked.attemptId,
+            hex(linked.manifestHash()),
+            linked.phase.name());
+    }
+
+    private static void assertDurableTransferCutpoint(
+        Context context, ExpectedState expected) throws IOException {
+        OctavoLibraryStore library = new OctavoLibraryStore(context);
+        library.loadCatalog(new File(OctavoFixture.install(context)));
+        OctavoLibraryStore.Book transferred =
+            library.findBook(expected.transfer.digest);
+        assertNotNull(transferred);
+        assertTrue(transferred.imported);
+        assertFalse(transferred.repairRequired);
+        assertFalse(
+            "A fresh O6 load must not infer exact identity from shape",
+            transferred.identityVerified);
+        assertEquals(expected.transfer.byteCount, transferred.byteCount);
+        assertEquals(expected.transfer.digest,
+                     sha256(transferred.file));
+        assertReaderAnchorInStore(library, expected);
+
+        OctavoLibrarySyncStore sync =
+            new OctavoLibrarySyncStore(context);
+        assertEquals(OctavoLibrarySyncStore.LoadStatus.LOADED,
+                     sync.load());
+        OctavoLibraryPortable.Descriptor descriptor =
+            sync.snapshot().descriptor(expected.transfer.digest);
+        assertNotNull(descriptor);
+        assertEquals(expected.transfer.byteCount, descriptor.byteCount);
+        assertEquals(OctavoLibrarySyncStore.Decision.DOWNLOADED,
+                     sync.decision(expected.transfer.digest));
+        assertNull(sync.transferReconciliation());
+
+        OctavoBookTransferStore transfer =
+            new OctavoBookTransferStore(context);
+        assertEquals(OctavoBookTransferStore.LoadStatus.LOADED,
+                     transfer.load());
+        assertExactTransferCutpoint(transfer.activeJob(), expected);
+        assertEquals(1, transfer.intentCount());
+        assertTrue(transfer.cleanupJobs().isEmpty());
+    }
+
+    private static void assertActivityTransferCutpoint(
+        OctavoActivity activity, ExpectedState expected) {
+        assertTrue(activity.libraryTransferExplicitRetryRequiredForTesting());
+        assertExactTransferCutpoint(
+            activity.bookTransferStoreForTesting().activeJob(), expected);
+        assertEquals(
+            OctavoLibrarySyncStore.Decision.DOWNLOADED,
+            activity.librarySyncStoreForTesting().decision(
+                expected.transfer.digest));
+        assertNull(activity.librarySyncStoreForTesting()
+                       .transferReconciliation());
+        OctavoLibraryPortable.Descriptor descriptor =
+            activity.librarySyncStoreForTesting().snapshot().descriptor(
+                expected.transfer.digest);
+        assertNotNull(descriptor);
+        assertEquals(expected.transfer.byteCount, descriptor.byteCount);
+        OctavoLibraryStore.Book transferred =
+            activity.libraryStoreForTesting().findBook(
+                expected.transfer.digest);
+        assertNotNull(transferred);
+        assertFalse(transferred.repairRequired);
+        assertFalse(transferred.identityVerified);
+        assertEquals(expected.transfer.byteCount, transferred.byteCount);
+    }
+
+    private static void assertExactTransferCutpoint(
+        OctavoBookTransferStore.ActiveJob active,
+        ExpectedState expected) {
+        assertNotNull(active);
+        assertEquals(expected.transfer.digest, active.digest);
+        assertEquals(expected.transfer.byteCount, active.byteCount);
+        assertEquals(expected.transfer.attemptId, active.attemptId);
+        assertEquals(expected.transfer.manifestHash,
+                     hex(active.manifestHash()));
+        assertEquals(expected.transfer.phase, active.phase.name());
+        assertSame(OctavoBookTransferStore.Direction.DOWNLOAD,
+                   active.direction);
+        assertSame(OctavoBookTransferStore.DurableDirection.FORWARD,
+                   active.durableDirection);
+    }
+
+    private static void assertReaderAnchorInLibrary(
+        OctavoActivity activity, ExpectedState expected) {
+        assertNull(activity.activeBookKeyForTesting());
+        assertReaderAnchorInStore(
+            activity.libraryStoreForTesting(), expected);
+    }
+
+    private static void assertReaderAnchorInStore(
+        OctavoLibraryStore library, ExpectedState expected) {
+        OctavoLibraryStore.Book anchor =
+            library.findBook(expected.bookKey);
+        assertNotNull(anchor);
+        assertTrue(anchor.hasPosition);
+        assertEquals(expected.spineIndex, anchor.spineIndex);
+        assertEquals(expected.byteOffset, anchor.byteOffset);
+    }
+
+    private static void awaitCatalogTransferFinalized(
+        ActivityScenario<OctavoActivity> scenario,
+        ExpectedState expected) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            AtomicReference<Boolean> settled =
+                new AtomicReference<>(false);
+            scenario.onActivity(activity -> {
+                OctavoLibraryStore.Book transferred =
+                    activity.libraryStoreForTesting().findBook(
+                        expected.transfer.digest);
+                OctavoLibraryPortable.Descriptor descriptor =
+                    activity.librarySyncStoreForTesting()
+                        .snapshot().descriptor(expected.transfer.digest);
+                settled.set(activity.libraryVisibleForTesting()
+                    && activity.activeBookKeyForTesting() == null
+                    && transferred != null
+                    && transferred.imported
+                    && !transferred.repairRequired
+                    && transferred.identityVerified
+                    && transferred.byteCount
+                       == expected.transfer.byteCount
+                    && TRANSFER_TITLE.equals(transferred.title)
+                    && activity.libraryStoreForTesting()
+                        .hasExactManagedBook(
+                            expected.transfer.digest,
+                            expected.transfer.byteCount)
+                    && descriptor != null
+                    && descriptor.byteCount
+                       == expected.transfer.byteCount
+                    && activity.librarySyncStoreForTesting().decision(
+                           expected.transfer.digest)
+                       == OctavoLibrarySyncStore.Decision.DOWNLOADED
+                    && activity.librarySyncStoreForTesting()
+                           .transferReconciliation() == null
+                    && activity.bookTransferStoreForTesting()
+                           .activeJob() == null
+                    && activity.bookTransferStoreForTesting()
+                           .intentCount() == 0
+                    && activity.bookTransferStoreForTesting()
+                           .cleanupJobs().isEmpty());
+            });
+            if (settled.get()) {
+                scenario.onActivity(activity ->
+                    assertReaderAnchorInLibrary(activity, expected));
+                return;
+            }
+            SystemClock.sleep(50);
+        }
+        fail("The retained catalog transfer did not finalize after explicit Retry");
     }
 
     private static OctavoAppearance interruptedAppearanceTarget(
@@ -1284,6 +1627,25 @@ public final class OctavoProcessRestartTest {
         return result.get();
     }
 
+    private static long[] awaitReadingPosition(
+        ActivityScenario<OctavoActivity> scenario,
+        long expectedSpineIndex,
+        long expectedByteOffset,
+        String failureMessage) {
+        for (int attempt = 0; attempt < 300; ++attempt) {
+            long[] current = readingPosition(scenario);
+            if (current != null && current.length == 3
+                && current[0] == 1
+                && current[1] == expectedSpineIndex
+                && current[2] == expectedByteOffset) {
+                return current;
+            }
+            SystemClock.sleep(50);
+        }
+        fail(failureMessage);
+        return new long[0];
+    }
+
     private static OctavoSelection awaitSelection(
         ActivityScenario<OctavoActivity> scenario,
         boolean active,
@@ -1514,7 +1876,8 @@ public final class OctavoProcessRestartTest {
             || expected.progressPendingLocalSequence <= 0
             || expected.progressPendingLocalSequence
                != expected.progressOriginLocalSequence + 1
-            || expected.progressReviewEpoch <= 0) {
+            || expected.progressReviewEpoch <= 0
+            || !validExpectedTransfer(expected.transfer)) {
             throw new IOException("Invalid process-restart evidence");
         }
 
@@ -1545,6 +1908,11 @@ public final class OctavoProcessRestartTest {
             output.writeLong(expected.progressOriginLocalSequence);
             output.writeLong(expected.progressPendingLocalSequence);
             output.writeLong(expected.progressReviewEpoch);
+            output.writeUTF(expected.transfer.digest);
+            output.writeLong(expected.transfer.byteCount);
+            output.writeUTF(expected.transfer.attemptId);
+            output.writeUTF(expected.transfer.manifestHash);
+            output.writeUTF(expected.transfer.phase);
             int[] appearance = expected.appearance.nativeConfig();
             output.writeInt(appearance.length);
             for (int value : appearance) {
@@ -1592,6 +1960,12 @@ public final class OctavoProcessRestartTest {
             long progressOriginLocalSequence = input.readLong();
             long progressPendingLocalSequence = input.readLong();
             long progressReviewEpoch = input.readLong();
+            ExpectedTransfer transfer = new ExpectedTransfer(
+                input.readUTF(),
+                input.readLong(),
+                input.readUTF(),
+                input.readUTF(),
+                input.readUTF());
             int fieldCount = input.readInt();
             if (magic != EVIDENCE_MAGIC
                 || version != EVIDENCE_VERSION
@@ -1616,7 +1990,8 @@ public final class OctavoProcessRestartTest {
                 || progressPendingLocalSequence <= 0
                 || progressPendingLocalSequence
                    != progressOriginLocalSequence + 1
-                || progressReviewEpoch <= 0) {
+                || progressReviewEpoch <= 0
+                || !validExpectedTransfer(transfer)) {
                 throw new IOException("Invalid restart evidence anchor");
             }
             int[] appearance = new int[fieldCount];
@@ -1652,7 +2027,8 @@ public final class OctavoProcessRestartTest {
                                      interruptedProgressDisplay,
                                      progressOriginLocalSequence,
                                      progressPendingLocalSequence,
-                                     progressReviewEpoch);
+                                     progressReviewEpoch,
+                                     transfer);
         } catch (EOFException exception) {
             throw new IOException("Truncated restart evidence", exception);
         }
@@ -1674,6 +2050,95 @@ public final class OctavoProcessRestartTest {
 
     private static File evidenceDirectory(Context context) {
         return new File(context.getFilesDir(), EVIDENCE_DIRECTORY);
+    }
+
+    private static boolean validExpectedTransfer(ExpectedTransfer transfer) {
+        return transfer != null
+            && TRANSFER_DIGEST.equals(transfer.digest)
+            && transfer.byteCount == TRANSFER_BYTE_COUNT
+            && lowerHex(transfer.attemptId, 32)
+            && lowerHex(transfer.manifestHash, 64)
+            && OctavoBookTransferStore.Phase.LOCAL_CATALOG_LINKED.name()
+                   .equals(transfer.phase);
+    }
+
+    private static boolean lowerHex(String value, int length) {
+        if (value == null || value.length() != length) {
+            return false;
+        }
+        for (int index = 0; index < value.length(); ++index) {
+            char character = value.charAt(index);
+            if (!((character >= '0' && character <= '9')
+                  || (character >= 'a' && character <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static byte[] portable(String digest, long byteCount)
+        throws IOException {
+        OctavoLibraryPortable.Descriptor descriptor =
+            new OctavoLibraryPortable.Descriptor(digest, byteCount);
+        return OctavoLibraryPortable.simulatedRemoteBytes(
+            Collections.singletonList(descriptor));
+    }
+
+    private static File stageAsset(Context context,
+                                   String asset,
+                                   String name) throws IOException {
+        File destination = new File(context.getCacheDir(), name);
+        try (InputStream input = context.getAssets().open(asset);
+             FileOutputStream output =
+                 new FileOutputStream(destination, false)) {
+            byte[] buffer = new byte[8192];
+            for (int count = input.read(buffer);
+                 count >= 0;
+                 count = input.read(buffer)) {
+                if (count > 0) {
+                    output.write(buffer, 0, count);
+                }
+            }
+            output.getFD().sync();
+        }
+        return destination;
+    }
+
+    private static String sha256(File file) throws IOException {
+        MessageDigest digest = sha256Digest();
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[8192];
+            for (int count = input.read(buffer);
+                 count >= 0;
+                 count = input.read(buffer)) {
+                if (count > 0) {
+                    digest.update(buffer, 0, count);
+                }
+            }
+        }
+        return hex(digest.digest());
+    }
+
+    private static String sha256(byte[] bytes) {
+        MessageDigest digest = sha256Digest();
+        digest.update(bytes);
+        return hex(digest.digest());
+    }
+
+    private static MessageDigest sha256Digest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder result = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            result.append(String.format("%02x", value & 0xFF));
+        }
+        return result.toString();
     }
 
     private static void requireValidKey(String key) throws IOException {
