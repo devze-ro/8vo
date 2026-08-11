@@ -3,8 +3,8 @@
 Current pinned reader0 consumer dependency:
 
 - mode: `sibling-source`
-- version: `0.11.0-dev`
-- API version: `11`
+- version: `0.12.0-dev`
+- API version: `12`
 - commit: see the authoritative sibling `COMMIT` file (the coordinated final
   pin is advanced atomically with that file)
 
@@ -33,9 +33,10 @@ Windows reader uses its existing 32 MiB encoded-resource ceiling.
 
 API 11 appends exact SHA-256 PDF document identity to successful open
 transitions, readers, and frames using Ground0's allocation-free hash path.
-This compatibility-only repin does not consume or persist that identity; 8vo's
-existing EPUB and PDF behavior continues through the previously supported
-fields.
+8vo does not yet consume or persist that identity. API 12 appends canonical,
+Arena-owned PDF text selection snapshots with counted UTF-8, finite quads, and
+document/publication/selection generations. Only the Win32 host consumes that
+addition; Android remains on the backward-compatible EPUB surface.
 
 Saved catalog and legacy positions explicitly request Reader0's bounded
 six-page restore before resolving the persisted byte.

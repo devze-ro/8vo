@@ -1,12 +1,12 @@
 # MuPDF dependency
 
-8vo's Windows PDF target consumes MuPDF only through Reader0 API 11. The exact
+8vo's Windows PDF target consumes MuPDF only through Reader0 API 12. The exact
 clean MuPDF root and submodule closure are recorded here and must exactly match
 Reader0's own dependency metadata before the Reader0 PDF core is built or
 linked.
 
-This compatibility-only repin does not change the MuPDF component scope, and
-8vo does not consume API 11's appended PDF document identity.
+The API 12 selection addition does not change the MuPDF component scope. 8vo
+does not yet consume or persist API 11's appended PDF document identity.
 
 - upstream version: 1.28.2
 - upstream revision: `fe374accd98a43174a328fa7980d7675e06d5b0d`

@@ -202,6 +202,24 @@ octavo_accessibility_state(const ReaderViewSemanticNode *node)
   return result;
 }
 
+B32
+octavo_accessibility_enabled_menu_item_contract(
+  const ReaderViewSemanticNode *node,
+  ReaderViewText expected_name)
+{
+  if (!node || !expected_name.data || expected_name.size <= 0 ||
+      !node->name.data || node->name.size != expected_name.size ||
+      memcmp(node->name.data, expected_name.data,
+             (size_t)expected_name.size) != 0)
+  {
+    return 0;
+  }
+  long state = octavo_accessibility_state(node);
+  return octavo_accessibility_role(node->role) == ROLE_SYSTEM_MENUITEM &&
+    (state & STATE_SYSTEM_FOCUSABLE) != 0 &&
+    (state & STATE_SYSTEM_UNAVAILABLE) == 0;
+}
+
 FUNCTION HRESULT STDMETHODCALLTYPE
 octavo_accessibility_query_interface(IAccessible *iface,
                                        REFIID riid,

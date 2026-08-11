@@ -30,6 +30,24 @@ typedef struct OctavoPdf
   PdfReaderResult last_result;
 } OctavoPdf;
 
+typedef struct OctavoPdfScreenGeometry
+{
+  PdfReaderRect page_bounds;
+  F32 scale;
+  S32 content_x;
+  S32 content_y;
+  S32 content_width;
+  S32 content_height;
+  S32 raster_x;
+  S32 raster_y;
+  S32 raster_width;
+  S32 raster_height;
+  U64 document_generation;
+  U64 publication_generation;
+  U64 render_generation;
+  U32 page_index;
+} OctavoPdfScreenGeometry;
+
 FUNCTION B32 octavo_pdf_init(OctavoPdf *pdf);
 FUNCTION B32 octavo_pdf_release(OctavoPdf *pdf);
 FUNCTION B32 octavo_pdf_is_open(const OctavoPdf *pdf);
@@ -42,5 +60,22 @@ FUNCTION PdfReaderResult octavo_pdf_seek_page(OctavoPdf *pdf, U64 page_index);
 FUNCTION PdfReaderResult octavo_pdf_render_fit(OctavoPdf *pdf,
                                                 S32 content_width,
                                                 S32 content_height);
+FUNCTION B32 octavo_pdf_screen_geometry(
+  const OctavoPdf *pdf,
+  S32 content_x,
+  S32 content_y,
+  S32 content_width,
+  S32 content_height,
+  OctavoPdfScreenGeometry *out_geometry);
+FUNCTION B32 octavo_pdf_screen_to_page(
+  const OctavoPdfScreenGeometry *geometry,
+  S32 screen_x,
+  S32 screen_y,
+  PdfReaderPoint *out_point);
+FUNCTION B32 octavo_pdf_page_to_screen(
+  const OctavoPdfScreenGeometry *geometry,
+  PdfReaderPoint point,
+  F32 *out_screen_x,
+  F32 *out_screen_y);
 
 #endif /* OCTAVO_PDF_H */

@@ -7,7 +7,7 @@ below and must not silently advance them.
 
 | Repository | Revision | Version / API | Metadata |
 | --- | --- | --- | --- |
-| [reader0](https://github.com/devze-ro/reader0) | `213dc49043162ba59bfdc29e81825b03a4780f84` | 0.11.0-dev / API 11 | `vendor/reader0_dependency/` |
+| [reader0](https://github.com/devze-ro/reader0) | `f17b80eab591150f92fcd34ad21acfcdf16c7bb4` | 0.12.0-dev / API 12 | `vendor/reader0_dependency/` |
 | [readerview0](https://github.com/devze-ro/readerview0) | `a1b3f7a9b236cb9ac6cbfe68c293a1345267cc88` | 0.4.0-dev / API 4 | `vendor/readerview0_dependency/` |
 | [ui0](https://github.com/devze-ro/ui0) | `b1cf8e4fbe7e06b9799e251665bbe491ae4c22b5` | 0.1.0-dev / API 91 | `vendor/ui0_dependency/` |
 | [ground0](https://github.com/devze-ro/ground0) | `7abd8d136cc8cab2bd0d27f76c5bd0aa086901d5` | 0.4.6-dev / Presentation Engine API 1 | `vendor/ground0_dependency/` |

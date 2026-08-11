@@ -11,6 +11,8 @@ $pdfHeaderPath = Join-Path $RepoRoot "code\octavo_pdf.h"
 $pdfSourcePath = Join-Path $RepoRoot "code\octavo_pdf.c"
 $pdfContentHeaderPath = Join-Path $RepoRoot "code\octavo_pdf_content.h"
 $pdfContentSourcePath = Join-Path $RepoRoot "code\octavo_pdf_content.c"
+$pdfSelectionHeaderPath = Join-Path $RepoRoot "code\octavo_pdf_selection.h"
+$pdfSelectionSourcePath = Join-Path $RepoRoot "code\octavo_pdf_selection.c"
 $themeHeaderPath = Join-Path $RepoRoot "code\octavo_theme.h"
 $themePath = Join-Path $RepoRoot "code\octavo_theme.c"
 $libraryHeaderPath = Join-Path $RepoRoot "code\octavo_library.h"
@@ -26,6 +28,8 @@ $pdfBuildProvenancePath = Join-Path $RepoRoot "scripts\write_win32_pdf_build_pro
 $pdfSmokePath = Join-Path $RepoRoot "scripts\win32_octavo_pdf_stage1_smoke.ps1"
 $pdfContentSmokePath =
   Join-Path $RepoRoot "scripts\win32_octavo_pdf_content_smoke.ps1"
+$pdfSelectionSmokePath =
+  Join-Path $RepoRoot "scripts\win32_octavo_pdf_selection_smoke.ps1"
 $publicSmokePath = Join-Path $RepoRoot "scripts\run_public_smoke.ps1"
 $productSourceGuardPath =
   Join-Path $RepoRoot "scripts\require_win32_product_source_state.ps1"
@@ -66,6 +70,12 @@ if (!(Test-Path -LiteralPath $pdfContentHeaderPath)) {
 }
 if (!(Test-Path -LiteralPath $pdfContentSourcePath)) {
   $failures.Add("missing bounded Win32 PDF content implementation")
+}
+if (!(Test-Path -LiteralPath $pdfSelectionHeaderPath)) {
+  $failures.Add("missing bounded Win32 PDF selection contract")
+}
+if (!(Test-Path -LiteralPath $pdfSelectionSourcePath)) {
+  $failures.Add("missing bounded Win32 PDF selection implementation")
 }
 if (!(Test-Path -LiteralPath $themeHeaderPath)) {
   $failures.Add("missing platform-neutral 8vo theme catalog contract")
@@ -108,6 +118,9 @@ if (!(Test-Path -LiteralPath $pdfSmokePath)) {
 }
 if (!(Test-Path -LiteralPath $pdfContentSmokePath)) {
   $failures.Add("missing standalone Win32 PDF content smoke")
+}
+if (!(Test-Path -LiteralPath $pdfSelectionSmokePath)) {
+  $failures.Add("missing standalone Win32 PDF selection smoke")
 }
 if (!(Test-Path -LiteralPath $publicSmokePath)) {
   $failures.Add("missing public smoke gate")
@@ -158,6 +171,10 @@ if ($failures.Count -eq 0) {
   $pdfSource = [System.IO.File]::ReadAllText($pdfSourcePath)
   $pdfContentHeader = [System.IO.File]::ReadAllText($pdfContentHeaderPath)
   $pdfContentSource = [System.IO.File]::ReadAllText($pdfContentSourcePath)
+  $pdfSelectionHeader =
+    [System.IO.File]::ReadAllText($pdfSelectionHeaderPath)
+  $pdfSelectionSource =
+    [System.IO.File]::ReadAllText($pdfSelectionSourcePath)
   $themeHeader = [System.IO.File]::ReadAllText($themeHeaderPath)
   $theme = [System.IO.File]::ReadAllText($themePath)
   $libraryHeader = [System.IO.File]::ReadAllText($libraryHeaderPath)
@@ -174,6 +191,7 @@ if ($failures.Count -eq 0) {
     [System.IO.File]::ReadAllText($pdfBuildProvenancePath)
   $pdfSmoke = [System.IO.File]::ReadAllText($pdfSmokePath)
   $pdfContentSmoke = [System.IO.File]::ReadAllText($pdfContentSmokePath)
+  $pdfSelectionSmoke = [System.IO.File]::ReadAllText($pdfSelectionSmokePath)
   $publicSmoke = [System.IO.File]::ReadAllText($publicSmokePath)
   $productSourceGuard =
     [System.IO.File]::ReadAllText($productSourceGuardPath)
@@ -493,6 +511,191 @@ if ($failures.Count -eq 0) {
         '"win32_octavo_pdf_stage1_smoke\.ps1",\s*"win32_octavo_pdf_content_smoke\.ps1"') {
     $failures.Add("Win32 PDF content must remain concrete, arena-bounded, exact-copy, and UTF-8-safe")
   }
+  if ([regex]::Matches(
+        $build,
+        '#include\s+"octavo_pdf_selection\.c"').Count -ne 1 -or
+      $pdfSelectionSource -match
+        '(?i)\b(?:malloc|calloc|realloc|free)\s*\(' -or
+      $pdfSelectionSource.IndexOf('pdf_reader_select_text_snapshot') -lt 0 -or
+      $pdfSelectionSource.IndexOf(
+        'pdf_reader_selection_snapshot_is_current') -lt 0 -or
+      $pdfSelectionSource.IndexOf('base_unicode_utf8_validate') -lt 0 -or
+      $pdfSelectionSource.IndexOf(
+        'octavo_pdf_selection_quad_is_publishable') -lt 0 -or
+      $pdfSelectionSource.IndexOf('arena_alloc(&params)') -lt 0 -or
+      $pdfSelectionSource.IndexOf('PdfReaderResult_Stale') -lt 0 -or
+      $pdfSelectionHeader.IndexOf(
+        'OCTAVO_PDF_SELECTION_TEXT_BYTE_CAP = 1024 * 1024') -lt 0 -or
+      $pdfSelectionHeader.IndexOf(
+        'OCTAVO_PDF_SELECTION_SCALAR_CAP = 256 * 1024') -lt 0 -or
+      $pdfSelectionHeader.IndexOf(
+        'OCTAVO_PDF_SELECTION_QUAD_CAP = 384') -lt 0 -or
+      $accessibility.IndexOf(
+        'octavo_accessibility_enabled_menu_item_contract') -lt 0 -or
+      $app.IndexOf(
+        'octavo_accessibility_enabled_menu_item_contract') -lt 0 -or
+      $pdfSource.IndexOf('octavo_pdf_screen_geometry') -lt 0 -or
+      $pdfSource.IndexOf('octavo_pdf_screen_to_page') -lt 0 -or
+      $pdfSource.IndexOf('octavo_pdf_page_to_screen') -lt 0 -or
+      $app.IndexOf('geometry.raster_x, geometry.raster_y') -lt 0 -or
+      $app.IndexOf('octavo_current_pdf_selection_text') -lt 0 -or
+      $app.IndexOf('ReaderViewAction_CopySelection') -lt 0 -or
+      $app.IndexOf('ReaderViewSelection_CanCopy') -lt 0 -or
+      $app.IndexOf('CF_UNICODETEXT') -lt 0 -or
+      $app.IndexOf('accDoDefaultAction') -lt 0 -or
+      $app.IndexOf('octavo_pdf_selection_smoke_ctrl_c') -lt 0 -or
+      $app.IndexOf('active-drag-escape-retires-selection') -lt 0 -or
+      $app.IndexOf('octavo_pdf_selection_cancel_pointer') -lt 0 -or
+      $app.IndexOf('--pdf-selection-smoke') -lt 0 -or
+      $pdfSelectionSmoke.IndexOf('--pdf-selection-smoke') -lt 0 -or
+      $pdfSelectionSmoke.IndexOf('repeat=2') -lt 0 -or
+      $publicSmoke -notmatch
+        '"win32_octavo_pdf_content_smoke\.ps1",\s*"win32_octavo_pdf_selection_smoke\.ps1"') {
+    $failures.Add("Win32 PDF selection must remain API12-owned, arena-bounded, generation-guarded, geometry-valid, real-Copy-qualified, and Copy-only")
+  }
+  $pdfSelectionSmokeFunctionMatch = [regex]::Match(
+    $app,
+    '(?s)octavo_run_pdf_selection_smoke\(.*?#undef OCTAVO_PDF_SELECTION_SMOKE_REQUIRE\s*\r?\n\}')
+  $pdfSelectionScopeBeginMatch = [regex]::Match(
+    $app,
+    '(?s)octavo_pdf_selection_smoke_clipboard_scope_begin\(.*?(?=\r?\nFUNCTION B32\r?\noctavo_pdf_selection_smoke_clipboard_scope_finish)')
+  $pdfSelectionScopeFinishMatch = [regex]::Match(
+    $app,
+    '(?s)octavo_pdf_selection_smoke_clipboard_scope_finish\(.*?(?=\r?\nFUNCTION B32\r?\noctavo_pdf_selection_smoke_ctrl_c)')
+  $pdfSelectionCtrlMatch = [regex]::Match(
+    $app,
+    '(?s)octavo_pdf_selection_smoke_ctrl_c\(.*?(?=\r?\nFUNCTION B32\r?\noctavo_pdf_selection_smoke_has_copy_accessibility)')
+  $pdfSelectionCloseMatch = [regex]::Match(
+    $app,
+    '(?s)octavo_pdf_selection_smoke_close_clipboard_bounded\(.*?(?=\r?\nFUNCTION OctavoPdfSelectionSmokeClipboardRead)')
+  if (!$pdfSelectionSmokeFunctionMatch.Success -or
+      !$pdfSelectionScopeBeginMatch.Success -or
+      !$pdfSelectionScopeFinishMatch.Success -or
+      !$pdfSelectionCtrlMatch.Success -or
+      !$pdfSelectionCloseMatch.Success) {
+    $failures.Add("Win32 PDF selection audit must resolve the focused smoke and bounded clipboard helper bodies")
+  } else {
+    $selectionSmokeFunction = $pdfSelectionSmokeFunctionMatch.Value
+    $selectionScopeBegin = $pdfSelectionScopeBeginMatch.Value
+    $selectionScopeFinish = $pdfSelectionScopeFinishMatch.Value
+    $selectionCtrl = $pdfSelectionCtrlMatch.Value
+    $selectionClose = $pdfSelectionCloseMatch.Value
+
+    $firstMemberWindow = [regex]::IsMatch(
+      $app,
+      '(?s)typedef struct OctavoPdfSelectionSmokeWindow\s*\{\s*(?:/\*.*?\*/\s*)?OctavoWin32 win32;\s*OctavoAccessibility \*accessibility;\s*\}')
+    $shallowCopy = $selectionSmokeFunction -match
+      '(?s)smoke_window(?:->|\.)win32\.app\s*=|(?:memcpy|MemoryCopy)\s*\([^;]*win32\.app|\bOctavoApp\s+app\s*=|OctavoPdfSelectionSmokeWindow\s+smoke_window\s*='
+    if (!$firstMemberWindow -or $shallowCopy -or
+        $selectionSmokeFunction.IndexOf(
+          'Arena *state_arena = octavo_pdf_selection_smoke_state_arena();') -lt 0 -or
+        $selectionSmokeFunction.IndexOf('Arena *clipboard_arena = 0;') -lt 0 -or
+        $selectionSmokeFunction.IndexOf('arena_push(') -lt 0 -or
+        $selectionSmokeFunction.IndexOf(
+          'smoke_app = &smoke_window->win32.app;') -lt 0 -or
+        $selectionSmokeFunction.IndexOf('#define app (*smoke_app)') -lt 0 -or
+        $selectionSmokeFunction.IndexOf(
+          'clipboard_arena = octavo_pdf_selection_smoke_clipboard_arena();') -lt 0 -or
+        $selectionSmokeFunction -match
+          'clipboard_arena\s*=\s*state_arena') {
+      $failures.Add("PDF selection smoke must keep one final-address Arena-owned first-member OctavoWin32/App, a separate clipboard Arena, and no shallow app copy")
+    }
+
+    $positiveSentinelIndex = $selectionSmokeFunction.IndexOf(
+      'reader-view-copy-sentinel-verified')
+    $positiveCopyIndex = $selectionSmokeFunction.IndexOf(
+      'reader-view-copy-cf-unicode-text')
+    $staleSentinelIndex = $selectionSmokeFunction.IndexOf(
+      'stale-copy-sentinel-verified')
+    $stalePreservedIndex = $selectionSmokeFunction.IndexOf(
+      'stale-copy-sentinel-preserved')
+    $staleSegment = if ($staleSentinelIndex -ge 0 -and
+                         $stalePreservedIndex -gt $staleSentinelIndex) {
+      $selectionSmokeFunction.Substring(
+        $staleSentinelIndex,
+        $stalePreservedIndex - $staleSentinelIndex)
+    } else { '' }
+    if ($positiveSentinelIndex -lt 0 -or
+        $positiveCopyIndex -le $positiveSentinelIndex -or
+        $staleSentinelIndex -le $positiveCopyIndex -or
+        $stalePreservedIndex -le $staleSentinelIndex -or
+        $selectionSmokeFunction.IndexOf(
+          '"8vo PDF Reader View Copy sentinel"') -lt 0 -or
+        $selectionSmokeFunction.IndexOf(
+          '"8vo PDF stale-key Copy sentinel"') -lt 0 -or
+        [regex]::Matches(
+          $selectionSmokeFunction,
+          'octavo_pdf_selection_smoke_prepare_clipboard_text\s*\(').Count -ne 4 -or
+        $staleSegment.IndexOf('.key = stale_key') -lt 0 -or
+        $staleSegment.IndexOf('stale_sentinel') -lt 0 -or
+        $staleSegment.IndexOf('expected_copy') -ge 0) {
+      $failures.Add("PDF selection Copy qualification must replace a verified positive sentinel and preserve a distinct verified stale-key sentinel")
+    }
+
+    $countIndex = $selectionScopeBegin.IndexOf('CountClipboardFormats()')
+    $emptyFastPathIndex = $selectionScopeBegin.IndexOf(
+      'if (scope->original_empty)')
+    $oleInitializeIndex = $selectionScopeBegin.IndexOf('OleInitialize(0)')
+    $restoreGuardIndex = $selectionScopeFinish.IndexOf(
+      'if (!restored) return 0;')
+    $savedReleaseIndex = $selectionScopeFinish.IndexOf(
+      'scope->saved_data->lpVtbl->Release')
+    $scopeZeroIndex = $selectionScopeFinish.IndexOf(
+      '*scope = (OctavoPdfSelectionSmokeClipboardScope){0};')
+    if ($selectionScopeBegin.IndexOf(
+          'octavo_pdf_selection_smoke_open_clipboard_bounded') -lt 0 -or
+        $selectionScopeBegin.IndexOf(
+          'octavo_pdf_selection_smoke_close_clipboard_bounded') -lt 0 -or
+        $selectionScopeBegin.IndexOf(
+          'OctavoPdfSelectionSmokeClipboardAttemptCap') -lt 0 -or
+        $countIndex -lt 0 -or $emptyFastPathIndex -le $countIndex -or
+        $oleInitializeIndex -le $emptyFastPathIndex -or
+        $selectionScopeBegin.IndexOf('OleGetClipboard') -lt 0 -or
+        $selectionScopeFinish.IndexOf(
+          'octavo_pdf_selection_smoke_open_clipboard_bounded') -lt 0 -or
+        $selectionScopeFinish.IndexOf(
+          'octavo_pdf_selection_smoke_close_clipboard_bounded') -lt 0 -or
+        $selectionScopeFinish.IndexOf('OleSetClipboard') -lt 0 -or
+        $selectionScopeFinish.IndexOf('OleFlushClipboard') -lt 0 -or
+        [regex]::Matches(
+          $selectionScopeFinish,
+          'OctavoPdfSelectionSmokeClipboardAttemptCap').Count -lt 2 -or
+        $restoreGuardIndex -lt 0 -or
+        $savedReleaseIndex -le $restoreGuardIndex -or
+        $scopeZeroIndex -le $savedReleaseIndex -or
+        $selectionClose.IndexOf('if (CloseClipboard())') -lt 0 -or
+        $selectionSmokeFunction.IndexOf(
+          'clipboard_cleanup_restore_failed = 1;') -lt 0 -or
+        ![regex]::IsMatch(
+          $selectionSmokeFunction,
+          '(?s)octavo_pdf_selection_smoke_clipboard_scope_begin\(\s*smoke_hwnd,\s*&clipboard_scope,\s*&clipboard_scope_diagnostic\)') -or
+        ![regex]::IsMatch(
+          $selectionSmokeFunction,
+          '(?s)octavo_pdf_selection_smoke_clipboard_scope_finish\(\s*smoke_hwnd,\s*&clipboard_scope,\s*&clipboard_scope_diagnostic\)') -or
+        ![regex]::IsMatch(
+          $selectionSmokeFunction,
+          '(?s)if \(!octavo_pdf_selection_smoke_clipboard_scope_finish\(\s*smoke_hwnd,\s*&clipboard_scope,\s*&clipboard_cleanup_diagnostic\)\)') -or
+        $selectionSmokeFunction -match
+          '\(void\)octavo_pdf_selection_smoke_clipboard_scope_finish') {
+      $failures.Add("PDF selection smoke must use checked bounded clipboard preserve/restore, count-before-OLE empty fast path, retained saved scope, and surfaced cleanup failure")
+    }
+
+    if ([regex]::Matches(
+          $selectionSmokeFunction,
+          'octavo_apply_reader_view_action\(&app').Count -ne 2 -or
+        [regex]::Matches(
+          $selectionSmokeFunction,
+          'octavo_pdf_selection_smoke_ctrl_c\s*\(').Count -ne 1 -or
+        [regex]::Matches(
+          $selectionSmokeFunction,
+          'accDoDefaultAction\s*\(').Count -ne 1 -or
+        [regex]::Matches($selectionCtrl, 'octavo_win32_proc\(').Count -ne 1 -or
+        ![regex]::IsMatch(
+          $selectionSmokeFunction,
+          '(?s)octavo_apply_reader_view_actions\(&app\);.*?octavo_reset_input\(&app\);')) {
+      $failures.Add("PDF selection Copy actions must stay single-attempt and synthetic ReaderView input must use production frame reset consumption")
+    }
+  }
   if ([regex]::Matches($build, '#include\s+"ui0\.c"').Count -ne 1) {
     $failures.Add("code/build.c must compile ui0.c exactly once")
   }
@@ -520,9 +723,9 @@ if ($failures.Count -eq 0) {
   if ($app.IndexOf('#include "reader0.h"') -lt 0) {
     $failures.Add("octavo must consume the reader0 umbrella")
   }
-  if ($app.IndexOf('READER0_API_VERSION != 11') -lt 0 -or
+  if ($app.IndexOf('READER0_API_VERSION != 12') -lt 0 -or
       $app.IndexOf('doc_engine_get_author') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 11 including author metadata and PDF")
+    $failures.Add("octavo must consume Reader0 API 12 including owned PDF selection snapshots")
   }
   if ($pdfHeader.IndexOf('OCTAVO_PDF_RASTER_MEMORY_CAP = 64 * 1024 * 1024') -lt 0 -or
       $pdfHeader.IndexOf('U8 *rgba_pixels') -lt 0 -or
@@ -603,6 +806,8 @@ if ($failures.Count -eq 0) {
       $pdfProvenanceAudit.IndexOf('Get-Command link.exe') -lt 0 -or
       $pdfBuildProvenance.IndexOf('input_sha256') -lt 0 -or
       $pdfBuildProvenance.IndexOf(
+        'code\platform\win32\octavo_accessibility_win32.h') -lt 0 -or
+      $pdfBuildProvenance.IndexOf(
         'code\platform\win32\octavo_accessibility_win32.c') -lt 0 -or
       $pdfBuildProvenance.IndexOf(
         'vendor\readerview0_dependency\VERSION') -lt 0 -or
@@ -660,7 +865,7 @@ if ($failures.Count -eq 0) {
   )
   foreach ($api in $reader0StructuralNavigationApis) {
     if ($androidNavigation.IndexOf($api) -lt 0) {
-      $failures.Add("Android EPUB structural navigation must consume Reader0 API 11's API 10-compatible API $api")
+      $failures.Add("Android EPUB structural navigation must consume Reader0 API 12's API 10-compatible API $api")
     }
   }
   if ($androidNavigation.IndexOf('.suppress_history = 1') -lt 0 -or
@@ -902,7 +1107,7 @@ if ($failures.Count -eq 0) {
       $app.IndexOf('epub_reader_build_page_frame') -lt 0 -or
       $app.IndexOf('OctavoAdjacentWarmPageCap = 4') -lt 0 -or
       $app.IndexOf('adjacent_warm_direction') -lt 0) {
-    $failures.Add("octavo must consume Reader0 API 11's API 10-compatible EPUB navigation preparation with bounded four-page host warming")
+    $failures.Add("octavo must consume Reader0 API 12's API 10-compatible EPUB navigation preparation with bounded four-page host warming")
   }
   $timerResolutionBegins =
     [regex]::Matches($app, 'timeBeginPeriod\s*\(\s*1\s*\)').Count
@@ -1109,4 +1314,4 @@ if ($failures.Count -gt 0) {
 }
 
 Write-Host "octavo architecture audit: pass"
-Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster + readerview0/UI0 chrome + Reader0 API 11 EPUB and Win32 MuPDF core"
+Write-Host "boundary: Octavo explicit EPUB/PDF host + Ground0-owned PDF raster/selection + readerview0/UI0 chrome + Reader0 API 12 EPUB and Win32 MuPDF core"

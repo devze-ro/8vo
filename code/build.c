@@ -24,6 +24,7 @@
 #include "reader0.c"
 #include "octavo_pdf.c"
 #include "octavo_pdf_content.c"
+#include "octavo_pdf_selection.c"
 #include "render/render.c"
 #include "ui0.c"
 #include "octavo_theme.c"

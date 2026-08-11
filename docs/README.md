@@ -18,6 +18,11 @@
   appearance foundation and retains its historical evidence.
 - [`architecture.md`](architecture.md) describes the current 8vo ownership and
   source-consumption boundaries.
+- [`win32_pdf_stage1.md`](win32_pdf_stage1.md) records the bounded Win32 PDF
+  raster, lifecycle, build, provenance, and license boundary.
+- [`win32_pdf_selection_copy.md`](win32_pdf_selection_copy.md) defines the
+  transient API 12 selection/Copy ownership, caps, geometry, generation, and
+  qualification contract.
 - [`android_port0.md`](android_port0.md) defines the Android toolchain, native
   bootstrap, and coordinated Ground0/Reader0 foundation milestone.
 - [`android_port1.md`](android_port1.md) defines the native application state,

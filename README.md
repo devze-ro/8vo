@@ -1,9 +1,9 @@
 # 8vo
 
 8vo is an experimental native reader. The Windows application supports EPUB
-and now has a bounded Stage 1 PDF reader; an EPUB-only Android port is being
-developed in parallel milestones. Other document and comic-book formats may be
-explored later.
+and a bounded PDF reader; an EPUB-only Android port is being developed in
+parallel milestones. Other document and comic-book formats may be explored
+later.
 
 The name `8vo` is the bibliographic abbreviation for *octavo* and is
 pronounced *octavo*.
@@ -35,12 +35,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 See [DEPENDENCIES.md](DEPENDENCIES.md) for the exact pins and manual checkout
 options.
 
-The Win32 PDF Stage 1 surface opens `.pdf`, renders a fit-page premultiplied
-raster, and supports Previous/Next, Back/Forward, progress seek, and bounded
-direct page-number entry through Readerview0 API 4.
-PDF search, Contents, settings, annotations, persistence/sync, and Android PDF
-are intentionally deferred. Run its deterministic product/lifecycle proof with
-`scripts\win32_octavo_pdf_stage1_smoke.ps1`.
+The Win32 PDF surface opens `.pdf`, renders a fit-page premultiplied raster,
+and supports Previous/Next, Back/Forward, direct page entry, page labels,
+Contents, incremental search, internal and trusted external links, and
+bounded text selection with Copy. PDF highlights, notes, bookmarks, reading-
+position/annotation persistence, synchronization, settings, and Android PDF
+are intentionally deferred. Its focused deterministic proofs are
+`scripts\win32_octavo_pdf_stage1_smoke.ps1`,
+`scripts\win32_octavo_pdf_content_smoke.ps1`, and
+`scripts\win32_octavo_pdf_selection_smoke.ps1`.
 
 Architecture details are in [docs/architecture.md](docs/architecture.md).
 
@@ -59,9 +62,11 @@ foundation remain intact.
 
 The historical Port 8 candidate added bounded Contents, Go-to, Return/Forward,
 and progress choices through the then-current Reader0 API 7 surface. The
-current tree consumes Reader0 API 11's backward-compatible EPUB surface.
-API 11's appended SHA-256 PDF document identity is available at the shared
-boundary but is not consumed by this compatibility-only repin. Port 8's
+current tree consumes Reader0 API 12's backward-compatible EPUB surface.
+API 11's appended SHA-256 PDF document identity remains available at the
+shared boundary but is not consumed by Android. API 12's appended PDF text-
+selection snapshot is consumed only by the Win32 host and does not enter the
+Android closure. Port 8's
 corrective slice also closes six reported
 navigation, pagination, image-page, chapter-targeting, and top-padding defects;
 adds narrow, bounded image-only and in-flow image presentation; and hardens the

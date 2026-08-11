@@ -1,11 +1,12 @@
 # Win32 PDF Stage 1
 
-This slice adds one concrete PDF reader to the existing 8vo Win32 product. It
-uses Reader0 API 11 and Reader0's audited MuPDF 1.28.2 PDF-only core. API 11 is
-append-only over API 10's transactional PDF contract and publishes exact
-SHA-256 document identity; this compatibility-only repin does not consume that
-identity. EPUB keeps its existing concrete `EpubReader`; the host does not
-introduce a generic document vtable or an EPUB adapter.
+This slice added one concrete PDF reader to the existing 8vo Win32 product.
+The current product uses Reader0 API 12 and Reader0's audited MuPDF 1.28.2 PDF-
+only core. API 11 appended exact SHA-256 document identity; 8vo does not yet
+consume or persist that identity. API 12 appends the Arena-owned PDF selection
+snapshot used by the later bounded selection/Copy milestone. EPUB keeps its
+existing concrete `EpubReader`; the host does not introduce a generic document
+vtable or an EPUB adapter.
 
 ## Product boundary
 
@@ -20,7 +21,7 @@ The picker accepts `.epub` and `.pdf`. Existing multi-EPUB import/library
 behavior is unchanged; a PDF must be selected alone and is opened directly.
 Android remains EPUB-only.
 
-Stage 1 PDF actions are:
+The original Stage 1 PDF actions are:
 
 - fit-page rendering;
 - Previous and Next;
@@ -28,10 +29,12 @@ Stage 1 PDF actions are:
 - direct page/progress seek;
 - Open and Fullscreen through the shared Reader View chrome.
 
-Reader View marks Contents, Find, reading settings, bookmarks, annotations,
-selection tools, lookup, and export unavailable for PDF. Search, links as
-interactive hit targets, ToC, persistence/sync, annotations, and Android PDF
-are later slices; their absence is explicit rather than emulated.
+Later bounded slices add page labels, Contents/outline, incremental case-
+insensitive search, internal and trusted external links, and text selection
+with Copy. Reader View still marks reading settings, PDF bookmarks, durable
+highlights, notes, lookup, export, and unavailable selection actions absent.
+PDF reading-position/annotation persistence, synchronization, and Android PDF
+remain later slices; EPUB records are not reused as PDF anchors.
 
 ## Raster and memory ownership
 
@@ -77,8 +80,8 @@ set; the audit rejects speculative `kernel32`, `winspool`, `advapi32`, or ODBC
 additions.
 Reader0's final link-map audit rejects OCR, barcode, HarfBuzz, Extract, MuJS
 regexp, and the unsafe structured-text search object. The safe
-`fz_new_search` overlay is retained as an audit sentinel even though PDF search
-is not exposed in Stage 1. The build writes
+`fz_new_search` overlay is retained as an audit sentinel and is consumed by the
+bounded PDF search slice. The build writes
 `build\win32\8vo_pdf.provenance.json`, including product/map hashes, the exact
 compiler identity, Reader0 core fingerprint, dependency pins, build flags, and
 hashes of the 8vo PDF source/build closure. The default release-profile build
@@ -105,10 +108,11 @@ graphics, a raster image, and a link annotation. It runs the product twice and
 locks deterministic bitmap output, the in-place conversion, the 64 MiB cap,
 an 8192-by-4320 landscape fit, render-failure recovery through both a smaller
 resize and navigation, real-Win32 persistent-failure escape through page,
-history, seek, open, and close, navigation/history/progress, unavailable Reader
-View actions, all three
+history, seek, open, and close, navigation/history/progress, remaining
+unavailable Reader View actions, all three
 replacement-failure directions, explicit close/release invariants, and live
-cancel-token teardown refusal. The existing host smoke remains the focused EPUB
+cancel-token teardown refusal. Separate content and selection smokes qualify
+the later API additions. The existing host smoke remains the focused EPUB
 regression.
 
 ## License boundary

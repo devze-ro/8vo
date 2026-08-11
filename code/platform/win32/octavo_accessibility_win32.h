@@ -14,6 +14,9 @@ LRESULT octavo_accessibility_get_object(OctavoAccessibility *accessibility,
                                           LPARAM l_param);
 void octavo_accessibility_publish_frame(OctavoAccessibility *accessibility,
                                           const ReaderViewFrame *frame);
+B32 octavo_accessibility_enabled_menu_item_contract(
+  const ReaderViewSemanticNode *node,
+  ReaderViewText expected_name);
 long octavo_accessibility_shared_child_id(
   const OctavoAccessibility *accessibility,
   long shared_index);

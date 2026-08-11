@@ -1,5 +1,6 @@
 #include "octavo_pdf.h"
 
+#include <limits.h>
 #include <math.h>
 
 FUNCTION void
@@ -147,6 +148,125 @@ octavo_pdf_open(OctavoPdf *pdf, String8 path)
   if (transition.changed) octavo_pdf_clear_raster(pdf);
   pdf->last_result = PdfReaderResult_Ok;
   return PdfReaderResult_Ok;
+}
+
+FUNCTION B32
+octavo_pdf_screen_geometry(const OctavoPdf *pdf,
+                           S32 content_x,
+                           S32 content_y,
+                           S32 content_width,
+                           S32 content_height,
+                           OctavoPdfScreenGeometry *out_geometry)
+{
+  if (out_geometry) *out_geometry = (OctavoPdfScreenGeometry){0};
+  if (!pdf || !out_geometry || !octavo_pdf_is_open(pdf) ||
+      !pdf->bgra_pixels || pdf->raster_width == 0 ||
+      pdf->raster_height == 0 || pdf->raster_width > INT32_MAX ||
+      pdf->raster_height > INT32_MAX || content_width <= 0 ||
+      content_height <= 0 ||
+      pdf->rendered_content_width != content_width ||
+      pdf->rendered_content_height != content_height ||
+      pdf->rendered_reader_generation != pdf->frame.generation ||
+      !isfinite(pdf->rendered_scale) || pdf->rendered_scale <= 0.0f)
+  {
+    return 0;
+  }
+  PdfReaderRect bounds = pdf->frame.page.bounds;
+  if (!isfinite(bounds.x0) || !isfinite(bounds.y0) ||
+      !isfinite(bounds.x1) || !isfinite(bounds.y1) ||
+      bounds.x1 <= bounds.x0 || bounds.y1 <= bounds.y0)
+  {
+    return 0;
+  }
+  S32 raster_width = (S32)pdf->raster_width;
+  S32 raster_height = (S32)pdf->raster_height;
+  S64 raster_x = (S64)content_x +
+    ((S64)content_width - (S64)raster_width) / 2;
+  S64 raster_y = (S64)content_y +
+    ((S64)content_height - (S64)raster_height) / 2;
+  if (raster_x < INT32_MIN || raster_x > INT32_MAX ||
+      raster_y < INT32_MIN || raster_y > INT32_MAX)
+  {
+    return 0;
+  }
+  *out_geometry = (OctavoPdfScreenGeometry){
+    .page_bounds = bounds,
+    .scale = pdf->rendered_scale,
+    .content_x = content_x,
+    .content_y = content_y,
+    .content_width = content_width,
+    .content_height = content_height,
+    .raster_x = (S32)raster_x,
+    .raster_y = (S32)raster_y,
+    .raster_width = raster_width,
+    .raster_height = raster_height,
+    .document_generation = pdf->frame.document_generation,
+    .publication_generation = pdf->frame.generation,
+    .render_generation = pdf->render_generation,
+    .page_index = pdf->frame.page_index,
+  };
+  return 1;
+}
+
+FUNCTION B32
+octavo_pdf_screen_to_page(const OctavoPdfScreenGeometry *geometry,
+                          S32 screen_x,
+                          S32 screen_y,
+                          PdfReaderPoint *out_point)
+{
+  if (out_point) *out_point = (PdfReaderPoint){0};
+  if (!geometry || !out_point || !isfinite(geometry->scale) ||
+      geometry->scale <= 0.0f || geometry->raster_width <= 0 ||
+      geometry->raster_height <= 0)
+  {
+    return 0;
+  }
+  S64 raster_right = (S64)geometry->raster_x + geometry->raster_width;
+  S64 raster_bottom = (S64)geometry->raster_y + geometry->raster_height;
+  S64 content_right = (S64)geometry->content_x + geometry->content_width;
+  S64 content_bottom = (S64)geometry->content_y + geometry->content_height;
+  if ((S64)screen_x < geometry->raster_x ||
+      (S64)screen_y < geometry->raster_y ||
+      (S64)screen_x >= raster_right || (S64)screen_y >= raster_bottom ||
+      (S64)screen_x < geometry->content_x ||
+      (S64)screen_y < geometry->content_y ||
+      (S64)screen_x >= content_right || (S64)screen_y >= content_bottom)
+  {
+    return 0;
+  }
+  F32 page_x = geometry->page_bounds.x0 +
+    (F32)(screen_x - geometry->raster_x) / geometry->scale;
+  F32 page_y = geometry->page_bounds.y0 +
+    (F32)(screen_y - geometry->raster_y) / geometry->scale;
+  if (!isfinite(page_x) || !isfinite(page_y)) return 0;
+  out_point->x = page_x;
+  out_point->y = page_y;
+  return 1;
+}
+
+FUNCTION B32
+octavo_pdf_page_to_screen(const OctavoPdfScreenGeometry *geometry,
+                          PdfReaderPoint point,
+                          F32 *out_screen_x,
+                          F32 *out_screen_y)
+{
+  if (out_screen_x) *out_screen_x = 0.0f;
+  if (out_screen_y) *out_screen_y = 0.0f;
+  if (!geometry || !out_screen_x || !out_screen_y ||
+      !isfinite(point.x) || !isfinite(point.y) ||
+      !isfinite(geometry->scale) || geometry->scale <= 0.0f ||
+      geometry->raster_width <= 0 || geometry->raster_height <= 0)
+  {
+    return 0;
+  }
+  F32 screen_x = (F32)geometry->raster_x +
+    (point.x - geometry->page_bounds.x0) * geometry->scale;
+  F32 screen_y = (F32)geometry->raster_y +
+    (point.y - geometry->page_bounds.y0) * geometry->scale;
+  if (!isfinite(screen_x) || !isfinite(screen_y)) return 0;
+  *out_screen_x = screen_x;
+  *out_screen_y = screen_y;
+  return 1;
 }
 
 FUNCTION PdfReaderResult
