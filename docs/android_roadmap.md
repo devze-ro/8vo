@@ -529,14 +529,25 @@ are still pending.
   SHA-256 and Port 6 catalog commit steps. The final crash/fatal buffers are
   empty. No physical device, provider, Drive/account path, network permission,
   security decision, worker, cloud resource, or Play Console operation was part
-  of this gate; and
+  of this gate;
+- the tenth independent local slice is accepted on API 36 for synchronized-
+  Library membership. Canonical causal `O1LM` and private atomic `O1MS` remain
+  separate from catalog discovery, transfer, Port 6, and every earlier family.
+  Library UI exposes explicit Withdraw, Restore, and conflict resolution while
+  local Remove remains unchanged. Exact receipts reject stale callbacks, and
+  Back defers retained attention without mutating it. Focused coverage passes
+  31/31 in 42 seconds; the complete ordinary matrix passes 344/344 in 9m12s;
+  crash/fatal buffers are empty; and the product APK declares zero permissions.
+  Missing membership bytes are not remote-object evidence. No physical device,
+  provider/account/network path, transfer, cloud deletion, security decision,
+  or Play Console operation was part of this gate; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
   closed through deterministic coordination and the independent position gate
   is closed through local confirmation. The accepted appearance-only local gate
-  and the accepted progress-choice and catalog/managed-transfer local gates do
-  not authorize transport; concrete provider behavior, provider trust/encryption
-  UX, account binding, permissions, and explicit authorization remain before
-  cloud work.
+  and the accepted progress-choice, catalog/managed-transfer, and membership
+  local gates do not authorize transport. Concrete provider behavior, object-
+  presence binding, provider trust/encryption UX, account binding, permissions,
+  and explicit authorization remain before cloud work.
 
 ### Annotations workspace
 

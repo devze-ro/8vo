@@ -18,6 +18,10 @@ Port 11's ninth local slice adds an API 36-accepted provider-neutral discovery
 catalog and managed EPUB transfer/cleanup boundary. It remains disconnected
 from providers, accounts, networks, permissions, cloud resources, and Play
 Console state; physical-device and launch-security qualification are deferred.
+Its tenth local slice adds API 36-accepted canonical `O1LM` synchronized-Library
+membership, private atomic `O1MS`, and explicit Library Withdraw/Restore/
+conflict review. It remains independent of discovery, transfer, Port 6, and
+every earlier portable family.
 It compiles the same exact shared sources, starts on an 8vo-owned bounded
 library, opens its deterministic sample or multiple digest-keyed imported
 EPUBs through Reader0, presents canonical borderless styled pages with
@@ -605,9 +609,11 @@ includes local bookmark, multi-color highlight, note/storage/merge, and
 disconnected deterministic annotation coordination without connecting Drive.
 Its position family is independently qualified, and its seventh appearance-only
 family, eighth progress-choice family, and ninth provider-neutral catalog/
-managed-transfer family are accepted on API 36. Concrete provider transport,
-account/network/permission integration, physical-device qualification, and
-launch security remain separate later work.
+managed-transfer family are accepted on API 36. The tenth causal membership
+family and its Library-only UI are also accepted there. Concrete provider
+transport, reviewed object-presence binding, account/network/permission
+integration, physical-device qualification, and launch security remain separate
+later work.
 The current bounded contracts are in
 [`android_port11.md`](android_port11.md),
 [`android_port11_portable_annotations_v1.md`](android_port11_portable_annotations_v1.md),
@@ -616,6 +622,7 @@ The current bounded contracts are in
 [`android_port11_preference_sync.md`](android_port11_preference_sync.md),
 [`android_port11_progress_sync.md`](android_port11_progress_sync.md),
 [`android_port11_catalog_transfer.md`](android_port11_catalog_transfer.md),
+[`android_port11_library_membership.md`](android_port11_library_membership.md),
 [`android_port10_cross_page_selection.md`](android_port10_cross_page_selection.md),
 [`android_port10.md`](android_port10.md),
 [`android_port9.md`](android_port9.md), and
@@ -655,6 +662,15 @@ seconds; and selected 130%-system-text/disabled-animation coverage 21/21 in
 qualification: physical-device, provider, Drive/account, network/permission,
 security/encryption, worker, cloud, and Play Console work remains explicitly
 deferred.
+
+The 2026-08-11 Port 11 membership candidate is compile-green and passes its API
+36 acceptance gate: focused portable/store/prompt/Activity coverage 31/31 in 42
+seconds and the complete ordinary connected matrix 344/344 in 9m12s, with zero
+failures, errors, or skips and empty crash/fatal buffers. The resulting product
+APK declares zero permissions. This was an emulator-only local qualification:
+O1LM absence is not remote-object evidence, and physical-device, provider/
+object-presence coordinator, Drive/account, network/permission, encryption/
+anti-rollback, cloud-deletion, and Play Console work remain deferred.
 
 The current Port 8 Reader0 boundary is `0.7.0-dev` / public API 7. Its exact
 local commit `5fe949d88258cd96884c44b69e4f4ab6f27dc394` is pinned in

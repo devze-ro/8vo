@@ -63,6 +63,7 @@ public final class OctavoLibraryCatalogTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoLibraryMembershipStore.clearForTesting(context);
         OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);

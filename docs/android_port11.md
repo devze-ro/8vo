@@ -17,7 +17,10 @@ local `O8PG` record remaining three separate formats. The ninth independent
 local slice is accepted on API 36 for provider-neutral `O1LC` catalog discovery,
 private `O1LS` review decisions, exact `O1BM` manifests, and the private `O1BQ`
 managed-transfer/cleanup queue. These remain separate from every earlier `O1`
-family and from Port 6's local catalog. Google Drive remains disconnected.
+family and from Port 6's local catalog. The tenth independent local slice is
+accepted on API 36 for canonical causal `O1LM` synchronized-Library membership,
+private atomic `O1MS` review/recovery, and the explicit Library Withdraw,
+Restore, and conflict-review surface. Google Drive remains disconnected.
 
 ## Boundary
 
@@ -543,6 +546,25 @@ The final crash and fatal buffers are empty. No physical device, provider, Drive
 or account path, network permission, security/encryption decision, worker, cloud
 resource, or Play Console state was used or changed. Those concrete-provider
 and launch security gates remain explicitly deferred.
+
+On 2026-08-11, the tenth independent synchronized-Library membership slice
+passes its Android compile and API 36 `emulator-5554` acceptance gate. Canonical
+`O1LM` and private `O1MS` remain separate from `O1LC`, `O1LS`, `O1BM`, `O1BQ`,
+Port 6, and every earlier family. Focused portable/store/prompt/Activity
+coverage passes 31/31 in 42 seconds. The complete ordinary connected matrix
+passes 344/344 with zero failures, errors, or skips in 9m12s, and crash/fatal
+buffers are empty.
+
+The Library adds full-width explicit Withdraw, Restore, and conflict-review
+actions without changing local Remove. Exact history/generation receipts reject
+stale callbacks; Back closes confirmation without mutation or defers retained
+attention to a nonmodal exact reopen action. Known exact Withdrawn or Conflict
+history blocks only the matching catalog offer; absent `O1LM` is not provider-
+object-presence proof. The resulting product APK declares zero permissions.
+No physical device, provider, account, network, transfer, cloud deletion,
+security/encryption decision, or Play Console operation was part of this gate.
+A separately reviewed provider/object-presence binding coordinator remains
+required before inherited membership can authorize remote behavior.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

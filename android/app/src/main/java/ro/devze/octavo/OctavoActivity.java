@@ -134,10 +134,33 @@ public final class OctavoActivity extends Activity {
         "octavo.port11.library_focus_book_key";
     private static final String STATE_LIBRARY_FOCUS_REMOVE =
         "octavo.port11.library_focus_remove";
+    private static final String STATE_LIBRARY_FOCUS_ACTION =
+        "octavo.port11.library_focus_action";
     private static final String STATE_LIBRARY_SUPPRESSED_REVIEW =
         "octavo.port11.library_suppressed_review";
     private static final String STATE_LIBRARY_ATTENTION_DEFERRED =
         "octavo.port11.library_attention_deferred";
+    private static final String STATE_LIBRARY_MEMBERSHIP_ATTENTION_DEFERRED =
+        "octavo.port11.library_membership_attention_deferred";
+    private static final String STATE_LIBRARY_MEMBERSHIP_PENDING_ACTION =
+        "octavo.port11.library_membership_pending_action";
+    private static final String STATE_LIBRARY_MEMBERSHIP_PENDING_DIGEST =
+        "octavo.port11.library_membership_pending_digest";
+    private static final String STATE_LIBRARY_MEMBERSHIP_PENDING_BYTES =
+        "octavo.port11.library_membership_pending_bytes";
+    private static final String
+        STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_FINGERPRINT =
+            "octavo.port11.library_membership_pending_record_fingerprint";
+    private static final String
+        STATE_LIBRARY_MEMBERSHIP_PENDING_SNAPSHOT_FINGERPRINT =
+            "octavo.port11.library_membership_pending_snapshot_fingerprint";
+    private static final String STATE_LIBRARY_MEMBERSHIP_PENDING_GENERATION =
+        "octavo.port11.library_membership_pending_generation";
+    private static final String
+        STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_PRESENT =
+            "octavo.port11.library_membership_pending_record_present";
+    private static final String STATE_LIBRARY_MEMBERSHIP_PENDING_PROJECTION =
+        "octavo.port11.library_membership_pending_projection";
     private static final int LIBRARY_IDENTITY_MODE_NONE = 0;
     private static final int LIBRARY_IDENTITY_MODE_OPEN = 1;
     private static final int LIBRARY_IDENTITY_MODE_IMPORT_ASSOCIATION = 2;
@@ -145,6 +168,18 @@ public final class OctavoActivity extends Activity {
     private static final int LIBRARY_IDENTITY_MODE_TRANSFER_FINALIZATION = 4;
     private static final String LIBRARY_FOCUS_ADD =
         "octavo.library.focus.add";
+    private static final int LIBRARY_FOCUS_NONE = 0;
+    private static final int LIBRARY_FOCUS_ADD_ACTION = 1;
+    private static final int LIBRARY_FOCUS_OPEN = 2;
+    private static final int LIBRARY_FOCUS_REMOVE_LOCAL = 3;
+    private static final int LIBRARY_FOCUS_WITHDRAW = 4;
+    private static final int LIBRARY_FOCUS_RESTORE = 5;
+    private static final int LIBRARY_FOCUS_MEMBERSHIP_REVIEW = 6;
+    private static final int LIBRARY_MEMBERSHIP_ACTION_NONE = 0;
+    private static final int LIBRARY_MEMBERSHIP_ACTION_WITHDRAW = 1;
+    private static final int LIBRARY_MEMBERSHIP_ACTION_RESTORE = 2;
+    private static final int LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER = 3;
+    private static final int LIBRARY_MEMBERSHIP_ACTION_RESOLVE_WITHDRAWN = 4;
     private static final int POSITION_RETRY_MARK_GO = 1;
     private static final int POSITION_RETRY_STAY = 2;
     private static final int POSITION_RETRY_DISMISS = 3;
@@ -649,6 +684,7 @@ public final class OctavoActivity extends Activity {
     private File libraryFixture;
     private OctavoLibrarySyncStore librarySyncStore;
     private OctavoBookTransferStore bookTransferStore;
+    private OctavoLibraryMembershipStore libraryMembershipStore;
     private OctavoAppearanceStore appearanceStore;
     private OctavoAppearanceSyncStore appearanceSyncStore;
     private OctavoAppearance appearance;
@@ -662,6 +698,10 @@ public final class OctavoActivity extends Activity {
     private TextView libraryIdentityStatus;
     private TextView libraryCatalogStatus;
     private OctavoLibrarySyncPrompt librarySyncPrompt;
+    private OctavoLibraryMembershipPrompt libraryMembershipPrompt;
+    private OctavoLibraryMembershipStore.Receipt libraryMembershipReceipt;
+    private OctavoLibraryMembershipStore.StagedPortable
+        libraryMembershipStaged;
     private OctavoLibrarySyncStore.StagedPortable libraryPromptStaged;
     private Runnable libraryPromptRetry;
     private Runnable libraryPromptCancel;
@@ -680,10 +720,19 @@ public final class OctavoActivity extends Activity {
     private String libraryDiscoveryRetryBookKey;
     private boolean libraryDiscoveryDerivedThisActivity;
     private String libraryFocusBookKey;
-    private boolean libraryFocusRemove;
+    private int libraryFocusAction;
     private View libraryRowFocusReturn;
     private boolean librarySuppressedReviewRequested;
     private boolean libraryAttentionDeferred;
+    private boolean libraryMembershipAttentionDeferred;
+    private int libraryMembershipPendingAction;
+    private String libraryMembershipPendingDigest;
+    private long libraryMembershipPendingByteCount;
+    private String libraryMembershipPendingRecordFingerprint;
+    private String libraryMembershipPendingSnapshotFingerprint;
+    private long libraryMembershipPendingStateGeneration = -1;
+    private boolean libraryMembershipPendingRecordPresent;
+    private int libraryMembershipPendingProjection = -1;
     private String libraryImportAssociationStatus;
     private OctavoLibraryStore.Book pendingImportAssociationBook;
     private OctavoLibraryStore.Book rejectedStagedImportCleanupBook;
@@ -1003,19 +1052,61 @@ public final class OctavoActivity extends Activity {
         libraryFocusBookKey = savedInstanceState == null
             ? null : savedInstanceState.getString(
                 STATE_LIBRARY_FOCUS_BOOK_KEY);
-        libraryFocusRemove = savedInstanceState != null
-            && savedInstanceState.getBoolean(
-                STATE_LIBRARY_FOCUS_REMOVE, false);
+        libraryFocusAction = savedInstanceState == null
+            ? LIBRARY_FOCUS_NONE
+            : savedInstanceState.getInt(
+                STATE_LIBRARY_FOCUS_ACTION,
+                savedInstanceState.getBoolean(
+                    STATE_LIBRARY_FOCUS_REMOVE, false)
+                    ? LIBRARY_FOCUS_REMOVE_LOCAL
+                    : LIBRARY_FOCUS_OPEN);
         librarySuppressedReviewRequested = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_LIBRARY_SUPPRESSED_REVIEW, false);
         libraryAttentionDeferred = savedInstanceState != null
             && savedInstanceState.getBoolean(
                 STATE_LIBRARY_ATTENTION_DEFERRED, false);
+        libraryMembershipAttentionDeferred = savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_MEMBERSHIP_ATTENTION_DEFERRED, false);
+        libraryMembershipPendingAction = savedInstanceState == null
+            ? LIBRARY_MEMBERSHIP_ACTION_NONE
+            : savedInstanceState.getInt(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_ACTION,
+                LIBRARY_MEMBERSHIP_ACTION_NONE);
+        libraryMembershipPendingDigest = savedInstanceState == null
+            ? null : savedInstanceState.getString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_DIGEST);
+        libraryMembershipPendingByteCount = savedInstanceState == null
+            ? 0 : savedInstanceState.getLong(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_BYTES, 0);
+        libraryMembershipPendingRecordFingerprint =
+            savedInstanceState == null ? null
+            : savedInstanceState.getString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_FINGERPRINT);
+        libraryMembershipPendingSnapshotFingerprint =
+            savedInstanceState == null ? null
+            : savedInstanceState.getString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_SNAPSHOT_FINGERPRINT);
+        libraryMembershipPendingStateGeneration =
+            savedInstanceState == null ? -1
+            : savedInstanceState.getLong(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_GENERATION, -1);
+        libraryMembershipPendingRecordPresent =
+            savedInstanceState != null
+            && savedInstanceState.getBoolean(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_PRESENT, false);
+        libraryMembershipPendingProjection =
+            savedInstanceState == null ? -1
+            : savedInstanceState.getInt(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_PROJECTION, -1);
         librarySyncStore = new OctavoLibrarySyncStore(this);
         librarySyncStore.load();
         bookTransferStore = new OctavoBookTransferStore(this);
         bookTransferStore.load();
+        libraryMembershipStore =
+            new OctavoLibraryMembershipStore(this);
+        libraryMembershipStore.load();
         libraryTransferExplicitRetryRequired =
             bookTransferStore.intentCount() != 0;
         libraryStore = new OctavoLibraryStore(this);
@@ -1126,8 +1217,8 @@ public final class OctavoActivity extends Activity {
         if (hasText(libraryFocusBookKey)) {
             state.putString(
                 STATE_LIBRARY_FOCUS_BOOK_KEY, libraryFocusBookKey);
-            state.putBoolean(
-                STATE_LIBRARY_FOCUS_REMOVE, libraryFocusRemove);
+            state.putInt(
+                STATE_LIBRARY_FOCUS_ACTION, libraryFocusAction);
         }
         state.putBoolean(
             STATE_LIBRARY_SUPPRESSED_REVIEW,
@@ -1135,6 +1226,38 @@ public final class OctavoActivity extends Activity {
         state.putBoolean(
             STATE_LIBRARY_ATTENTION_DEFERRED,
             libraryAttentionDeferred && libraryRoot != null);
+        state.putBoolean(
+            STATE_LIBRARY_MEMBERSHIP_ATTENTION_DEFERRED,
+            libraryMembershipAttentionDeferred && libraryRoot != null);
+        if (libraryMembershipPendingAction
+                != LIBRARY_MEMBERSHIP_ACTION_NONE
+            && hasText(libraryMembershipPendingDigest)
+            && libraryMembershipPendingByteCount > 0) {
+            state.putInt(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_ACTION,
+                libraryMembershipPendingAction);
+            state.putString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_DIGEST,
+                libraryMembershipPendingDigest);
+            state.putLong(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_BYTES,
+                libraryMembershipPendingByteCount);
+            state.putString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_FINGERPRINT,
+                libraryMembershipPendingRecordFingerprint);
+            state.putString(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_SNAPSHOT_FINGERPRINT,
+                libraryMembershipPendingSnapshotFingerprint);
+            state.putLong(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_GENERATION,
+                libraryMembershipPendingStateGeneration);
+            state.putBoolean(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_RECORD_PRESENT,
+                libraryMembershipPendingRecordPresent);
+            state.putInt(
+                STATE_LIBRARY_MEMBERSHIP_PENDING_PROJECTION,
+                libraryMembershipPendingProjection);
+        }
         state.putBoolean(
             STATE_POSITION_REVIEW_PENDING,
             readingPositionReviewPending);
@@ -1254,6 +1377,9 @@ public final class OctavoActivity extends Activity {
             }
             updateProgressSyncPromptBounds();
         }
+        if (libraryMembershipPrompt != null) {
+            libraryMembershipPrompt.applyAppearance(appearance);
+        }
         if (surfaceView != null) {
             surfaceView.reapplyAppearance();
         }
@@ -1264,7 +1390,10 @@ public final class OctavoActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (librarySyncPrompt != null) {
+        if (libraryMembershipPrompt != null) {
+            dismissLibraryMembershipForBack();
+            return;
+        } else if (librarySyncPrompt != null) {
             if (librarySyncPrompt.handleBack()) {
                 return;
             }
@@ -1556,7 +1685,7 @@ public final class OctavoActivity extends Activity {
         pendingLibraryIdentityRecordOpened = false;
         pendingLibraryIdentityLocalReconciliation = null;
         libraryFocusBookKey = null;
-        libraryFocusRemove = false;
+        libraryFocusAction = LIBRARY_FOCUS_NONE;
         libraryRowFocusReturn = null;
         libraryReviewEpochActive = false;
         readingPositionReviewPending = recordOpened;
@@ -1568,6 +1697,9 @@ public final class OctavoActivity extends Activity {
         hasPresentedReadingPosition = false;
         libraryRoot = null;
         librarySyncPrompt = null;
+        libraryMembershipPrompt = null;
+        libraryMembershipReceipt = null;
+        libraryMembershipStaged = null;
         libraryPromptStaged = null;
         libraryPromptRetry = null;
         libraryPromptCancel = null;
@@ -9309,7 +9441,7 @@ public final class OctavoActivity extends Activity {
             ColorStateList.valueOf(tokens.accent));
         addButton.setOnClickListener(view -> {
             libraryFocusBookKey = LIBRARY_FOCUS_ADD;
-            libraryFocusRemove = false;
+            libraryFocusAction = LIBRARY_FOCUS_ADD_ACTION;
             startActivityForResult(createOpenDocumentIntent(),
                                    REQUEST_ADD_EPUB);
         });
@@ -9334,7 +9466,7 @@ public final class OctavoActivity extends Activity {
                 ColorStateList.valueOf(tokens.buttonSurface));
             suppressed.setOnClickListener(view -> {
                 libraryFocusBookKey = LIBRARY_FOCUS_ADD;
-                libraryFocusRemove = false;
+                libraryFocusAction = LIBRARY_FOCUS_ADD_ACTION;
                 librarySuppressedReviewRequested = true;
                 showLibrary();
             });
@@ -9363,6 +9495,78 @@ public final class OctavoActivity extends Activity {
             root.addView(attention, matchParentWidthLayout());
         }
 
+        if (libraryMembershipAttentionDeferred
+            && !retainedLibraryMembershipAttentionAvailable()) {
+            libraryMembershipAttentionDeferred = false;
+        }
+        if (libraryMembershipAttentionDeferred) {
+            Button membershipAttention = new Button(this);
+            membershipAttention.setText(
+                "Review pending membership attention");
+            membershipAttention.setContentDescription(
+                "Review pending synchronized Library membership attention");
+            membershipAttention.setAllCaps(false);
+            membershipAttention.setFocusable(true);
+            membershipAttention.setFocusableInTouchMode(true);
+            membershipAttention.setMinHeight(
+                dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            membershipAttention.setTextColor(tokens.chromeText);
+            membershipAttention.setBackgroundTintList(
+                ColorStateList.valueOf(tokens.buttonSurface));
+            membershipAttention.setOnClickListener(view -> {
+                libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+                libraryFocusAction = LIBRARY_FOCUS_MEMBERSHIP_REVIEW;
+                libraryMembershipAttentionDeferred = false;
+                showLibrary();
+            });
+            root.addView(
+                membershipAttention, matchParentWidthLayout());
+            if (LIBRARY_FOCUS_ADD.equals(libraryFocusBookKey)
+                && libraryFocusAction
+                    == LIBRARY_FOCUS_MEMBERSHIP_REVIEW) {
+                libraryRowFocusReturn = membershipAttention;
+            }
+        }
+
+        OctavoLibraryMembershipStore.Receipt membershipHistory =
+            firstAbsentLibraryMembershipHistory();
+        if (membershipHistory != null
+            && !libraryMembershipAttentionDeferred) {
+            Button membershipReview = new Button(this);
+            membershipReview.setText(
+                membershipHistory.projection
+                    == OctavoLibraryMembershipPortable.Projection.CONFLICT
+                    ? "Review synchronized Library conflict"
+                    : "Restore to synchronized Library");
+            membershipReview.setContentDescription(
+                membershipReview.getText() + " for EPUB "
+                    + shortDigest(membershipHistory.digest));
+            membershipReview.setAllCaps(false);
+            membershipReview.setFocusable(true);
+            membershipReview.setFocusableInTouchMode(true);
+            membershipReview.setMinHeight(
+                dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            membershipReview.setTextColor(tokens.chromeText);
+            membershipReview.setBackgroundTintList(
+                ColorStateList.valueOf(tokens.buttonSurface));
+            membershipReview.setOnClickListener(view -> {
+                libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+                libraryFocusAction = LIBRARY_FOCUS_MEMBERSHIP_REVIEW;
+                beginLibraryMembershipAction(
+                    membershipHistory,
+                    membershipHistory.projection
+                        == OctavoLibraryMembershipPortable.Projection.CONFLICT
+                        ? LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER
+                        : LIBRARY_MEMBERSHIP_ACTION_RESTORE);
+            });
+            root.addView(membershipReview, matchParentWidthLayout());
+            if (LIBRARY_FOCUS_ADD.equals(libraryFocusBookKey)
+                && libraryFocusAction
+                    == LIBRARY_FOCUS_MEMBERSHIP_REVIEW) {
+                libraryRowFocusReturn = membershipReview;
+            }
+        }
+
         TextView summary = new TextView(this);
         int importedCount = Math.max(0, libraryStore.bookCount() - 1);
         summary.setText(String.format(
@@ -9379,7 +9583,8 @@ public final class OctavoActivity extends Activity {
             libraryCatalogDurableAttentionMessage(),
             libraryStore.lastError(),
             librarySyncStore.lastError(),
-            bookTransferStore.lastError());
+            bookTransferStore.lastError(),
+            libraryMembershipStore.lastError());
         if (hasText(libraryError)) {
             TextView libraryStatus = new TextView(this);
             libraryStatus.setText(libraryError);
@@ -9422,11 +9627,15 @@ public final class OctavoActivity extends Activity {
         libraryCatalogOffer = null;
         libraryCatalogOfferManifestSha256 = null;
         librarySyncPrompt = null;
+        libraryMembershipPrompt = null;
+        libraryMembershipReceipt = null;
+        libraryMembershipStaged = null;
         libraryPromptStaged = null;
         libraryPromptRetry = null;
         libraryPromptCancel = null;
         View catalogPanel = createLibraryCatalogPanel(tokens);
-        boolean catalogModal = librarySyncPrompt != null;
+        boolean catalogModal = librarySyncPrompt != null
+            || libraryMembershipPrompt != null;
         if (catalogPanel != null) {
             root.addView(
                 catalogPanel,
@@ -9461,7 +9670,18 @@ public final class OctavoActivity extends Activity {
             tokens.librarySurface);
         setContentView(windowRoot, matchParentLayout());
         windowRoot.requestApplyInsets();
-        if (librarySyncPrompt != null) {
+        if (libraryMembershipPrompt != null) {
+            View focus = libraryMembershipPrompt.preferredInitialFocus();
+            focus.post(() -> {
+                if (libraryMembershipPrompt == null || !focus.isShown()) {
+                    return;
+                }
+                focus.requestFocus();
+                focus.performAccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
+                    null);
+            });
+        } else if (librarySyncPrompt != null) {
             View focus = librarySyncPrompt.preferredInitialFocus();
             focus.post(() -> {
                 if (librarySyncPrompt == null || !focus.isShown()) {
@@ -9479,7 +9699,8 @@ public final class OctavoActivity extends Activity {
                 ? addButton : libraryRowFocusReturn;
             String expectedFocusKey = libraryFocusBookKey;
             focus.post(() -> {
-                if (librarySyncPrompt != null || !focus.isShown()
+                if (librarySyncPrompt != null
+                    || libraryMembershipPrompt != null || !focus.isShown()
                     || !expectedFocusKey.equals(libraryFocusBookKey)) {
                     return;
                 }
@@ -9488,7 +9709,7 @@ public final class OctavoActivity extends Activity {
                     AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS,
                     null);
                 libraryFocusBookKey = null;
-                libraryFocusRemove = false;
+                libraryFocusAction = LIBRARY_FOCUS_NONE;
                 libraryRowFocusReturn = null;
             });
         }
@@ -9587,6 +9808,10 @@ public final class OctavoActivity extends Activity {
             && canStartLibraryCatalogDownload()) {
             return createLibraryRepairDownloadPanel(availableManifest);
         }
+        View membershipPanel = createLibraryMembershipPanel(tokens);
+        if (membershipPanel != null) {
+            return membershipPanel;
+        }
         OctavoLibraryPortable.Descriptor suppressed =
             suppressedLibraryCatalogDescriptor(availableManifest);
         boolean suppressedReady = suppressed != null
@@ -9603,6 +9828,515 @@ public final class OctavoActivity extends Activity {
         }
         libraryCatalogOffer = offer;
         return createLibraryCatalogOfferPanel(tokens, offer);
+    }
+
+    private View createLibraryMembershipPanel(OctavoDesignTokens tokens) {
+        if (libraryMembershipPendingAction
+                != LIBRARY_MEMBERSHIP_ACTION_NONE) {
+            View pending = createPendingLibraryMembershipPanel();
+            if (pending != null) {
+                return pending;
+            }
+        }
+        if (libraryMembershipAttentionDeferred
+            && retainedLibraryMembershipAttentionAvailable()) {
+            return null;
+        }
+        libraryMembershipAttentionDeferred = false;
+
+        if (libraryMembershipStoreBlocked()) {
+            OctavoLibraryMembershipPrompt prompt =
+                newLibraryMembershipPrompt();
+            prompt.showRetainedAttention(
+                "Synchronized Library membership needs Retry",
+                nonemptyMessage(
+                    libraryMembershipStore.lastError(),
+                    "The exact membership state is retained and blocked."),
+                libraryMembershipStore.stagedPortable() != null);
+            return prompt;
+        }
+
+        OctavoLibraryMembershipStore.StagedPortable staged =
+            libraryMembershipStore.stagedPortable();
+        if (staged != null) {
+            libraryMembershipStaged = staged;
+            if (staged.kind
+                    == OctavoLibraryMembershipStore.StagedKind.CURRENT
+                && staged.attention
+                    == OctavoLibraryMembershipStore.Attention
+                        .CURRENT_APPROVAL) {
+                OctavoLibraryMembershipPortable.DecodeResult decoded =
+                    OctavoLibraryMembershipPortable.decode(staged.bytes());
+                if (decoded.status
+                    == OctavoLibraryMembershipPortable.DecodeStatus.READY) {
+                    OctavoLibraryMembershipPrompt prompt =
+                        newLibraryMembershipPrompt();
+                    prompt.showStagedApproval(
+                        decoded.snapshot().recordCount(),
+                        staged.sha256, staged.reviewEpoch);
+                    return prompt;
+                }
+            }
+            OctavoLibraryMembershipPrompt prompt =
+                newLibraryMembershipPrompt();
+            prompt.showRetainedAttention(
+                membershipAttentionHeading(staged.attention),
+                nonemptyMessage(
+                    libraryMembershipStore.lastError(),
+                    "The exact reviewed membership input is retained."),
+                true);
+            return prompt;
+        }
+
+        OctavoLibraryMembershipStore.Receipt crossFamily =
+            firstLibraryMembershipCrossFamilyIssue();
+        if (crossFamily != null) {
+            libraryMembershipReceipt = crossFamily;
+            OctavoLibraryMembershipPrompt prompt =
+                newLibraryMembershipPrompt();
+            OctavoLibraryPortable.Descriptor catalog =
+                librarySyncStore.snapshot().descriptor(crossFamily.digest);
+            boolean missing = catalog == null;
+            prompt.showRetainedAttention(
+                missing
+                    ? "Membership catalog identity is unavailable"
+                    : "Membership catalog identity is equivocal",
+                missing
+                    ? "The exact membership history is retained, but its "
+                        + "Library discovery identity is not yet available."
+                    : "The membership and Library discovery byte counts do "
+                        + "not match. Both exact states are retained.",
+                false);
+            return prompt;
+        }
+        OctavoLibraryMembershipStore.Receipt conflict =
+            firstLibraryMembershipConflict();
+        if (conflict != null) {
+            libraryMembershipReceipt = conflict;
+            OctavoLibraryMembershipPrompt prompt =
+                newLibraryMembershipPrompt();
+            prompt.showConflict(conflict.digest, conflict.byteCount);
+            return prompt;
+        }
+        return null;
+    }
+
+    private View createPendingLibraryMembershipPanel() {
+        OctavoLibraryMembershipPortable.Descriptor descriptor =
+            pendingLibraryMembershipDescriptor();
+        OctavoLibraryMembershipStore.Receipt receipt = descriptor == null
+            ? null : libraryMembershipStore.receipt(descriptor);
+        if (!validPendingLibraryMembershipAction(receipt)) {
+            clearPendingLibraryMembershipAction();
+            return null;
+        }
+        libraryMembershipReceipt = receipt;
+        OctavoLibraryMembershipPrompt prompt =
+            newLibraryMembershipPrompt();
+        if (libraryMembershipPendingAction
+            == LIBRARY_MEMBERSHIP_ACTION_WITHDRAW) {
+            prompt.showWithdraw(receipt.digest, receipt.byteCount);
+        } else if (libraryMembershipPendingAction
+                   == LIBRARY_MEMBERSHIP_ACTION_RESTORE) {
+            prompt.showRestore(receipt.digest, receipt.byteCount);
+        } else {
+            prompt.showConflict(receipt.digest, receipt.byteCount);
+        }
+        return prompt;
+    }
+
+    private OctavoLibraryMembershipPrompt newLibraryMembershipPrompt() {
+        final OctavoLibraryMembershipPrompt[] owner =
+            new OctavoLibraryMembershipPrompt[1];
+        OctavoLibraryMembershipPrompt prompt =
+            new OctavoLibraryMembershipPrompt(
+                this,
+                appearance,
+                new OctavoLibraryMembershipPrompt.Listener() {
+                    private boolean current() {
+                        return owner[0] != null
+                            && libraryMembershipPrompt == owner[0]
+                            && libraryRoot != null;
+                    }
+
+                    @Override
+                    public void onWithdraw() {
+                        if (current()) {
+                            applyLibraryMembershipMutation(
+                                LIBRARY_MEMBERSHIP_ACTION_WITHDRAW);
+                        }
+                    }
+
+                    @Override
+                    public void onRestore() {
+                        if (current()) {
+                            applyLibraryMembershipMutation(
+                                LIBRARY_MEMBERSHIP_ACTION_RESTORE);
+                        }
+                    }
+
+                    @Override
+                    public void onResolveMember() {
+                        if (current()) {
+                            applyLibraryMembershipMutation(
+                                LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER);
+                        }
+                    }
+
+                    @Override
+                    public void onResolveWithdrawn() {
+                        if (current()) {
+                            applyLibraryMembershipMutation(
+                                LIBRARY_MEMBERSHIP_ACTION_RESOLVE_WITHDRAWN);
+                        }
+                    }
+
+                    @Override
+                    public void onApproveStaged() {
+                        if (current()) {
+                            approveLibraryMembershipStaged();
+                        }
+                    }
+
+                    @Override
+                    public void onDiscardStaged() {
+                        if (current()) {
+                            discardLibraryMembershipStaged();
+                        }
+                    }
+
+                    @Override
+                    public void onRetry() {
+                        if (current()) {
+                            retryLibraryMembershipAttention();
+                        }
+                    }
+                });
+        owner[0] = prompt;
+        libraryMembershipPrompt = prompt;
+        return prompt;
+    }
+
+    private void applyLibraryMembershipMutation(int action) {
+        OctavoLibraryMembershipStore.Receipt expected =
+            libraryMembershipReceipt;
+        if (!exactLibraryMembershipCatalogDescriptor(expected)) {
+            clearPendingLibraryMembershipAction();
+            libraryMembershipReceipt = null;
+            showLibrary();
+            showOpenFailure(
+                "The exact Library discovery identity changed; membership was not updated");
+            return;
+        }
+        OctavoLibraryMembershipStore.MutationOutcome outcome;
+        if (action == LIBRARY_MEMBERSHIP_ACTION_WITHDRAW) {
+            outcome = libraryMembershipStore.withdraw(expected);
+        } else if (action == LIBRARY_MEMBERSHIP_ACTION_RESTORE) {
+            outcome = libraryMembershipStore.restore(expected);
+        } else if (action
+                   == LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER) {
+            outcome = libraryMembershipStore.resolveConflict(
+                expected,
+                OctavoLibraryMembershipPortable.Projection.MEMBER);
+        } else if (action
+                   == LIBRARY_MEMBERSHIP_ACTION_RESOLVE_WITHDRAWN) {
+            outcome = libraryMembershipStore.resolveConflict(
+                expected,
+                OctavoLibraryMembershipPortable.Projection.WITHDRAWN);
+        } else {
+            return;
+        }
+        clearPendingLibraryMembershipAction();
+        libraryMembershipReceipt = null;
+        showLibrary();
+        if (outcome == null || !outcome.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                libraryMembershipStore.lastError(),
+                "Synchronized Library membership still needs review"));
+        }
+    }
+
+    private void approveLibraryMembershipStaged() {
+        OctavoLibraryMembershipStore.StagedPortable expected =
+            libraryMembershipStaged;
+        OctavoLibraryMembershipStore.PortableApprovalResult result =
+            libraryMembershipStore.approveStagedPortable(expected);
+        libraryMembershipStaged = null;
+        showLibrary();
+        if (!result.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                libraryMembershipStore.lastError(),
+                "Membership approval still needs review"));
+        }
+    }
+
+    private void discardLibraryMembershipStaged() {
+        OctavoLibraryMembershipStore.StagedPortable expected =
+            libraryMembershipStaged;
+        OctavoLibraryMembershipStore.PortableDiscardResult result =
+            libraryMembershipStore.discardStagedPortable(expected);
+        libraryMembershipStaged = null;
+        showLibrary();
+        if (!result.succeeded()) {
+            showOpenFailure(nonemptyMessage(
+                libraryMembershipStore.lastError(),
+                "Membership input could not be discarded"));
+        }
+    }
+
+    private void retryLibraryMembershipAttention() {
+        libraryMembershipStore.load();
+        libraryMembershipAttentionDeferred = false;
+        showLibrary();
+    }
+
+    private void dismissLibraryMembershipForBack() {
+        boolean retained = libraryMembershipPrompt != null
+            && libraryMembershipPrompt.retainedAttention();
+        libraryMembershipPrompt = null;
+        libraryMembershipReceipt = null;
+        libraryMembershipStaged = null;
+        if (retained) {
+            clearPendingLibraryMembershipAction();
+            libraryMembershipAttentionDeferred = true;
+            if (!hasText(libraryFocusBookKey)) {
+                libraryFocusBookKey = LIBRARY_FOCUS_ADD;
+                libraryFocusAction = LIBRARY_FOCUS_MEMBERSHIP_REVIEW;
+            }
+        } else {
+            clearPendingLibraryMembershipAction();
+        }
+        showLibrary();
+    }
+
+    private boolean retainedLibraryMembershipAttentionAvailable() {
+        return libraryMembershipStoreBlocked()
+            || libraryMembershipStore.stagedPortable() != null
+            || firstLibraryMembershipConflict() != null
+            || firstLibraryMembershipCrossFamilyIssue() != null;
+    }
+
+    private boolean libraryMembershipStoreBlocked() {
+        OctavoLibraryMembershipStore.LoadStatus status =
+            libraryMembershipStore.loadStatus();
+        return status
+                == OctavoLibraryMembershipStore.LoadStatus
+                    .CORRUPT_QUARANTINED_BLOCKED
+            || status
+                == OctavoLibraryMembershipStore.LoadStatus.CORRUPT_BLOCKED
+            || status
+                == OctavoLibraryMembershipStore.LoadStatus.OVERBOUND_BLOCKED
+            || status
+                == OctavoLibraryMembershipStore.LoadStatus
+                    .FUTURE_VERSION_BLOCKED
+            || status
+                == OctavoLibraryMembershipStore.LoadStatus
+                    .PUBLISH_UNCERTAIN_BLOCKED;
+    }
+
+    private OctavoLibraryMembershipStore.Receipt
+        firstLibraryMembershipConflict() {
+        if (libraryMembershipStoreBlocked()) {
+            return null;
+        }
+        for (OctavoLibraryMembershipPortable.Record record
+                 : libraryMembershipStore.snapshot().records()) {
+            if (record.projection()
+                == OctavoLibraryMembershipPortable.Projection.CONFLICT) {
+                return libraryMembershipStore.receipt(record.descriptor());
+            }
+        }
+        return null;
+    }
+
+    private OctavoLibraryMembershipStore.Receipt
+        firstLibraryMembershipCrossFamilyIssue() {
+        if (libraryMembershipStoreBlocked()) {
+            return null;
+        }
+        for (OctavoLibraryMembershipPortable.Record record
+                 : libraryMembershipStore.snapshot().records()) {
+            OctavoLibraryPortable.Descriptor catalog =
+                librarySyncStore.snapshot().descriptor(
+                    record.descriptor.digest);
+            if (catalog == null
+                || catalog.byteCount != record.descriptor.byteCount) {
+                return libraryMembershipStore.receipt(record.descriptor());
+            }
+        }
+        return null;
+    }
+
+    private OctavoLibraryMembershipStore.Receipt
+        firstAbsentLibraryMembershipHistory() {
+        if (libraryMembershipStoreBlocked()) {
+            return null;
+        }
+        for (OctavoLibraryMembershipPortable.Record record
+                 : libraryMembershipStore.snapshot().records()) {
+            OctavoLibraryPortable.Descriptor catalog =
+                librarySyncStore.snapshot().descriptor(
+                    record.descriptor.digest);
+            if (catalog == null
+                || catalog.byteCount != record.descriptor.byteCount
+                || libraryStore.findBook(record.descriptor.digest) != null) {
+                continue;
+            }
+            OctavoLibraryMembershipPortable.Projection projection =
+                record.projection();
+            if (projection
+                    == OctavoLibraryMembershipPortable.Projection.WITHDRAWN
+                || projection
+                    == OctavoLibraryMembershipPortable.Projection.CONFLICT) {
+                return libraryMembershipStore.receipt(record.descriptor());
+            }
+        }
+        return null;
+    }
+
+    private boolean libraryMembershipAllowsCatalogOffer(
+        String digest,
+        long byteCount) {
+        if (libraryMembershipStoreBlocked()) {
+            return false;
+        }
+        OctavoLibraryMembershipPortable.Record record =
+            libraryMembershipStore.snapshot().record(digest);
+        if (record == null) {
+            // The provider/object-presence coordinator is a later family.
+            // Preserve the accepted O1LC offer path without interpreting
+            // O1LM absence as synchronized-membership evidence.
+            return true;
+        }
+        return record.descriptor.byteCount == byteCount
+            && record.projection()
+                == OctavoLibraryMembershipPortable.Projection.MEMBER;
+    }
+
+    private void beginLibraryMembershipAction(
+        OctavoLibraryMembershipStore.Receipt expected,
+        int action) {
+        if (expected == null) {
+            return;
+        }
+        libraryMembershipPendingAction = action;
+        libraryMembershipPendingDigest = expected.digest;
+        libraryMembershipPendingByteCount = expected.byteCount;
+        libraryMembershipPendingRecordFingerprint =
+            expected.recordFingerprint;
+        libraryMembershipPendingSnapshotFingerprint =
+            expected.snapshotFingerprint;
+        libraryMembershipPendingStateGeneration =
+            expected.stateGeneration;
+        libraryMembershipPendingRecordPresent = expected.recordPresent;
+        libraryMembershipPendingProjection = expected.projection == null
+            ? -1 : expected.projection.ordinal();
+        showLibrary();
+    }
+
+    private OctavoLibraryMembershipPortable.Descriptor
+        pendingLibraryMembershipDescriptor() {
+        if (!hasText(libraryMembershipPendingDigest)
+            || libraryMembershipPendingByteCount <= 0
+            || libraryMembershipPendingByteCount > 536870912L) {
+            return null;
+        }
+        try {
+            return new OctavoLibraryMembershipPortable.Descriptor(
+                libraryMembershipPendingDigest,
+                libraryMembershipPendingByteCount);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private boolean validPendingLibraryMembershipAction(
+        OctavoLibraryMembershipStore.Receipt receipt) {
+        if (receipt == null) {
+            return false;
+        }
+        if (!exactLibraryMembershipCatalogDescriptor(receipt)) {
+            return false;
+        }
+        int projection = receipt.projection == null
+            ? -1 : receipt.projection.ordinal();
+        if (receipt.stateGeneration
+                != libraryMembershipPendingStateGeneration
+            || receipt.recordPresent
+                != libraryMembershipPendingRecordPresent
+            || projection != libraryMembershipPendingProjection
+            || !receipt.recordFingerprint.equals(
+                libraryMembershipPendingRecordFingerprint)
+            || !receipt.snapshotFingerprint.equals(
+                libraryMembershipPendingSnapshotFingerprint)) {
+            return false;
+        }
+        if (libraryMembershipPendingAction
+            == LIBRARY_MEMBERSHIP_ACTION_WITHDRAW) {
+            return !receipt.recordPresent
+                || receipt.projection
+                    == OctavoLibraryMembershipPortable.Projection.MEMBER;
+        }
+        if (libraryMembershipPendingAction
+            == LIBRARY_MEMBERSHIP_ACTION_RESTORE) {
+            return receipt.recordPresent
+                && receipt.projection
+                    == OctavoLibraryMembershipPortable.Projection.WITHDRAWN;
+        }
+        return (libraryMembershipPendingAction
+                    == LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER
+                || libraryMembershipPendingAction
+                    == LIBRARY_MEMBERSHIP_ACTION_RESOLVE_WITHDRAWN)
+            && receipt.recordPresent
+            && receipt.projection
+                == OctavoLibraryMembershipPortable.Projection.CONFLICT;
+    }
+
+    private void clearPendingLibraryMembershipAction() {
+        libraryMembershipPendingAction = LIBRARY_MEMBERSHIP_ACTION_NONE;
+        libraryMembershipPendingDigest = null;
+        libraryMembershipPendingByteCount = 0;
+        libraryMembershipPendingRecordFingerprint = null;
+        libraryMembershipPendingSnapshotFingerprint = null;
+        libraryMembershipPendingStateGeneration = -1;
+        libraryMembershipPendingRecordPresent = false;
+        libraryMembershipPendingProjection = -1;
+    }
+
+    private boolean exactLibraryMembershipCatalogDescriptor(
+        OctavoLibraryMembershipStore.Receipt receipt) {
+        if (receipt == null) {
+            return false;
+        }
+        if (librarySyncLoadBlocked(librarySyncStore.loadStatus())) {
+            return false;
+        }
+        OctavoLibraryPortable.Descriptor catalog =
+            librarySyncStore.snapshot().descriptor(receipt.digest);
+        return catalog != null && catalog.byteCount == receipt.byteCount
+            && receipt.kind
+                == OctavoLibraryMembershipPortable.Descriptor.EPUB;
+    }
+
+    private static String membershipAttentionHeading(
+        OctavoLibraryMembershipStore.Attention attention) {
+        if (attention
+            == OctavoLibraryMembershipStore.Attention.FUTURE_RETAINED) {
+            return "Membership input needs a newer app";
+        }
+        if (attention
+            == OctavoLibraryMembershipStore.Attention.JOIN_LIMIT_RETAINED) {
+            return "Membership history reached a limit";
+        }
+        if (attention
+            == OctavoLibraryMembershipStore.Attention.STAGED_CONFLICT) {
+            return "Membership review inputs conflict";
+        }
+        if (attention
+            == OctavoLibraryMembershipStore.Attention.STALE_BASE) {
+            return "Membership review base changed";
+        }
+        return "Synchronized Library membership needs review";
     }
 
     private boolean retainedLibraryAttentionAvailable() {
@@ -9666,7 +10400,7 @@ public final class OctavoActivity extends Activity {
         }
         libraryAttentionDeferred = true;
         libraryFocusBookKey = LIBRARY_FOCUS_ADD;
-        libraryFocusRemove = false;
+        libraryFocusAction = LIBRARY_FOCUS_ADD_ACTION;
         showLibrary();
     }
 
@@ -10099,14 +10833,14 @@ public final class OctavoActivity extends Activity {
         pendingImportAssociationBook = null;
         libraryImportAssociationStatus = null;
         libraryFocusBookKey = LIBRARY_FOCUS_ADD;
-        libraryFocusRemove = false;
+        libraryFocusAction = LIBRARY_FOCUS_ADD_ACTION;
         return true;
     }
 
     private OctavoLibrarySyncPrompt newLibrarySyncPrompt() {
         if (!hasText(libraryFocusBookKey)) {
             libraryFocusBookKey = LIBRARY_FOCUS_ADD;
-            libraryFocusRemove = false;
+            libraryFocusAction = LIBRARY_FOCUS_ADD_ACTION;
         }
         final OctavoLibrarySyncPrompt[] owner =
             new OctavoLibrarySyncPrompt[1];
@@ -10290,7 +11024,7 @@ public final class OctavoActivity extends Activity {
                 boolean removed = false;
                 if (exact) {
                     libraryFocusBookKey = currentBook.key;
-                    libraryFocusRemove = true;
+                    libraryFocusAction = LIBRARY_FOCUS_REMOVE_LOCAL;
                     removed = removeImportedBook(currentBook);
                 }
                 showLibrary();
@@ -10456,7 +11190,9 @@ public final class OctavoActivity extends Activity {
         for (OctavoLibrarySyncStore.Candidate candidate : candidates) {
             if (candidate.digest.equals(manifest.digest)
                 && candidate.byteCount == manifest.byteCount
-                && libraryCatalogCandidateHasSafeLocalState(candidate)) {
+                && libraryCatalogCandidateHasSafeLocalState(candidate)
+                && libraryMembershipAllowsCatalogOffer(
+                    candidate.digest, candidate.byteCount)) {
                 return candidate;
             }
         }
@@ -10484,7 +11220,9 @@ public final class OctavoActivity extends Activity {
             if (current.sameIdentity(expected)
                 && current.decision == expected.decision
                 && current.kind == expected.kind
-                && libraryCatalogCandidateHasSafeLocalState(current)) {
+                && libraryCatalogCandidateHasSafeLocalState(current)
+                && libraryMembershipAllowsCatalogOffer(
+                    current.digest, current.byteCount)) {
                 return true;
             }
         }
@@ -10795,7 +11533,7 @@ public final class OctavoActivity extends Activity {
                     boolean removed = false;
                     if (exact) {
                         libraryFocusBookKey = currentBook.key;
-                        libraryFocusRemove = true;
+                        libraryFocusAction = LIBRARY_FOCUS_REMOVE_LOCAL;
                         removed = removeImportedBook(currentBook);
                     }
                     showLibrary();
@@ -11937,6 +12675,19 @@ public final class OctavoActivity extends Activity {
             : book.hasPosition
             ? "Resume available"
             : "Not started";
+        OctavoLibraryMembershipStore.Receipt membership =
+            membershipReceiptForBook(book);
+        if (membership != null && membership.recordPresent) {
+            if (membership.projection
+                == OctavoLibraryMembershipPortable.Projection.WITHDRAWN) {
+                progress += " | Synchronized Library: withdrawn";
+            } else if (membership.projection
+                       == OctavoLibraryMembershipPortable.Projection.MEMBER) {
+                progress += " | Synchronized Library: restored";
+            } else {
+                progress += " | Synchronized Library: conflict";
+            }
+        }
         status.setText(book.imported
                            ? progress
                            : "Built-in sample | " + progress);
@@ -11957,7 +12708,7 @@ public final class OctavoActivity extends Activity {
         open.setEnabled(!book.repairRequired);
         open.setOnClickListener(view -> {
             libraryFocusBookKey = book.key;
-            libraryFocusRemove = false;
+            libraryFocusAction = LIBRARY_FOCUS_OPEN;
             if (!showReader(book, true)) {
                 showLibrary();
                 showOpenFailure("Unable to open the library book");
@@ -11965,7 +12716,7 @@ public final class OctavoActivity extends Activity {
         });
         actions.addView(open, wrapLayout());
         if (book.key.equals(libraryFocusBookKey)
-            && !libraryFocusRemove) {
+            && libraryFocusAction == LIBRARY_FOCUS_OPEN) {
             libraryRowFocusReturn = open;
         }
 
@@ -11981,7 +12732,7 @@ public final class OctavoActivity extends Activity {
                 "Remove " + book.title + " from this device");
             remove.setOnClickListener(view -> {
                 libraryFocusBookKey = book.key;
-                libraryFocusRemove = true;
+                libraryFocusAction = LIBRARY_FOCUS_REMOVE_LOCAL;
                 if (removeImportedBook(book)) {
                     showLibrary();
                 } else {
@@ -11996,11 +12747,69 @@ public final class OctavoActivity extends Activity {
             });
             actions.addView(remove, wrapLayout());
             if (book.key.equals(libraryFocusBookKey)
-                && libraryFocusRemove) {
+                && libraryFocusAction == LIBRARY_FOCUS_REMOVE_LOCAL) {
                 libraryRowFocusReturn = remove;
             }
         }
         row.addView(actions, matchParentWidthLayout());
+
+        if (membership != null) {
+            Button membershipAction = new Button(this);
+            int action;
+            if (!membership.recordPresent
+                || membership.projection
+                    == OctavoLibraryMembershipPortable.Projection.MEMBER) {
+                action = LIBRARY_MEMBERSHIP_ACTION_WITHDRAW;
+                membershipAction.setText(
+                    "Withdraw from synchronized Library");
+                membershipAction.setContentDescription(
+                    "Withdraw " + book.title
+                        + " from the synchronized Library");
+                membershipAction.setTextColor(tokens.error);
+            } else if (membership.projection
+                       == OctavoLibraryMembershipPortable.Projection
+                           .WITHDRAWN) {
+                action = LIBRARY_MEMBERSHIP_ACTION_RESTORE;
+                membershipAction.setText(
+                    "Restore to synchronized Library");
+                membershipAction.setContentDescription(
+                    "Restore " + book.title
+                        + " to the synchronized Library");
+                membershipAction.setTextColor(tokens.chromeText);
+            } else {
+                action = LIBRARY_MEMBERSHIP_ACTION_RESOLVE_MEMBER;
+                membershipAction.setText(
+                    "Review synchronized Library conflict");
+                membershipAction.setContentDescription(
+                    "Review the synchronized Library conflict for "
+                        + book.title);
+                membershipAction.setTextColor(tokens.chromeText);
+            }
+            membershipAction.setAllCaps(false);
+            membershipAction.setFocusable(true);
+            membershipAction.setFocusableInTouchMode(true);
+            membershipAction.setMinHeight(
+                dp(OctavoDesignTokens.TOUCH_TARGET_DP));
+            membershipAction.setBackgroundTintList(
+                ColorStateList.valueOf(tokens.buttonSurface));
+            membershipAction.setOnClickListener(view -> {
+                libraryFocusBookKey = book.key;
+                libraryFocusAction = action
+                        == LIBRARY_MEMBERSHIP_ACTION_WITHDRAW
+                    ? LIBRARY_FOCUS_WITHDRAW
+                    : LIBRARY_FOCUS_RESTORE;
+                beginLibraryMembershipAction(membership, action);
+            });
+            LinearLayout.LayoutParams membershipLayout =
+                matchParentWidthLayout();
+            membershipLayout.topMargin = dp(8);
+            row.addView(membershipAction, membershipLayout);
+            if (book.key.equals(libraryFocusBookKey)
+                && (libraryFocusAction == LIBRARY_FOCUS_WITHDRAW
+                    || libraryFocusAction == LIBRARY_FOCUS_RESTORE)) {
+                libraryRowFocusReturn = membershipAction;
+            }
+        }
 
         View divider = new View(this);
         divider.setBackgroundColor(tokens.divider);
@@ -12009,6 +12818,26 @@ public final class OctavoActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         Math.max(1, dp(1))));
         return row;
+    }
+
+    private OctavoLibraryMembershipStore.Receipt membershipReceiptForBook(
+        OctavoLibraryStore.Book book) {
+        if (book == null || !book.imported || book.repairRequired
+            || libraryMembershipStoreBlocked()) {
+            return null;
+        }
+        OctavoLibraryPortable.Descriptor catalog =
+            librarySyncStore.snapshot().descriptor(book.key);
+        if (catalog == null || catalog.byteCount != book.byteCount) {
+            return null;
+        }
+        try {
+            return libraryMembershipStore.receipt(
+                new OctavoLibraryMembershipPortable.Descriptor(
+                    catalog.digest, catalog.byteCount));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private LinearLayout createInsetRoot() {
@@ -12493,8 +13322,56 @@ public final class OctavoActivity extends Activity {
         return bookTransferStore;
     }
 
+    OctavoLibraryMembershipStore libraryMembershipStoreForTesting() {
+        return libraryMembershipStore;
+    }
+
     OctavoLibrarySyncPrompt librarySyncPromptForTesting() {
         return librarySyncPrompt;
+    }
+
+    OctavoLibraryMembershipPrompt libraryMembershipPromptForTesting() {
+        return libraryMembershipPrompt;
+    }
+
+    OctavoLibraryMembershipStore.PortableStageResult
+        stagePortableLibraryMembershipForTesting(byte[] bytes) {
+        OctavoLibraryMembershipStore.StageOutcome outcome =
+            libraryMembershipStore.stagePortableBytes(bytes);
+        if (libraryRoot != null) {
+            showLibrary();
+        }
+        return outcome.result;
+    }
+
+    boolean beginLibraryMembershipActionForTesting(
+        String digest,
+        long byteCount,
+        int action) {
+        OctavoLibraryMembershipStore.Receipt receipt;
+        try {
+            receipt = libraryMembershipStore.receipt(
+                new OctavoLibraryMembershipPortable.Descriptor(
+                    digest, byteCount));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        if (receipt == null) {
+            return false;
+        }
+        beginLibraryMembershipAction(receipt, action);
+        return libraryMembershipPrompt != null;
+    }
+
+    boolean beginLibraryMembershipWithdrawForTesting(
+        String digest,
+        long byteCount) {
+        return beginLibraryMembershipActionForTesting(
+            digest, byteCount, LIBRARY_MEMBERSHIP_ACTION_WITHDRAW);
+    }
+
+    boolean libraryMembershipAttentionDeferredForTesting() {
+        return libraryMembershipAttentionDeferred;
     }
 
     OctavoLibrarySyncStore.PortableStageResult

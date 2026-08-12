@@ -9,8 +9,9 @@ conditional sync coordinator now pass their API 36 offline qualification;
 the independent position family is API 36/API 34-qualified. The seventh
 appearance-only `O1PF`/`O1SS` and eighth progress-choice `O1PC`/`O1PS` local
 slices are accepted on API 36. The ninth provider-neutral catalog/managed-
-transfer local slice is also accepted on API 36. Google Drive integration,
-provider/account/network/permission and security decisions, physical-device
+transfer and tenth synchronized-Library membership local slices are also
+accepted on API 36. Google Drive integration, provider/object-presence binding,
+account/network/permission and security decisions, physical-device
 qualification, and remaining bounded UI polish are still required launch gates.
 Policy links were checked on 2026-08-06 and must be rechecked before submission.
 This document authorizes no push, merge, signing-key operation, Play Console
@@ -221,6 +222,22 @@ then uses exact-attempt-bound 4 MiB fused SHA-256 and Port 6 catalog commit
 steps. No physical device, provider, Drive/account path, network permission,
 security/encryption decision, worker, cloud resource, or Play Console operation
 was part of this gate; each remains explicitly deferred.
+
+The independent synchronized-Library membership boundary is
+[`android_port11_library_membership.md`](android_port11_library_membership.md).
+Canonical causal `O1LM` and private atomic `O1MS` remain separate from catalog,
+transfer, Port 6, and every earlier family. The Library provides explicit
+Withdraw, Restore, and conflict review without changing local Remove. Exact
+receipts reject stale callbacks; retained attention can be deferred and reopened
+without mutation. Focused coverage passes 31/31 in 42 seconds, the complete
+ordinary matrix passes 344/344 in 9m12s with zero failures/errors/skips, and
+crash/fatal buffers are empty. The product APK declares zero permissions.
+
+This gate does not connect a provider or treat absent membership state as proof
+of remote-object absence. Physical-device review, provider/object-presence
+binding, authorization, account/network/permission work, encryption and anti-
+rollback policy, transfer execution, separate cloud deletion, and Play Console
+work remain explicitly deferred.
 
 ### Bounded UI polish
 

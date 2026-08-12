@@ -2060,6 +2060,7 @@ public final class OctavoLibrarySyncIntegrationTest {
         }
         OctavoLibraryStore.clearForTesting(context);
         OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoLibraryMembershipStore.clearForTesting(context);
         OctavoBookTransferStore.clearForTesting(context);
         OctavoReadingPositionStore.clearForTesting(context);
         OctavoProgressStore.clearForTesting(context);

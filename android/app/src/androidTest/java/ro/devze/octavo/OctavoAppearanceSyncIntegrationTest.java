@@ -1303,6 +1303,7 @@ public final class OctavoAppearanceSyncIntegrationTest {
         Context context = ApplicationProvider.getApplicationContext();
         OctavoLibraryStore.clearForTesting(context);
         OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoLibraryMembershipStore.clearForTesting(context);
         OctavoBookTransferStore.clearForTesting(context);
         OctavoAppearanceStore.clearForTesting(context);
         OctavoAppearanceSyncStore.clearForTesting(context);

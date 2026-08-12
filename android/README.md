@@ -96,7 +96,9 @@ slice and its revised editor-inset/reader-marker follow-up pass API 36 and API
 are physically accepted. The seventh appearance-only synchronization slice is
 accepted on API 36. The eighth independent global progress-display-choice slice
 is also accepted on API 36. The ninth independent provider-neutral catalog and
-managed-transfer slice is accepted on API 36. Google Drive remains disconnected:
+managed-transfer slice is accepted on API 36. The tenth independent synchronized-
+Library membership slice is accepted on API 36. Google Drive remains
+disconnected:
 
 The fourth local slice adds the distinct actor-neutral `O1AP` annotation
 container and hardened offline join without a provider, account, network
@@ -172,6 +174,18 @@ attempt-bound 4 MiB fused SHA-256/Port 6 commit steps with no hash-to-catalog
 callback gap. No physical device, provider, Drive/account path, network
 permission, security/encryption decision, worker, cloud resource, or Play
 Console operation was part of this local acceptance.
+
+The tenth synchronized-Library membership slice keeps canonical causal `O1LM`
+history and private atomic `O1MS` review/recovery separate from discovery,
+transfer, Port 6, and every earlier `O1` family. Its Library-only UI provides
+explicit Withdraw, Restore, and conflict review; preserves local bytes and rows;
+binds every callback to exact history and generation receipts; and transiently
+defers retained attention without changing durable state. On API 36
+`emulator-5554`, focused membership coverage passes 31/31 in 42 seconds and the
+complete ordinary matrix passes 344/344 in 9m12s with empty crash/fatal buffers.
+The product APK declares zero permissions. This local gate does not treat
+missing membership bytes as remote-object evidence and adds no provider,
+account, network, transfer, cloud deletion, or Play Console behavior.
 
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
@@ -836,7 +850,8 @@ empty crash/fatal buffers. The physical gate also closed touch-mode action
 focus and restored the accepted APK/private-data baseline exactly. Durable
 Unicode-aware indexing, annotation search/export, concrete provider transport,
 provider/account/network/permission integration, launch security/encryption
-decisions, and catalog/transfer physical-device qualification remain deferred.
+decisions, and catalog/transfer/membership physical-device qualification remain
+deferred.
 The separate catalog and transfer portable families themselves are now accepted
 locally on API 36. The
 seventh appearance-only local slice adds canonical `O1PF`
@@ -859,6 +874,8 @@ for the appearance-only portable profile/review-transaction boundary,
 for the progress-choice portable/private/local-file boundary,
 [`../docs/android_port11_catalog_transfer.md`](../docs/android_port11_catalog_transfer.md)
 for the provider-neutral catalog/managed-transfer boundary,
+[`../docs/android_port11_library_membership.md`](../docs/android_port11_library_membership.md)
+for the separate synchronized-Library membership boundary,
 [`../docs/android_port10.md`](../docs/android_port10.md) for the selection
 implementation and acceptance boundary,
 [`../docs/android_port9.md`](../docs/android_port9.md) for the search predecessor,
