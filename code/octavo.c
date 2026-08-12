@@ -2,6 +2,9 @@
 #include "octavo_library.h"
 #include "octavo_reader_justification.h"
 #include "reader0.h"
+#include "octavo_pdf.h"
+#include "octavo_pdf_content.h"
+#include "octavo_pdf_selection.h"
 #include "ui0.h"
 #include "octavo_theme.h"
 #include "readerview0.h"
@@ -28,18 +31,19 @@
 #if PRESENTATION_ENGINE_API_VERSION != 1
 #  error "octavo requires Presentation Engine API 1"
 #endif
-#if READER0_API_VERSION != 7
-#  error "octavo requires Reader0 API 7"
+#if READER0_API_VERSION != 12
+#  error "octavo requires Reader0 API 12"
 #endif
 #if UI0_API_VERSION != 91
 #  error "octavo requires UI0 API 91"
 #endif
-#if READERVIEW0_API_VERSION != 3
-#  error "octavo requires Reader View API 3"
+#if READERVIEW0_API_VERSION != 4
+#  error "octavo requires Reader View API 4"
 #endif
 
 #include <commdlg.h>
 #include <objbase.h>
+#include <ole2.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,6 +105,8 @@ enum
   OctavoPresentationRetryMaxDelayMs = 256,
   OctavoLocationWarmTimerId = 4,
   OctavoLocationWarmDelayMs = 32,
+  OctavoPdfSearchPumpFirstTimerId = 0x100,
+  OctavoPdfSearchPumpDelayMs = 1,
   OctavoAdjacentWarmTextBudget = 4,
   OctavoAdjacentWarmPageCap = 4,
   OctavoAdjacentPagePixelCap = 4096 * 4096,
@@ -505,7 +511,23 @@ typedef enum OctavoPresentationIdentityKind
   OctavoPresentationIdentity_None,
   OctavoPresentationIdentity_Library,
   OctavoPresentationIdentity_Page,
+  OctavoPresentationIdentity_PdfPage,
 } OctavoPresentationIdentityKind;
+
+typedef enum OctavoDocumentKind
+{
+  OctavoDocument_None,
+  OctavoDocument_EPUB,
+  OctavoDocument_PDF,
+} OctavoDocumentKind;
+
+typedef enum OctavoMoveResult
+{
+  OctavoMoveResult_Ok,
+  OctavoMoveResult_Boundary,
+  OctavoMoveResult_NotOpen,
+  OctavoMoveResult_Error,
+} OctavoMoveResult;
 
 /* Pointer-free subset of the canonical Reader0 page range retained for
    presentation identity and frame validation. */
@@ -535,7 +557,11 @@ typedef struct OctavoPresentationIdentity
 typedef struct OctavoApp
 {
   Arena *arena;
+  OctavoDocumentKind document_kind;
   EpubReader reader;
+  OctavoPdf pdf;
+  OctavoPdfContent pdf_content;
+  OctavoPdfSelection pdf_selection;
   EpubReaderFrameStorage frame_storage;
   EpubReaderFrame frame;
   EpubReaderFrameStorage *adjacent_frame_storage;
@@ -560,6 +586,10 @@ typedef struct OctavoApp
   B32 last_present_complete;
   U64 complete_present_sequence;
   HWND window;
+  UINT_PTR pdf_search_timer_last_id;
+  UINT_PTR pdf_search_timer_armed_id;
+  U64 pdf_search_timer_armed_document_generation;
+  U64 pdf_search_timer_armed_search_serial;
   OctavoAccessibility *accessibility;
   S32 width;
   S32 height;
@@ -661,6 +691,10 @@ typedef struct OctavoApp
   OctavoReaderSpanStyle reader_span_styles[OctavoDisplaySpanCap];
   TextEngineDisplayRowStop reader_display_stops[OctavoDisplayRowStopCap];
   B32 selection_dragging;
+  B32 pdf_link_pointer_armed;
+  U64 pdf_link_pointer_document_generation;
+  U32 pdf_link_pointer_page_index;
+  OctavoPdfContentActivation pdf_link_pointer_activation;
   U64 selection_anchor_byte;
   UI0Rect selection_anchor_rect;
   char clipboard_text[OctavoClipboardCap];
@@ -717,6 +751,7 @@ typedef struct OctavoApp
   U32 page_action_presentation_retry_attempt;
   U32 page_action_presentation_retry_scheduled_count;
   U32 page_action_presentation_retry_fired_count;
+  U32 page_action_failed_pdf_recovery_count;
   U32 page_action_mutation_drop_count;
   U32 capture_frame_fail_count;
   B32 capture_frame_failed_since_mutation;
@@ -927,8 +962,9 @@ typedef struct OctavoPageRepeatWin32Probe
 } OctavoPageRepeatWin32Probe;
 
 FUNCTION void octavo_library_update_progress(OctavoApp *app);
+FUNCTION void octavo_app_release(OctavoApp *app);
 FUNCTION B32 octavo_close_book(OctavoApp *app);
-FUNCTION B32 octavo_pick_epub(OctavoApp *app);
+FUNCTION B32 octavo_pick_document(OctavoApp *app);
 FUNCTION B32 octavo_locate_library_entry(OctavoApp *app, U64 entry_id);
 FUNCTION void octavo_schedule_adjacent_warm(OctavoApp *app);
 FUNCTION void octavo_cancel_adjacent_warm(OctavoApp *app);
@@ -943,9 +979,23 @@ FUNCTION void octavo_cancel_page_repeat_for_focus(OctavoApp *app);
 FUNCTION void octavo_cancel_page_repeat_for_deactivation(OctavoApp *app);
 FUNCTION void octavo_cancel_page_repeat_for_mutation(OctavoApp *app);
 FUNCTION void octavo_page_action_note_emitted(OctavoApp *app);
+FUNCTION B32
+octavo_page_action_abandon_failed_pdf_presentation(OctavoApp *app);
 FUNCTION B32 octavo_begin_document_mutation(OctavoApp *app);
 FUNCTION void octavo_complete_document_mutation(OctavoApp *app,
                                                    B32 changed);
+FUNCTION void octavo_pdf_link_pointer_clear(OctavoApp *app);
+FUNCTION B32 octavo_pdf_selection_screen_anchor_rect(
+  const OctavoApp *app,
+  UI0Rect *out_rect);
+FUNCTION B32 octavo_pdf_selection_contains_screen_point(
+  const OctavoApp *app,
+  S32 x,
+  S32 y);
+FUNCTION B32 octavo_pdf_update_pointer_selection(
+  OctavoApp *app,
+  S32 x,
+  S32 y);
 FUNCTION void octavo_page_action_clear_pending(OctavoApp *app);
 FUNCTION void octavo_page_action_defer(OctavoApp *app,
                                           WPARAM key,
@@ -983,6 +1033,135 @@ octavo_copy_cstr(char *dst, U64 cap, const char *src)
     }
   }
   dst[size] = 0;
+}
+
+FUNCTION B32
+octavo_path_has_extension(const char *path, const char *extension)
+{
+  if (!path || !extension) return 0;
+  U64 path_size = strlen(path);
+  U64 extension_size = strlen(extension);
+  return path_size > extension_size &&
+    _stricmp(path + path_size - extension_size, extension) == 0;
+}
+
+FUNCTION B32
+octavo_path_is_epub(const char *path)
+{
+  return octavo_path_has_extension(path, ".epub");
+}
+
+FUNCTION B32
+octavo_path_is_pdf(const char *path)
+{
+  return octavo_path_has_extension(path, ".pdf");
+}
+
+FUNCTION B32
+octavo_document_is_open(const OctavoApp *app)
+{
+  if (!app) return 0;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return epub_reader_is_open(&app->reader);
+  if (app->document_kind == OctavoDocument_PDF)
+    return octavo_pdf_is_open(&app->pdf);
+  return 0;
+}
+
+FUNCTION B32
+octavo_document_invariants_hold(const OctavoApp *app)
+{
+  if (!app || !epub_reader_invariants_hold(&app->reader) ||
+      !octavo_pdf_invariants_hold(&app->pdf) ||
+      !octavo_pdf_content_invariants_hold(&app->pdf_content) ||
+      !octavo_pdf_selection_invariants_hold(&app->pdf_selection))
+  {
+    return 0;
+  }
+  if ((app->pdf_search_timer_last_id != 0 &&
+       app->pdf_search_timer_last_id < OctavoPdfSearchPumpFirstTimerId) ||
+      (app->pdf_search_timer_armed_id == 0 &&
+       (app->pdf_search_timer_armed_document_generation != 0 ||
+        app->pdf_search_timer_armed_search_serial != 0)) ||
+      (app->pdf_search_timer_armed_id != 0 &&
+       (app->pdf_search_timer_armed_id != app->pdf_search_timer_last_id ||
+        app->pdf_search_timer_armed_id <
+          OctavoPdfSearchPumpFirstTimerId ||
+        app->pdf_search_timer_armed_document_generation == 0 ||
+        app->pdf_search_timer_armed_search_serial == 0)))
+  {
+    return 0;
+  }
+  B32 epub_open = epub_reader_is_open(&app->reader);
+  B32 pdf_open = octavo_pdf_is_open(&app->pdf);
+  if (epub_open && pdf_open) return 0;
+  if (app->document_kind == OctavoDocument_None)
+    return !epub_open && !pdf_open;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return epub_open && !pdf_open;
+  if (app->document_kind == OctavoDocument_PDF)
+    return pdf_open && !epub_open &&
+      app->pdf_content.document_generation ==
+        app->pdf.frame.document_generation &&
+      app->pdf_content.page_count == app->pdf.frame.page_count &&
+      (!app->pdf_selection.ready ||
+       octavo_pdf_selection_is_current(
+         &app->pdf_selection, &app->pdf.reader, &app->pdf.frame));
+  return 0;
+}
+
+FUNCTION void
+octavo_pdf_search_timer_disarm(OctavoApp *app)
+{
+  if (!app) return;
+  UINT_PTR timer_id = app->pdf_search_timer_armed_id;
+  if (app->window && timer_id)
+    (void)KillTimer(app->window, timer_id);
+  app->pdf_search_timer_armed_id = 0;
+  app->pdf_search_timer_armed_document_generation = 0;
+  app->pdf_search_timer_armed_search_serial = 0;
+}
+
+FUNCTION PdfReaderResult
+octavo_close_pdf_backend(OctavoApp *app)
+{
+  if (!app) return PdfReaderResult_InvalidInput;
+  PdfReaderResult result = octavo_pdf_close(&app->pdf);
+  if (result == PdfReaderResult_Ok)
+  {
+    octavo_pdf_search_timer_disarm(app);
+    octavo_pdf_content_reset(&app->pdf_content);
+    octavo_pdf_selection_reset(&app->pdf_selection);
+  }
+  return result;
+}
+
+FUNCTION void
+octavo_refresh_pdf_content_page(OctavoApp *app)
+{
+  if (!app || app->document_kind != OctavoDocument_PDF ||
+      !octavo_pdf_is_open(&app->pdf))
+  {
+    return;
+  }
+  octavo_pdf_content_refresh_current_page(
+    &app->pdf_content, &app->pdf.reader,
+    app->pdf.frame.document_generation,
+    app->pdf.frame.page_index, app->pdf.frame.page_count);
+}
+
+FUNCTION void
+octavo_path_title(const char *path, char *title, U64 title_cap)
+{
+  if (!title || title_cap == 0) return;
+  title[0] = 0;
+  if (!path) return;
+  const char *name = path;
+  for (const char *at = path; *at; at += 1)
+    if (*at == '\\' || *at == '/') name = at + 1;
+  octavo_copy_cstr(title, title_cap, name);
+  char *dot = strrchr(title, '.');
+  if (dot && dot != title) *dot = 0;
 }
 
 FUNCTION void
@@ -2203,21 +2382,21 @@ octavo_library_record_open_document(OctavoApp *app,
                                           app->library_selected_entry_id);
 }
 
-FUNCTION void
+FUNCTION B32
 octavo_library_hydrate_startup_entry(OctavoApp *app)
 {
   if (!app || !app->persistence_enabled || app->library.entry_count == 0)
-    return;
+    return 1;
   OctavoLibraryEntry *entry = octavo_library_catalog_find_id(
     &app->library, app->library_selected_entry_id);
   if (!entry || entry->runtime_missing)
-    return;
+    return 1;
   B32 metadata_inspected =
     (entry->metadata_flags & OctavoLibraryMetadata_Inspected) != 0;
   B32 thumbnail_current =
     !(entry->metadata_flags & OctavoLibraryMetadata_Cover) ||
     octavo_library_thumbnail_load(app, entry) != 0;
-  if (metadata_inspected && thumbnail_current) return;
+  if (metadata_inspected && thumbnail_current) return 1;
 
   EpubReaderOpenTransition transition = {0};
   EpubReaderResult open_result = epub_reader_open(
@@ -2227,11 +2406,17 @@ octavo_library_hydrate_startup_entry(OctavoApp *app)
   {
     (void)octavo_library_refresh_open_document_metadata(app, entry);
     B32 changed = 0;
-    (void)epub_reader_close(&app->reader, &changed);
+    EpubReaderResult close_result = epub_reader_close(&app->reader, &changed);
+    if (close_result != EpubReaderResult_Ok ||
+        epub_reader_is_open(&app->reader))
+    {
+      return 0;
+    }
     octavo_image_cache_reset(&app->image_cache);
     (void)octavo_save_library(app);
   }
   (void)transition;
+  return 1;
 }
 
 FUNCTION void
@@ -2505,8 +2690,29 @@ octavo_recover_failed_open_to_library(OctavoApp *app)
   if (!app) return 0;
   octavo_cancel_location_warm(app);
   B32 changed = 0;
+  EpubReaderResult epub_close_result = EpubReaderResult_Ok;
+  PdfReaderResult pdf_close_result = PdfReaderResult_Ok;
   if (epub_reader_is_open(&app->reader))
-    (void)epub_reader_close(&app->reader, &changed);
+    epub_close_result = epub_reader_close(&app->reader, &changed);
+  if (octavo_pdf_is_open(&app->pdf))
+    pdf_close_result = octavo_close_pdf_backend(app);
+
+  B32 epub_open = epub_reader_is_open(&app->reader);
+  B32 pdf_open = octavo_pdf_is_open(&app->pdf);
+  if (epub_close_result != EpubReaderResult_Ok ||
+      pdf_close_result != PdfReaderResult_Ok || epub_open || pdf_open)
+  {
+    /* Never publish None while a concrete reader is still owned. If one
+       close succeeded, make the remaining owner explicit; if both backends
+       refused teardown, retain the prior owner and surface a hard error. */
+    if (epub_open && !pdf_open) app->document_kind = OctavoDocument_EPUB;
+    if (pdf_open && !epub_open) app->document_kind = OctavoDocument_PDF;
+    app->document_state = ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open cleanup failed: reader remains owned");
+    return 0;
+  }
+
+  app->document_kind = OctavoDocument_None;
   app->current_path[0] = 0;
   app->annotations_path[0] = 0;
   app->document_state = ReaderViewLoad_Error;
@@ -2526,13 +2732,38 @@ octavo_recover_failed_open_to_library(OctavoApp *app)
     OctavoHostControl_LibraryAdd;
   app->host_focus_visible = 1;
   octavo_complete_document_mutation(app, 1);
-  return !epub_reader_is_open(&app->reader);
+  return octavo_document_invariants_hold(app);
 }
 
 FUNCTION B32
-octavo_open_path(OctavoApp *app, const char *path)
+octavo_abandon_epub_candidate(OctavoApp *app, B32 preserve_pdf)
+{
+  if (!app) return 0;
+  B32 changed = 0;
+  EpubReaderResult close_result = EpubReaderResult_Ok;
+  if (epub_reader_is_open(&app->reader))
+    close_result = epub_reader_close(&app->reader, &changed);
+  if (close_result != EpubReaderResult_Ok ||
+      epub_reader_is_open(&app->reader))
+  {
+    app->document_state = ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open cleanup failed: EPUB remains owned");
+    return 0;
+  }
+  if (preserve_pdf && octavo_pdf_is_open(&app->pdf))
+  {
+    app->document_kind = OctavoDocument_PDF;
+    app->document_state = ReaderViewLoad_Ready;
+    return octavo_document_invariants_hold(app);
+  }
+  return octavo_recover_failed_open_to_library(app);
+}
+
+FUNCTION B32
+octavo_open_epub_path(OctavoApp *app, const char *path)
 {
   if (!app || !path || !path[0]) { return 0; }
+  OctavoDocumentKind previous_kind = app->document_kind;
   if (!octavo_begin_document_mutation(app)) return 0;
   octavo_cancel_location_warm(app);
   octavo_cancel_adjacent_warm(app);
@@ -2555,7 +2786,7 @@ octavo_open_path(OctavoApp *app, const char *path)
   B32 has_catalog_position = restore_entry != 0;
   app->document_state = ReaderViewLoad_Loading;
   octavo_set_statusf(app, "Opening EPUB...");
-  if (app->current_path[0])
+  if (previous_kind == OctavoDocument_EPUB && app->current_path[0])
   {
     (void)octavo_save_state(app);
     (void)octavo_save_annotations(app);
@@ -2576,9 +2807,10 @@ octavo_open_path(OctavoApp *app, const char *path)
       previous_document_id != epub_reader_document_id(&app->reader) ||
       previous_document_generation != app->reader.document_generation;
     if (reader_changed)
-      (void)octavo_recover_failed_open_to_library(app);
+      (void)octavo_abandon_epub_candidate(
+        app, previous_kind == OctavoDocument_PDF);
     else
-      app->document_state = reader_was_open ?
+      app->document_state = octavo_document_is_open(app) ?
         ReaderViewLoad_Ready : ReaderViewLoad_Error;
     app->library_locate_entry_id = 0;
     return 0;
@@ -2586,20 +2818,13 @@ octavo_open_path(OctavoApp *app, const char *path)
   if (!epub_reader_refresh_active_spine(&app->reader) ||
       !octavo_update_layout_inputs(app))
   {
-    (void)octavo_recover_failed_open_to_library(app);
+    (void)octavo_abandon_epub_candidate(
+      app, previous_kind == OctavoDocument_PDF);
     octavo_set_statusf(app, "Open failed: layout");
     app->library_locate_entry_id = 0;
     return 0;
   }
 
-  octavo_image_cache_reset(&app->image_cache);
-  octavo_copy_cstr(app->current_path,
-                     ARRAY_COUNT(app->current_path),
-                     normalized_path);
-  octavo_set_annotations_path(app, normalized_path);
-  octavo_load_annotations(app);
-  reader_view_state_reset_document(&app->reader_view_state,
-                                   (UI0U64)epub_reader_document_id(&app->reader));
   B32 restored = 0;
   if (has_catalog_position)
   {
@@ -2627,12 +2852,36 @@ octavo_open_path(OctavoApp *app, const char *path)
                                         app->layout_config,
                                         &reused))
     {
-      (void)octavo_recover_failed_open_to_library(app);
+      (void)octavo_abandon_epub_candidate(
+        app, previous_kind == OctavoDocument_PDF);
       octavo_set_statusf(app, "Open failed: pagination");
       app->library_locate_entry_id = 0;
       return 0;
     }
   }
+
+  /* Pagination is part of the EPUB candidate transaction. Keep the previous
+     PDF live through every fallible candidate step, and close it only at the
+     final publication boundary. */
+  if (previous_kind == OctavoDocument_PDF)
+  {
+    if (octavo_close_pdf_backend(app) != PdfReaderResult_Ok)
+    {
+      B32 abandoned = octavo_abandon_epub_candidate(app, 1);
+      if (abandoned)
+        octavo_set_statusf(app, "Open failed: could not close PDF");
+      return 0;
+    }
+  }
+  app->document_kind = OctavoDocument_EPUB;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_copy_cstr(app->current_path,
+                     ARRAY_COUNT(app->current_path),
+                     normalized_path);
+  octavo_set_annotations_path(app, normalized_path);
+  octavo_load_annotations(app);
+  reader_view_state_reset_document(&app->reader_view_state,
+                                   (UI0U64)epub_reader_document_id(&app->reader));
   app->document_state = ReaderViewLoad_Ready;
   B32 frame_captured = octavo_capture_frame(app);
   octavo_complete_document_mutation(app, 1);
@@ -2662,13 +2911,162 @@ octavo_open_path(OctavoApp *app, const char *path)
   octavo_schedule_state_save(app);
   app->first_reader_present_pending = app->window != 0;
   if (frame_captured) octavo_schedule_adjacent_warm(app);
-  return 1;
+  return octavo_document_invariants_hold(app);
 }
 
 FUNCTION B32
-octavo_close_book(OctavoApp *app)
+octavo_open_pdf_path(OctavoApp *app, const char *path)
 {
-  if (!app || !epub_reader_is_open(&app->reader)) return 0;
+  if (!app || !path || !path[0]) return 0;
+  if (!octavo_begin_document_mutation(app)) return 0;
+  OctavoDocumentKind previous_kind = app->document_kind;
+  char normalized_path[OctavoLibraryPathCap] = {0};
+  if (!octavo_library_normalize_path(path, normalized_path,
+                                     ARRAY_COUNT(normalized_path)))
+  {
+    octavo_set_statusf(app, "Open failed: path encoding");
+    return 0;
+  }
+  octavo_stop_page_repeat(app);
+  octavo_cancel_location_warm(app);
+  octavo_cancel_adjacent_warm(app);
+  octavo_invalidate_adjacent_page(app);
+  app->document_state = ReaderViewLoad_Loading;
+  octavo_set_statusf(app, "Opening PDF...");
+  if (previous_kind == OctavoDocument_EPUB && app->current_path[0])
+  {
+    (void)octavo_save_state(app);
+    (void)octavo_save_annotations(app);
+  }
+
+  B32 pdf_was_open = octavo_pdf_is_open(&app->pdf);
+  PdfReaderResult result = octavo_pdf_open(
+    &app->pdf, str8_from_cstr(normalized_path));
+  if (result != PdfReaderResult_Ok)
+  {
+    B32 pdf_is_open = octavo_pdf_is_open(&app->pdf);
+    if (previous_kind != OctavoDocument_PDF && !pdf_was_open && pdf_is_open)
+    {
+      PdfReaderResult close_result = octavo_close_pdf_backend(app);
+      pdf_is_open = octavo_pdf_is_open(&app->pdf);
+      if (close_result != PdfReaderResult_Ok || pdf_is_open)
+      {
+        app->document_kind = previous_kind == OctavoDocument_EPUB ?
+          OctavoDocument_EPUB : OctavoDocument_PDF;
+        app->document_state = ReaderViewLoad_Error;
+        octavo_set_statusf(app, "Open cleanup failed: PDF remains owned");
+        return 0;
+      }
+    }
+    if (previous_kind == OctavoDocument_PDF && !pdf_is_open)
+    {
+      app->document_kind = OctavoDocument_None;
+      app->current_path[0] = 0;
+    }
+    app->document_state = octavo_document_is_open(app) ?
+      ReaderViewLoad_Ready : ReaderViewLoad_Error;
+    octavo_set_statusf(app, "Open failed: %s", pdf_reader_result_code(result));
+    app->library_locate_entry_id = 0;
+    return 0;
+  }
+  if (previous_kind == OctavoDocument_EPUB)
+  {
+    B32 changed = 0;
+    if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok)
+    {
+      PdfReaderResult close_result = octavo_close_pdf_backend(app);
+      if (close_result == PdfReaderResult_Ok &&
+          !octavo_pdf_is_open(&app->pdf))
+      {
+        app->document_kind = OctavoDocument_EPUB;
+        app->document_state = ReaderViewLoad_Ready;
+        octavo_set_statusf(app, "Open failed: could not close EPUB");
+      }
+      else
+      {
+        app->document_state = ReaderViewLoad_Error;
+        octavo_set_statusf(app, "Open cleanup failed: both readers remain owned");
+      }
+      return 0;
+    }
+  }
+
+  app->document_kind = OctavoDocument_PDF;
+  app->document_state = ReaderViewLoad_Ready;
+  octavo_copy_cstr(app->current_path, ARRAY_COUNT(app->current_path),
+                   normalized_path);
+  app->annotations_path[0] = 0;
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_clear_annotations(app);
+  octavo_pdf_search_timer_disarm(app);
+  B32 content_ready = octavo_pdf_content_begin_document(
+    &app->pdf_content, &app->pdf.reader,
+    app->pdf.frame.document_generation,
+    app->pdf.frame.page_index, app->pdf.frame.page_count);
+  if (!content_ready &&
+      !octavo_pdf_content_bind_error_document(
+        &app->pdf_content, app->pdf.frame.document_generation,
+        app->pdf.frame.page_count))
+  {
+    PdfReaderResult close_result = octavo_close_pdf_backend(app);
+    if (close_result == PdfReaderResult_Ok)
+    {
+      app->document_kind = OctavoDocument_None;
+      app->current_path[0] = 0;
+      app->document_state = ReaderViewLoad_Error;
+      octavo_set_statusf(app, "PDF content initialization failed");
+    }
+    else
+    {
+      app->document_state = ReaderViewLoad_Error;
+      octavo_set_statusf(
+        app, "PDF content cleanup failed: backend remains owned");
+    }
+    return 0;
+  }
+  U64 document_key = u64_hash_str8(str8_from_cstr(normalized_path)) ^
+                     app->pdf.frame.document_generation;
+  reader_view_state_reset_document(&app->reader_view_state,
+                                   document_key ? document_key : 1);
+  app->host_focus_control = OctavoHostControl_None;
+  app->host_focus_visible = 0;
+  app->host_pointer_armed = OctavoHostControl_None;
+  app->host_exit_pointer_armed = 0;
+  if (content_ready)
+    octavo_set_statusf(app, "Opened PDF | page %u/%u",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+  else
+    octavo_set_statusf(
+      app, "Opened PDF | content unavailable | page %u/%u",
+      app->pdf.frame.page_index + 1, app->pdf.frame.page_count);
+  app->library_locate_entry_id = 0;
+  octavo_complete_document_mutation(app, 1);
+  return octavo_document_invariants_hold(app);
+}
+
+FUNCTION B32
+octavo_open_path(OctavoApp *app, const char *path)
+{
+  if (octavo_path_is_epub(path)) return octavo_open_epub_path(app, path);
+  if (octavo_path_is_pdf(path)) return octavo_open_pdf_path(app, path);
+  if (app) octavo_set_statusf(app, "Open failed: unsupported file type");
+  return 0;
+}
+
+FUNCTION B32
+octavo_close_epub_book(OctavoApp *app)
+{
+  if (!app || app->document_kind != OctavoDocument_EPUB ||
+      !epub_reader_is_open(&app->reader)) return 0;
   if (!octavo_begin_document_mutation(app)) return 0;
   octavo_stop_page_repeat(app);
   octavo_cancel_location_warm(app);
@@ -2679,6 +3077,7 @@ octavo_close_book(OctavoApp *app)
   B32 changed = 0;
   if (epub_reader_close(&app->reader, &changed) != EpubReaderResult_Ok || !changed)
     return 0;
+  app->document_kind = OctavoDocument_None;
   app->current_path[0] = 0;
   app->annotations_path[0] = 0;
   app->document_state = ReaderViewLoad_Empty;
@@ -2706,8 +3105,56 @@ octavo_close_book(OctavoApp *app)
   return 1;
 }
 
+FUNCTION B32
+octavo_close_pdf_book(OctavoApp *app)
+{
+  if (!app || app->document_kind != OctavoDocument_PDF ||
+      !octavo_pdf_is_open(&app->pdf)) return 0;
+  if (!octavo_begin_document_mutation(app)) return 0;
+  octavo_stop_page_repeat(app);
+  octavo_cancel_location_warm(app);
+  octavo_cancel_adjacent_warm(app);
+  octavo_invalidate_adjacent_page(app);
+  if (octavo_close_pdf_backend(app) != PdfReaderResult_Ok) return 0;
+  app->document_kind = OctavoDocument_None;
+  app->current_path[0] = 0;
+  app->annotations_path[0] = 0;
+  app->document_state = ReaderViewLoad_Empty;
+  MemoryZeroStruct(&app->frame);
+  MemoryZeroStruct(&app->presentation_frame);
+  app->presentation_hash = 0;
+  app->pagination_viewport_width = 0;
+  app->pagination_viewport_height = 0;
+  app->first_reader_present_pending = 0;
+  app->selection_dragging = 0;
+  app->selected_text[0] = 0;
+  octavo_image_cache_reset(&app->image_cache);
+  octavo_clear_annotations(app);
+  reader_view_state_init(&app->reader_view_state);
+  app->reader_view_ready = 0;
+  app->host_focus_control = app->library.entry_count > 0 ?
+    (OctavoHostControlIdentity)OctavoHostControl_LibraryBookBase :
+    OctavoHostControl_LibraryAdd;
+  app->host_focus_visible = 1;
+  app->host_pointer_armed = OctavoHostControl_None;
+  octavo_library_set_summary_status(app);
+  octavo_complete_document_mutation(app, 1);
+  return 1;
+}
+
+FUNCTION B32
+octavo_close_book(OctavoApp *app)
+{
+  if (!app) return 0;
+  if (app->document_kind == OctavoDocument_EPUB)
+    return octavo_close_epub_book(app);
+  if (app->document_kind == OctavoDocument_PDF)
+    return octavo_close_pdf_book(app);
+  return 0;
+}
+
 FUNCTION EpubReaderResult
-octavo_move_page(OctavoApp *app, S32 direction)
+octavo_move_epub_page(OctavoApp *app, S32 direction)
 {
   if (!app || !epub_reader_is_open(&app->reader))
   {
@@ -2762,6 +3209,50 @@ octavo_move_page(OctavoApp *app, S32 direction)
                        (unsigned)app->frame.section_count);
   octavo_schedule_adjacent_warm(app);
   return EpubReaderResult_Ok;
+}
+
+FUNCTION OctavoMoveResult
+octavo_move_page(OctavoApp *app, S32 direction)
+{
+  if (!app || !octavo_document_is_open(app))
+  {
+    if (app) octavo_set_statusf(app, "Open a book first");
+    return OctavoMoveResult_NotOpen;
+  }
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_move_epub_page(app, direction);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    if (result == EpubReaderResult_NotOpen) return OctavoMoveResult_NotOpen;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_move_page(&app->pdf, direction);
+    if (result == PdfReaderResult_PageOutOfRange)
+    {
+      octavo_set_statusf(app, direction < 0 ?
+        "Beginning of document" : "End of document");
+      return OctavoMoveResult_Boundary;
+    }
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "Page move failed: %s",
+                         pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    if (changed) octavo_refresh_pdf_content_page(app);
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "Page %u/%u",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
 }
 
 FUNCTION EpubReaderResult
@@ -3159,7 +3650,7 @@ octavo_navigate_to_location(OctavoApp *app,
 }
 
 FUNCTION EpubReaderResult
-octavo_move_history(OctavoApp *app, B32 forward)
+octavo_move_epub_history(OctavoApp *app, B32 forward)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
   if (!octavo_begin_document_mutation(app))
@@ -3185,7 +3676,7 @@ octavo_move_history(OctavoApp *app, B32 forward)
 }
 
 FUNCTION EpubReaderResult
-octavo_seek_location(OctavoApp *app, U64 location_index)
+octavo_seek_epub_location(OctavoApp *app, U64 location_index)
 {
   if (!app || !epub_reader_is_open(&app->reader)) return EpubReaderResult_NotOpen;
   U32 spine_index = 0;
@@ -3198,6 +3689,79 @@ octavo_seek_location(OctavoApp *app, U64 location_index)
   (void)location_count;
   return octavo_navigate_to_location(app, spine_index, byte_offset,
                                        EpubReaderNavigationReason_Location);
+}
+
+FUNCTION OctavoMoveResult
+octavo_move_history(OctavoApp *app, B32 forward)
+{
+  if (!app || !octavo_document_is_open(app)) return OctavoMoveResult_NotOpen;
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_move_epub_history(app, forward);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    if (result == EpubReaderResult_NotOpen) return OctavoMoveResult_NotOpen;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_move_history(&app->pdf, forward);
+    if (result == PdfReaderResult_PageOutOfRange)
+    {
+      octavo_set_statusf(app, forward ? "No forward history" : "No back history");
+      return OctavoMoveResult_Boundary;
+    }
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "%s failed: %s", forward ? "Forward" : "Back",
+                         pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    if (changed) octavo_refresh_pdf_content_page(app);
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "%s | page %u/%u", forward ? "Forward" : "Back",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
+}
+
+FUNCTION OctavoMoveResult
+octavo_seek_location(OctavoApp *app, U64 location_index)
+{
+  if (!app || !octavo_document_is_open(app)) return OctavoMoveResult_NotOpen;
+  if (app->document_kind == OctavoDocument_EPUB)
+  {
+    EpubReaderResult result = octavo_seek_epub_location(app, location_index);
+    if (result == EpubReaderResult_Ok) return OctavoMoveResult_Ok;
+    if (result == EpubReaderResult_Boundary) return OctavoMoveResult_Boundary;
+    return OctavoMoveResult_Error;
+  }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_begin_document_mutation(app)) return OctavoMoveResult_Error;
+    U32 previous = app->pdf.frame.page_index;
+    PdfReaderResult result = octavo_pdf_seek_page(&app->pdf, location_index);
+    if (result == PdfReaderResult_PageOutOfRange)
+      return OctavoMoveResult_Boundary;
+    if (result != PdfReaderResult_Ok)
+    {
+      octavo_set_statusf(app, "Seek failed: %s", pdf_reader_result_code(result));
+      return OctavoMoveResult_Error;
+    }
+    B32 changed = app->pdf.frame.page_index != previous;
+    if (changed) octavo_refresh_pdf_content_page(app);
+    octavo_complete_document_mutation(app, changed);
+    octavo_set_statusf(app, "Page %u/%u",
+                       app->pdf.frame.page_index + 1,
+                       app->pdf.frame.page_count);
+    return OctavoMoveResult_Ok;
+  }
+  return OctavoMoveResult_NotOpen;
 }
 
 FUNCTION B32
@@ -3531,6 +4095,160 @@ octavo_prepare_reader_view_find(OctavoApp *app)
     .has_more = app->frame.search_has_more,
     .can_step_previous = app->frame.search_total_count > 0,
     .can_step_next = app->frame.search_total_count > 0,
+  };
+}
+
+FUNCTION ReaderViewText
+octavo_pdf_content_span_text(OctavoPdfContentSpan span)
+{
+  ReaderViewText result = {0};
+  if (span.str && span.size <= INT32_MAX)
+  {
+    result.data = (const char *)span.str;
+    result.size = (UI0S32)span.size;
+  }
+  return result;
+}
+
+FUNCTION ReaderViewSurfaceStatus
+octavo_pdf_content_surface_status(OctavoPdfContentLoadState state,
+                                  const char *empty_message,
+                                  const char *error_message,
+                                  const char *limit_message)
+{
+  switch (state)
+  {
+    case OctavoPdfContentLoad_Loading:
+      return octavo_reader_view_status(ReaderViewLoad_Loading, "Loading...");
+    case OctavoPdfContentLoad_Empty:
+      return octavo_reader_view_status(ReaderViewLoad_Empty, empty_message);
+    case OctavoPdfContentLoad_Ready:
+      return octavo_reader_view_status(ReaderViewLoad_Ready, 0);
+    case OctavoPdfContentLoad_LimitExceeded:
+      return octavo_reader_view_status(ReaderViewLoad_Error, limit_message);
+    case OctavoPdfContentLoad_Error:
+      return octavo_reader_view_status(ReaderViewLoad_Error, error_message);
+    case OctavoPdfContentLoad_Unavailable:
+    default:
+      return octavo_reader_view_status(
+        ReaderViewLoad_Unavailable, "Open a PDF first");
+  }
+}
+
+FUNCTION void
+octavo_prepare_reader_view_pdf_toc(OctavoApp *app)
+{
+  if (!app) return;
+  OctavoPdfContent *content = &app->pdf_content;
+  ReaderViewTocProjection projection = {
+    .status = octavo_pdf_content_surface_status(
+      content->outline_state,
+      "This PDF has no table of contents.",
+      "The PDF table of contents could not be read.",
+      "The PDF table of contents exceeds the app limit."),
+  };
+  if (content->outline_state == OctavoPdfContentLoad_Ready &&
+      content->document_generation == app->pdf.frame.document_generation)
+  {
+    U32 count = MIN(content->outline_item_count,
+                    (U32)READER_VIEW_TOC_ROW_CAP);
+    U32 published = 0;
+    for (U32 index = 0; index < count; index += 1)
+    {
+      OctavoPdfContentSpan title = {0};
+      const PdfReaderOutlineItem *item = octavo_pdf_content_outline_item(
+        content, app->pdf.frame.document_generation, index, &title);
+      if (!item) continue;
+      U64 key = octavo_pdf_content_outline_key(index);
+      OctavoPdfContentActivation activation = {0};
+      B32 enabled = octavo_pdf_content_resolve_outline_key(
+        content, app->pdf.frame.document_generation, key, &activation);
+      B32 current = enabled &&
+        activation.target_kind == PdfReaderLinkTargetKind_Internal &&
+        activation.destination.page_index == app->pdf.frame.page_index;
+      app->reader_view_toc_rows[published++] = (ReaderViewTocRow){
+        .key = key,
+        .depth = item->depth,
+        .label = title.size ? octavo_pdf_content_span_text(title) :
+                              octavo_reader_view_text("Untitled section"),
+        .flags = (enabled ? ReaderViewRow_Enabled : ReaderViewRow_None) |
+          (current ? ReaderViewRow_Current | ReaderViewRow_Selected : 0),
+      };
+    }
+    projection.rows = app->reader_view_toc_rows;
+    projection.row_count = (UI0S32)published;
+    projection.total_count = content->outline_item_count;
+  }
+  app->reader_view_projection.toc = projection;
+}
+
+FUNCTION void
+octavo_prepare_reader_view_pdf_find(OctavoApp *app)
+{
+  if (!app) return;
+  OctavoPdfContent *content = &app->pdf_content;
+  ReaderViewSurfaceStatus status = {0};
+  if (content->search_state == OctavoPdfContentLoad_Loading)
+  {
+    (void)cstr_format(app->reader_view_find_status,
+                      ARRAY_COUNT(app->reader_view_find_status),
+                      "Searching page %u of %u",
+                      MIN(content->search_next_page + 1, content->page_count),
+                      content->page_count);
+    status = octavo_reader_view_status(
+      ReaderViewLoad_Ready, app->reader_view_find_status);
+  }
+  else if (content->search_state == OctavoPdfContentLoad_Ready)
+  {
+    (void)cstr_format(app->reader_view_find_status,
+                      ARRAY_COUNT(app->reader_view_find_status),
+                      "%llu matches",
+                      (unsigned long long)content->search_total_count);
+    status = octavo_reader_view_status(
+      ReaderViewLoad_Ready, app->reader_view_find_status);
+  }
+  else if (content->search_state == OctavoPdfContentLoad_Empty)
+  {
+    status = octavo_reader_view_status(
+      ReaderViewLoad_Ready,
+      content->search_query_size ? "No matches" : "Type and press Enter");
+  }
+  else
+  {
+    status = octavo_pdf_content_surface_status(
+      content->search_state, "No matches",
+      "PDF search failed.", "PDF search exceeds the app limit.");
+  }
+
+  U32 count = MIN(content->search_row_count,
+                  (U32)READER_VIEW_FIND_ROW_CAP);
+  for (U32 index = 0; index < count; index += 1)
+  {
+    const OctavoPdfContentSearchRow *source = content->search_rows + index;
+    app->reader_view_find_rows[index] = (ReaderViewFindRow){
+      .key = source->key,
+      .section = octavo_pdf_content_span_text(source->page_label),
+      .excerpt = octavo_pdf_content_span_text(source->excerpt),
+      .match_start = 0,
+      .match_size = (UI0U32)source->excerpt.size,
+      .flags = ReaderViewRow_Enabled |
+        ((S32)index == content->search_active_index ?
+          ReaderViewRow_Selected : 0),
+    };
+  }
+  app->reader_view_projection.find = (ReaderViewFindProjection){
+    .status = status,
+    .committed_query = octavo_reader_view_bytes(
+      (const char *)content->search_query, content->search_query_size),
+    .rows = app->reader_view_find_rows,
+    .row_count = (UI0S32)count,
+    .total_count = content->search_total_count,
+    .active_index = content->search_active_index >= 0 &&
+                    content->search_active_index < (S32)count ?
+      content->search_active_index : -1,
+    .has_more = content->search_has_more,
+    .can_step_previous = count > 0,
+    .can_step_next = count > 0,
   };
 }
 
@@ -4011,48 +4729,119 @@ octavo_prepare_reader_view_selection(OctavoApp *app)
   app->reader_view_projection.selection = selection;
 }
 
+FUNCTION ReaderViewKey
+octavo_pdf_selection_key(const OctavoApp *app)
+{
+  if (!app || !octavo_pdf_selection_is_current(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+  {
+    return 0;
+  }
+  return app->pdf_selection.snapshot.selection_generation;
+}
+
+FUNCTION void
+octavo_prepare_reader_view_pdf_selection(OctavoApp *app)
+{
+  ReaderViewSelectionProjection selection = {
+    .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
+  };
+  UI0Rect anchor_rect = {0};
+  ReaderViewKey key = octavo_pdf_selection_key(app);
+  if (key != 0 && !app->pdf_selection.pointer_armed &&
+      app->pdf_selection.snapshot.text.size <= INT32_MAX &&
+      octavo_pdf_selection_screen_anchor_rect(app, &anchor_rect))
+  {
+    selection.selection_key = key;
+    selection.revision = app->pdf_selection.snapshot.selection_generation;
+    selection.selected_text = (ReaderViewText){
+      .data = (const char *)app->pdf_selection.snapshot.text.str,
+      .size = (UI0S32)app->pdf_selection.snapshot.text.size,
+    };
+    selection.flags = ReaderViewSelection_Active |
+                      ReaderViewSelection_CanCopy;
+    selection.anchor_rect = anchor_rect;
+  }
+  app->reader_view_projection.selection = selection;
+}
+
 FUNCTION void
 octavo_prepare_reader_view_projection(OctavoApp *app)
 {
   if (!app) { return; }
   ReaderViewProjection projection = {0};
-  B32 open = app->document_state == ReaderViewLoad_Ready &&
-             epub_reader_is_open(&app->reader) && app->frame.ready &&
-             app->frame.document_open;
-  projection.document_key = open ? (UI0U64)app->frame.document_id : 0;
+  B32 epub_open = app->document_kind == OctavoDocument_EPUB &&
+    app->document_state == ReaderViewLoad_Ready &&
+    epub_reader_is_open(&app->reader) && app->frame.ready &&
+    app->frame.document_open;
+  B32 pdf_open = app->document_kind == OctavoDocument_PDF &&
+    app->document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app->pdf);
+  B32 open = epub_open || pdf_open;
+  B32 pdf_document = app->document_kind == OctavoDocument_PDF;
+  if (epub_open)
+    projection.document_key = (UI0U64)app->frame.document_id;
+  else if (pdf_open)
+  {
+    U64 pdf_key = u64_hash_str8(str8_from_cstr(app->current_path)) ^
+                  app->pdf.frame.document_generation;
+    projection.document_key = pdf_key ? pdf_key : 1;
+  }
   projection.features = ReaderViewFeature_Open |
                         ReaderViewFeature_Paging |
                         ReaderViewFeature_History |
-                        ReaderViewFeature_Contents |
-                        ReaderViewFeature_Find |
                         ReaderViewFeature_Progress |
-                        ReaderViewFeature_ReadingSettings |
-                        ReaderViewFeature_Bookmark |
-                        ReaderViewFeature_Annotations |
-                        ReaderViewFeature_SelectionTools |
-                        ReaderViewFeature_Fullscreen |
-                        ReaderViewFeature_Lookup |
-                        ReaderViewFeature_Export;
+                        ReaderViewFeature_Fullscreen;
+  if (pdf_open)
+    projection.features |= ReaderViewFeature_DirectPageNumber |
+                           ReaderViewFeature_Contents |
+                           ReaderViewFeature_Find |
+                           ReaderViewFeature_SelectionTools;
+  if (!pdf_document)
+  {
+    projection.features |= ReaderViewFeature_Contents |
+                           ReaderViewFeature_Find |
+                           ReaderViewFeature_ReadingSettings |
+                           ReaderViewFeature_Bookmark |
+                           ReaderViewFeature_Annotations |
+                           ReaderViewFeature_SelectionTools |
+                           ReaderViewFeature_Lookup |
+                           ReaderViewFeature_Export;
+  }
   projection.document_flags = ReaderViewDocument_CanOpen |
                               ReaderViewDocument_CanToggleFullscreen;
   if (open)
   {
     projection.document_flags |= ReaderViewDocument_Open;
-    if (app->reader.active_spine_index > 0 || app->frame.page_index > 1)
-      projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
-    if (app->reader.active_spine_index + 1 < app->layout_key.spine_count ||
-        app->frame.page_count == 0 ||
-        app->frame.page_index < app->frame.page_count)
-      projection.document_flags |= ReaderViewDocument_CanGoNextPage;
-    if (app->frame.history_back_count > 0)
-      projection.document_flags |= ReaderViewDocument_CanGoBack;
-    if (app->frame.history_forward_count > 0)
-      projection.document_flags |= ReaderViewDocument_CanGoForward;
-    S32 bookmark_index = octavo_current_bookmark_index(app);
-    if (bookmark_index >= 0)
+    if (pdf_open)
     {
-      projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
-      projection.current_bookmark_key = app->bookmarks[bookmark_index].id;
+      if (app->pdf.frame.can_move_previous)
+        projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
+      if (app->pdf.frame.can_move_next)
+        projection.document_flags |= ReaderViewDocument_CanGoNextPage;
+      if (app->pdf.frame.can_history_back)
+        projection.document_flags |= ReaderViewDocument_CanGoBack;
+      if (app->pdf.frame.can_history_forward)
+        projection.document_flags |= ReaderViewDocument_CanGoForward;
+    }
+    else
+    {
+      if (app->reader.active_spine_index > 0 || app->frame.page_index > 1)
+        projection.document_flags |= ReaderViewDocument_CanGoPreviousPage;
+      if (app->reader.active_spine_index + 1 < app->layout_key.spine_count ||
+          app->frame.page_count == 0 ||
+          app->frame.page_index < app->frame.page_count)
+        projection.document_flags |= ReaderViewDocument_CanGoNextPage;
+      if (app->frame.history_back_count > 0)
+        projection.document_flags |= ReaderViewDocument_CanGoBack;
+      if (app->frame.history_forward_count > 0)
+        projection.document_flags |= ReaderViewDocument_CanGoForward;
+      S32 bookmark_index = octavo_current_bookmark_index(app);
+      if (bookmark_index >= 0)
+      {
+        projection.document_flags |= ReaderViewDocument_CurrentBookmarked;
+        projection.current_bookmark_key = app->bookmarks[bookmark_index].id;
+      }
     }
   }
   if (app->fullscreen.active)
@@ -4076,21 +4865,34 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
   app->document_title[0] = 0;
   if (open)
   {
-    octavo_copy_cstr(app->document_title,
-                      ARRAY_COUNT(app->document_title),
-                      octavo_current_section_label(app));
+    if (pdf_open)
+      octavo_path_title(app->current_path, app->document_title,
+                        ARRAY_COUNT(app->document_title));
+    else
+      octavo_copy_cstr(app->document_title,
+                        ARRAY_COUNT(app->document_title),
+                        octavo_current_section_label(app));
   }
   projection.document_title = octavo_reader_view_text(app->document_title);
   app->reader_view_projection = projection;
 
-  octavo_prepare_reader_view_settings(app);
-  app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
-    .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
-    .items = app->reader_view_settings,
-    .count = READER_VIEW_SETTING_CAP,
-  };
+  if (!pdf_document)
+  {
+    octavo_prepare_reader_view_settings(app);
+    app->reader_view_projection.settings = (ReaderViewReadingSettingsProjection){
+      .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
+      .items = app->reader_view_settings,
+      .count = READER_VIEW_SETTING_CAP,
+    };
+  }
+  else
+  {
+    app->reader_view_projection.settings.status =
+      octavo_reader_view_status(ReaderViewLoad_Unavailable,
+                                "Reading settings are not available for PDF yet");
+  }
 
-  if (open)
+  if (epub_open)
   {
     EpubReaderLocationSummary location = epub_reader_location_summary(&app->reader);
     if (location.available && location.location_count > 0)
@@ -4128,6 +4930,33 @@ octavo_prepare_reader_view_projection(OctavoApp *app)
     octavo_prepare_reader_view_find(app);
     octavo_prepare_reader_view_right_rows(app);
     octavo_prepare_reader_view_selection(app);
+  }
+  else if (pdf_open)
+  {
+    OctavoPdfContentSpan page_label = octavo_pdf_content_page_label(
+      &app->pdf_content, app->pdf.frame.document_generation,
+      app->pdf.frame.page_index);
+    (void)cstr_format(app->progress_label, ARRAY_COUNT(app->progress_label),
+                      "Page %u of %u", app->pdf.frame.page_index + 1,
+                      app->pdf.frame.page_count);
+    app->reader_view_projection.progress = (ReaderViewProgressProjection){
+      .status = octavo_reader_view_status(ReaderViewLoad_Ready, 0),
+      .location_index = app->pdf.frame.page_index,
+      .location_count = app->pdf.frame.page_count,
+      .page_index = app->pdf.frame.page_index,
+      .page_count = app->pdf.frame.page_count,
+      .chapter = page_label.size ?
+        octavo_pdf_content_span_text(page_label) :
+        octavo_reader_view_text(app->document_title),
+      .label = octavo_reader_view_text(app->progress_label),
+      .can_seek = app->pdf.frame.page_count > 0,
+    };
+    octavo_prepare_reader_view_pdf_toc(app);
+    octavo_prepare_reader_view_pdf_find(app);
+    ReaderViewSurfaceStatus unavailable = octavo_reader_view_status(
+      ReaderViewLoad_Unavailable, "Not available for PDF yet");
+    app->reader_view_projection.right.status = unavailable;
+    octavo_prepare_reader_view_pdf_selection(app);
   }
   else
   {
@@ -4201,6 +5030,10 @@ octavo_reader_view_text_editing(const OctavoApp *app)
              ReaderViewLeftPanel_Find ||
            octavo_reader_view_focus_control_is(
              app, ReaderViewSemanticControl_FindInput))) ||
+         (app->reader_view_state.popup ==
+            ReaderViewPopup_DirectPageNumber &&
+          octavo_reader_view_focus_control_is(
+            app, ReaderViewSemanticControl_DirectPageInput)) ||
          (app->reader_view_state.popup == ReaderViewPopup_NoteEditor &&
           octavo_reader_view_focus_is(app, ReaderViewSemantic_TextArea));
 }
@@ -4276,6 +5109,7 @@ octavo_reader_view_input(OctavoApp *app)
   text.commit_pressed = app->input.commit_pressed;
   text.transfer_buffer = &app->clipboard_transfer;
   result.find_text = text;
+  result.direct_page_text = text;
   result.note_text = (UI0TextAreaFrameInput){
     .text = text.text,
     .text_len = text.text_len,
@@ -4299,7 +5133,12 @@ FUNCTION void
 octavo_reader_view_escape(OctavoApp *app)
 {
   if (!app) return;
-  if (app->reader_view_state.popup == ReaderViewPopup_SelectionTools)
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (app->pdf_selection.pointer_armed || app->pdf_selection.ready)
+      octavo_pdf_selection_reset(&app->pdf_selection);
+  }
+  else if (app->reader_view_state.popup == ReaderViewPopup_SelectionTools)
   {
     epub_reader_clear_selection(&app->reader);
     app->selected_text[0] = 0;
@@ -4855,8 +5694,36 @@ octavo_app_init(OctavoApp *app,
     app->arena = 0;
     return 0;
   }
+  if (!octavo_pdf_init(&app->pdf))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
+  if (!octavo_pdf_content_init(&app->pdf_content))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
+  if (!octavo_pdf_selection_init(&app->pdf_selection))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    octavo_pdf_content_release(&app->pdf_content);
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
   if (!octavo_image_cache_init(&app->image_cache))
   {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    octavo_pdf_selection_release(&app->pdf_selection);
+    octavo_pdf_content_release(&app->pdf_content);
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
@@ -4864,13 +5731,27 @@ octavo_app_init(OctavoApp *app,
   }
   if (!octavo_library_thumbnail_cache_init(&app->library_thumbnail_cache))
   {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    octavo_pdf_selection_release(&app->pdf_selection);
+    octavo_pdf_content_release(&app->pdf_content);
     octavo_image_cache_release(&app->image_cache);
     epub_reader_release(&app->reader);
     arena_release(app->arena);
     app->arena = 0;
     return 0;
   }
-  octavo_library_hydrate_startup_entry(app);
+  if (!octavo_library_hydrate_startup_entry(app))
+  {
+    if (!octavo_pdf_release(&app->pdf)) return 0;
+    octavo_pdf_selection_release(&app->pdf_selection);
+    octavo_pdf_content_release(&app->pdf_content);
+    octavo_library_thumbnail_cache_release(&app->library_thumbnail_cache);
+    octavo_image_cache_release(&app->image_cache);
+    epub_reader_release(&app->reader);
+    arena_release(app->arena);
+    app->arena = 0;
+    return 0;
+  }
 
   if (graphical)
   {
@@ -4884,6 +5765,11 @@ octavo_app_init(OctavoApp *app,
     octavo_prewarm_reader_text_pipeline(app);
   }
   octavo_library_set_summary_status(app);
+  if (!octavo_document_invariants_hold(app))
+  {
+    octavo_app_release(app);
+    return 0;
+  }
   return 1;
 }
 
@@ -4891,6 +5777,16 @@ FUNCTION void
 octavo_app_release(OctavoApp *app)
 {
   if (!app) { return; }
+  /* Reader0 teardown is fallible while a PDF cancel token is live. Nothing
+     else in the host may be destroyed until that ownership boundary closes. */
+  if (!octavo_pdf_release(&app->pdf))
+  {
+    octavo_set_statusf(app, "PDF release failed: ownership invariant");
+    return;
+  }
+  octavo_pdf_search_timer_disarm(app);
+  octavo_pdf_selection_release(&app->pdf_selection);
+  octavo_pdf_content_release(&app->pdf_content);
   octavo_cancel_location_warm(app);
   octavo_cancel_adjacent_warm(app);
   if (app->accessibility) octavo_accessibility_destroy(app->accessibility);
@@ -5915,7 +6811,7 @@ octavo_adapt_ui0_draw(OctavoApp *app)
 FUNCTION B32
 octavo_library_active(const OctavoApp *app)
 {
-  return app && !epub_reader_is_open(&app->reader);
+  return app && app->document_kind == OctavoDocument_None;
 }
 
 FUNCTION UI0Rect
@@ -6512,7 +7408,7 @@ octavo_host_control_invoke(OctavoApp *app,
     case OctavoHostControlAction_CloseBook:
       return octavo_close_book(app);
     case OctavoHostControlAction_AddBooks:
-      return octavo_pick_epub(app);
+      return octavo_pick_document(app);
     case OctavoHostControlAction_OpenBook:
     {
       OctavoLibraryEntry *entry =
@@ -6716,6 +7612,11 @@ octavo_host_pointer_move(OctavoApp *app, S32 x, S32 y)
   if (app->host_exit_pointer_armed &&
       (exit_rect.w <= 0 || !ui0_rect_contains_point(exit_rect, x, y)))
     app->host_exit_pointer_armed = 0;
+  if (app->document_kind == OctavoDocument_PDF &&
+      app->input.pointer_down && app->pdf_selection.pointer_armed)
+  {
+    (void)octavo_pdf_update_pointer_selection(app, x, y);
+  }
 }
 
 FUNCTION void
@@ -6725,9 +7626,16 @@ octavo_host_pointer_cancel(OctavoApp *app)
   B32 cancel_active = app->input.pointer_down ||
                       app->host_pointer_armed != OctavoHostControl_None ||
                       app->host_exit_pointer_armed ||
-                      app->selection_dragging;
+                      app->selection_dragging ||
+                      app->pdf_selection.pointer_armed;
   app->host_exit_pointer_armed = 0;
   app->host_pointer_armed = OctavoHostControl_None;
+  octavo_pdf_link_pointer_clear(app);
+  if (app->document_kind == OctavoDocument_PDF &&
+      (app->input.pointer_down || app->pdf_selection.pointer_armed))
+  {
+    octavo_pdf_selection_cancel_pointer(&app->pdf_selection);
+  }
   app->input.pointer_down = 0;
   app->input.pointer_pressed = 0;
   app->input.pointer_selection_release = 0;
@@ -6816,7 +7724,7 @@ octavo_draw_host_exit_slot(OctavoApp *app)
 }
 
 FUNCTION B32
-octavo_pick_epub_paths(OctavoApp *app,
+octavo_pick_document_paths(OctavoApp *app,
                          B32 allow_multiple,
                          char paths[OctavoLibraryImportPathCap]
                                    [OctavoLibraryPathCap],
@@ -6828,7 +7736,8 @@ octavo_pick_epub_paths(OctavoApp *app,
   OPENFILENAMEW dialog = {0};
   dialog.lStructSize = sizeof(dialog);
   dialog.hwndOwner = app->window;
-  dialog.lpstrFilter = L"EPUB Books\0*.epub\0All Files\0*.*\0";
+  dialog.lpstrFilter =
+    L"EPUB and PDF Documents\0*.epub;*.pdf\0EPUB Books\0*.epub\0PDF Documents\0*.pdf\0All Files\0*.*\0";
   dialog.lpstrFile = selection;
   dialog.nMaxFile = ARRAY_COUNT(selection);
   dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER |
@@ -6861,7 +7770,7 @@ octavo_pick_epub_paths(OctavoApp *app,
 }
 
 FUNCTION B32
-octavo_pick_epub_impl(OctavoApp *app)
+octavo_pick_document_impl(OctavoApp *app)
 {
   if (!app) return 0;
   app->native_picker_request_count += 1;
@@ -6874,7 +7783,19 @@ octavo_pick_epub_impl(OctavoApp *app)
   char paths[OctavoLibraryImportPathCap][OctavoLibraryPathCap] = {0};
   U32 path_count = 0;
   B32 library_was_active = octavo_library_active(app);
-  if (!octavo_pick_epub_paths(app, 1, paths, &path_count)) return 0;
+  if (!octavo_pick_document_paths(app, 1, paths, &path_count)) return 0;
+  U32 pdf_count = 0;
+  for (U32 index = 0; index < path_count; index += 1)
+    if (octavo_path_is_pdf(paths[index])) pdf_count += 1;
+  if (pdf_count > 0)
+  {
+    if (path_count != 1)
+    {
+      octavo_set_statusf(app, "Open one PDF at a time");
+      return 0;
+    }
+    return octavo_open_path(app, paths[0]);
+  }
   app->library_import_in_progress = 1;
   if (app->window)
   {
@@ -6884,7 +7805,8 @@ octavo_pick_epub_impl(OctavoApp *app)
   U32 imported = 0;
   for (U32 index = 0; index < path_count; index += 1)
     if (octavo_open_path(app, paths[index])) imported += 1;
-  if (library_was_active && epub_reader_is_open(&app->reader))
+  if (library_was_active && app->document_kind == OctavoDocument_EPUB &&
+      epub_reader_is_open(&app->reader))
     (void)octavo_close_book(app);
   else if (!library_was_active && imported > 1)
     (void)octavo_open_path(app, paths[0]);
@@ -6897,18 +7819,22 @@ octavo_pick_epub_impl(OctavoApp *app)
 }
 
 FUNCTION B32
-octavo_pick_epub(OctavoApp *app)
+octavo_pick_document(OctavoApp *app)
 {
   if (!octavo_begin_document_mutation(app)) return 0;
-  B32 was_open = epub_reader_is_open(&app->reader);
+  OctavoDocumentKind previous_kind = app->document_kind;
+  B32 was_open = octavo_document_is_open(app);
   DocDocumentId document_id = epub_reader_document_id(&app->reader);
   U64 document_generation = app->reader.document_generation;
+  U64 pdf_document_generation = app->pdf.reader.document_generation;
   app->page_action_internal_dispatch = 1;
-  B32 result = octavo_pick_epub_impl(app);
+  B32 result = octavo_pick_document_impl(app);
   app->page_action_internal_dispatch = 0;
-  B32 reader_changed = was_open != epub_reader_is_open(&app->reader) ||
+  B32 reader_changed = previous_kind != app->document_kind ||
+    was_open != octavo_document_is_open(app) ||
     document_id != epub_reader_document_id(&app->reader) ||
-    document_generation != app->reader.document_generation;
+    document_generation != app->reader.document_generation ||
+    pdf_document_generation != app->pdf.reader.document_generation;
   octavo_complete_document_mutation(
     app, !app->suppress_native_picker && reader_changed);
   return result;
@@ -6922,7 +7848,12 @@ octavo_locate_library_entry_impl(OctavoApp *app, U64 entry_id)
   if (!entry || !app->window) return 0;
   char paths[OctavoLibraryImportPathCap][OctavoLibraryPathCap] = {0};
   U32 count = 0;
-  if (!octavo_pick_epub_paths(app, 0, paths, &count) || count != 1) return 0;
+  if (!octavo_pick_document_paths(app, 0, paths, &count) || count != 1) return 0;
+  if (!octavo_path_is_epub(paths[0]))
+  {
+    octavo_set_statusf(app, "Locate requires an EPUB file");
+    return 0;
+  }
   char normalized[OctavoLibraryPathCap] = {0};
   if (!octavo_library_normalize_path(paths[0], normalized,
                                        ARRAY_COUNT(normalized)))
@@ -6997,6 +7928,51 @@ octavo_set_clipboard_text(OctavoApp *app, ReaderViewText text)
   }
   CloseClipboard();
   return result;
+}
+
+FUNCTION B32
+octavo_current_pdf_selection_text(OctavoApp *app,
+                                  ReaderViewKey expected_key,
+                                  B32 require_key,
+                                  ReaderViewText *out_text)
+{
+  if (out_text) *out_text = (ReaderViewText){0};
+  if (!app || !out_text || app->document_kind != OctavoDocument_PDF ||
+      app->pdf_selection.pointer_armed ||
+      !octavo_pdf_selection_is_current(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame) ||
+      app->pdf_selection.snapshot.text.size == 0 ||
+      app->pdf_selection.snapshot.text.size > INT32_MAX)
+  {
+    return 0;
+  }
+  ReaderViewKey current_key = octavo_pdf_selection_key(app);
+  if (current_key == 0 || (require_key && expected_key != current_key))
+    return 0;
+  *out_text = (ReaderViewText){
+    .data = (const char *)app->pdf_selection.snapshot.text.str,
+    .size = (UI0S32)app->pdf_selection.snapshot.text.size,
+  };
+  if (!base_unicode_utf8_validate(
+        str8((U8 *)out_text->data, (U64)out_text->size)) ||
+      !octavo_pdf_selection_is_current(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+  {
+    *out_text = (ReaderViewText){0};
+    return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
+octavo_copy_current_pdf_selection(OctavoApp *app,
+                                  ReaderViewKey expected_key,
+                                  B32 require_key)
+{
+  ReaderViewText text = {0};
+  return octavo_current_pdf_selection_text(
+           app, expected_key, require_key, &text) &&
+    octavo_set_clipboard_text(app, text);
 }
 
 FUNCTION B32
@@ -7228,11 +8204,35 @@ octavo_capture_presentation_identity(const OctavoApp *app,
   if (out) MemoryZeroStruct(out);
   if (!app || !out) return 0;
   out->frame_generation = app->page_action_frame_generation;
-  if (!epub_reader_is_open(&app->reader))
+  if (app->document_kind == OctavoDocument_None)
   {
     out->kind = OctavoPresentationIdentity_Library;
     return 1;
   }
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    if (!octavo_pdf_is_open(&app->pdf) ||
+        app->pdf.frame.document_generation == 0 ||
+        app->pdf.frame.generation == 0 || app->pdf.frame.page_count == 0)
+    {
+      return 0;
+    }
+    out->kind = OctavoPresentationIdentity_PdfPage;
+    out->document_generation = app->pdf.frame.document_generation;
+    /* PDF page identity is independent of host viewport geometry. */
+    out->layout_generation = 1;
+    out->frame_capture_generation = app->pdf.render_generation;
+    out->reader_frame_generation = app->pdf.frame.generation;
+    out->page = (OctavoCanonicalPageIdentity){
+      .spine_index = app->pdf.frame.page_index,
+      .spine_page_index = app->pdf.frame.page_index,
+      .spine_page_count = app->pdf.frame.page_count,
+      .first_byte = app->pdf.frame.page_index,
+      .one_past_last_byte = (U64)app->pdf.frame.page_index + 1,
+    };
+    return 1;
+  }
+  if (!epub_reader_is_open(&app->reader)) return 0;
   if (!app->reader.has_current_page || app->reader.document_id == 0 ||
       app->reader.document_generation == 0 ||
       app->reader.current_page.spine_page_count == 0 ||
@@ -7271,6 +8271,12 @@ octavo_capture_rendered_presentation_identity(
 {
   if (!octavo_capture_presentation_identity(app, out)) return 0;
   if (out->kind == OctavoPresentationIdentity_Library) return 1;
+  if (out->kind == OctavoPresentationIdentity_PdfPage)
+  {
+    return app->pdf.bgra_pixels != 0 &&
+      app->pdf.rendered_reader_generation == app->pdf.frame.generation &&
+      app->pdf.render_generation > 0;
+  }
   return out->frame_capture_generation > 0 &&
     out->reader_frame_generation != 0 &&
     octavo_frame_matches_canonical_page(
@@ -7306,12 +8312,14 @@ FUNCTION B32
 octavo_begin_document_mutation(OctavoApp *app)
 {
   if (!app) return 0;
+  octavo_pdf_link_pointer_clear(app);
   if (!app->window || app->page_action_internal_dispatch)
   {
     app->capture_frame_failed_since_mutation = 0;
     return 1;
   }
-  if (app->page_action_waiting_for_present)
+  if (app->page_action_waiting_for_present &&
+      !octavo_page_action_abandon_failed_pdf_presentation(app))
   {
     if (app->page_action_mutation_drop_count < UINT32_MAX)
       app->page_action_mutation_drop_count += 1;
@@ -7327,6 +8335,7 @@ octavo_begin_document_mutation(OctavoApp *app)
 FUNCTION void
 octavo_complete_document_mutation(OctavoApp *app, B32 changed)
 {
+  if (app && changed) octavo_pdf_selection_reset(&app->pdf_selection);
   if (!app || !changed || !app->window || app->page_action_internal_dispatch)
     return;
   octavo_page_action_note_emitted(app);
@@ -7612,6 +8621,35 @@ octavo_page_action_clear_pending(OctavoApp *app)
   app->page_action_pending_key = 0;
 }
 
+/* A failed PDF raster transaction cannot ever satisfy the identity captured
+   for the accepted page action. Keep ordinary surface/present failures gated
+   and retryable, but let the next explicit document mutation abandon this
+   impossible PDF presentation. This cancels its retry timer and any deferred
+   directional action before the caller starts a fresh mutation. */
+FUNCTION B32
+octavo_page_action_abandon_failed_pdf_presentation(OctavoApp *app)
+{
+  if (!app || !app->window || !app->page_action_waiting_for_present ||
+      app->document_kind != OctavoDocument_PDF ||
+      app->document_state != ReaderViewLoad_Ready ||
+      !octavo_pdf_is_open(&app->pdf) ||
+      app->page_action_expected_identity.kind !=
+        OctavoPresentationIdentity_PdfPage ||
+      app->pdf.last_result == PdfReaderResult_Ok ||
+      app->pdf.bgra_pixels || app->presentation_complete)
+  {
+    return 0;
+  }
+
+  octavo_page_action_cancel_presentation_retry(app);
+  app->page_action_waiting_for_present = 0;
+  MemoryZeroStruct(&app->page_action_expected_identity);
+  octavo_page_action_clear_pending(app);
+  if (app->page_action_failed_pdf_recovery_count < UINT32_MAX)
+    app->page_action_failed_pdf_recovery_count += 1;
+  return 1;
+}
+
 FUNCTION void
 octavo_page_action_defer(OctavoApp *app,
                            WPARAM key,
@@ -7886,7 +8924,8 @@ octavo_start_page_repeat(OctavoApp *app,
                            WPARAM key,
                            S32 direction)
 {
-  if (!app || !app->window || direction == 0) return;
+  if (!app || app->document_kind != OctavoDocument_EPUB ||
+      !app->window || direction == 0) return;
   octavo_stop_page_repeat(app);
   octavo_begin_page_repeat(app, key, direction);
 }
@@ -7927,13 +8966,13 @@ octavo_page_repeat_step(OctavoApp *app,
   OctavoCanonicalPageIdentity before_page =
     octavo_canonical_page_identity(app->reader.current_page);
   app->page_action_internal_dispatch = 1;
-  EpubReaderResult result = octavo_move_page(
+  OctavoMoveResult result = octavo_move_page(
     app, app->page_repeat_direction);
   app->page_action_internal_dispatch = 0;
   B32 reader_changed = app->reader.has_current_page &&
     (!had_page || !octavo_canonical_page_identity_equal(
       before_page, octavo_canonical_page_identity(app->reader.current_page)));
-  if (result != EpubReaderResult_Ok)
+  if (result != OctavoMoveResult_Ok)
   {
     octavo_stop_page_repeat(app);
     if (reader_changed)
@@ -8006,14 +9045,14 @@ octavo_page_repeat_note_presented_frame(OctavoApp *app, B32 complete)
     OctavoCanonicalPageIdentity before_page =
       octavo_canonical_page_identity(app->reader.current_page);
     app->page_action_internal_dispatch = 1;
-    EpubReaderResult result = octavo_move_page(app, direction);
+    OctavoMoveResult result = octavo_move_page(app, direction);
     app->page_action_internal_dispatch = 0;
     B32 reader_changed = app->reader.has_current_page &&
       (!had_page || !octavo_canonical_page_identity_equal(
         before_page,
         octavo_canonical_page_identity(app->reader.current_page)));
     octavo_page_action_clear_pending(app);
-    if (result == EpubReaderResult_Ok)
+    if (result == OctavoMoveResult_Ok)
     {
       octavo_page_action_note_emitted(app);
       if (arm_repeat) octavo_start_page_repeat(app, key, direction);
@@ -8101,9 +9140,9 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
   else if (!editing && app->reader_view_state.focus_id != 0 &&
            (key == VK_LEFT || key == VK_RIGHT))
   {
-    EpubReaderResult move =
+    OctavoMoveResult move =
       octavo_move_page(app, key == VK_LEFT ? -1 : 1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (!editing && app->reader_view_state.focus_id != 0 &&
@@ -8135,8 +9174,8 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
            app->host_focus_control == OctavoHostControl_None &&
            (key == VK_LEFT || key == VK_PRIOR))
   {
-    EpubReaderResult move = octavo_move_page(app, -1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, -1);
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_SPACE &&
@@ -8148,8 +9187,8 @@ octavo_reader_view_route_keydown_ex(OctavoApp *app,
            app->host_focus_control == OctavoHostControl_None &&
            (key == VK_RIGHT || key == VK_NEXT || key == VK_SPACE))
   {
-    EpubReaderResult move = octavo_move_page(app, 1);
-    if (out_page_move_succeeded && move == EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, 1);
+    if (out_page_move_succeeded && move == OctavoMoveResult_Ok)
       *out_page_move_succeeded = 1;
   }
   else if (key == VK_TAB)
@@ -8449,13 +9488,172 @@ octavo_reader_view_set_find_query(OctavoApp *app, ReaderViewText query)
 }
 
 FUNCTION void
+octavo_pdf_search_timer_next_id(OctavoApp *app, UINT_PTR *out_timer_id)
+{
+  if (out_timer_id) *out_timer_id = 0;
+  if (!app || !out_timer_id) return;
+  UINT_PTR last = app->pdf_search_timer_last_id;
+  if (last < (UINT_PTR)OctavoPdfSearchPumpFirstTimerId)
+    *out_timer_id = (UINT_PTR)OctavoPdfSearchPumpFirstTimerId;
+  else if (last != ~(UINT_PTR)0)
+    *out_timer_id = last + 1;
+  if (*out_timer_id)
+    app->pdf_search_timer_last_id = *out_timer_id;
+}
+
+FUNCTION void
+octavo_schedule_pdf_search_pump(OctavoApp *app)
+{
+  if (!app || !app->window ||
+      app->document_kind != OctavoDocument_PDF ||
+      app->pdf_content.search_state != OctavoPdfContentLoad_Loading ||
+      app->pdf_content.search_document_generation !=
+        app->pdf.frame.document_generation ||
+      app->pdf_content.search_serial == 0)
+  {
+    return;
+  }
+  octavo_pdf_search_timer_disarm(app);
+  UINT_PTR timer_id = 0;
+  octavo_pdf_search_timer_next_id(app, &timer_id);
+  if (timer_id == 0)
+  {
+    octavo_pdf_content_cancel_search(&app->pdf_content);
+    octavo_set_statusf(app, "PDF search timer identity exhausted");
+    return;
+  }
+  UINT_PTR installed = SetTimer(
+    app->window, timer_id, OctavoPdfSearchPumpDelayMs, 0);
+  if (installed != timer_id)
+  {
+    if (installed)
+    {
+      app->pdf_search_timer_armed_id = installed;
+      app->pdf_search_timer_armed_document_generation =
+        app->pdf.frame.document_generation;
+      app->pdf_search_timer_armed_search_serial =
+        app->pdf_content.search_serial;
+      octavo_pdf_search_timer_disarm(app);
+    }
+    octavo_pdf_content_cancel_search(&app->pdf_content);
+    octavo_set_statusf(app, "PDF search timer could not start");
+    return;
+  }
+  app->pdf_search_timer_armed_id = timer_id;
+  app->pdf_search_timer_armed_document_generation =
+    app->pdf.frame.document_generation;
+  app->pdf_search_timer_armed_search_serial =
+    app->pdf_content.search_serial;
+}
+
+FUNCTION B32
+octavo_handle_pdf_search_timer(OctavoApp *app, UINT_PTR timer_id)
+{
+  if (!app || timer_id == 0 ||
+      timer_id != app->pdf_search_timer_armed_id)
+  {
+    return 0;
+  }
+  U64 document_generation =
+    app->pdf_search_timer_armed_document_generation;
+  U64 search_serial = app->pdf_search_timer_armed_search_serial;
+  B32 current = app->document_kind == OctavoDocument_PDF &&
+    octavo_pdf_is_open(&app->pdf) &&
+    app->pdf.frame.document_generation == document_generation &&
+    app->pdf_content.search_document_generation == document_generation &&
+    app->pdf_content.search_serial == search_serial &&
+    app->pdf_content.search_state == OctavoPdfContentLoad_Loading;
+  octavo_pdf_search_timer_disarm(app);
+  if (!current) return 1;
+
+  B32 did_work = 0;
+  B32 valid = octavo_pdf_content_search_pump(
+    &app->pdf_content, &app->pdf.reader,
+    document_generation, app->pdf.frame.page_count, &did_work);
+  if (!valid)
+    octavo_set_statusf(app, "PDF search failed");
+  if (did_work && app->window)
+    (void)InvalidateRect(app->window, 0, FALSE);
+  if (valid && app->pdf_content.search_state ==
+                 OctavoPdfContentLoad_Loading &&
+      app->pdf_content.search_document_generation == document_generation &&
+      app->pdf_content.search_serial == search_serial)
+  {
+    octavo_schedule_pdf_search_pump(app);
+  }
+  return 1;
+}
+
+FUNCTION B32
+octavo_activate_pdf_content_target(
+  OctavoApp *app,
+  OctavoPdfContentActivation activation)
+{
+  if (!app || app->document_kind != OctavoDocument_PDF ||
+      !octavo_pdf_is_open(&app->pdf))
+  {
+    return 0;
+  }
+  if (activation.target_kind == PdfReaderLinkTargetKind_Internal)
+  {
+    if (!activation.destination.valid ||
+        activation.destination.page_index >= app->pdf.frame.page_count)
+    {
+      return 0;
+    }
+    return octavo_seek_location(
+      app, activation.destination.page_index) == OctavoMoveResult_Ok;
+  }
+  if (activation.target_kind == PdfReaderLinkTargetKind_External)
+  {
+    const wchar_t *uri = 0;
+    if (!octavo_pdf_content_external_uri_wide(
+          &app->pdf_content, activation.external_uri, &uri) || !uri)
+    {
+      octavo_set_statusf(app, "PDF link rejected");
+      return 0;
+    }
+    HINSTANCE opened = ShellExecuteW(
+      app->window, L"open", uri, 0, 0, SW_SHOWNORMAL);
+    B32 success = (INT_PTR)opened > 32;
+    octavo_set_statusf(app, success ? "Opened PDF link" :
+                                      "PDF link open failed");
+    return success;
+  }
+  return 0;
+}
+
+FUNCTION void
 octavo_apply_reader_view_action(OctavoApp *app,
                                   const ReaderViewAction *action)
 {
   if (!app || !action) return;
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    B32 supported = action->kind == ReaderViewAction_Open ||
+      action->kind == ReaderViewAction_PreviousPage ||
+      action->kind == ReaderViewAction_NextPage ||
+      action->kind == ReaderViewAction_HistoryBack ||
+      action->kind == ReaderViewAction_HistoryForward ||
+      action->kind == ReaderViewAction_SeekLocation ||
+      action->kind == ReaderViewAction_FindChanged ||
+      action->kind == ReaderViewAction_FindCommitted ||
+      action->kind == ReaderViewAction_FindPrevious ||
+      action->kind == ReaderViewAction_FindNext ||
+      action->kind == ReaderViewAction_ActivateTocRow ||
+      action->kind == ReaderViewAction_ActivateFindRow ||
+      action->kind == ReaderViewAction_CopySelection ||
+      action->kind == ReaderViewAction_ToggleFullscreen ||
+      action->kind == ReaderViewAction_None;
+    if (!supported)
+    {
+      octavo_set_statusf(app, "Action is not available for PDF yet");
+      return;
+    }
+  }
   switch (action->kind)
   {
-    case ReaderViewAction_Open: (void)octavo_pick_epub(app); break;
+    case ReaderViewAction_Open: (void)octavo_pick_document(app); break;
     case ReaderViewAction_PreviousPage: (void)octavo_move_page(app, -1); break;
     case ReaderViewAction_NextPage: (void)octavo_move_page(app, 1); break;
     case ReaderViewAction_HistoryBack: (void)octavo_move_history(app, 0); break;
@@ -8469,6 +9667,15 @@ octavo_apply_reader_view_action(OctavoApp *app,
       break;
     case ReaderViewAction_FindChanged:
     {
+      if (app->document_kind == OctavoDocument_PDF)
+      {
+        if (!octavo_begin_document_mutation(app)) break;
+        if (!octavo_reader_view_set_find_query(app, action->text)) break;
+        octavo_pdf_search_timer_disarm(app);
+        octavo_pdf_content_cancel_search(&app->pdf_content);
+        octavo_complete_document_mutation(app, 0);
+        break;
+      }
       if (!octavo_begin_document_mutation(app)) break;
       if (!octavo_reader_view_set_find_query(app, action->text)) break;
       app->page_action_internal_dispatch = 1;
@@ -8486,6 +9693,21 @@ octavo_apply_reader_view_action(OctavoApp *app,
     } break;
     case ReaderViewAction_FindCommitted:
     {
+      if (app->document_kind == OctavoDocument_PDF)
+      {
+        if (!octavo_begin_document_mutation(app)) break;
+        if (!octavo_reader_view_set_find_query(app, action->text)) break;
+        octavo_pdf_search_timer_disarm(app);
+        B32 started = octavo_pdf_content_begin_search(
+          &app->pdf_content, &app->pdf.reader,
+          app->pdf.frame.document_generation, app->pdf.frame.page_count,
+          str8((U8 *)action->text.data, (U64)action->text.size));
+        if (!started)
+          octavo_set_statusf(app, "PDF search could not start");
+        octavo_complete_document_mutation(app, 0);
+        if (started) octavo_schedule_pdf_search_pump(app);
+        break;
+      }
       if (!octavo_begin_document_mutation(app)) break;
       if (!octavo_reader_view_set_find_query(app, action->text)) break;
       app->page_action_internal_dispatch = 1;
@@ -8516,6 +9738,18 @@ octavo_apply_reader_view_action(OctavoApp *app,
     case ReaderViewAction_FindPrevious:
     case ReaderViewAction_FindNext:
     {
+      if (app->document_kind == OctavoDocument_PDF)
+      {
+        U32 page_index = 0;
+        if (octavo_pdf_content_step_search(
+              &app->pdf_content, app->pdf.frame.document_generation,
+              action->kind == ReaderViewAction_FindPrevious ? -1 : 1,
+              &page_index))
+        {
+          (void)octavo_seek_location(app, page_index);
+        }
+        break;
+      }
       if (!octavo_begin_document_mutation(app)) break;
       app->page_action_internal_dispatch = 1;
       if (epub_reader_search_step(&app->reader,
@@ -8529,11 +9763,35 @@ octavo_apply_reader_view_action(OctavoApp *app,
       octavo_complete_document_mutation(app, 1);
     } break;
     case ReaderViewAction_ActivateTocRow:
+      if (app->document_kind == OctavoDocument_PDF)
+      {
+        OctavoPdfContentActivation activation = {0};
+        if (octavo_pdf_content_resolve_outline_key(
+              &app->pdf_content, app->pdf.frame.document_generation,
+              action->key, &activation))
+        {
+          (void)octavo_activate_pdf_content_target(app, activation);
+        }
+        break;
+      }
       if (action->key > 0 && action->key - 1 <= 0xffffffffull)
         (void)octavo_navigate_to_nav_point(
           app, (U32)(action->key - 1), &(EpubReaderNavPointResult){0});
       break;
     case ReaderViewAction_ActivateFindRow:
+      if (app->document_kind == OctavoDocument_PDF)
+      {
+        U32 page_index = 0;
+        S32 row_index = -1;
+        if (octavo_pdf_content_resolve_search_key(
+              &app->pdf_content, app->pdf.frame.document_generation,
+              action->key, &page_index, &row_index))
+        {
+          app->pdf_content.search_active_index = row_index;
+          (void)octavo_seek_location(app, page_index);
+        }
+        break;
+      }
       if (action->key >= 0x100000ull &&
           action->key - 0x100000ull <= 0xffffffffull)
         (void)octavo_navigate_to_search_match(
@@ -8618,7 +9876,10 @@ octavo_apply_reader_view_action(OctavoApp *app,
         (void)octavo_remove_highlight_identity_at(app, (U32)index);
     } break;
     case ReaderViewAction_CopySelection:
-      (void)octavo_set_clipboard_text(app, action->text);
+      if (app->document_kind == OctavoDocument_PDF)
+        (void)octavo_copy_current_pdf_selection(app, action->key, 1);
+      else
+        (void)octavo_set_clipboard_text(app, action->text);
       break;
     case ReaderViewAction_DictionarySelection:
       (void)octavo_launch_lookup(app,
@@ -9829,6 +11090,8 @@ octavo_update_pointer_selection(OctavoApp *app, S32 x, S32 y, B32 begin)
 FUNCTION B32
 octavo_reader_selection_contains_point(OctavoApp *app, S32 x, S32 y)
 {
+  if (app && app->document_kind == OctavoDocument_PDF)
+    return octavo_pdf_selection_contains_screen_point(app, x, y);
   if (!app || !app->reader.has_active_selection ||
       app->reader.active_selection.spine_index != app->frame.spine_index ||
       !app->presentation_frame.valid)
@@ -9900,6 +11163,291 @@ octavo_reader_selection_popup_contains_point(const OctavoApp *app,
 }
 
 FUNCTION void
+octavo_pdf_link_pointer_clear(OctavoApp *app)
+{
+  if (!app) return;
+  app->pdf_link_pointer_armed = 0;
+  app->pdf_link_pointer_document_generation = 0;
+  app->pdf_link_pointer_page_index = 0;
+  MemoryZeroStruct(&app->pdf_link_pointer_activation);
+}
+
+FUNCTION B32
+octavo_pdf_screen_geometry_for_app(const OctavoApp *app,
+                                  OctavoPdfScreenGeometry *out_geometry)
+{
+  if (out_geometry) *out_geometry = (OctavoPdfScreenGeometry){0};
+  if (!app || !out_geometry ||
+      app->document_kind != OctavoDocument_PDF ||
+      !octavo_pdf_is_open(&app->pdf) || !app->pdf.bgra_pixels ||
+      !app->reader_view_ready ||
+      app->reader_content_geometry.content_rect.w <= 0 ||
+      app->reader_content_geometry.content_rect.h <= 0)
+  {
+    return 0;
+  }
+  UI0Rect content = app->reader_content_geometry.content_rect;
+  return octavo_pdf_screen_geometry(
+    &app->pdf, content.x, content.y, content.w, content.h, out_geometry);
+}
+
+FUNCTION B32
+octavo_pdf_screen_point_to_page_with_popup(const OctavoApp *app,
+                                           S32 x,
+                                           S32 y,
+                                           B32 allow_selection_popup,
+                                           PdfReaderPoint *out_point)
+{
+  if (out_point) *out_point = (PdfReaderPoint){0};
+  if (!app || !out_point ||
+      (app->reader_view_state.popup != ReaderViewPopup_None &&
+       !(allow_selection_popup &&
+         app->reader_view_state.popup == ReaderViewPopup_SelectionTools)))
+  {
+    return 0;
+  }
+  UI0Rect viewport = app->reader_view_layout.viewport_rect;
+  if (!ui0_rect_contains_point(viewport, x, y) ||
+      (app->reader_view_layout.left_panel_visible &&
+       ui0_rect_contains_point(
+         app->reader_view_layout.left_panel_rect, x, y)) ||
+      (app->reader_view_layout.right_panel_visible &&
+       ui0_rect_contains_point(
+         app->reader_view_layout.right_panel_rect, x, y)) ||
+      ui0_rect_contains_point(
+        app->reader_view_layout.previous_gutter_rect, x, y) ||
+      ui0_rect_contains_point(
+        app->reader_view_layout.next_gutter_rect, x, y))
+  {
+    return 0;
+  }
+  OctavoPdfScreenGeometry geometry = {0};
+  return octavo_pdf_screen_geometry_for_app(app, &geometry) &&
+    octavo_pdf_screen_to_page(&geometry, x, y, out_point);
+}
+
+FUNCTION B32
+octavo_pdf_screen_point_to_page(const OctavoApp *app,
+                                S32 x,
+                                S32 y,
+                                PdfReaderPoint *out_point)
+{
+  return octavo_pdf_screen_point_to_page_with_popup(
+    app, x, y, 0, out_point);
+}
+
+FUNCTION B32
+octavo_pdf_destination_equal(PdfReaderDestination a,
+                             PdfReaderDestination b)
+{
+  if (!a.valid || !b.valid || a.page_index != b.page_index ||
+      a.fit != b.fit || a.has_x != b.has_x || a.has_y != b.has_y ||
+      a.has_width != b.has_width || a.has_height != b.has_height ||
+      a.has_zoom != b.has_zoom)
+  {
+    return 0;
+  }
+  if ((a.has_x && (!isfinite(a.x) || !isfinite(b.x) || a.x != b.x)) ||
+      (a.has_y && (!isfinite(a.y) || !isfinite(b.y) || a.y != b.y)) ||
+      (a.has_width &&
+       (!isfinite(a.width) || !isfinite(b.width) || a.width != b.width)) ||
+      (a.has_height &&
+       (!isfinite(a.height) || !isfinite(b.height) ||
+        a.height != b.height)) ||
+      (a.has_zoom &&
+       (!isfinite(a.zoom) || !isfinite(b.zoom) || a.zoom != b.zoom)))
+  {
+    return 0;
+  }
+  return 1;
+}
+
+FUNCTION B32
+octavo_pdf_content_activation_equal(
+  OctavoPdfContentActivation a,
+  OctavoPdfContentActivation b)
+{
+  if (a.target_kind != b.target_kind) return 0;
+  if (a.target_kind == PdfReaderLinkTargetKind_Internal)
+    return octavo_pdf_destination_equal(a.destination, b.destination);
+  if (a.target_kind == PdfReaderLinkTargetKind_External)
+    return a.external_uri.size == b.external_uri.size &&
+      a.external_uri.str && b.external_uri.str &&
+      memcmp(a.external_uri.str, b.external_uri.str,
+             (size_t)a.external_uri.size) == 0;
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_link_at_screen_point(OctavoApp *app,
+                                S32 x,
+                                S32 y,
+                                OctavoPdfContentActivation *out_activation)
+{
+  if (out_activation) *out_activation = (OctavoPdfContentActivation){0};
+  PdfReaderPoint point = {0};
+  return app && out_activation &&
+    octavo_pdf_screen_point_to_page(app, x, y, &point) &&
+    octavo_pdf_content_hit_test_link(
+      &app->pdf_content, app->pdf.frame.document_generation,
+      app->pdf.frame.page_index, point, out_activation);
+}
+
+FUNCTION B32
+octavo_pdf_selection_contains_screen_point(const OctavoApp *app,
+                                           S32 x,
+                                           S32 y)
+{
+  PdfReaderPoint point = {0};
+  return app &&
+    octavo_pdf_screen_point_to_page_with_popup(app, x, y, 1, &point) &&
+    octavo_pdf_selection_contains_page_point(
+      &app->pdf_selection, &app->pdf.reader, &app->pdf.frame, point);
+}
+
+FUNCTION B32
+octavo_pdf_quad_screen_rect(const OctavoPdfScreenGeometry *geometry,
+                            PdfReaderQuad quad,
+                            UI0Rect *out_rect)
+{
+  if (out_rect) *out_rect = (UI0Rect){0};
+  if (!geometry || !out_rect) return 0;
+  PdfReaderPoint points[4] = {
+    quad.upper_left,
+    quad.upper_right,
+    quad.lower_right,
+    quad.lower_left,
+  };
+  F32 min_x = 0.0f;
+  F32 min_y = 0.0f;
+  F32 max_x = 0.0f;
+  F32 max_y = 0.0f;
+  for (U32 index = 0; index < ARRAY_COUNT(points); index += 1)
+  {
+    F32 x = 0.0f;
+    F32 y = 0.0f;
+    if (!octavo_pdf_page_to_screen(geometry, points[index], &x, &y))
+      return 0;
+    if (index == 0)
+    {
+      min_x = max_x = x;
+      min_y = max_y = y;
+    }
+    else
+    {
+      min_x = MIN(min_x, x);
+      min_y = MIN(min_y, y);
+      max_x = MAX(max_x, x);
+      max_y = MAX(max_y, y);
+    }
+  }
+  if ((F64)min_x < (F64)INT32_MIN || (F64)min_y < (F64)INT32_MIN ||
+      (F64)max_x > (F64)INT32_MAX || (F64)max_y > (F64)INT32_MAX)
+  {
+    return 0;
+  }
+  S32 x0 = (S32)floorf(min_x);
+  S32 y0 = (S32)floorf(min_y);
+  S32 x1 = (S32)ceilf(max_x);
+  S32 y1 = (S32)ceilf(max_y);
+  S32 clip_x0 = MAX(geometry->content_x, geometry->raster_x);
+  S32 clip_y0 = MAX(geometry->content_y, geometry->raster_y);
+  S64 content_x1 = (S64)geometry->content_x + geometry->content_width;
+  S64 content_y1 = (S64)geometry->content_y + geometry->content_height;
+  S64 raster_x1 = (S64)geometry->raster_x + geometry->raster_width;
+  S64 raster_y1 = (S64)geometry->raster_y + geometry->raster_height;
+  S64 clip_x1_wide = MIN(content_x1, raster_x1);
+  S64 clip_y1_wide = MIN(content_y1, raster_y1);
+  if (clip_x1_wide < INT32_MIN || clip_x1_wide > INT32_MAX ||
+      clip_y1_wide < INT32_MIN || clip_y1_wide > INT32_MAX)
+  {
+    return 0;
+  }
+  S32 clip_x1 = (S32)clip_x1_wide;
+  S32 clip_y1 = (S32)clip_y1_wide;
+  x0 = MAX(x0, clip_x0);
+  y0 = MAX(y0, clip_y0);
+  x1 = MIN(x1, clip_x1);
+  y1 = MIN(y1, clip_y1);
+  if (x1 <= x0 || y1 <= y0) return 0;
+  *out_rect = ui0_rect(x0, y0, x1 - x0, y1 - y0);
+  return 1;
+}
+
+FUNCTION B32
+octavo_pdf_selection_screen_anchor_rect(const OctavoApp *app,
+                                        UI0Rect *out_rect)
+{
+  if (out_rect) *out_rect = (UI0Rect){0};
+  if (!app || !out_rect ||
+      !octavo_pdf_selection_is_current(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+  {
+    return 0;
+  }
+  OctavoPdfScreenGeometry geometry = {0};
+  F32 focus_x = 0.0f;
+  F32 focus_y = 0.0f;
+  if (!octavo_pdf_screen_geometry_for_app(app, &geometry) ||
+      !octavo_pdf_page_to_screen(
+        &geometry, app->pdf_selection.snapshot.snapped_focus,
+        &focus_x, &focus_y))
+  {
+    return 0;
+  }
+  B32 found = 0;
+  F64 best_distance = 0.0;
+  UI0Rect best = {0};
+  for (U32 index = 0;
+       index < app->pdf_selection.snapshot.quad_count;
+       index += 1)
+  {
+    UI0Rect rect = {0};
+    if (!octavo_pdf_quad_screen_rect(
+          &geometry, app->pdf_selection.snapshot.quads[index], &rect))
+    {
+      continue;
+    }
+    F64 center_x = (F64)rect.x + (F64)rect.w * 0.5;
+    F64 center_y = (F64)rect.y + (F64)rect.h * 0.5;
+    F64 dx = center_x - focus_x;
+    F64 dy = center_y - focus_y;
+    F64 distance = dx * dx + dy * dy;
+    if (!found || distance < best_distance)
+    {
+      found = 1;
+      best_distance = distance;
+      best = rect;
+    }
+  }
+  if (found) *out_rect = best;
+  return found;
+}
+
+FUNCTION B32
+octavo_pdf_update_pointer_selection(OctavoApp *app, S32 x, S32 y)
+{
+  if (!app || app->document_kind != OctavoDocument_PDF ||
+      !app->pdf_selection.pointer_armed ||
+      !octavo_pdf_selection_should_promote(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame, x, y))
+  {
+    return 0;
+  }
+  PdfReaderPoint focus = {0};
+  if (!octavo_pdf_screen_point_to_page(app, x, y, &focus)) return 0;
+  octavo_pdf_link_pointer_clear(app);
+  PdfReaderResult result = octavo_pdf_selection_update_pointer(
+    &app->pdf_selection, &app->pdf.reader, &app->pdf.frame, focus, 0);
+  if (result != PdfReaderResult_Ok && result != PdfReaderResult_Cancelled)
+  {
+    octavo_set_statusf(app, "PDF selection failed: %s",
+                       pdf_reader_result_code(result));
+  }
+  return result == PdfReaderResult_Ok;
+}
+
+FUNCTION void
 octavo_host_pointer_press(OctavoApp *app, S32 x, S32 y)
 {
   if (!app) return;
@@ -9908,6 +11456,7 @@ octavo_host_pointer_press(OctavoApp *app, S32 x, S32 y)
   app->input.pointer_down = 1;
   app->input.pointer_pressed = 1;
   app->input.pointer_selection_release = 0;
+  octavo_pdf_link_pointer_clear(app);
   if (octavo_library_active(app))
   {
     app->host_pointer_armed = OctavoHostControl_None;
@@ -9954,7 +11503,31 @@ octavo_host_pointer_press(OctavoApp *app, S32 x, S32 y)
   else
   {
     (void)octavo_host_focus_set(app, OctavoHostControl_None, 0);
-    octavo_update_pointer_selection(app, x, y, 1);
+    OctavoPdfContentActivation activation = {0};
+    PdfReaderPoint pdf_anchor = {0};
+    B32 pdf_point = app->document_kind == OctavoDocument_PDF &&
+      octavo_pdf_screen_point_to_page(app, x, y, &pdf_anchor);
+    if (pdf_point)
+    {
+      (void)octavo_pdf_selection_begin_pointer(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame,
+        pdf_anchor, x, y);
+    }
+    if (pdf_point &&
+        octavo_pdf_content_hit_test_link(
+          &app->pdf_content, app->pdf.frame.document_generation,
+          app->pdf.frame.page_index, pdf_anchor, &activation))
+    {
+      app->pdf_link_pointer_armed = 1;
+      app->pdf_link_pointer_document_generation =
+        app->pdf.frame.document_generation;
+      app->pdf_link_pointer_page_index = app->pdf.frame.page_index;
+      app->pdf_link_pointer_activation = activation;
+    }
+    else if (app->document_kind != OctavoDocument_PDF)
+    {
+      octavo_update_pointer_selection(app, x, y, 1);
+    }
   }
 }
 
@@ -9991,6 +11564,37 @@ octavo_host_pointer_release(OctavoApp *app, S32 x, S32 y)
     app->input.pointer_released = 0;
     return octavo_host_control_invoke(app, OctavoHostControl_ExitReader);
   }
+  if (app->pdf_link_pointer_armed)
+  {
+    OctavoPdfContentActivation armed = app->pdf_link_pointer_activation;
+    U64 generation = app->pdf_link_pointer_document_generation;
+    U32 page_index = app->pdf_link_pointer_page_index;
+    OctavoPdfContentActivation released = {0};
+    B32 activate = app->document_kind == OctavoDocument_PDF &&
+      app->pdf.frame.document_generation == generation &&
+      app->pdf.frame.page_index == page_index &&
+      octavo_pdf_link_at_screen_point(app, x, y, &released) &&
+      octavo_pdf_content_activation_equal(armed, released);
+    octavo_pdf_link_pointer_clear(app);
+    if (activate)
+    {
+      octavo_pdf_selection_cancel_pointer(&app->pdf_selection);
+      app->input.pointer_pressed = 0;
+      app->input.pointer_released = 0;
+      return octavo_activate_pdf_content_target(app, released);
+    }
+  }
+  if (app->document_kind == OctavoDocument_PDF &&
+      app->pdf_selection.pointer_armed)
+  {
+    (void)octavo_pdf_update_pointer_selection(app, x, y);
+    if (octavo_pdf_selection_finish_pointer(
+          &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+    {
+      app->input.pointer_selection_release = 1;
+    }
+    return 0;
+  }
   if (app->selection_dragging)
   {
     octavo_update_pointer_selection(app, x, y, 0);
@@ -10005,6 +11609,89 @@ FUNCTION U32
 octavo_reader_page_color(const OctavoApp *app)
 {
   return app ? app->reader_content_theme.page_background : 0x00FFFDF9U;
+}
+
+FUNCTION B32
+octavo_pdf_screen_coordinate(F32 value, S32 *out_value)
+{
+  if (out_value) *out_value = 0;
+  if (!out_value || !isfinite(value) ||
+      (F64)value < (F64)INT32_MIN || (F64)value > (F64)INT32_MAX)
+  {
+    return 0;
+  }
+  *out_value = (S32)lroundf(value);
+  return 1;
+}
+
+FUNCTION B32
+octavo_draw_pdf_selection_overlay(
+  OctavoApp *app,
+  const OctavoPdfScreenGeometry *geometry)
+{
+  if (!app || !geometry) return 0;
+  if (!octavo_pdf_selection_is_current(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+  {
+    return 1;
+  }
+  S32 clip_x = MAX(geometry->content_x, geometry->raster_x);
+  S32 clip_y = MAX(geometry->content_y, geometry->raster_y);
+  S64 clip_right = MIN(
+    (S64)geometry->content_x + geometry->content_width,
+    (S64)geometry->raster_x + geometry->raster_width);
+  S64 clip_bottom = MIN(
+    (S64)geometry->content_y + geometry->content_height,
+    (S64)geometry->raster_y + geometry->raster_height);
+  if (clip_right <= clip_x || clip_bottom <= clip_y ||
+      clip_right - clip_x > INT32_MAX ||
+      clip_bottom - clip_y > INT32_MAX)
+  {
+    return 0;
+  }
+  S32 clip_width = (S32)(clip_right - clip_x);
+  S32 clip_height = (S32)(clip_bottom - clip_y);
+  U32 color = app->reader_content_theme.selection;
+  for (U32 index = 0;
+       index < app->pdf_selection.snapshot.quad_count;
+       index += 1)
+  {
+    PdfReaderQuad quad = app->pdf_selection.snapshot.quads[index];
+    PdfReaderPoint points[4] = {
+      quad.upper_left,
+      quad.upper_right,
+      quad.lower_right,
+      quad.lower_left,
+    };
+    S32 xs[4] = {0};
+    S32 ys[4] = {0};
+    for (U32 point_index = 0;
+         point_index < ARRAY_COUNT(points);
+         point_index += 1)
+    {
+      F32 screen_x = 0.0f;
+      F32 screen_y = 0.0f;
+      if (!octavo_pdf_page_to_screen(
+            geometry, points[point_index], &screen_x, &screen_y) ||
+          !octavo_pdf_screen_coordinate(screen_x, xs + point_index) ||
+          !octavo_pdf_screen_coordinate(screen_y, ys + point_index))
+      {
+        return 0;
+      }
+    }
+    for (U32 edge = 0; edge < ARRAY_COUNT(points); edge += 1)
+    {
+      U32 next = (edge + 1) % ARRAY_COUNT(points);
+      if (!draw_push_line_width_clipped(
+            &app->draw_commands, DrawLayer_Overlay,
+            xs[edge], ys[edge], xs[next], ys[next], 2, color,
+            clip_x, clip_y, clip_width, clip_height))
+      {
+        return 0;
+      }
+    }
+  }
+  return 1;
 }
 
 FUNCTION U32
@@ -10505,6 +12192,65 @@ octavo_draw_reader_page(OctavoApp *app)
                        page.w,
                        page.h,
                        page_color);
+
+  if (app->document_kind == OctavoDocument_PDF)
+  {
+    MemoryZeroStruct(&app->presentation_frame);
+    app->presentation_hash = 0;
+    if (app->document_state != ReaderViewLoad_Ready ||
+        !octavo_pdf_is_open(&app->pdf))
+    {
+      return;
+    }
+    PdfReaderResult result = octavo_pdf_render_fit(
+      &app->pdf, body_w, body_h);
+    if (result != PdfReaderResult_Ok || !app->pdf.bgra_pixels ||
+        app->pdf.raster_width == 0 || app->pdf.raster_height == 0)
+    {
+      /* A render failure is presentation-local. The concrete PDF remains
+         open and Ready so a resize or page move can retry on the next frame. */
+      octavo_set_statusf(app, "PDF render failed: %s",
+                         pdf_reader_result_code(result));
+      app->presentation_complete = 0;
+      return;
+    }
+    S32 raster_width = (S32)app->pdf.raster_width;
+    S32 raster_height = (S32)app->pdf.raster_height;
+    OctavoPdfScreenGeometry geometry = {0};
+    if (!octavo_pdf_screen_geometry(
+          &app->pdf, body_x, body_y, body_w, body_h, &geometry))
+    {
+      app->presentation_complete = 0;
+      return;
+    }
+    if (!draw_push_sprite_clipped_sampled(
+          &app->draw_commands, DrawLayer_World,
+          app->pdf.bgra_pixels, raster_width, raster_height,
+          raster_width, DrawSpriteSampleKind_Nearest,
+          geometry.raster_x, geometry.raster_y,
+          geometry.raster_width, geometry.raster_height,
+          body_x, body_y, body_w, body_h))
+    {
+      app->presentation_complete = 0;
+      return;
+    }
+    if (!octavo_draw_pdf_selection_overlay(app, &geometry))
+    {
+      app->presentation_complete = 0;
+      return;
+    }
+    U64 hash_values[] = {
+      app->pdf.frame.document_generation,
+      app->pdf.frame.generation,
+      app->pdf.render_generation,
+      app->pdf.frame.page_index,
+      app->pdf.raster_width,
+      app->pdf.raster_height,
+    };
+    app->presentation_hash = u64_hash_bytes(hash_values,
+                                             sizeof(hash_values));
+    return;
+  }
 
   if (!app->frame.ready || !app->frame.document_open)
   {
@@ -11239,7 +12985,7 @@ octavo_frame_presentation_is_complete(const OctavoApp *app)
   {
     return 0;
   }
-  if (epub_reader_is_open(&app->reader) &&
+  if (octavo_document_is_open(app) &&
       (!app->reader_view_ready ||
        app->reader_view_frame.error_flags != ReaderViewFrameError_None))
   {
@@ -11538,7 +13284,7 @@ octavo_run_library_smoke(const char *epub_path, const char *output_prefix)
   octavo_copy_cstr(app.saved.path, ARRAY_COUNT(app.saved.path), epub_path);
   octavo_migrate_saved_state_to_library(&app);
   app.library_selected_entry_id = app.library.entries[0].entry_id;
-  octavo_library_hydrate_startup_entry(&app);
+  if (!octavo_library_hydrate_startup_entry(&app)) goto fail;
   OctavoLibraryEntry *hydrated = app.library.entries;
   OctavoLibraryThumbnail *hydrated_thumbnail =
     octavo_library_thumbnail_load(&app, hydrated);
@@ -12019,7 +13765,7 @@ octavo_reader_view_parity_focus(OctavoApp *app,
   {
     U32 before_spine = app->reader.active_spine_index;
     U64 before_byte = app->reader.view_byte_offset;
-    if (octavo_move_page(app, 1) != EpubReaderResult_Ok) return 0;
+    if (octavo_move_page(app, 1) != OctavoMoveResult_Ok) return 0;
     octavo_render_to_buffer(app, buffer);
     octavo_apply_reader_view_actions(app);
     if (app->reader.active_spine_index == before_spine &&
@@ -12526,13 +14272,31 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
     case WM_ACTIVATEAPP:
     {
       if (app && !w_param)
+      {
+        if (app->document_kind == OctavoDocument_PDF)
+          octavo_pdf_selection_reset(&app->pdf_selection);
         octavo_cancel_page_repeat_for_deactivation(app);
+      }
     } break;
 
     case WM_ACTIVATE:
     {
       if (app && LOWORD(w_param) == WA_INACTIVE)
+      {
+        if (app->document_kind == OctavoDocument_PDF)
+          octavo_pdf_selection_reset(&app->pdf_selection);
         octavo_cancel_page_repeat_for_deactivation(app);
+      }
+    } break;
+
+    case WM_POWERBROADCAST:
+    {
+      if (w_param == PBT_APMSUSPEND)
+      {
+        if (app && app->document_kind == OctavoDocument_PDF)
+          octavo_pdf_selection_reset(&app->pdf_selection);
+        return TRUE;
+      }
     } break;
 
     case WM_LBUTTONDOWN:
@@ -12652,7 +14416,8 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         S32 repeat_direction = 0;
         B32 page_action_candidate = !control && !alt &&
           octavo_page_direction_for_key(app, w_param, &repeat_direction);
-        B32 repeat_candidate = page_action_candidate && !shift;
+        B32 repeat_candidate = page_action_candidate && !shift &&
+          app->document_kind == OctavoDocument_EPUB;
         B32 repeat_handled = 0;
         if (octavo_page_repeat_consume_cancelled_keydown(app,
                                                            w_param,
@@ -12685,7 +14450,8 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
           return 0;
         }
         if (page_action_candidate && system_repeat) return 0;
-        if (page_action_candidate && app->page_action_waiting_for_present)
+        if (page_action_candidate && app->page_action_waiting_for_present &&
+            !octavo_page_action_abandon_failed_pdf_presentation(app))
         {
           if (system_repeat) return 0;
           octavo_page_action_defer(app,
@@ -12703,10 +14469,10 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         if (w_param == 'O' && control)
         {
-          (void)octavo_pick_epub(app);
+          (void)octavo_pick_document(app);
         }
         else if (w_param == 'F' && control &&
-                 epub_reader_is_open(&app->reader))
+                 octavo_document_is_open(app))
         {
           octavo_reader_view_open_find_from_shortcut(app);
         }
@@ -12718,7 +14484,7 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           (void)octavo_set_fullscreen(app, !app->fullscreen.active);
         }
-        else if (w_param == VK_ESCAPE && epub_reader_is_open(&app->reader))
+        else if (w_param == VK_ESCAPE && octavo_document_is_open(app))
         {
           octavo_reader_view_escape(app);
         }
@@ -12731,6 +14497,11 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         }
         else if (editing && control && w_param == 'Z') app->input.undo_pressed = 1;
         else if (editing && control && w_param == 'Y') app->input.redo_pressed = 1;
+        else if (!editing && control && w_param == 'C' &&
+                 app->document_kind == OctavoDocument_PDF)
+        {
+          (void)octavo_copy_current_pdf_selection(app, 0, 0);
+        }
         else if (!editing && control && w_param == 'C' && app->selected_text[0])
         {
           (void)octavo_set_clipboard_text(
@@ -12805,6 +14576,9 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
 
     case WM_TIMER:
     {
+      if (app && octavo_handle_pdf_search_timer(
+                   app, (UINT_PTR)w_param))
+        return 0;
       if (app && w_param == OctavoPresentationRetryTimerId)
       {
         (void)KillTimer(window, OctavoPresentationRetryTimerId);
@@ -12849,7 +14623,7 @@ octavo_win32_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
         {
           case 0:
             app->suppress_native_picker = 1;
-            (void)octavo_pick_epub(app);
+            (void)octavo_pick_document(app);
             app->suppress_native_picker = 0;
             break;
           case 1: (void)octavo_move_history(app, 0); break;
@@ -13130,7 +14904,7 @@ octavo_run_headless(const char *path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       fprintf(stderr, "octavo_host_smoke result=fail reason=forward\n");
       octavo_app_release(&app);
@@ -13156,9 +14930,9 @@ octavo_run_headless(const char *path)
     return 1;
   }
 
-  if (!crossed || octavo_move_page(&app, -1) != EpubReaderResult_Ok ||
+  if (!crossed || octavo_move_page(&app, -1) != OctavoMoveResult_Ok ||
       app.reader.active_spine_index != start_spine ||
-      octavo_move_page(&app, 1) != EpubReaderResult_Ok ||
+      octavo_move_page(&app, 1) != OctavoMoveResult_Ok ||
       app.reader.current_page.spine_index != cross_page.spine_index ||
       app.reader.current_page.first_byte != cross_page.first_byte ||
       !octavo_capture_frame(&app))
@@ -13212,8 +14986,8 @@ octavo_run_render_smoke(const char *path, const char *bmp_path)
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    EpubReaderResult move = octavo_move_page(&app, 1);
-    if (move != EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(&app, 1);
+    if (move != OctavoMoveResult_Ok)
     {
       fprintf(stderr, "octavo_visual_smoke result=fail reason=forward\n");
       octavo_app_release(&app);
@@ -13353,7 +15127,7 @@ octavo_run_image_smoke(const char *path,
   B32 crossed = 0;
   for (U32 attempt = 0; attempt < 256 && !crossed; attempt += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       break;
     }
@@ -13694,7 +15468,7 @@ octavo_run_reader_image_fit_smoke(const char *epub_path,
   for (U32 case_index = 1; case_index < CaseCount; case_index += 1)
   {
     if (case_index > 1 &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
     {
       fprintf(stderr,
               "octavo_reader_image_fit result=fail reason=maps_page case=%u\n",
@@ -17642,7 +19416,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
 
   for (U32 page = 0; page < 8 && app.frame.visible_text.size < 32; page += 1)
   {
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
     octavo_render_to_buffer(&app, &buffer);
   }
   if (app.frame.visible_text.size < 32) goto cleanup;
@@ -17690,7 +19464,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   checkpoint = 2;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_render_to_buffer(&app, &buffer);
   const ReaderViewSemanticNode *annotations =
     octavo_reader_view_semantic_control(
@@ -17745,7 +19519,7 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   checkpoint = 4;
 
   for (U32 page = 0; page < 2; page += 1)
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_render_to_buffer(&app, &buffer);
   ReaderViewKey note_key =
     octavo_reader_view_parity_right_key(&app, ReaderViewRightRow_Note);
@@ -17850,15 +19624,15 @@ octavo_run_reader_view_post_action_arrow_smoke(const char *path,
   {
     U32 probe_spine = app.reader.active_spine_index;
     U64 probe_byte = app.reader.view_byte_offset;
-    if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) break;
+    if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) break;
     B32 moved = app.reader.active_spine_index != probe_spine ||
                 app.reader.view_byte_offset != probe_byte;
-    if (octavo_move_page(&app, -1) != EpubReaderResult_Ok) break;
+    if (octavo_move_page(&app, -1) != OctavoMoveResult_Ok) break;
     stable_font_page = moved &&
       app.reader.active_spine_index == probe_spine &&
       app.reader.view_byte_offset == probe_byte;
     if (!stable_font_page &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
       break;
   }
   if (!stable_font_page ||
@@ -20311,7 +22085,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
   SourceReaderPageRange failure_after_page = {0};
   EpubReaderNavigationStats failure_nav_before = {0};
   EpubReaderNavigationStats failure_nav_after = {0};
-  EpubReaderResult failure_move_result = EpubReaderResult_Ok;
+  OctavoMoveResult failure_move_result = OctavoMoveResult_Ok;
   U32 checkpoint = 0;
   int result = 1;
 
@@ -20371,7 +22145,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     B32 move_warm_pending_before = app.adjacent_warm_pending;
     B32 move_warm_ready_before = app.adjacent_warm_frame_ready;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = octavo_move_page(&app, 1);
+    OctavoMoveResult move = octavo_move_page(&app, 1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
@@ -20389,7 +22163,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
       first_zero_warm_pending_before = move_warm_pending_before;
       first_zero_warm_ready_before = move_warm_ready_before;
     }
-    if (move != EpubReaderResult_Ok)
+    if (move != OctavoMoveResult_Ok)
     {
       failure_step = step;
       failure_before_page = move_before_page;
@@ -20423,12 +22197,12 @@ octavo_run_page_turn_regression_smoke(const char *path,
     SourceReaderPageRange move_before_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_before = app.reader.navigation_stats;
     U64 move_start = os_time_ticks();
-    EpubReaderResult move = octavo_move_page(&app, -1);
+    OctavoMoveResult move = octavo_move_page(&app, -1);
     U64 move_ticks = os_time_ticks() - move_start;
     SourceReaderPageRange move_after_page = app.reader.current_page;
     EpubReaderNavigationStats move_nav_after = app.reader.navigation_stats;
-    if (move == EpubReaderResult_Boundary) break;
-    if (move != EpubReaderResult_Ok)
+    if (move == OctavoMoveResult_Boundary) break;
+    if (move != OctavoMoveResult_Ok)
     {
       failure_step = step;
       failure_backward = 1;
@@ -20540,7 +22314,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
   U64 deferred_emitted_before = app.page_action_emitted_count;
   U64 deferred_presented_before = app.page_action_presented_count;
   U32 deferred_overlap_before = app.page_action_overlap_count;
-  if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+  if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
   octavo_page_action_note_emitted(&app);
   octavo_begin_page_repeat(&app, VK_RIGHT, 1);
   octavo_page_action_defer(&app, VK_LEFT, -1, 1);
@@ -20588,7 +22362,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     octavo_cancel_adjacent_warm(&app);
     octavo_invalidate_adjacent_page(&app);
     if (!font_cache_clear_shaped_text(&app.render_state.text_cache) ||
-        octavo_move_page(&app, repeat_direction) != EpubReaderResult_Ok)
+        octavo_move_page(&app, repeat_direction) != OctavoMoveResult_Ok)
       goto cleanup;
     octavo_page_action_note_emitted(&app);
 
@@ -20731,15 +22505,15 @@ octavo_run_page_turn_regression_smoke(const char *path,
         !app.adjacent_page_ready)
     {
       checkpoint = 43;
-      if (octavo_move_page(&app, 1) != EpubReaderResult_Ok) goto cleanup;
+      if (octavo_move_page(&app, 1) != OctavoMoveResult_Ok) goto cleanup;
       octavo_render_to_buffer(&app, &buffer);
       continue;
     }
     checkpoint = 44;
     U64 prepared_move_start = os_time_ticks();
-    EpubReaderResult prepared_move = octavo_move_page(&app, 1);
+    OctavoMoveResult prepared_move = octavo_move_page(&app, 1);
     U64 prepared_move_ticks = os_time_ticks() - prepared_move_start;
-    if (prepared_move != EpubReaderResult_Ok) goto cleanup;
+    if (prepared_move != OctavoMoveResult_Ok) goto cleanup;
     prepared_move_total_ticks += prepared_move_ticks;
     prepared_move_max_ticks = MAX(prepared_move_max_ticks, prepared_move_ticks);
     U64 warmed_start = os_time_ticks();
@@ -20767,7 +22541,7 @@ octavo_run_page_turn_regression_smoke(const char *path,
     pixel_exact_count += 1;
     performance_pair_count += 1;
     if (performance_pair_count < PerformancePairCount &&
-        octavo_move_page(&app, 1) != EpubReaderResult_Ok)
+        octavo_move_page(&app, 1) != OctavoMoveResult_Ok)
       goto cleanup;
   }
   checkpoint = 50;
@@ -21281,8 +23055,8 @@ octavo_page_repeat_probe_seek_anchor(OctavoApp *app)
        index < OctavoPageRepeatProbeBoundarySearchCap;
        index += 1)
   {
-    EpubReaderResult move = octavo_move_page(app, 1);
-    if (move != EpubReaderResult_Ok)
+    OctavoMoveResult move = octavo_move_page(app, 1);
+    if (move != OctavoMoveResult_Ok)
     {
       fprintf(stderr,
               "octavo_page_repeat_anchor result=fail step=%u move=%d status=%s\n",
@@ -21302,7 +23076,7 @@ octavo_page_repeat_probe_seek_anchor(OctavoApp *app)
        index < OctavoPageRepeatProbeBoundaryLeadPageCount;
        index += 1)
   {
-    if (octavo_move_page(app, -1) != EpubReaderResult_Ok) return 0;
+    if (octavo_move_page(app, -1) != OctavoMoveResult_Ok) return 0;
   }
   octavo_cancel_adjacent_warm(app);
   octavo_invalidate_adjacent_page(app);
@@ -21342,14 +23116,14 @@ octavo_page_repeat_probe_build_expected(const char *path,
   U32 forward_crossings = 0;
   U32 forward_moves = 0;
   U32 backward_moves = 0;
-  EpubReaderResult last_move_result = EpubReaderResult_Ok;
+  OctavoMoveResult last_move_result = OctavoMoveResult_Ok;
   for (U32 index = 0;
        result && index < OctavoPageRepeatProbePageCount;
        index += 1)
   {
     SourceReaderPageRange before = app.reader.current_page;
     last_move_result = octavo_move_page(&app, 1);
-    result = last_move_result == EpubReaderResult_Ok;
+    result = last_move_result == OctavoMoveResult_Ok;
     if (result)
     {
       forward_moves += 1;
@@ -21366,7 +23140,7 @@ octavo_page_repeat_probe_build_expected(const char *path,
   {
     SourceReaderPageRange before = app.reader.current_page;
     last_move_result = octavo_move_page(&app, -1);
-    result = last_move_result == EpubReaderResult_Ok;
+    result = last_move_result == OctavoMoveResult_Ok;
     if (result)
     {
       backward_moves += 1;
@@ -22710,8 +24484,8 @@ octavo_win32_image_page_gate_regression(OctavoWin32 *win32,
 
   for (U32 map_index = 2; map_index <= 3; map_index += 1)
   {
-    EpubReaderResult move = octavo_move_page(&win32->app, 1);
-    if (move != EpubReaderResult_Ok ||
+    OctavoMoveResult move = octavo_move_page(&win32->app, 1);
+    if (move != OctavoMoveResult_Ok ||
         !octavo_win32_present_until_gate_clear(win32, 16) ||
         !octavo_win32_current_image_page_gate_is_exact(win32))
     {
@@ -22952,12 +24726,270 @@ octavo_page_repeat_win32_run_probe(
   return probe.completed;
 }
 
+FUNCTION B32
+octavo_win32_pdf_recovery_wait_for_timer(OctavoWin32 *win32,
+                                           U32 fired_before)
+{
+  if (!win32 || !win32->window) return 0;
+  ULONGLONG deadline = GetTickCount64() + 2000;
+  MSG message = {0};
+  while (GetTickCount64() < deadline)
+  {
+    DWORD wait_result = MsgWaitForMultipleObjectsEx(
+      0, 0, 100, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    if (wait_result == WAIT_FAILED) return 0;
+    while (PeekMessageW(&message, 0, 0, 0, PM_REMOVE))
+    {
+      if (message.message == WM_QUIT) return 0;
+      B32 target_timer = message.hwnd == win32->window &&
+        message.message == WM_TIMER &&
+        message.wParam == OctavoPresentationRetryTimerId;
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+      if (target_timer)
+      {
+        return win32->app.page_action_presentation_retry_fired_count ==
+                 fired_before + 1 &&
+          GetUpdateRect(win32->window, 0, FALSE) != 0;
+      }
+    }
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_win32_pdf_recovery_fail_pending_frame(OctavoWin32 *win32,
+                                                U32 *out_timer_cycles)
+{
+  if (out_timer_cycles) *out_timer_cycles = 0;
+  if (!win32 || !win32->window || !out_timer_cycles ||
+      !win32->app.page_action_waiting_for_present ||
+      win32->app.page_action_expected_identity.kind !=
+        OctavoPresentationIdentity_PdfPage ||
+      !octavo_pdf_is_open(&win32->app.pdf) ||
+      !win32->app.pdf.rgba_pixels)
+  {
+    return 0;
+  }
+
+  OctavoApp *app = &win32->app;
+  U8 *owned_raster = app->pdf.rgba_pixels;
+  U32 scheduled_before = app->page_action_presentation_retry_scheduled_count;
+  U32 fired_before = app->page_action_presentation_retry_fired_count;
+  B32 passed = 1;
+  app->pdf.bgra_pixels = 0;
+  app->pdf.rendered_reader_generation = 0;
+  app->pdf.rgba_pixels = 0;
+  for (U32 cycle = 0; cycle < 2; cycle += 1)
+  {
+    if (!InvalidateRect(win32->window, 0, FALSE) ||
+        !UpdateWindow(win32->window) ||
+        !app->page_action_waiting_for_present ||
+        app->page_action_expected_identity.kind !=
+          OctavoPresentationIdentity_PdfPage ||
+        app->pdf.last_result == PdfReaderResult_Ok ||
+        app->pdf.bgra_pixels || app->presentation_complete ||
+        app->page_action_presentation_retry_scheduled_count !=
+          scheduled_before + cycle + 1 ||
+        app->page_action_presentation_retry_attempt == 0 ||
+        !octavo_win32_pdf_recovery_wait_for_timer(
+          win32, fired_before + cycle))
+    {
+      passed = 0;
+      break;
+    }
+    *out_timer_cycles += 1;
+  }
+  app->pdf.rgba_pixels = owned_raster;
+  return passed && *out_timer_cycles == 2 &&
+    app->page_action_presentation_retry_fired_count == fired_before + 2 &&
+    app->page_action_presentation_retry_scheduled_count ==
+      scheduled_before + 2 &&
+    app->page_action_waiting_for_present &&
+    GetUpdateRect(win32->window, 0, FALSE) != 0;
+}
+
+FUNCTION B32
+octavo_win32_pdf_recovery_present(OctavoWin32 *win32)
+{
+  if (!win32 || !win32->window) return 0;
+  if (GetUpdateRect(win32->window, 0, FALSE) == 0 &&
+      !InvalidateRect(win32->window, 0, FALSE))
+  {
+    return 0;
+  }
+  if (!UpdateWindow(win32->window) ||
+      win32->app.page_action_waiting_for_present ||
+      win32->app.page_action_presentation_retry_attempt != 0 ||
+      !win32->app.last_present_complete)
+  {
+    return 0;
+  }
+  if (win32->app.document_kind == OctavoDocument_PDF)
+  {
+    return win32->app.pdf.bgra_pixels &&
+      win32->app.pdf.rendered_reader_generation ==
+        win32->app.pdf.frame.generation;
+  }
+  return win32->app.document_kind == OctavoDocument_None;
+}
+
+FUNCTION B32
+octavo_win32_pdf_presentation_recovery_regression(OctavoWin32 *win32,
+                                                     const char *path)
+{
+  const char *failure = "initial";
+  if (!win32 || !win32->window || !path || !path[0] ||
+      win32->app.document_kind != OctavoDocument_PDF ||
+      win32->app.pdf.frame.page_count != 3 ||
+      !octavo_win32_pdf_recovery_present(win32))
+  {
+    fprintf(stderr,
+            "octavo_pdf_presentation_recovery_win32_smoke result=fail "
+            "reason=%s\n", failure);
+    return 0;
+  }
+
+  OctavoApp *app = &win32->app;
+  U32 recovery_before = app->page_action_failed_pdf_recovery_count;
+  U32 scheduled_before = app->page_action_presentation_retry_scheduled_count;
+  U32 fired_before = app->page_action_presentation_retry_fired_count;
+  U32 timer_cycles = 0;
+  U32 cycles = 0;
+
+#define OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(condition, reason) \
+  do { if (!(condition)) { failure = (reason); goto cleanup; } } while (0)
+
+  /* Keyboard page recovery passes through the real Win32 defer gate. */
+  SendMessageW(win32->window, WM_KEYDOWN, VK_RIGHT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 1 && app->page_action_waiting_for_present,
+    "page-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "page-failure");
+  timer_cycles += cycles;
+  SendMessageW(win32->window, WM_KEYDOWN, VK_RIGHT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 2 && app->page_action_waiting_for_present &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 1 &&
+    app->page_action_presentation_retry_attempt == 0 &&
+    octavo_win32_pdf_recovery_present(win32), "page-recovery");
+
+  /* A failed page-one presentation must not block explicit history. */
+  SendMessageW(win32->window, WM_KEYDOWN, VK_LEFT, 1);
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    app->pdf.frame.page_index == 1 && app->page_action_waiting_for_present,
+    "history-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "history-failure");
+  timer_cycles += cycles;
+  U32 history_source = app->pdf.frame.page_index;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_move_history(app, 0) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index != history_source &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 2 &&
+    octavo_win32_pdf_recovery_present(win32), "history-recovery");
+
+  /* Seek once to create an accepted gate, fail it, then seek elsewhere. */
+  U32 seek_source = app->pdf.frame.page_index;
+  U32 first_seek = seek_source == 0 ? 1 : 0;
+  U32 recovery_seek = first_seek == 2 ? 0 : 2;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, first_seek) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index == first_seek &&
+    app->page_action_waiting_for_present, "seek-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "seek-failure");
+  timer_cycles += cycles;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, recovery_seek) == OctavoMoveResult_Ok &&
+    app->pdf.frame.page_index == recovery_seek &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 3 &&
+    octavo_win32_pdf_recovery_present(win32), "seek-recovery");
+
+  /* Same-kind Open is a real transactional replacement through the gate. */
+  U32 open_failure_target = app->pdf.frame.page_index == 0 ? 1 : 0;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_seek_location(app, open_failure_target) == OctavoMoveResult_Ok &&
+    app->page_action_waiting_for_present, "open-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "open-failure");
+  timer_cycles += cycles;
+  U64 document_generation = app->pdf.frame.document_generation;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_open_path(app, path) && app->pdf.frame.page_index == 0 &&
+    app->pdf.frame.document_generation != document_generation &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 4 &&
+    octavo_win32_pdf_recovery_present(win32), "open-recovery");
+
+  /* Close must always remain an escape from a persistently failed page. */
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_move_page(app, 1) == OctavoMoveResult_Ok &&
+    app->page_action_waiting_for_present, "close-mutation");
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_win32_pdf_recovery_fail_pending_frame(win32, &cycles),
+    "close-failure");
+  timer_cycles += cycles;
+  OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+    octavo_close_book(app) &&
+    app->document_kind == OctavoDocument_None &&
+    app->page_action_failed_pdf_recovery_count == recovery_before + 5 &&
+    octavo_win32_pdf_recovery_present(win32), "close-recovery");
+
+  {
+    MSG queued = {0};
+    B32 stale_retry = 0;
+    while (PeekMessageW(&queued, win32->window, WM_TIMER, WM_TIMER, PM_REMOVE))
+      if (queued.wParam == OctavoPresentationRetryTimerId) stale_retry = 1;
+    OCTAVO_PDF_WIN32_RECOVERY_REQUIRE(
+      !stale_retry && timer_cycles == 10 &&
+      app->page_action_presentation_retry_scheduled_count ==
+        scheduled_before + 10 &&
+      app->page_action_presentation_retry_fired_count == fired_before + 10 &&
+      !app->page_action_waiting_for_present && !app->page_action_pending &&
+      app->page_action_presentation_retry_attempt == 0,
+      "final-gate");
+  }
+
+  fprintf(stdout,
+          "octavo_pdf_presentation_recovery_win32_smoke result=pass "
+          "gate=real_win32 recoveries=page,history,seek,open,close "
+          "recovery_count=5 timer_cycles=%u timers=%u/%u stale=0\n",
+          timer_cycles,
+          app->page_action_presentation_retry_scheduled_count -
+            scheduled_before,
+          app->page_action_presentation_retry_fired_count - fired_before);
+  return 1;
+
+cleanup:
+  fprintf(stderr,
+          "octavo_pdf_presentation_recovery_win32_smoke result=fail "
+          "reason=%s page=%u waiting=%d retry=%u last=%s cycles=%u\n",
+          failure,
+          app->document_kind == OctavoDocument_PDF ?
+            app->pdf.frame.page_index : 0,
+          app->page_action_waiting_for_present,
+          app->page_action_presentation_retry_attempt,
+          pdf_reader_result_code(app->pdf.last_result),
+          timer_cycles);
+  return 0;
+
+#undef OCTAVO_PDF_WIN32_RECOVERY_REQUIRE
+}
+
 FUNCTION int
 octavo_run_window_internal(const char *initial_path,
-                             B32 page_repeat_probe_enabled)
+                             B32 page_repeat_probe_enabled,
+                             B32 pdf_recovery_probe_enabled)
 {
   OctavoWin32 win32 = {0};
   B32 page_repeat_sandbox_ready = 0;
+  B32 probe_window = page_repeat_probe_enabled ||
+    pdf_recovery_probe_enabled;
   S32 initial_width = page_repeat_probe_enabled ?
     OctavoPageRepeatProbeWidth : 1100;
   S32 initial_height = page_repeat_probe_enabled ?
@@ -22966,7 +24998,7 @@ octavo_run_window_internal(const char *initial_path,
                          initial_width,
                          initial_height,
                          1,
-                         !page_repeat_probe_enabled))
+                         !probe_window))
   {
     return 1;
   }
@@ -22986,7 +25018,7 @@ octavo_run_window_internal(const char *initial_path,
   }
 
   DWORD window_style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
-  DWORD window_ex_style = page_repeat_probe_enabled ?
+  DWORD window_ex_style = probe_window ?
     WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE : 0;
   RECT rect = {0, 0, win32.app.width, win32.app.height};
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
@@ -22994,9 +25026,9 @@ octavo_run_window_internal(const char *initial_path,
                                  window_class.lpszClassName,
                                  L"8vo",
                                  window_style,
-                                 page_repeat_probe_enabled ? -32000 :
+                                 probe_window ? -32000 :
                                    CW_USEDEFAULT,
-                                 page_repeat_probe_enabled ? -32000 :
+                                 probe_window ? -32000 :
                                    CW_USEDEFAULT,
                                  rect.right - rect.left,
                                  rect.bottom - rect.top,
@@ -23032,6 +25064,16 @@ octavo_run_window_internal(const char *initial_path,
     DestroyWindow(win32.window);
     octavo_app_release(&win32.app);
     return 1;
+  }
+  if (pdf_recovery_probe_enabled)
+  {
+    B32 passed = octavo_win32_pdf_presentation_recovery_regression(
+      &win32, initial_path);
+    DestroyWindow(win32.window);
+    win32.window = 0;
+    win32.app.window = 0;
+    octavo_app_release(&win32.app);
+    return passed ? 0 : 1;
   }
   if (page_repeat_probe_enabled)
   {
@@ -23784,13 +25826,2389 @@ octavo_run_window_internal(const char *initial_path,
 FUNCTION int
 octavo_run_window(const char *initial_path)
 {
-  return octavo_run_window_internal(initial_path, 0);
+  return octavo_run_window_internal(initial_path, 0, 0);
 }
 
 FUNCTION int
 octavo_run_page_repeat_win32_smoke(const char *path)
 {
-  return octavo_run_window_internal(path, 1);
+  return octavo_run_window_internal(path, 1, 0);
+}
+
+FUNCTION int
+octavo_run_pdf_presentation_recovery_win32_smoke(const char *path)
+{
+  return octavo_run_window_internal(path, 0, 1);
+}
+
+FUNCTION int
+octavo_run_pdf_stage1_smoke(const char *pdf_path,
+                            const char *epub_path,
+                            const char *invalid_pdf_path,
+                            const char *invalid_epub_path,
+                            const char *late_failure_epub_path,
+                            const char *bmp_path)
+{
+  enum { Width = 1100, Height = 760 };
+  const char *failure = "args";
+  OctavoApp app = {0};
+  OctavoPdf release_probe = {0};
+  PdfReaderCancelToken release_probe_token = {0};
+  B32 release_probe_token_live = 0;
+  Arena *pixel_arena = 0;
+  U64 output_hash = 0;
+  U32 raster_width = 0;
+  U32 raster_height = 0;
+  U64 raster_bytes = 0;
+  U32 landscape_width = 0;
+  U32 landscape_height = 0;
+  U64 landscape_bytes = 0;
+  B32 passed = 0;
+
+#define OCTAVO_PDF_SMOKE_REQUIRE(condition, reason) \
+  do { if (!(condition)) { failure = (reason); goto cleanup; } } while (0)
+
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_path && pdf_path[0] && epub_path && epub_path[0] &&
+    invalid_pdf_path && invalid_pdf_path[0] &&
+    invalid_epub_path && invalid_epub_path[0] &&
+    late_failure_epub_path && late_failure_epub_path[0] &&
+    bmp_path && bmp_path[0],
+    "args");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_app_init(&app, Width, Height, 1, 0), "init");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_document_invariants_hold(&app),
+                           "init-invariants");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, pdf_path), "pdf-open");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.page_count == 3 && app.pdf.frame.page_index == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-open-invariants");
+
+  octavo_prepare_reader_view_projection(&app);
+  UI0U64 expected_features = ReaderViewFeature_Open |
+    ReaderViewFeature_Paging | ReaderViewFeature_History |
+    ReaderViewFeature_Progress | ReaderViewFeature_Fullscreen |
+    ReaderViewFeature_DirectPageNumber | ReaderViewFeature_Contents |
+    ReaderViewFeature_Find | ReaderViewFeature_SelectionTools;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_projection.features == expected_features &&
+    (app.reader_view_projection.document_flags & ReaderViewDocument_Open) &&
+    !(app.reader_view_projection.document_flags &
+      ReaderViewDocument_CanGoPreviousPage) &&
+    (app.reader_view_projection.document_flags &
+      ReaderViewDocument_CanGoNextPage) &&
+    app.reader_view_projection.progress.page_index == 0 &&
+    app.reader_view_projection.progress.page_count == 3 &&
+    app.reader_view_projection.progress.can_seek &&
+    app.reader_view_projection.toc.status.state == ReaderViewLoad_Empty &&
+    app.reader_view_projection.toc.row_count == 0 &&
+    app.reader_view_projection.find.status.state == ReaderViewLoad_Ready &&
+    app.reader_view_projection.find.row_count == 0 &&
+    app.reader_view_projection.find.active_index == -1 &&
+    app.reader_view_projection.settings.status.state ==
+      ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.right.status.state ==
+      ReaderViewLoad_Unavailable &&
+    app.reader_view_projection.selection.status.state ==
+      ReaderViewLoad_Ready &&
+    app.reader_view_projection.selection.selection_key == 0 &&
+    app.reader_view_projection.selection.flags == 0,
+    "pdf-projection");
+
+  U64 pixel_bytes = (U64)Width * (U64)Height * sizeof(U32);
+  pixel_arena = arena_alloc(&(ArenaParams){
+    .reserve_size = pixel_bytes,
+    .commit_size = 64 * 1024,
+  });
+  U32 *pixels = pixel_arena ?
+    (U32 *)arena_push(pixel_arena, pixel_bytes, ALIGN_OF(U32)) : 0;
+  OCTAVO_PDF_SMOKE_REQUIRE(pixels != 0, "output-arena");
+  MemoryZero(pixels, pixel_bytes);
+  RenderBuffer buffer = {0};
+  render_buffer_init(&buffer, pixels, Width, Height, Width);
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.presentation_hash != 0 &&
+    app.pdf.bgra_pixels &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    app.pdf.raster_width > 0 && app.pdf.raster_height > 0 &&
+    app.pdf.raster_capacity_bytes <= app.pdf.arena_allocated_bytes &&
+    app.pdf.arena_allocated_bytes <= OCTAVO_PDF_RASTER_MEMORY_CAP &&
+    octavo_document_invariants_hold(&app), "pdf-render");
+  B32 found_red = 0;
+  U64 pdf_pixel_count = (U64)app.pdf.raster_width * app.pdf.raster_height;
+  for (U64 index = 0; index < pdf_pixel_count && !found_red; index += 1)
+    found_red = app.pdf.bgra_pixels[index] == 0xffff0000U;
+  OCTAVO_PDF_SMOKE_REQUIRE(found_red, "rgba-bgra-swizzle");
+  output_hash = u64_hash_bytes(pixels, pixel_bytes);
+  raster_width = app.pdf.raster_width;
+  raster_height = app.pdf.raster_height;
+  raster_bytes = app.pdf.raster_capacity_bytes;
+  OCTAVO_PDF_SMOKE_REQUIRE(output_hash != 0 &&
+                           octavo_write_bmp(bmp_path, pixels, Width, Height),
+                           "bmp");
+
+  /* A failed new render must withdraw the old publication, while retaining
+     its one bounded allocation for the next successful render. */
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, 0, Height) ==
+      PdfReaderResult_LimitExceeded && !app.pdf.bgra_pixels,
+    "render-failure-publication");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, Width, Height) == PdfReaderResult_Ok &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "render-recovery");
+
+  /* Exercise the full product draw path with a transient backend-target
+     failure. Restoring the owned target models the transient condition ending;
+     Ready must survive so both resize and navigation cause a fresh retry. */
+  U8 *owned_raster = app.pdf.rgba_pixels;
+  app.pdf.bgra_pixels = 0;
+  app.pdf.rendered_reader_generation = 0;
+  app.pdf.rgba_pixels = 0;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app.pdf) && !app.presentation_complete &&
+    !app.pdf.bgra_pixels && octavo_document_invariants_hold(&app),
+    "product-render-failure-ready");
+  app.pdf.rgba_pixels = owned_raster;
+  app.width = 820;
+  app.height = 620;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready && app.presentation_complete &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "product-render-resize-retry");
+  app.width = Width;
+  app.height = Height;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.pdf.bgra_pixels,
+    "product-render-size-restore");
+
+  owned_raster = app.pdf.rgba_pixels;
+  app.pdf.bgra_pixels = 0;
+  app.pdf.rendered_reader_generation = 0;
+  app.pdf.rgba_pixels = 0;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.document_state == ReaderViewLoad_Ready &&
+    octavo_pdf_is_open(&app.pdf) && !app.presentation_complete &&
+    !app.pdf.bgra_pixels, "product-render-navigation-ready");
+  app.pdf.rgba_pixels = owned_raster;
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_NextPage});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 1 &&
+                           !app.pdf.bgra_pixels &&
+                           app.document_state == ReaderViewLoad_Ready,
+                           "next-page-after-render-failure");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.presentation_complete && app.pdf.bgra_pixels &&
+    app.pdf.frame.page_index == 1 && octavo_document_invariants_hold(&app),
+    "product-render-navigation-retry");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
+                              OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 2, "next-page-2");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, 8192, 4320) == PdfReaderResult_Ok &&
+    app.pdf.raster_width == 5792 && app.pdf.raster_height == 2896 &&
+    app.pdf.raster_capacity_bytes == 67094528 &&
+    app.pdf.raster_capacity_bytes <= OCTAVO_PDF_RASTER_MEMORY_CAP &&
+    app.pdf.bgra_pixels == (U32 *)app.pdf.rgba_pixels &&
+    octavo_document_invariants_hold(&app), "landscape-8k-memory-fit");
+  landscape_width = app.pdf.raster_width;
+  landscape_height = app.pdf.raster_height;
+  landscape_bytes = app.pdf.raster_capacity_bytes;
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, 1) ==
+                             OctavoMoveResult_Boundary &&
+                           app.pdf.frame.page_index == 2, "next-boundary");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_history(&app, 0) ==
+                             OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 1, "history-back");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_history(&app, 1) ==
+                             OctavoMoveResult_Ok &&
+                           app.pdf.frame.page_index == 2, "history-forward");
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_SeekLocation, .value = 0});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 0, "progress-seek");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_move_page(&app, -1) ==
+                             OctavoMoveResult_Boundary,
+                           "previous-boundary");
+
+  /* Exercise the application-owned input bridge and action translation, not
+     only Readerview0's package test. Pointer activation opens the PDF-only
+     editor, Enter commits its one-based draft, and the existing zero-based
+     SeekLocation action reaches Reader0. */
+  octavo_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *direct_trigger =
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_trigger != 0,
+                           "direct-page-pointer-trigger");
+  UI0Rect direct_trigger_rect = direct_trigger->rect;
+  app.input.pointer_x = direct_trigger_rect.x + direct_trigger_rect.w / 2;
+  app.input.pointer_y = direct_trigger_rect.y + direct_trigger_rect.h / 2;
+  app.input.pointer_down = 1;
+  app.input.pointer_pressed = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  app.input.pointer_down = 0;
+  app.input.pointer_released = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-pointer-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame,
+      ReaderViewSemanticControl_DirectPageInput) != 0,
+    "direct-page-input");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_reader_view_text_editing(&app),
+                           "direct-page-native-editing-route");
+  octavo_append_input_wchar(&app, L'2');
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.input.text_length == 1 && app.input.text[0] == '2',
+    "direct-page-native-text-route");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.direct_page_draft_length == 1 &&
+    app.reader_view_state.direct_page_draft[0] == '2',
+    "direct-page-keyboard-edit");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_route_keydown(&app, VK_RETURN, 0) ==
+      OctavoReaderKeyRoute_Handled,
+    "direct-page-native-enter-route");
+  octavo_render_to_buffer(&app, &buffer);
+  U64 direct_seek_value = UINT64_MAX;
+  for (UI0S32 action_index = 0;
+       action_index < app.reader_view_frame.action_count;
+       action_index += 1)
+  {
+    const ReaderViewAction *action =
+      app.reader_view_frame.actions + action_index;
+    if (action->kind == ReaderViewAction_SeekLocation)
+      direct_seek_value = action->value;
+  }
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    direct_seek_value == 1 &&
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "direct-page-keyboard-commit");
+  octavo_apply_reader_view_actions(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 1,
+                           "direct-page-keyboard-seek");
+
+  /* Reopen from keyboard focus and commit through the popup button so the
+     product bridge covers both input modes. */
+  octavo_render_to_buffer(&app, &buffer);
+  direct_trigger = octavo_reader_view_semantic_control(
+    &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_trigger != 0,
+                           "direct-page-keyboard-trigger");
+  app.reader_view_state.focus_id = direct_trigger->id;
+  app.reader_view_state.focus_visible = 1;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_route_keydown(&app, VK_RETURN, 0) ==
+      OctavoReaderKeyRoute_Handled,
+    "direct-page-native-trigger-route");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-keyboard-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_reader_view_text_editing(&app),
+                           "direct-page-native-second-editing-route");
+  octavo_append_input_wchar(&app, L'3');
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.input.text_length == 1 && app.input.text[0] == '3',
+    "direct-page-native-second-text-route");
+  octavo_render_to_buffer(&app, &buffer);
+  const ReaderViewSemanticNode *direct_commit =
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame, ReaderViewSemanticControl_DirectPageCommit);
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_commit != 0,
+                           "direct-page-pointer-commit-control");
+  UI0Rect direct_commit_rect = direct_commit->rect;
+  app.input.pointer_x = direct_commit_rect.x + direct_commit_rect.w / 2;
+  app.input.pointer_y = direct_commit_rect.y + direct_commit_rect.h / 2;
+  app.input.pointer_down = 1;
+  app.input.pointer_pressed = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  app.input.pointer_down = 0;
+  app.input.pointer_released = 1;
+  octavo_render_to_buffer(&app, &buffer);
+  direct_seek_value = UINT64_MAX;
+  for (UI0S32 action_index = 0;
+       action_index < app.reader_view_frame.action_count;
+       action_index += 1)
+  {
+    const ReaderViewAction *action =
+      app.reader_view_frame.actions + action_index;
+    if (action->kind == ReaderViewAction_SeekLocation)
+      direct_seek_value = action->value;
+  }
+  OCTAVO_PDF_SMOKE_REQUIRE(direct_seek_value == 2,
+                           "direct-page-pointer-commit");
+  octavo_apply_reader_view_actions(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 2,
+                           "direct-page-pointer-seek");
+
+  /* A host-side can_seek withdrawal must tear down stale editor state before
+     any deferred action can escape. Restore the valid Reader0 frame before
+     asking the document invariant checker to observe it. */
+  octavo_render_to_buffer(&app, &buffer);
+  direct_trigger = octavo_reader_view_semantic_control(
+    &app.reader_view_frame, ReaderViewSemanticControl_DirectPageTrigger);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    direct_trigger && reader_view_accessibility_invoke(
+      &app.reader_view_state, direct_trigger->id),
+    "direct-page-withdraw-open");
+  octavo_render_to_buffer(&app, &buffer);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_DirectPageNumber,
+    "direct-page-withdraw-popup");
+  U32 saved_pdf_page_count = app.pdf.frame.page_count;
+  U32 saved_pdf_page_index = app.pdf.frame.page_index;
+  app.pdf.frame.page_count = 0;
+  app.pdf.frame.page_index = 0;
+  B32 withdrawal_built = octavo_build_reader_view(&app);
+  app.pdf.frame.page_count = saved_pdf_page_count;
+  app.pdf.frame.page_index = saved_pdf_page_index;
+  OCTAVO_PDF_SMOKE_REQUIRE(withdrawal_built,
+                           "direct-page-withdraw-build");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "direct-page-withdraw-popup-close");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.reader_view_state.direct_page_draft_length == 0,
+    "direct-page-withdraw-draft-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(app.reader_view_frame.action_count == 0,
+                           "direct-page-withdraw-action-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_reader_view_semantic_control(
+      &app.reader_view_frame,
+      ReaderViewSemanticControl_DirectPageTrigger) == 0,
+    "direct-page-withdraw-trigger-clear");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_document_invariants_hold(&app),
+                           "direct-page-withdraw-invariants");
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_SeekLocation, .value = 0});
+  OCTAVO_PDF_SMOKE_REQUIRE(app.pdf.frame.page_index == 0,
+                           "direct-page-return");
+
+  U32 annotation_count = app.highlight_count + app.bookmark_count;
+  octavo_apply_reader_view_action(&app,
+    &(ReaderViewAction){.kind = ReaderViewAction_ToggleBookmark});
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 0 &&
+    annotation_count == app.highlight_count + app.bookmark_count,
+    "unsupported-action");
+
+  /* Same-kind and cross-kind failed replacements retain the exact live PDF. */
+  U64 pdf_document_generation = app.pdf.frame.document_generation;
+  U64 pdf_reader_generation = app.pdf.frame.generation;
+  char retained_pdf_path[OctavoLibraryPathCap] = {0};
+  octavo_copy_cstr(retained_pdf_path, ARRAY_COUNT(retained_pdf_path),
+                   app.current_path);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_pdf_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.generation == pdf_reader_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-pdf-failure");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_epub_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-epub-failure");
+  U64 epub_candidate_generation = app.reader.document_generation;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, late_failure_epub_path) &&
+    app.reader.document_generation > epub_candidate_generation &&
+    !epub_reader_is_open(&app.reader) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.document_generation == pdf_document_generation &&
+    app.pdf.frame.page_index == 0 &&
+    strcmp(app.current_path, retained_pdf_path) == 0 &&
+    octavo_document_invariants_hold(&app), "pdf-epub-late-failure");
+
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, epub_path) &&
+                           app.document_kind == OctavoDocument_EPUB &&
+                           epub_reader_is_open(&app.reader) &&
+                           !octavo_pdf_is_open(&app.pdf) &&
+                           octavo_document_invariants_hold(&app),
+                           "pdf-epub-replacement");
+  octavo_prepare_reader_view_projection(&app);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !(app.reader_view_projection.features &
+      ReaderViewFeature_DirectPageNumber),
+    "epub-direct-page-feature-absent");
+  DocDocumentId epub_document_id = epub_reader_document_id(&app.reader);
+  U64 epub_document_generation = app.reader.document_generation;
+  char retained_epub_path[OctavoLibraryPathCap] = {0};
+  octavo_copy_cstr(retained_epub_path, ARRAY_COUNT(retained_epub_path),
+                   app.current_path);
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_open_path(&app, invalid_pdf_path) &&
+    app.document_kind == OctavoDocument_EPUB &&
+    epub_reader_document_id(&app.reader) == epub_document_id &&
+    app.reader.document_generation == epub_document_generation &&
+    strcmp(app.current_path, retained_epub_path) == 0 &&
+    octavo_document_invariants_hold(&app), "epub-pdf-failure");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_open_path(&app, pdf_path) &&
+                           app.document_kind == OctavoDocument_PDF &&
+                           !epub_reader_is_open(&app.reader) &&
+                           octavo_document_invariants_hold(&app),
+                           "epub-pdf-replacement");
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_close_book(&app) &&
+                           app.document_kind == OctavoDocument_None &&
+                           octavo_document_invariants_hold(&app),
+                           "pdf-close");
+
+  /* The host wrapper refuses destructive release while a Reader0 token is
+     live, and remains fully releasable after the owned token is deinitialized. */
+  OCTAVO_PDF_SMOKE_REQUIRE(octavo_pdf_init(&release_probe), "release-probe-init");
+  Arena *probe_arena = release_probe.raster_arena;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_init(&release_probe.reader,
+                                 &release_probe_token) == PdfReaderResult_Ok,
+    "release-token-init");
+  release_probe_token_live = 1;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    !octavo_pdf_release(&release_probe) &&
+    release_probe.reader.initialized &&
+    release_probe.raster_arena == probe_arena &&
+    release_probe.reader.cancel_token_count == 1,
+    "release-live-token");
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_deinit(&release_probe.reader,
+                                   &release_probe_token) == PdfReaderResult_Ok,
+    "release-token-deinit");
+  release_probe_token_live = 0;
+  OCTAVO_PDF_SMOKE_REQUIRE(
+    octavo_pdf_invariants_hold(&release_probe) &&
+    octavo_pdf_release(&release_probe) && !release_probe.reader.initialized &&
+    !release_probe.raster_arena,
+    "release-token-deinit");
+  passed = 1;
+
+cleanup:
+  if (release_probe_token_live)
+  {
+    if (pdf_reader_cancel_token_deinit(&release_probe.reader,
+                                       &release_probe_token) !=
+        PdfReaderResult_Ok)
+    {
+      failure = "release-probe-token-cleanup";
+      passed = 0;
+    }
+    release_probe_token_live = 0;
+  }
+  if (release_probe.reader.initialized || release_probe.raster_arena)
+  {
+    if (!octavo_pdf_release(&release_probe))
+    {
+      failure = "release-probe-cleanup";
+      passed = 0;
+    }
+  }
+  if (pixel_arena) arena_release(pixel_arena);
+  if (app.arena)
+  {
+    octavo_app_release(&app);
+    if (app.arena || app.pdf.reader.initialized || app.pdf.raster_arena)
+    {
+      failure = "app-release";
+      passed = 0;
+    }
+  }
+  if (!passed)
+  {
+    fprintf(stderr, "octavo_pdf_stage1_smoke result=fail reason=%s\n",
+            failure);
+    return 1;
+  }
+  fprintf(stdout,
+          "octavo_pdf_stage1_smoke result=pass pages=3 raster=%ux%u "
+          "raster_bytes=%llu cap=%u rgba_to_bgra=in_place "
+          "landscape8k=%ux%u landscape_bytes=%llu retry=resize,navigate "
+          "navigation=previous,next,back,forward,seek "
+          "direct_page=pointer,keyboard withdrawal=can_seek "
+          "epub_direct_page=absent "
+          "replacement=pdf-pdf,pdf-epub-late,epub-pdf lifecycle=verified "
+          "hash=%016llx bmp=%s\n",
+          raster_width, raster_height, (unsigned long long)raster_bytes,
+          OCTAVO_PDF_RASTER_MEMORY_CAP, landscape_width, landscape_height,
+          (unsigned long long)landscape_bytes,
+          (unsigned long long)output_hash,
+          bmp_path);
+  return 0;
+
+#undef OCTAVO_PDF_SMOKE_REQUIRE
+}
+
+FUNCTION int
+octavo_run_pdf_content_smoke(const char *pdf_path)
+{
+  OctavoApp app = {0};
+  OctavoPdfContent error_shell = {0};
+  const char *failure = "init";
+  B32 passed = 0;
+
+#define OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(condition, reason_text) \
+  do { if (!(condition)) { failure = (reason_text); goto cleanup; } } while (0)
+
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_pdf_content_result_contract_smoke(),
+    "result-contract-validators");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    pdf_path && pdf_path[0] &&
+    octavo_app_init(&app, 1000, 720, 0, 0), "app-init");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_open_path(&app, pdf_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    octavo_document_invariants_hold(&app), "pdf-open");
+  U64 generation = app.pdf.frame.document_generation;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_pdf_content_init(&error_shell) &&
+    !octavo_pdf_content_begin_document(
+      &error_shell, &app.pdf.reader, generation,
+      app.pdf.frame.page_count, app.pdf.frame.page_count) &&
+    octavo_pdf_content_bind_error_document(
+      &error_shell, generation, app.pdf.frame.page_count) &&
+    error_shell.document_generation == generation &&
+    error_shell.page_count == app.pdf.frame.page_count &&
+    error_shell.outline_state == OctavoPdfContentLoad_Error &&
+    error_shell.label_state == OctavoPdfContentLoad_Error &&
+    error_shell.link_state == OctavoPdfContentLoad_Error &&
+    error_shell.search_state == OctavoPdfContentLoad_Error &&
+    octavo_pdf_content_invariants_hold(&error_shell),
+    "generation-bound-error-shell");
+  octavo_pdf_content_release(&error_shell);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf_content.document_generation == generation &&
+    app.pdf_content.page_count == 2 &&
+    app.pdf_content.outline_state == OctavoPdfContentLoad_Ready &&
+    app.pdf_content.outline_item_count == 3 &&
+    app.pdf_content.label_state == OctavoPdfContentLoad_Ready &&
+    app.pdf_content.link_state == OctavoPdfContentLoad_Ready &&
+    app.pdf_content.page_link_count == 4,
+    "initial-content-publication");
+
+  OctavoPdfContentSpan label = octavo_pdf_content_page_label(
+    &app.pdf_content, generation, 0);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    label.size == 1 && label.str && label.str[0] == 'i' &&
+    octavo_pdf_content_page_label(
+      &app.pdf_content, generation + 1, 0).size == 0,
+    "page-label-generation");
+
+  octavo_prepare_reader_view_projection(&app);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    (app.reader_view_projection.features &
+      (ReaderViewFeature_Contents | ReaderViewFeature_Find)) ==
+      (ReaderViewFeature_Contents | ReaderViewFeature_Find) &&
+    app.reader_view_projection.toc.status.state == ReaderViewLoad_Ready &&
+    app.reader_view_projection.toc.row_count == 3 &&
+    app.reader_view_projection.toc.total_count == 3 &&
+    app.reader_view_projection.toc.rows[0].depth == 0 &&
+    app.reader_view_projection.toc.rows[1].depth == 1 &&
+    app.reader_view_projection.toc.rows[2].depth == 0 &&
+    app.reader_view_projection.find.status.state == ReaderViewLoad_Ready &&
+    app.reader_view_projection.find.row_count == 0,
+    "reader-view-content-projection");
+
+  const PdfReaderLink *internal_link = 0;
+  const PdfReaderLink *alternate_internal_link = 0;
+  const PdfReaderLink *external_link = 0;
+  const PdfReaderLink *rejected_link = 0;
+  OctavoPdfContentSpan external_uri = {0};
+  for (U32 index = 0; index < app.pdf_content.page_link_count; index += 1)
+  {
+    const PdfReaderLink *link = app.pdf_content.page_links + index;
+    if (link->target_kind == PdfReaderLinkTargetKind_Internal)
+    {
+      if (!internal_link) internal_link = link;
+      else if (!alternate_internal_link) alternate_internal_link = link;
+      continue;
+    }
+    if (link->target_kind != PdfReaderLinkTargetKind_External ||
+        link->uri_offset > app.pdf_content.page_link_uri_size ||
+        link->uri_size >
+          app.pdf_content.page_link_uri_size - link->uri_offset)
+    {
+      continue;
+    }
+    OctavoPdfContentSpan uri = {
+      .str = app.pdf_content.page_link_uri_bytes + link->uri_offset,
+      .size = link->uri_size,
+    };
+    if (octavo_pdf_content_external_uri_is_allowed(uri))
+    {
+      external_link = link;
+      external_uri = uri;
+    }
+    else
+    {
+      rejected_link = link;
+    }
+  }
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    internal_link && alternate_internal_link &&
+    internal_link->destination.valid &&
+    alternate_internal_link->destination.valid &&
+    internal_link->destination.page_index ==
+      alternate_internal_link->destination.page_index &&
+    internal_link->destination.fit !=
+      alternate_internal_link->destination.fit &&
+    external_link && rejected_link &&
+    external_uri.size == sizeof("https://example.com/8vo") - 1,
+    "link-kinds");
+
+  PdfReaderLink reversed_links[2] = {
+    {
+      .bounds = {.x0 = 360, .y0 = 100, .x1 = 220, .y1 = 125},
+      .target_kind = PdfReaderLinkTargetKind_Internal,
+      .destination = internal_link->destination,
+    },
+    {
+      .bounds = {.x0 = 220, .y0 = 125, .x1 = 360, .y1 = 100},
+      .target_kind = PdfReaderLinkTargetKind_Internal,
+      .destination = internal_link->destination,
+    },
+  };
+  PdfReaderPoint reversed_x_point = {
+    .x = (reversed_links[0].bounds.x0 +
+          reversed_links[0].bounds.x1) * 0.5f,
+    .y = (reversed_links[0].bounds.y0 +
+          reversed_links[0].bounds.y1) * 0.5f,
+  };
+  PdfReaderPoint reversed_y_point = {
+    .x = (reversed_links[1].bounds.x0 +
+          reversed_links[1].bounds.x1) * 0.5f,
+    .y = (reversed_links[1].bounds.y0 +
+          reversed_links[1].bounds.y1) * 0.5f,
+  };
+  PdfReaderLink *published_links = app.pdf_content.page_links;
+  U32 published_link_count = app.pdf_content.page_link_count;
+  app.pdf_content.page_links = reversed_links;
+  app.pdf_content.page_link_count = ARRAY_COUNT(reversed_links);
+  OctavoPdfContentActivation reversed_activation = {0};
+  B32 reversed_x_hit = octavo_pdf_content_hit_test_link(
+    &app.pdf_content, generation, 0, reversed_x_point,
+    &reversed_activation);
+  B32 reversed_y_hit = octavo_pdf_content_hit_test_link(
+    &app.pdf_content, generation, 0, reversed_y_point,
+    &reversed_activation);
+  app.pdf_content.page_links = published_links;
+  app.pdf_content.page_link_count = published_link_count;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    reversed_x_point.x == reversed_y_point.x &&
+    reversed_x_point.y == reversed_y_point.y &&
+    !reversed_x_hit && !reversed_y_hit,
+    "reversed-overlapping-link-bounds");
+
+  PdfReaderPoint external_point = {
+    .x = (external_link->bounds.x0 + external_link->bounds.x1) * 0.5f,
+    .y = (external_link->bounds.y0 + external_link->bounds.y1) * 0.5f,
+  };
+  OctavoPdfContentActivation external_activation = {0};
+  const wchar_t *wide_uri = 0;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_pdf_content_hit_test_link(
+      &app.pdf_content, generation, 0, external_point,
+      &external_activation) &&
+    external_activation.target_kind == PdfReaderLinkTargetKind_External &&
+    octavo_pdf_content_external_uri_wide(
+      &app.pdf_content, external_activation.external_uri, &wide_uri) &&
+    wide_uri && lstrcmpW(wide_uri, L"https://example.com/8vo") == 0,
+    "external-link-counted-wide");
+
+  PdfReaderPoint rejected_point = {
+    .x = (rejected_link->bounds.x0 + rejected_link->bounds.x1) * 0.5f,
+    .y = (rejected_link->bounds.y0 + rejected_link->bounds.y1) * 0.5f,
+  };
+  OctavoPdfContentActivation rejected_activation = {0};
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_content_hit_test_link(
+      &app.pdf_content, generation, 0, rejected_point,
+      &rejected_activation) &&
+    !octavo_pdf_content_hit_test_link(
+      &app.pdf_content, generation + 1, 0, external_point,
+      &rejected_activation),
+    "link-policy-and-generation");
+
+  static const U8 allowed_https[] = "HTTPS://example.com/path?q=1";
+  static const U8 allowed_mailto[] = "mailto:reader@example.com";
+  static const U8 rejected_file[] = "file:///C:/book.pdf";
+  static const U8 rejected_path[] = "C:\\books\\book.pdf";
+  static const U8 rejected_empty_query_authority[] =
+    "https://?next=example.com";
+  static const U8 rejected_empty_fragment_authority[] =
+    "https://#example.com";
+  static const U8 rejected_empty_userinfo_host[] =
+    "https://reader@/book";
+  static const U8 rejected_encoded_control[] =
+    "https://example.com/%0dnext";
+  static const U8 rejected_c1_control[] = {
+    'h','t','t','p','s',':','/','/','e','x','a','m','p','l','e','.',
+    'c','o','m','/',0xc2,0x80,
+  };
+  static const U8 rejected_nul[] = {
+    'h','t','t','p','s',':','/','/','e','x','a','m','p','l','e','.',
+    'c','o','m',0,'x',
+  };
+  static const U8 rejected_utf8[] = {
+    'h','t','t','p','s',':','/','/','e','x','a','m','p','l','e','.',
+    'c','o','m','/',0xc3,0x28,
+  };
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      allowed_https, sizeof(allowed_https) - 1}) &&
+    octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      allowed_mailto, sizeof(allowed_mailto) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_file, sizeof(rejected_file) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_path, sizeof(rejected_path) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_empty_query_authority,
+      sizeof(rejected_empty_query_authority) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_empty_fragment_authority,
+      sizeof(rejected_empty_fragment_authority) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_empty_userinfo_host,
+      sizeof(rejected_empty_userinfo_host) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_encoded_control, sizeof(rejected_encoded_control) - 1}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_c1_control, sizeof(rejected_c1_control)}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_nul, sizeof(rejected_nul)}) &&
+    !octavo_pdf_content_external_uri_is_allowed((OctavoPdfContentSpan){
+      rejected_utf8, sizeof(rejected_utf8)}),
+    "external-uri-policy");
+
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_build_reader_view(&app), "link-reader-view-layout");
+  UI0Rect content_rect = app.reader_content_geometry.content_rect;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    content_rect.w > 0 && content_rect.h > 0 &&
+    octavo_pdf_render_fit(&app.pdf, content_rect.w, content_rect.h) ==
+      PdfReaderResult_Ok,
+    "link-raster");
+  PdfReaderPoint internal_point = {
+    .x = (internal_link->bounds.x0 + internal_link->bounds.x1) * 0.5f,
+    .y = (internal_link->bounds.y0 + internal_link->bounds.y1) * 0.5f,
+  };
+  PdfReaderPoint alternate_internal_point = {
+    .x = (alternate_internal_link->bounds.x0 +
+          alternate_internal_link->bounds.x1) * 0.5f,
+    .y = (alternate_internal_link->bounds.y0 +
+          alternate_internal_link->bounds.y1) * 0.5f,
+  };
+  OctavoPdfScreenGeometry link_geometry = {0};
+  F32 link_x_f = 0.0f;
+  F32 link_y_f = 0.0f;
+  F32 alternate_link_x_f = 0.0f;
+  F32 alternate_link_y_f = 0.0f;
+  F32 reversed_link_x_f = 0.0f;
+  F32 reversed_link_y_f = 0.0f;
+  S32 link_x = 0;
+  S32 link_y = 0;
+  S32 alternate_link_x = 0;
+  S32 alternate_link_y = 0;
+  S32 reversed_link_x = 0;
+  S32 reversed_link_y = 0;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_pdf_screen_geometry_for_app(&app, &link_geometry) &&
+    octavo_pdf_page_to_screen(
+      &link_geometry, internal_point, &link_x_f, &link_y_f) &&
+    octavo_pdf_page_to_screen(
+      &link_geometry, alternate_internal_point,
+      &alternate_link_x_f, &alternate_link_y_f) &&
+    octavo_pdf_page_to_screen(
+      &link_geometry, reversed_x_point,
+      &reversed_link_x_f, &reversed_link_y_f) &&
+    octavo_pdf_screen_coordinate(link_x_f, &link_x) &&
+    octavo_pdf_screen_coordinate(link_y_f, &link_y) &&
+    octavo_pdf_screen_coordinate(alternate_link_x_f, &alternate_link_x) &&
+    octavo_pdf_screen_coordinate(alternate_link_y_f, &alternate_link_y) &&
+    octavo_pdf_screen_coordinate(reversed_link_x_f, &reversed_link_x) &&
+    octavo_pdf_screen_coordinate(reversed_link_y_f, &reversed_link_y),
+    "shared-link-transform");
+  OctavoPdfContentActivation overlay_probe = {0};
+  ReaderViewPopupKind saved_popup = app.reader_view_state.popup;
+  ReaderViewLayout saved_layout = app.reader_view_layout;
+  app.reader_view_state.popup = ReaderViewPopup_DirectPageNumber;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_link_at_screen_point(
+      &app, link_x, link_y, &overlay_probe),
+    "link-popup-precedence");
+  app.reader_view_state.popup = ReaderViewPopup_None;
+  app.reader_view_layout.left_panel_visible = 1;
+  app.reader_view_layout.left_panel_rect =
+    ui0_rect(link_x - 1, link_y - 1, 3, 3);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_link_at_screen_point(
+      &app, link_x, link_y, &overlay_probe),
+    "link-left-panel-precedence");
+  app.reader_view_layout = saved_layout;
+  app.reader_view_layout.right_panel_visible = 1;
+  app.reader_view_layout.right_panel_rect =
+    ui0_rect(link_x - 1, link_y - 1, 3, 3);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_link_at_screen_point(
+      &app, link_x, link_y, &overlay_probe),
+    "link-right-panel-precedence");
+  app.reader_view_layout = saved_layout;
+  app.reader_view_layout.previous_gutter_rect =
+    ui0_rect(link_x - 1, link_y - 1, 3, 3);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_link_at_screen_point(
+      &app, link_x, link_y, &overlay_probe),
+    "link-previous-gutter-precedence");
+  app.reader_view_layout = saved_layout;
+  app.reader_view_layout.next_gutter_rect =
+    ui0_rect(link_x - 1, link_y - 1, 3, 3);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_link_at_screen_point(
+      &app, link_x, link_y, &overlay_probe),
+    "link-next-gutter-precedence");
+  app.reader_view_state.popup = saved_popup;
+  app.reader_view_layout = saved_layout;
+  app.pdf_content.page_links = reversed_links;
+  app.pdf_content.page_link_count = ARRAY_COUNT(reversed_links);
+  octavo_host_pointer_press(&app, reversed_link_x, reversed_link_y);
+  B32 reversed_pointer_armed = app.pdf_link_pointer_armed;
+  B32 reversed_pointer_activated = octavo_host_pointer_release(
+    &app, reversed_link_x, reversed_link_y);
+  app.pdf_content.page_links = published_links;
+  app.pdf_content.page_link_count = published_link_count;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !reversed_pointer_armed,
+    "reversed-overlapping-link-no-arm");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !reversed_pointer_activated &&
+    app.pdf.frame.page_index == 0 &&
+    !app.pdf_link_pointer_armed &&
+    octavo_document_invariants_hold(&app),
+    "reversed-overlapping-link-no-activation");
+  octavo_host_pointer_press(&app, link_x, link_y);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf_link_pointer_armed, "internal-link-distinct-pointer-arm");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_host_pointer_release(
+      &app, alternate_link_x, alternate_link_y) &&
+    app.pdf.frame.page_index == 0 &&
+    !app.pdf_link_pointer_armed &&
+    octavo_document_invariants_hold(&app),
+    "internal-link-distinct-destination-release");
+  octavo_host_pointer_press(&app, link_x, link_y);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf_link_pointer_armed, "internal-link-pointer-arm");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_host_pointer_release(&app, link_x, link_y) &&
+    app.pdf.frame.page_index == 1 &&
+    !app.pdf_link_pointer_armed &&
+    octavo_document_invariants_hold(&app),
+    "internal-link-pointer-activate");
+  label = octavo_pdf_content_page_label(&app.pdf_content, generation, 1);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    label.size == 3 && label.str &&
+    memcmp(label.str, "A-1", 3) == 0,
+    "page-label-after-link");
+
+  octavo_prepare_reader_view_projection(&app);
+  ReaderViewKey first_outline_key =
+    app.reader_view_projection.toc.rows[0].key;
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateTocRow,
+    .key = first_outline_key,
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 0, "outline-activation");
+  OctavoPdfContentSpan stale_title = {0};
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_pdf_content_outline_item(
+      &app.pdf_content, generation + 1, 0, &stale_title),
+    "outline-generation-guard");
+
+  static const char query[] = "needle";
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindCommitted,
+    .text = {.data = query, .size = (UI0S32)(sizeof(query) - 1)},
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf_content.search_state == OctavoPdfContentLoad_Loading &&
+    app.pdf_content.search_next_page == 0 &&
+    app.pdf_content.search_serial != 0,
+    "search-start");
+  U64 old_search_serial = app.pdf_content.search_serial;
+  UINT_PTR old_timer_id = 0;
+  octavo_pdf_search_timer_next_id(&app, &old_timer_id);
+  app.pdf_search_timer_armed_id = old_timer_id;
+  app.pdf_search_timer_armed_document_generation = generation;
+  app.pdf_search_timer_armed_search_serial = old_search_serial;
+
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindCommitted,
+    .text = {.data = query, .size = (UI0S32)(sizeof(query) - 1)},
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    old_timer_id >= OctavoPdfSearchPumpFirstTimerId &&
+    app.pdf_search_timer_armed_id == 0 &&
+    app.pdf_content.search_state == OctavoPdfContentLoad_Loading &&
+    app.pdf_content.search_next_page == 0 &&
+    app.pdf_content.search_serial != old_search_serial,
+    "search-new-serial-disarms-old-timer");
+
+  U64 current_search_serial = app.pdf_content.search_serial;
+  UINT_PTR current_timer_id = 0;
+  octavo_pdf_search_timer_next_id(&app, &current_timer_id);
+  app.pdf_search_timer_armed_id = current_timer_id;
+  app.pdf_search_timer_armed_document_generation = generation;
+  app.pdf_search_timer_armed_search_serial = current_search_serial;
+  octavo_copy_cstr(app.status, ARRAY_COUNT(app.status),
+                   "search-timer-status-sentinel");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    current_timer_id > old_timer_id &&
+    !octavo_handle_pdf_search_timer(&app, old_timer_id) &&
+    app.pdf_search_timer_armed_id == current_timer_id &&
+    app.pdf_search_timer_armed_search_serial == current_search_serial &&
+    app.pdf_content.search_next_page == 0 &&
+    strcmp(app.status, "search-timer-status-sentinel") == 0,
+    "search-old-timer-id-ignored");
+
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_handle_pdf_search_timer(&app, current_timer_id) &&
+    app.pdf_search_timer_armed_id == 0 &&
+    app.pdf_content.search_next_page == 1 &&
+    app.pdf_content.search_state == OctavoPdfContentLoad_Loading &&
+    app.pdf_content.search_serial == current_search_serial &&
+    strcmp(app.status, "search-timer-status-sentinel") == 0,
+    "search-current-timer-one-page");
+
+  UINT_PTR second_timer_id = 0;
+  octavo_pdf_search_timer_next_id(&app, &second_timer_id);
+  app.pdf_search_timer_armed_id = second_timer_id;
+  app.pdf_search_timer_armed_document_generation = generation;
+  app.pdf_search_timer_armed_search_serial = current_search_serial;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    second_timer_id > current_timer_id &&
+    octavo_handle_pdf_search_timer(&app, second_timer_id) &&
+    app.pdf_search_timer_armed_id == 0 &&
+    app.pdf_content.search_next_page == 2,
+    "search-second-current-timer-one-page");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf_content.search_state == OctavoPdfContentLoad_Ready &&
+    app.pdf_content.search_complete &&
+    app.pdf_content.search_total_count == 3 &&
+    app.pdf_content.search_row_count == 3 &&
+    !app.pdf_content.search_has_more,
+    "search-complete");
+  octavo_prepare_reader_view_projection(&app);
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.reader_view_projection.find.status.state == ReaderViewLoad_Ready &&
+    app.reader_view_projection.find.row_count == 3 &&
+    app.reader_view_projection.find.total_count == 3 &&
+    app.reader_view_projection.find.can_step_previous &&
+    app.reader_view_projection.find.can_step_next,
+    "search-reader-view-projection");
+  ReaderViewKey last_search_key =
+    app.reader_view_projection.find.rows[2].key;
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_ActivateFindRow,
+    .key = last_search_key,
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 1 &&
+    app.pdf_content.search_active_index == 2,
+    "search-row-navigation");
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindPrevious,
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 0 &&
+    app.pdf_content.search_active_index == 1,
+    "search-previous-navigation");
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_FindNext,
+  });
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    app.pdf.frame.page_index == 1 &&
+    app.pdf_content.search_active_index == 2,
+    "search-next-navigation");
+
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    arena_pos(app.pdf_content.outline_arena) <=
+      OCTAVO_PDF_CONTENT_OUTLINE_ARENA_CAP &&
+    arena_pos(app.pdf_content.label_arena) <=
+      OCTAVO_PDF_CONTENT_LABEL_ARENA_CAP &&
+    arena_pos(app.pdf_content.link_arena) <=
+      OCTAVO_PDF_CONTENT_LINK_ARENA_CAP &&
+    arena_pos(app.pdf_content.search_arena) <=
+      OCTAVO_PDF_CONTENT_SEARCH_ARENA_CAP &&
+    arena_pos(app.pdf_content.search_scratch_arena) == 0 &&
+    octavo_pdf_content_invariants_hold(&app.pdf_content) &&
+    octavo_document_invariants_hold(&app),
+    "arena-caps-and-invariants");
+
+  UINT_PTR stale_after_close_id = 0;
+  octavo_pdf_search_timer_next_id(&app, &stale_after_close_id);
+  app.pdf_search_timer_armed_id = stale_after_close_id;
+  app.pdf_search_timer_armed_document_generation = generation;
+  app.pdf_search_timer_armed_search_serial = current_search_serial;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    octavo_close_pdf_book(&app) &&
+    app.document_kind == OctavoDocument_None &&
+    app.pdf_search_timer_armed_id == 0 &&
+    app.pdf_content.document_generation == 0 &&
+    octavo_document_invariants_hold(&app),
+    "search-timer-close-disarm");
+  octavo_copy_cstr(app.status, ARRAY_COUNT(app.status),
+                   "closed-search-timer-status-sentinel");
+  UINT_PTR last_timer_id_after_close = app.pdf_search_timer_last_id;
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_handle_pdf_search_timer(&app, stale_after_close_id) &&
+    app.pdf_search_timer_armed_id == 0 &&
+    app.pdf_search_timer_last_id == last_timer_id_after_close &&
+    app.pdf_content.document_generation == 0 &&
+    strcmp(app.status, "closed-search-timer-status-sentinel") == 0,
+    "search-stale-timer-after-close-ignored");
+
+  OctavoApp epub_timer_probe = {0};
+  epub_timer_probe.document_kind = OctavoDocument_EPUB;
+  octavo_copy_cstr(epub_timer_probe.status,
+                   ARRAY_COUNT(epub_timer_probe.status),
+                   "epub-search-timer-status-sentinel");
+  OCTAVO_PDF_CONTENT_SMOKE_REQUIRE(
+    !octavo_handle_pdf_search_timer(
+      &epub_timer_probe, stale_after_close_id) &&
+    epub_timer_probe.pdf_search_timer_armed_id == 0 &&
+    strcmp(epub_timer_probe.status,
+           "epub-search-timer-status-sentinel") == 0,
+    "search-stale-timer-cross-format-ignored");
+  passed = 1;
+
+cleanup:
+  if (error_shell.outline_arena)
+    octavo_pdf_content_release(&error_shell);
+  if (app.arena) octavo_app_release(&app);
+  if (!passed)
+  {
+    fprintf(stderr,
+            "octavo_pdf_content_smoke result=fail reason=%s\n", failure);
+    return 1;
+  }
+  fprintf(stdout,
+          "octavo_pdf_content_smoke result=pass pages=2 labels=i,A-1 "
+          "outline=3 search=incremental_one_page_per_pump,3_hits "
+          "timer=unique_serial,stale_ignored "
+          "links=internal_pointer,reversed_rejected,http_utf16 "
+          "uri=untrusted_rejected result_contract=exact "
+          "memory=ground0_arenas generation=guarded,error_shell\n");
+  return 0;
+
+#undef OCTAVO_PDF_CONTENT_SMOKE_REQUIRE
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_text_contains(String8 text,
+                                         const U8 *needle,
+                                         U64 needle_size)
+{
+  if (!needle || needle_size == 0 || !text.str ||
+      text.size < needle_size)
+  {
+    return 0;
+  }
+  for (U64 at = 0; at <= text.size - needle_size; at += 1)
+  {
+    if (memcmp(text.str + at, needle, (size_t)needle_size) == 0) return 1;
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_select(OctavoApp *app,
+                                  PdfReaderPoint anchor,
+                                  PdfReaderPoint focus)
+{
+  if (!app || !octavo_pdf_selection_begin_pointer(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame,
+        anchor, 10, 10) ||
+      octavo_pdf_selection_should_promote(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame, 13, 10) ||
+      !octavo_pdf_selection_should_promote(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame, 14, 10) ||
+      octavo_pdf_selection_update_pointer(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame,
+        focus, 0) != PdfReaderResult_Ok ||
+      !octavo_pdf_selection_finish_pointer(
+        &app->pdf_selection, &app->pdf.reader, &app->pdf.frame))
+  {
+    return 0;
+  }
+  return octavo_pdf_selection_is_current(
+    &app->pdf_selection, &app->pdf.reader, &app->pdf.frame);
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_render_current(
+  OctavoApp *app,
+  OctavoPdfScreenGeometry *out_geometry)
+{
+  if (out_geometry) *out_geometry = (OctavoPdfScreenGeometry){0};
+  if (!app || !out_geometry || !octavo_build_reader_view(app)) return 0;
+  UI0Rect content = app->reader_content_geometry.content_rect;
+  return content.w > 0 && content.h > 0 &&
+    octavo_pdf_render_fit(&app->pdf, content.w, content.h) ==
+      PdfReaderResult_Ok &&
+    octavo_pdf_screen_geometry_for_app(app, out_geometry);
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_round_trip(
+  const OctavoPdfScreenGeometry *geometry,
+  PdfReaderPoint point)
+{
+  F32 screen_x = 0.0f;
+  F32 screen_y = 0.0f;
+  S32 pixel_x = 0;
+  S32 pixel_y = 0;
+  PdfReaderPoint restored = {0};
+  if (!geometry || !octavo_pdf_page_to_screen(
+        geometry, point, &screen_x, &screen_y) ||
+      !octavo_pdf_screen_coordinate(screen_x, &pixel_x) ||
+      !octavo_pdf_screen_coordinate(screen_y, &pixel_y) ||
+      !octavo_pdf_screen_to_page(geometry, pixel_x, pixel_y, &restored))
+  {
+    return 0;
+  }
+  F32 tolerance = 1.1f / geometry->scale;
+  return fabsf(restored.x - point.x) <= tolerance &&
+         fabsf(restored.y - point.y) <= tolerance;
+}
+
+enum
+{
+  OctavoPdfSelectionSmokeStateArenaCap = 32 * 1024 * 1024,
+  OctavoPdfSelectionSmokeClipboardArenaCap = 3 * 1024 * 1024,
+  OctavoPdfSelectionSmokeClipboardAttemptCap = 16,
+  OctavoPdfSelectionSmokeClipboardRetryDelayMs = 2,
+  OctavoPdfSelectionSmokeClipboardSettleDelayMs = 12,
+  OctavoPdfSelectionSmokeClipboardStableProbeCount = 2,
+};
+
+typedef struct OctavoPdfSelectionSmokeClipboardScope
+{
+  IDataObject *saved_data;
+  B32 active;
+  B32 ole_initialized;
+  B32 original_empty;
+} OctavoPdfSelectionSmokeClipboardScope;
+
+typedef enum OctavoPdfSelectionSmokeClipboardOperation
+{
+  OctavoPdfSelectionSmokeClipboardOperation_None,
+  OctavoPdfSelectionSmokeClipboardOperation_Open,
+  OctavoPdfSelectionSmokeClipboardOperation_Close,
+  OctavoPdfSelectionSmokeClipboardOperation_Count,
+  OctavoPdfSelectionSmokeClipboardOperation_OleInitialize,
+  OctavoPdfSelectionSmokeClipboardOperation_OleGet,
+  OctavoPdfSelectionSmokeClipboardOperation_Empty,
+  OctavoPdfSelectionSmokeClipboardOperation_OleSet,
+  OctavoPdfSelectionSmokeClipboardOperation_OleFlush,
+} OctavoPdfSelectionSmokeClipboardOperation;
+
+typedef struct OctavoPdfSelectionSmokeClipboardDiagnostic
+{
+  DWORD last_error;
+  HWND open_window;
+  U32 attempt_count;
+  OctavoPdfSelectionSmokeClipboardOperation operation;
+  HRESULT hresult;
+} OctavoPdfSelectionSmokeClipboardDiagnostic;
+
+typedef enum OctavoPdfSelectionSmokeClipboardRead
+{
+  OctavoPdfSelectionSmokeClipboardRead_Match,
+  OctavoPdfSelectionSmokeClipboardRead_Unavailable,
+  OctavoPdfSelectionSmokeClipboardRead_Mismatch,
+} OctavoPdfSelectionSmokeClipboardRead;
+
+typedef struct OctavoPdfSelectionSmokeCtrlDiagnostic
+{
+  B32 control_down;
+  B32 editing;
+  B32 selection_current;
+  DWORD sequence_before;
+  DWORD sequence_after;
+} OctavoPdfSelectionSmokeCtrlDiagnostic;
+
+typedef struct OctavoPdfSelectionSmokeWindow
+{
+  /* First-member layout lets the custom smoke procedure and the production
+   * OctavoWin32 procedure consume one window user-data pointer. */
+  OctavoWin32 win32;
+  OctavoAccessibility *accessibility;
+} OctavoPdfSelectionSmokeWindow;
+
+_Static_assert(sizeof(OctavoPdfSelectionSmokeWindow) <=
+                 OctavoPdfSelectionSmokeStateArenaCap,
+               "PDF selection smoke state must fit its Ground0 Arena");
+
+FUNCTION LRESULT CALLBACK
+octavo_pdf_selection_smoke_window_proc(HWND window,
+                                       UINT message,
+                                       WPARAM w_param,
+                                       LPARAM l_param)
+{
+  OctavoPdfSelectionSmokeWindow *state =
+    (OctavoPdfSelectionSmokeWindow *)GetWindowLongPtrW(window,
+                                                       GWLP_USERDATA);
+  switch (message)
+  {
+    case WM_NCCREATE:
+    {
+      CREATESTRUCTW *create = (CREATESTRUCTW *)l_param;
+      SetWindowLongPtrW(window, GWLP_USERDATA,
+                        (LONG_PTR)create->lpCreateParams);
+      return TRUE;
+    } break;
+
+    case WM_GETOBJECT:
+      if (state && state->accessibility &&
+          (LONG)l_param == OBJID_CLIENT)
+      {
+        return octavo_accessibility_get_object(state->accessibility,
+                                               w_param,
+                                               l_param);
+      }
+      break;
+
+    case WM_NCDESTROY:
+      SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+      break;
+  }
+  return DefWindowProcW(window, message, w_param, l_param);
+}
+
+FUNCTION Arena *
+octavo_pdf_selection_smoke_state_arena(void)
+{
+  ArenaParams params = {
+    .reserve_size = OctavoPdfSelectionSmokeStateArenaCap,
+    .commit_size = 64 * 1024,
+  };
+  return arena_alloc(&params);
+}
+
+FUNCTION Arena *
+octavo_pdf_selection_smoke_clipboard_arena(void)
+{
+  ArenaParams params = {
+    .reserve_size = OctavoPdfSelectionSmokeClipboardArenaCap,
+    .commit_size = 64 * 1024,
+  };
+  return arena_alloc(&params);
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_open_clipboard_bounded(
+  HWND window,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (!window || !diagnostic) return 0;
+  for (U32 attempt = 0;
+       attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+       attempt += 1)
+  {
+    if (diagnostic->attempt_count < UINT32_MAX)
+      diagnostic->attempt_count += 1;
+    SetLastError(ERROR_SUCCESS);
+    if (OpenClipboard(window))
+    {
+      diagnostic->last_error = ERROR_SUCCESS;
+      diagnostic->open_window = 0;
+      diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_None;
+      diagnostic->hresult = S_OK;
+      return 1;
+    }
+    diagnostic->last_error = GetLastError();
+    diagnostic->open_window = GetOpenClipboardWindow();
+    diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_Open;
+    diagnostic->hresult = S_OK;
+    Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_close_clipboard_bounded(
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (!diagnostic) return 0;
+  for (U32 attempt = 0;
+       attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+       attempt += 1)
+  {
+    if (diagnostic->attempt_count < UINT32_MAX)
+      diagnostic->attempt_count += 1;
+    SetLastError(ERROR_SUCCESS);
+    if (CloseClipboard())
+    {
+      diagnostic->last_error = ERROR_SUCCESS;
+      diagnostic->open_window = 0;
+      diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_None;
+      diagnostic->hresult = S_OK;
+      return 1;
+    }
+    diagnostic->last_error = GetLastError();
+    diagnostic->open_window = GetOpenClipboardWindow();
+    diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_Close;
+    diagnostic->hresult = S_OK;
+    Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+  }
+  return 0;
+}
+
+FUNCTION OctavoPdfSelectionSmokeClipboardRead
+octavo_pdf_selection_smoke_clipboard_matches(HWND window,
+                                             Arena *scratch,
+                                             String8 expected)
+{
+  if (!window || !scratch || !expected.str || expected.size == 0 ||
+      expected.size > OCTAVO_PDF_SELECTION_TEXT_BYTE_CAP ||
+      expected.size > INT_MAX || !base_unicode_utf8_validate(expected))
+  {
+    return OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+  }
+
+  arena_clear(scratch);
+  int wide_count = MultiByteToWideChar(CP_UTF8,
+                                       MB_ERR_INVALID_CHARS,
+                                       (const char *)expected.str,
+                                       (int)expected.size,
+                                       0,
+                                       0);
+  U64 wide_capacity = wide_count > 0 ? (U64)wide_count + 1 : 0;
+  if (wide_count <= 0 ||
+      wide_capacity >
+        OctavoPdfSelectionSmokeClipboardArenaCap / sizeof(wchar_t))
+  {
+    return OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+  }
+  wchar_t *expected_wide = PUSH_ARRAY(scratch, wchar_t, wide_capacity);
+  if (!expected_wide ||
+      MultiByteToWideChar(CP_UTF8,
+                          MB_ERR_INVALID_CHARS,
+                          (const char *)expected.str,
+                          (int)expected.size,
+                          expected_wide,
+                          wide_count) != wide_count)
+  {
+    arena_clear(scratch);
+    return OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+  }
+  expected_wide[wide_count] = 0;
+
+  OctavoPdfSelectionSmokeClipboardRead result =
+    OctavoPdfSelectionSmokeClipboardRead_Unavailable;
+  if (OpenClipboard(window))
+  {
+    result = OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+    HANDLE memory = GetClipboardData(CF_UNICODETEXT);
+    SIZE_T memory_size = memory ? GlobalSize(memory) : 0;
+    const wchar_t *actual =
+      memory ? (const wchar_t *)GlobalLock(memory) : 0;
+    SIZE_T required_size =
+      ((SIZE_T)wide_count + 1) * sizeof(wchar_t);
+    SIZE_T actual_capacity = memory_size / sizeof(wchar_t);
+    SIZE_T actual_count = 0;
+    if (actual && memory_size % sizeof(wchar_t) == 0 &&
+        memory_size >= required_size)
+    {
+      while (actual_count < actual_capacity && actual[actual_count] != 0)
+        actual_count += 1;
+    }
+    if (actual && actual_count == (SIZE_T)wide_count &&
+        actual_count < actual_capacity && actual[actual_count] == 0 &&
+        memcmp(actual, expected_wide,
+               (size_t)wide_count * sizeof(wchar_t)) == 0)
+    {
+      result = OctavoPdfSelectionSmokeClipboardRead_Match;
+    }
+    if (actual)
+    {
+      SetLastError(ERROR_SUCCESS);
+      if (!GlobalUnlock(memory) && GetLastError() != ERROR_SUCCESS)
+        result = OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+    }
+    if (!CloseClipboard())
+      result = OctavoPdfSelectionSmokeClipboardRead_Mismatch;
+  }
+  arena_clear(scratch);
+  return result;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_clipboard_matches_bounded(
+  HWND window,
+  Arena *scratch,
+  String8 expected,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (diagnostic)
+    *diagnostic = (OctavoPdfSelectionSmokeClipboardDiagnostic){0};
+  if (!window || !scratch || !diagnostic) return 0;
+  for (U32 attempt = 0;
+       attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+       attempt += 1)
+  {
+    diagnostic->attempt_count = attempt + 1;
+    SetLastError(ERROR_SUCCESS);
+    OctavoPdfSelectionSmokeClipboardRead result =
+      octavo_pdf_selection_smoke_clipboard_matches(window,
+                                                    scratch,
+                                                    expected);
+    if (result == OctavoPdfSelectionSmokeClipboardRead_Match)
+    {
+      diagnostic->last_error = ERROR_SUCCESS;
+      diagnostic->open_window = 0;
+      return 1;
+    }
+    if (result == OctavoPdfSelectionSmokeClipboardRead_Mismatch) return 0;
+    diagnostic->last_error = GetLastError();
+    diagnostic->open_window = GetOpenClipboardWindow();
+    Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_set_clipboard_text(
+  OctavoApp *app,
+  ReaderViewText text,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (diagnostic)
+    *diagnostic = (OctavoPdfSelectionSmokeClipboardDiagnostic){0};
+  if (!app || !app->window || !diagnostic) return 0;
+  for (U32 attempt = 0;
+       attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+       attempt += 1)
+  {
+    diagnostic->attempt_count = attempt + 1;
+    SetLastError(ERROR_SUCCESS);
+    if (octavo_set_clipboard_text(app, text))
+    {
+      /* Clipboard managers may inspect a new publication asynchronously.
+       * Give that bounded platform work one short window, then require two
+       * consecutive clean availability probes before the single production
+       * action under test. */
+      Sleep(OctavoPdfSelectionSmokeClipboardSettleDelayMs);
+      U32 stable_probe_count = 0;
+      for (U32 probe = 0;
+           probe < OctavoPdfSelectionSmokeClipboardAttemptCap;
+           probe += 1)
+      {
+        diagnostic->attempt_count = attempt + probe + 2;
+        SetLastError(ERROR_SUCCESS);
+        if (OpenClipboard(app->window))
+        {
+          if (CloseClipboard())
+          {
+            stable_probe_count += 1;
+            diagnostic->last_error = ERROR_SUCCESS;
+            diagnostic->open_window = 0;
+            if (stable_probe_count ==
+                OctavoPdfSelectionSmokeClipboardStableProbeCount)
+            {
+              return 1;
+            }
+          }
+          else
+          {
+            stable_probe_count = 0;
+            diagnostic->last_error = GetLastError();
+            diagnostic->open_window = GetOpenClipboardWindow();
+          }
+        }
+        else
+        {
+          stable_probe_count = 0;
+          diagnostic->last_error = GetLastError();
+          diagnostic->open_window = GetOpenClipboardWindow();
+        }
+        Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+      }
+      return 0;
+    }
+    diagnostic->last_error = GetLastError();
+    diagnostic->open_window = GetOpenClipboardWindow();
+    Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+  }
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_prepare_clipboard_text(
+  OctavoApp *app,
+  Arena *scratch,
+  String8 text,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  return app && scratch && diagnostic && text.str && text.size > 0 &&
+    text.size <= INT32_MAX &&
+    octavo_pdf_selection_smoke_set_clipboard_text(
+      app, (ReaderViewText){
+        .data = (const char *)text.str,
+        .size = (UI0S32)text.size,
+      }, diagnostic) &&
+    octavo_pdf_selection_smoke_clipboard_matches_bounded(
+      app->window, scratch, text, diagnostic);
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_clipboard_scope_begin(
+  HWND window,
+  OctavoPdfSelectionSmokeClipboardScope *scope,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (diagnostic)
+    *diagnostic = (OctavoPdfSelectionSmokeClipboardDiagnostic){0};
+  if (!window || !scope || !diagnostic) return 0;
+  *scope = (OctavoPdfSelectionSmokeClipboardScope){0};
+  if (!octavo_pdf_selection_smoke_open_clipboard_bounded(
+        window, diagnostic))
+  {
+    return 0;
+  }
+  SetLastError(ERROR_SUCCESS);
+  UINT format_count = CountClipboardFormats();
+  DWORD format_error = GetLastError();
+  if (!octavo_pdf_selection_smoke_close_clipboard_bounded(diagnostic))
+    return 0;
+  if (format_count == 0 && format_error != ERROR_SUCCESS)
+  {
+    diagnostic->last_error = format_error;
+    diagnostic->open_window = GetOpenClipboardWindow();
+    diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_Count;
+    diagnostic->hresult = S_OK;
+    return 0;
+  }
+  scope->original_empty = format_count == 0;
+  if (scope->original_empty)
+  {
+    scope->active = 1;
+    return 1;
+  }
+
+  HRESULT initialized = OleInitialize(0);
+  if (FAILED(initialized))
+  {
+    diagnostic->last_error = (DWORD)initialized;
+    diagnostic->open_window = GetOpenClipboardWindow();
+    diagnostic->operation =
+      OctavoPdfSelectionSmokeClipboardOperation_OleInitialize;
+    diagnostic->hresult = initialized;
+    goto failure;
+  }
+  scope->ole_initialized = 1;
+  HRESULT get_result = E_FAIL;
+  for (U32 attempt = 0;
+       attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+       attempt += 1)
+  {
+    if (diagnostic->attempt_count < UINT32_MAX)
+      diagnostic->attempt_count += 1;
+    IDataObject *candidate = 0;
+    get_result = OleGetClipboard(&candidate);
+    if (SUCCEEDED(get_result) && candidate)
+    {
+      scope->saved_data = candidate;
+      diagnostic->last_error = ERROR_SUCCESS;
+      diagnostic->open_window = 0;
+      diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_None;
+      diagnostic->hresult = S_OK;
+      break;
+    }
+    if (candidate) (void)candidate->lpVtbl->Release(candidate);
+    if (SUCCEEDED(get_result)) get_result = E_UNEXPECTED;
+    diagnostic->last_error = (DWORD)get_result;
+    diagnostic->open_window = GetOpenClipboardWindow();
+    diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_OleGet;
+    diagnostic->hresult = get_result;
+    Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+  }
+  if (FAILED(get_result) || !scope->saved_data) goto failure;
+  scope->active = 1;
+  return 1;
+
+failure:
+  if (scope->saved_data)
+    (void)scope->saved_data->lpVtbl->Release(scope->saved_data);
+  if (scope->ole_initialized) OleUninitialize();
+  *scope = (OctavoPdfSelectionSmokeClipboardScope){0};
+  return 0;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_clipboard_scope_finish(
+  HWND window,
+  OctavoPdfSelectionSmokeClipboardScope *scope,
+  OctavoPdfSelectionSmokeClipboardDiagnostic *diagnostic)
+{
+  if (diagnostic)
+    *diagnostic = (OctavoPdfSelectionSmokeClipboardDiagnostic){0};
+  if (!scope || !diagnostic) return 0;
+  if (!scope->active) return 1;
+  B32 restored = 0;
+  if (scope->original_empty)
+  {
+    for (U32 attempt = 0;
+         attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+         attempt += 1)
+    {
+      if (!octavo_pdf_selection_smoke_open_clipboard_bounded(
+            window, diagnostic))
+      {
+        break;
+      }
+      SetLastError(ERROR_SUCCESS);
+      B32 emptied = EmptyClipboard() != 0;
+      DWORD empty_error = GetLastError();
+      HWND empty_open_window = GetOpenClipboardWindow();
+      B32 closed =
+        octavo_pdf_selection_smoke_close_clipboard_bounded(diagnostic);
+      if (emptied && closed)
+      {
+        restored = 1;
+        break;
+      }
+      if (!closed) break;
+      diagnostic->last_error = empty_error;
+      diagnostic->open_window = empty_open_window;
+      diagnostic->operation =
+        OctavoPdfSelectionSmokeClipboardOperation_Empty;
+      diagnostic->hresult = S_OK;
+      Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+    }
+  }
+  else if (scope->saved_data)
+  {
+    for (U32 attempt = 0;
+         attempt < OctavoPdfSelectionSmokeClipboardAttemptCap;
+         attempt += 1)
+    {
+      if (diagnostic->attempt_count < UINT32_MAX)
+        diagnostic->attempt_count += 1;
+      HRESULT set_result = OleSetClipboard(scope->saved_data);
+      if (FAILED(set_result))
+      {
+        diagnostic->last_error = (DWORD)set_result;
+        diagnostic->open_window = GetOpenClipboardWindow();
+        diagnostic->operation =
+          OctavoPdfSelectionSmokeClipboardOperation_OleSet;
+        diagnostic->hresult = set_result;
+        Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+        continue;
+      }
+      HRESULT flush_result = OleFlushClipboard();
+      if (FAILED(flush_result))
+      {
+        diagnostic->last_error = (DWORD)flush_result;
+        diagnostic->open_window = GetOpenClipboardWindow();
+        diagnostic->operation =
+          OctavoPdfSelectionSmokeClipboardOperation_OleFlush;
+        diagnostic->hresult = flush_result;
+        Sleep(OctavoPdfSelectionSmokeClipboardRetryDelayMs);
+        continue;
+      }
+      diagnostic->last_error = ERROR_SUCCESS;
+      diagnostic->open_window = 0;
+      diagnostic->operation = OctavoPdfSelectionSmokeClipboardOperation_None;
+      diagnostic->hresult = S_OK;
+      restored = 1;
+      break;
+    }
+  }
+  if (!restored) return 0;
+  if (scope->saved_data)
+    (void)scope->saved_data->lpVtbl->Release(scope->saved_data);
+  if (scope->ole_initialized) OleUninitialize();
+  *scope = (OctavoPdfSelectionSmokeClipboardScope){0};
+  return restored;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_ctrl_c(HWND window,
+                                  OctavoPdfSelectionSmokeWindow *state,
+                                  OctavoPdfSelectionSmokeCtrlDiagnostic *diagnostic)
+{
+  if (diagnostic)
+    *diagnostic = (OctavoPdfSelectionSmokeCtrlDiagnostic){0};
+  if (!window || !state || !diagnostic ||
+      (OctavoWin32 *)state != &state->win32 ||
+      GetWindowLongPtrW(window, GWLP_USERDATA) != (LONG_PTR)state)
+  {
+    return 0;
+  }
+  OctavoApp *app = &state->win32.app;
+
+  BYTE saved_keyboard[256] = {0};
+  BYTE control_keyboard[256] = {0};
+  if (!GetKeyboardState(saved_keyboard)) return 0;
+  memcpy(control_keyboard, saved_keyboard, sizeof(control_keyboard));
+  control_keyboard[VK_CONTROL] |= 0x80;
+  control_keyboard[VK_SHIFT] &= 0x7f;
+  control_keyboard[VK_MENU] &= 0x7f;
+  if (!SetKeyboardState(control_keyboard))
+    return 0;
+  ReaderViewText current_selection = {0};
+  diagnostic->control_down =
+    (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+  diagnostic->editing = octavo_reader_view_text_editing(app);
+  diagnostic->selection_current = octavo_current_pdf_selection_text(
+    app, 0, 0, &current_selection);
+  diagnostic->sequence_before = GetClipboardSequenceNumber();
+
+  LRESULT routed = octavo_win32_proc(window, WM_KEYDOWN, 'C', 1);
+  diagnostic->sequence_after = GetClipboardSequenceNumber();
+  B32 restored = SetKeyboardState(saved_keyboard) != 0;
+  return routed == 0 && restored &&
+    diagnostic->control_down && !diagnostic->editing &&
+    diagnostic->selection_current;
+}
+
+FUNCTION B32
+octavo_pdf_selection_smoke_has_copy_accessibility(OctavoApp *app,
+                                                  ReaderViewKey key,
+                                                  UI0S32 *out_index)
+{
+  if (out_index) *out_index = -1;
+  if (!app || !app->reader_view_frame.semantic_nodes || key == 0) return 0;
+  for (UI0S32 index = 0;
+       index < app->reader_view_frame.semantic_node_count;
+       index += 1)
+  {
+    const ReaderViewSemanticNode *node =
+      app->reader_view_frame.semantic_nodes + index;
+    if (node->role == ReaderViewSemantic_MenuItem &&
+        node->source_key == key && node->name.size == 4 &&
+        node->name.data && memcmp(node->name.data, "Copy", 4) == 0 &&
+        (node->flags & (ReaderViewSemantic_Enabled |
+                        ReaderViewSemantic_Focusable)) ==
+          (ReaderViewSemantic_Enabled | ReaderViewSemantic_Focusable))
+    {
+      B32 valid = octavo_accessibility_enabled_menu_item_contract(
+        node, (ReaderViewText){.data = "Copy", .size = 4});
+      if (valid && out_index) *out_index = index;
+      return valid;
+    }
+  }
+  return 0;
+}
+
+FUNCTION int
+octavo_run_pdf_selection_smoke(const char *pdf_path,
+                               const char *replacement_pdf_path)
+{
+  static const wchar_t *SmokeWindowClass =
+    L"OctavoPdfSelectionClipboardSmokeWindow";
+  const char *failure = "init";
+  B32 passed = 0;
+  PdfReaderCancelToken cancel_token = {0};
+  B32 cancel_token_live = 0;
+  Arena *state_arena = octavo_pdf_selection_smoke_state_arena();
+  OctavoPdfSelectionSmokeWindow *smoke_window = 0;
+  OctavoApp *smoke_app = 0;
+  Arena *clipboard_arena = 0;
+  OctavoPdfSelectionSmokeClipboardScope clipboard_scope = {0};
+  OctavoPdfSelectionSmokeClipboardDiagnostic clipboard_diagnostic = {0};
+  OctavoPdfSelectionSmokeClipboardDiagnostic clipboard_scope_diagnostic = {0};
+  OctavoPdfSelectionSmokeClipboardDiagnostic clipboard_cleanup_diagnostic = {0};
+  B32 clipboard_cleanup_restore_failed = 0;
+  OctavoPdfSelectionSmokeCtrlDiagnostic ctrl_diagnostic = {0};
+  HINSTANCE smoke_instance = GetModuleHandleW(0);
+  HWND smoke_hwnd = 0;
+  B32 smoke_class_registered = 0;
+  IAccessible *accessible = 0;
+
+  if (state_arena)
+  {
+    smoke_window = (OctavoPdfSelectionSmokeWindow *)arena_push(
+      state_arena,
+      sizeof(*smoke_window),
+      ALIGN_OF(OctavoPdfSelectionSmokeWindow));
+  }
+  if (!smoke_window)
+  {
+    if (state_arena) arena_release(state_arena);
+    fprintf(stderr,
+            "octavo_pdf_selection_smoke result=fail reason=state-arena\n");
+    return 1;
+  }
+  MemoryZeroStruct(smoke_window);
+  smoke_app = &smoke_window->win32.app;
+
+#define app (*smoke_app)
+
+#define OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(condition, reason_text) \
+  do { if (!(condition)) { failure = (reason_text); goto cleanup; } } while (0)
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_result_contract_smoke(),
+    "result-contract-validators");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    pdf_path && pdf_path[0] && replacement_pdf_path &&
+    replacement_pdf_path[0] &&
+    octavo_app_init(&app, 1000, 720, 0, 0), "app-init");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_open_path(&app, pdf_path) &&
+    app.document_kind == OctavoDocument_PDF &&
+    app.pdf.frame.page_count == 2 &&
+    octavo_document_invariants_hold(&app), "pdf-open");
+
+  OctavoPdfScreenGeometry geometry = {0};
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_render_current(&app, &geometry),
+    "initial-raster-geometry");
+  PdfReaderPoint anchor = {42.0f, 35.0f};
+  PdfReaderPoint focus = {550.0f, 360.0f};
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_round_trip(&geometry, anchor),
+    "initial-geometry-round-trip");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_render_fit(&app.pdf, 501, 333) == PdfReaderResult_Ok,
+    "alternate-raster");
+  OctavoPdfScreenGeometry alternate_geometry = {0};
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_screen_geometry(
+      &app.pdf, 17, 19, 501, 333, &alternate_geometry) &&
+    octavo_pdf_selection_smoke_round_trip(&alternate_geometry, focus),
+    "alternate-geometry-round-trip");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_render_current(&app, &geometry),
+    "restore-host-geometry");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus),
+    "owned-selection");
+  static const U8 alpha_text[] = "Alpha";
+  static const U8 cafe_text[] = {'c','a','f',0xc3,0xa9};
+  static const U8 second_text[] = "Second line copy";
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_selection.snapshot.text.size > OctavoSelectionTextCap &&
+    app.pdf_selection.snapshot.text.size <=
+      OCTAVO_PDF_SELECTION_TEXT_BYTE_CAP &&
+    app.pdf_selection.snapshot.scalar_count <=
+      OCTAVO_PDF_SELECTION_SCALAR_CAP &&
+    app.pdf_selection.snapshot.quad_count > 0 &&
+    app.pdf_selection.snapshot.quad_count <=
+      OCTAVO_PDF_SELECTION_QUAD_CAP &&
+    octavo_pdf_selection_smoke_text_contains(
+      app.pdf_selection.snapshot.text,
+      alpha_text, sizeof(alpha_text) - 1) &&
+    octavo_pdf_selection_smoke_text_contains(
+      app.pdf_selection.snapshot.text,
+      cafe_text, sizeof(cafe_text)) &&
+    octavo_pdf_selection_smoke_text_contains(
+      app.pdf_selection.snapshot.text,
+      second_text, sizeof(second_text) - 1),
+    "unicode-multiline-selection");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_build_reader_view(&app) &&
+    app.reader_view_state.popup == ReaderViewPopup_SelectionTools &&
+    (app.reader_view_projection.features &
+      ReaderViewFeature_SelectionTools) != 0 &&
+    app.reader_view_projection.selection.flags ==
+      (ReaderViewSelection_Active | ReaderViewSelection_CanCopy),
+    "copy-only-reader-view-projection");
+  ReaderViewKey selection_key = octavo_pdf_selection_key(&app);
+  ReaderViewText copied_text = {0};
+  UI0S32 copy_semantic_index = -1;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    selection_key != 0 &&
+    octavo_current_pdf_selection_text(
+      &app, selection_key, 1, &copied_text) &&
+    copied_text.data ==
+      (const char *)app.pdf_selection.snapshot.text.str &&
+    copied_text.size == (UI0S32)app.pdf_selection.snapshot.text.size &&
+    !octavo_current_pdf_selection_text(
+      &app, selection_key + 1, 1, &copied_text) &&
+    octavo_pdf_selection_smoke_has_copy_accessibility(
+      &app, selection_key, &copy_semantic_index) &&
+    copy_semantic_index >= 0,
+    "copy-generation-and-accessibility");
+  draw_command_buffer_begin(&app.draw_commands);
+  app.presentation_complete = 1;
+  octavo_draw_reader_page(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.presentation_complete &&
+    app.draw_commands.command_count[DrawLayer_Overlay] ==
+      app.pdf_selection.snapshot.quad_count * 4,
+    "quad-overlay");
+
+  WNDCLASSW smoke_class = {0};
+  smoke_class.lpfnWndProc = octavo_pdf_selection_smoke_window_proc;
+  smoke_class.hInstance = smoke_instance;
+  smoke_class.lpszClassName = SmokeWindowClass;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    RegisterClassW(&smoke_class) != 0, "clipboard-window-register");
+  smoke_class_registered = 1;
+  smoke_hwnd = CreateWindowExW(0,
+                               SmokeWindowClass,
+                               L"8vo PDF selection clipboard smoke",
+                               WS_POPUP,
+                               0,
+                               0,
+                               1,
+                               1,
+                               0,
+                               0,
+                               smoke_instance,
+                               smoke_window);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(smoke_hwnd,
+                                     "clipboard-window-create");
+  app.window = smoke_hwnd;
+  smoke_window->win32.window = smoke_hwnd;
+  clipboard_arena = octavo_pdf_selection_smoke_clipboard_arena();
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    clipboard_arena &&
+    octavo_pdf_selection_smoke_clipboard_scope_begin(
+      smoke_hwnd, &clipboard_scope, &clipboard_scope_diagnostic),
+    "clipboard-preserve");
+
+  String8 expected_copy = app.pdf_selection.snapshot.text;
+  static const U8 reader_view_copy_sentinel[] =
+    "8vo PDF Reader View Copy sentinel";
+  String8 reader_view_sentinel = str8(
+    (U8 *)reader_view_copy_sentinel,
+    sizeof(reader_view_copy_sentinel) - 1);
+  static const U8 stale_copy_sentinel[] =
+    "8vo PDF stale-key Copy sentinel";
+  String8 stale_sentinel = str8((U8 *)stale_copy_sentinel,
+                                sizeof(stale_copy_sentinel) - 1);
+  static const U8 clipboard_sentinel[] =
+    "8vo PDF keyboard-accessibility Copy sentinel";
+  String8 sentinel = str8((U8 *)clipboard_sentinel,
+                          sizeof(clipboard_sentinel) - 1);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_prepare_clipboard_text(
+      &app, clipboard_arena, reader_view_sentinel,
+      &clipboard_diagnostic),
+    "reader-view-copy-sentinel-verified");
+  static const char ignored_action_text[] = "ignored action payload";
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_CopySelection,
+    .key = selection_key,
+    .text = {
+      .data = ignored_action_text,
+      .size = (UI0S32)(sizeof(ignored_action_text) - 1),
+    },
+  });
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_clipboard_matches_bounded(
+      smoke_hwnd, clipboard_arena, expected_copy,
+      &clipboard_diagnostic),
+    "reader-view-copy-cf-unicode-text");
+
+  ReaderViewKey stale_key = selection_key == UINT64_MAX ?
+    selection_key - 1 : selection_key + 1;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    stale_key != 0 && stale_key != selection_key,
+    "stale-copy-key");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_prepare_clipboard_text(
+      &app, clipboard_arena, stale_sentinel, &clipboard_diagnostic),
+    "stale-copy-sentinel-verified");
+  octavo_apply_reader_view_action(&app, &(ReaderViewAction){
+    .kind = ReaderViewAction_CopySelection,
+    .key = stale_key,
+  });
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_clipboard_matches_bounded(
+      smoke_hwnd, clipboard_arena, stale_sentinel,
+      &clipboard_diagnostic),
+    "stale-copy-sentinel-preserved");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_prepare_clipboard_text(
+      &app, clipboard_arena, sentinel, &clipboard_diagnostic),
+    "ctrl-c-sentinel-verified");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_ctrl_c(smoke_hwnd,
+                                      smoke_window,
+                                      &ctrl_diagnostic) &&
+    octavo_pdf_selection_smoke_clipboard_matches_bounded(
+      smoke_hwnd, clipboard_arena, expected_copy,
+      &clipboard_diagnostic),
+    "ctrl-c-cf-unicode-text");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_prepare_clipboard_text(
+      &app, clipboard_arena, sentinel, &clipboard_diagnostic),
+    "msaa-copy-sentinel-verified");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_accessibility_create(smoke_hwnd,
+                                &app,
+                                &smoke_window->accessibility),
+    "msaa-create");
+  app.accessibility = smoke_window->accessibility;
+  octavo_accessibility_publish_frame(app.accessibility,
+                                     &app.reader_view_frame);
+  HRESULT access_result = AccessibleObjectFromWindow(
+    smoke_hwnd,
+    (DWORD)OBJID_CLIENT,
+    &IID_IAccessible,
+    (void **)&accessible);
+  VARIANT copy_child;
+  VariantInit(&copy_child);
+  copy_child.vt = VT_I4;
+  copy_child.lVal = octavo_accessibility_shared_child_id(
+    app.accessibility, copy_semantic_index);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    SUCCEEDED(access_result) && accessible && copy_child.lVal > 0 &&
+    SUCCEEDED(accessible->lpVtbl->accDoDefaultAction(accessible,
+                                                     copy_child)) &&
+    octavo_build_reader_view(&app) &&
+    octavo_reader_view_has_action(
+      &app.reader_view_frame, ReaderViewAction_CopySelection),
+    "msaa-copy-default-action");
+  octavo_apply_reader_view_actions(&app);
+  /* The Win32 render loop retires one-shot input after every built frame.
+   * Keep the synthetic accessibility frame on that same lifecycle. */
+  octavo_reset_input(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_clipboard_matches_bounded(
+      smoke_hwnd, clipboard_arena, expected_copy,
+      &clipboard_diagnostic),
+    "msaa-copy-cf-unicode-text");
+  (void)accessible->lpVtbl->Release(accessible);
+  accessible = 0;
+  octavo_accessibility_destroy(smoke_window->accessibility);
+  smoke_window->accessibility = 0;
+  app.accessibility = 0;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_clipboard_scope_finish(
+      smoke_hwnd, &clipboard_scope, &clipboard_scope_diagnostic),
+    "clipboard-restore");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    DestroyWindow(smoke_hwnd) != 0, "clipboard-window-destroy");
+  smoke_hwnd = 0;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    UnregisterClassW(SmokeWindowClass, smoke_instance) != 0,
+    "clipboard-window-unregister");
+  smoke_class_registered = 0;
+  app.window = 0;
+  arena_release(clipboard_arena);
+  clipboard_arena = 0;
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_init(&app.pdf.reader, &cancel_token) ==
+      PdfReaderResult_Ok,
+    "cancel-token-init");
+  cancel_token_live = 1;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_begin_pointer(
+      &app.pdf_selection, &app.pdf.reader, &app.pdf.frame,
+      anchor, 10, 10) &&
+    pdf_reader_cancel_token_request(&cancel_token) &&
+    octavo_pdf_selection_update_pointer(
+      &app.pdf_selection, &app.pdf.reader, &app.pdf.frame,
+      focus, &cancel_token) == PdfReaderResult_Cancelled &&
+    !app.pdf_selection.ready &&
+    app.pdf_selection.snapshot.text.str == 0 &&
+    app.pdf_selection.snapshot.quads == 0 &&
+    arena_pos(app.pdf_selection.published_arena) == 0 &&
+    arena_pos(app.pdf_selection.candidate_arena) == 0,
+    "cancel-zero-publication");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    pdf_reader_cancel_token_deinit(&app.pdf.reader, &cancel_token) ==
+      PdfReaderResult_Ok,
+    "cancel-token-deinit");
+  cancel_token_live = 0;
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus),
+    "selection-before-page-change");
+  PdfReaderSelectionSnapshot stale_snapshot = app.pdf_selection.snapshot;
+  U64 stale_selection_generation = app.pdf_selection.gesture_generation;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_move_page(&app, 1) == OctavoMoveResult_Ok &&
+    app.pdf.frame.page_index == 1 && !app.pdf_selection.ready &&
+    !pdf_reader_selection_snapshot_is_current(
+      &app.pdf.reader, &stale_snapshot, stale_selection_generation),
+    "page-change-retires-selection");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_move_history(&app, 0) == OctavoMoveResult_Ok &&
+    app.pdf.frame.page_index == 0 && !app.pdf_selection.ready &&
+    octavo_pdf_selection_smoke_select(&app, anchor, focus) &&
+    octavo_seek_location(&app, 1) == OctavoMoveResult_Ok &&
+    app.pdf.frame.page_index == 1 && !app.pdf_selection.ready &&
+    octavo_seek_location(&app, 0) == OctavoMoveResult_Ok,
+    "history-and-direct-seek-retire-selection");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus) &&
+    octavo_open_pdf_path(&app, pdf_path) &&
+    app.pdf.frame.page_index == 0 && !app.pdf_selection.ready,
+    "reload-retires-selection");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus) &&
+    octavo_open_pdf_path(&app, replacement_pdf_path) &&
+    app.pdf.frame.page_index == 0 && !app.pdf_selection.ready &&
+    octavo_open_pdf_path(&app, pdf_path) &&
+    app.pdf.frame.page_index == 0 && !app.pdf_selection.ready,
+    "replacement-retires-selection");
+
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_render_current(&app, &geometry),
+    "link-host-geometry");
+  const PdfReaderLink *internal_link = 0;
+  for (U32 index = 0; index < app.pdf_content.page_link_count; index += 1)
+  {
+    if (app.pdf_content.page_links[index].target_kind ==
+          PdfReaderLinkTargetKind_Internal)
+    {
+      internal_link = app.pdf_content.page_links + index;
+      break;
+    }
+  }
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(internal_link, "internal-link");
+  PdfReaderPoint link_point = {
+    (internal_link->bounds.x0 + internal_link->bounds.x1) * 0.5f,
+    (internal_link->bounds.y0 + internal_link->bounds.y1) * 0.5f,
+  };
+  F32 link_screen_x_f = 0.0f;
+  F32 link_screen_y_f = 0.0f;
+  F32 focus_screen_x_f = 0.0f;
+  F32 focus_screen_y_f = 0.0f;
+  S32 link_screen_x = 0;
+  S32 link_screen_y = 0;
+  S32 focus_screen_x = 0;
+  S32 focus_screen_y = 0;
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_page_to_screen(
+      &geometry, link_point, &link_screen_x_f, &link_screen_y_f) &&
+    octavo_pdf_page_to_screen(
+      &geometry, focus, &focus_screen_x_f, &focus_screen_y_f) &&
+    octavo_pdf_screen_coordinate(link_screen_x_f, &link_screen_x) &&
+    octavo_pdf_screen_coordinate(link_screen_y_f, &link_screen_y) &&
+    octavo_pdf_screen_coordinate(focus_screen_x_f, &focus_screen_x) &&
+    octavo_pdf_screen_coordinate(focus_screen_y_f, &focus_screen_y),
+    "link-screen-transform");
+  octavo_host_pointer_press(&app, link_screen_x, link_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_link_pointer_armed && app.pdf_selection.pointer_armed &&
+    octavo_build_reader_view(&app),
+    "link-click-press-frame");
+  octavo_reset_input(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_host_pointer_release(&app, link_screen_x, link_screen_y) &&
+    app.pdf.frame.page_index == 1 && !app.pdf_link_pointer_armed &&
+    !app.pdf_selection.pointer_armed && !app.pdf_selection.ready,
+    "link-click-priority");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_move_history(&app, 0) == OctavoMoveResult_Ok &&
+    octavo_pdf_selection_smoke_render_current(&app, &geometry),
+    "link-return");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_page_to_screen(
+      &geometry, link_point, &link_screen_x_f, &link_screen_y_f) &&
+    octavo_pdf_page_to_screen(
+      &geometry, focus, &focus_screen_x_f, &focus_screen_y_f) &&
+    octavo_pdf_screen_coordinate(link_screen_x_f, &link_screen_x) &&
+    octavo_pdf_screen_coordinate(link_screen_y_f, &link_screen_y) &&
+    octavo_pdf_screen_coordinate(focus_screen_x_f, &focus_screen_x) &&
+    octavo_pdf_screen_coordinate(focus_screen_y_f, &focus_screen_y),
+    "link-drag-transform");
+  octavo_host_pointer_press(&app, link_screen_x, link_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_link_pointer_armed && app.pdf_selection.pointer_armed &&
+    octavo_build_reader_view(&app) &&
+    (app.reader_view_projection.selection.flags &
+      ReaderViewSelection_Active) == 0,
+    "link-drag-press-frame");
+  octavo_reset_input(&app);
+  octavo_host_pointer_move(&app, focus_screen_x, focus_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    !app.pdf_link_pointer_armed &&
+    app.pdf_selection.pointer_promoted && app.pdf_selection.ready &&
+    !octavo_host_pointer_release(&app, focus_screen_x, focus_screen_y) &&
+    app.pdf.frame.page_index == 0 && !app.pdf_selection.pointer_armed &&
+    app.pdf_selection.ready,
+    "link-drag-promotes-selection");
+  B32 drag_reader_view_ready = octavo_build_reader_view(&app);
+  ReaderViewKey drag_selection_key = octavo_pdf_selection_key(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    drag_reader_view_ready, "drag-reader-view-build");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.reader_view_state.popup == ReaderViewPopup_SelectionTools,
+    "drag-selection-tools-popup");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    drag_selection_key != 0 &&
+    drag_selection_key ==
+      app.reader_view_projection.selection.selection_key,
+    "drag-current-selection-key");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_has_copy_accessibility(
+      &app, drag_selection_key, 0),
+    "drag-copy-accessibility");
+  octavo_reset_input(&app);
+
+  octavo_reader_view_escape(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_build_reader_view(&app) && !app.pdf_selection.ready &&
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "escape-retires-selection");
+  octavo_reset_input(&app);
+  octavo_host_pointer_press(&app, link_screen_x, link_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_selection.pointer_armed && octavo_build_reader_view(&app),
+    "active-drag-press-frame");
+  octavo_reset_input(&app);
+  octavo_host_pointer_move(&app, focus_screen_x, focus_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_selection.pointer_armed &&
+    app.pdf_selection.pointer_promoted && app.pdf_selection.ready &&
+    octavo_build_reader_view(&app) &&
+    app.reader_view_state.popup != ReaderViewPopup_SelectionTools,
+    "active-drag-selection-projection-suppressed");
+  octavo_reset_input(&app);
+  octavo_reader_view_escape(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_build_reader_view(&app) &&
+    !app.pdf_selection.pointer_armed &&
+    !app.pdf_selection.pointer_promoted && !app.pdf_selection.ready &&
+    app.reader_view_state.popup == ReaderViewPopup_None,
+    "active-drag-escape-frame");
+  octavo_reset_input(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    !octavo_host_pointer_release(&app, focus_screen_x, focus_screen_y) &&
+    !app.pdf_selection.ready,
+    "active-drag-escape-retires-selection");
+  octavo_reset_input(&app);
+  octavo_host_pointer_press(&app, focus_screen_x, focus_screen_y);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    app.pdf_selection.pointer_armed && octavo_build_reader_view(&app),
+    "capture-arm");
+  octavo_reset_input(&app);
+  octavo_host_pointer_cancel(&app);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    !app.pdf_selection.pointer_armed && !app.pdf_selection.ready,
+    "capture-loss-retires-selection");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus),
+    "selection-before-deactivate");
+  octavo_pdf_selection_reset(&app.pdf_selection);
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    !app.pdf_selection.ready &&
+    octavo_pdf_selection_invariants_hold(&app.pdf_selection),
+    "deactivate-retires-selection");
+  OCTAVO_PDF_SELECTION_SMOKE_REQUIRE(
+    octavo_pdf_selection_smoke_select(&app, anchor, focus) &&
+    octavo_close_pdf_book(&app) &&
+    app.document_kind == OctavoDocument_None &&
+    !app.pdf_selection.ready &&
+    octavo_document_invariants_hold(&app),
+    "close-retires-selection");
+  passed = 1;
+
+cleanup:
+  if (accessible)
+    (void)accessible->lpVtbl->Release(accessible);
+  if (smoke_window->accessibility)
+  {
+    octavo_accessibility_destroy(smoke_window->accessibility);
+    smoke_window->accessibility = 0;
+    app.accessibility = 0;
+  }
+  if (clipboard_scope.active)
+  {
+    if (!octavo_pdf_selection_smoke_clipboard_scope_finish(
+          smoke_hwnd, &clipboard_scope, &clipboard_cleanup_diagnostic))
+    {
+      clipboard_cleanup_restore_failed = 1;
+      passed = 0;
+      if (strcmp(failure, "init") == 0)
+        failure = "clipboard-restore-cleanup";
+    }
+  }
+  if (smoke_hwnd)
+  {
+    (void)DestroyWindow(smoke_hwnd);
+    smoke_hwnd = 0;
+  }
+  app.window = 0;
+  smoke_window->win32.window = 0;
+  if (smoke_class_registered)
+    (void)UnregisterClassW(SmokeWindowClass, smoke_instance);
+  if (clipboard_arena) arena_release(clipboard_arena);
+  if (cancel_token_live)
+    (void)pdf_reader_cancel_token_deinit(&app.pdf.reader, &cancel_token);
+  if (app.arena) octavo_app_release(&app);
+  arena_release(state_arena);
+
+#undef app
+
+  if (!passed)
+  {
+    fprintf(stderr,
+            "octavo_pdf_selection_smoke result=fail reason=%s "
+            "clipboard_attempts=%u clipboard_error=%lu "
+            "clipboard_open=%p scope_operation=%u scope_hresult=0x%08lx "
+            "scope_attempts=%u scope_error=%lu scope_open=%p "
+            "cleanup_restore_failed=%d cleanup_operation=%u "
+            "cleanup_hresult=0x%08lx cleanup_attempts=%u "
+            "cleanup_error=%lu cleanup_open=%p "
+            "ctrl=%d editing=%d current=%d "
+            "sequence=%lu->%lu\n",
+            failure,
+            clipboard_diagnostic.attempt_count,
+            (unsigned long)clipboard_diagnostic.last_error,
+            (void *)clipboard_diagnostic.open_window,
+            (unsigned int)clipboard_scope_diagnostic.operation,
+            (unsigned long)clipboard_scope_diagnostic.hresult,
+            clipboard_scope_diagnostic.attempt_count,
+            (unsigned long)clipboard_scope_diagnostic.last_error,
+            (void *)clipboard_scope_diagnostic.open_window,
+            clipboard_cleanup_restore_failed,
+            (unsigned int)clipboard_cleanup_diagnostic.operation,
+            (unsigned long)clipboard_cleanup_diagnostic.hresult,
+            clipboard_cleanup_diagnostic.attempt_count,
+            (unsigned long)clipboard_cleanup_diagnostic.last_error,
+            (void *)clipboard_cleanup_diagnostic.open_window,
+            ctrl_diagnostic.control_down,
+            ctrl_diagnostic.editing,
+            ctrl_diagnostic.selection_current,
+            (unsigned long)ctrl_diagnostic.sequence_before,
+            (unsigned long)ctrl_diagnostic.sequence_after);
+    return 1;
+  }
+  fprintf(stdout,
+          "octavo_pdf_selection_smoke result=pass pages=2 "
+          "selection=utf8_multiline,owned_snapshot,copy_only "
+          "copy=reader_view_action,ctrl_c,cf_unicode_text,stale_key "
+          "geometry=shared_round_trip_two_viewports "
+          "pointer=threshold,link_click_priority,link_drag_selection "
+          "stale=page,history,seek,reload,replacement,cancel,capture,deactivate,close "
+          "accessibility=msaa_copy_menuitem,default_action "
+          "memory=ground0_arenas\n");
+  return 0;
+
+#undef OCTAVO_PDF_SELECTION_SMOKE_REQUIRE
 }
 
 int
@@ -23847,6 +28265,25 @@ main(int argc, char **argv)
            strcmp(argv[1], "--page-repeat-win32-smoke") == 0)
   {
     result = octavo_run_page_repeat_win32_smoke(argv[2]);
+  }
+  else if (argc == 3 &&
+           strcmp(argv[1],
+                  "--pdf-presentation-recovery-win32-smoke") == 0)
+  {
+    result = octavo_run_pdf_presentation_recovery_win32_smoke(argv[2]);
+  }
+  else if (argc == 8 && strcmp(argv[1], "--pdf-stage1-smoke") == 0)
+  {
+    result = octavo_run_pdf_stage1_smoke(
+      argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
+  }
+  else if (argc == 3 && strcmp(argv[1], "--pdf-content-smoke") == 0)
+  {
+    result = octavo_run_pdf_content_smoke(argv[2]);
+  }
+  else if (argc == 4 && strcmp(argv[1], "--pdf-selection-smoke") == 0)
+  {
+    result = octavo_run_pdf_selection_smoke(argv[2], argv[3]);
   }
   else if (argc == 4 && strcmp(argv[1], "--library-smoke") == 0)
   {
@@ -23923,7 +28360,7 @@ main(int argc, char **argv)
   else
   {
     fprintf(stderr,
-            "usage: 8vo.exe [epub-path | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --data-migration-smoke | --version]\n");
+            "usage: 8vo.exe [document.epub|document.pdf | --pdf-stage1-smoke pdf epub invalid-pdf invalid-epub late-failure-epub bmp | --pdf-content-smoke pdf | --pdf-selection-smoke pdf replacement-pdf | --saved-position-first-load-smoke epub-path spine byte | --headless epub-path | --render-smoke epub-path bmp-path | --image-smoke epub-path cover-bmp inline-bmp | --reader-image-fit-smoke epub-path output-prefix | --page-turn-regression-smoke epub-path output-prefix | --page-repeat-win32-smoke epub-path | --library-smoke epub-path output-prefix | --reader-view-smoke epub-path export-path | --publisher-typography-spacing-smoke epub-path output-prefix | --reader-view-post-action-arrow-smoke epub-path output-prefix | --reader-view-find-active-contrast-smoke epub-path output-prefix | --reader-view-find-snippet-context-smoke epub-path bmp-path | --reader-view-startup-interaction-smoke | --reader-view-parity-capture epub width height theme left right popup query evidence bmp [focus [annotation-case]] | --accessibility-smoke epub-path | --data-migration-smoke | --version]\n");
     result = 2;
   }
 

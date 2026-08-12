@@ -173,6 +173,7 @@ octavo_accessibility_role(ReaderViewSemanticRole role)
     case ReaderViewSemantic_ToggleButton: return ROLE_SYSTEM_CHECKBUTTON;
     case ReaderViewSemantic_SearchBox: return ROLE_SYSTEM_TEXT;
     case ReaderViewSemantic_TextArea: return ROLE_SYSTEM_TEXT;
+    case ReaderViewSemantic_TextBox: return ROLE_SYSTEM_TEXT;
     case ReaderViewSemantic_Slider: return ROLE_SYSTEM_SLIDER;
     case ReaderViewSemantic_Tab: return ROLE_SYSTEM_PAGETAB;
     case ReaderViewSemantic_List: return ROLE_SYSTEM_LIST;
@@ -199,6 +200,24 @@ octavo_accessibility_state(const ReaderViewSemanticNode *node)
   if (node->flags & ReaderViewSemantic_Offscreen) result |= STATE_SYSTEM_OFFSCREEN;
   if (node->flags & ReaderViewSemantic_ReadOnly) result |= STATE_SYSTEM_READONLY;
   return result;
+}
+
+B32
+octavo_accessibility_enabled_menu_item_contract(
+  const ReaderViewSemanticNode *node,
+  ReaderViewText expected_name)
+{
+  if (!node || !expected_name.data || expected_name.size <= 0 ||
+      !node->name.data || node->name.size != expected_name.size ||
+      memcmp(node->name.data, expected_name.data,
+             (size_t)expected_name.size) != 0)
+  {
+    return 0;
+  }
+  long state = octavo_accessibility_state(node);
+  return octavo_accessibility_role(node->role) == ROLE_SYSTEM_MENUITEM &&
+    (state & STATE_SYSTEM_FOCUSABLE) != 0 &&
+    (state & STATE_SYSTEM_UNAVAILABLE) == 0;
 }
 
 FUNCTION HRESULT STDMETHODCALLTYPE
@@ -476,7 +495,8 @@ octavo_accessibility_get_default_action(IAccessible *iface, VARIANT child,
     return node ? S_FALSE : E_INVALIDARG;
   const wchar_t *label = L"Activate";
   if (node->role == ReaderViewSemantic_SearchBox ||
-      node->role == ReaderViewSemantic_TextArea) label = L"Edit";
+      node->role == ReaderViewSemantic_TextArea ||
+      node->role == ReaderViewSemantic_TextBox) label = L"Edit";
   else if (node->role == ReaderViewSemantic_Slider) label = L"Focus";
   *out_action = SysAllocString(label);
   return *out_action ? S_OK : E_OUTOFMEMORY;

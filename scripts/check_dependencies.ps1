@@ -1,5 +1,7 @@
 param(
-  [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
+  [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+  [ValidateSet("Win32Pdf", "AndroidEpub")]
+  [string]$Target = "Win32Pdf"
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,6 +116,48 @@ Require-Dependency "readerview0" $readerview0 (Join-Path $RepoRoot "vendor\reade
 Require-Dependency "ground0" $ground0 (Join-Path $RepoRoot "vendor\ground0_dependency") `
   "code\foundation\version.h" "ZERO_FOUNDATION_VERSION_STRING"
 
+# Readerview0 and 8vo compile one shared UI0 source package into each unity
+# target. API equality alone is insufficient for an exact-source build: the
+# application pin must match Readerview0's reviewed nested UI0 closure.
+$octavoUi0Metadata = Join-Path $RepoRoot "vendor\ui0_dependency"
+$readerviewUi0Metadata = Join-Path $readerview0 "vendor\ui0_dependency"
+foreach ($name in @("COMMIT", "VERSION", "API_VERSION")) {
+  $octavoMetadataPath = Join-Path $octavoUi0Metadata $name
+  $readerviewMetadataPath = Join-Path $readerviewUi0Metadata $name
+  if (!(Test-Path -LiteralPath $octavoMetadataPath -PathType Leaf) -or
+      !(Test-Path -LiteralPath $readerviewMetadataPath -PathType Leaf)) {
+    throw "8vo/Readerview0 UI0 $name metadata is missing"
+  }
+  $octavoValue = (Get-Content -Raw -LiteralPath $octavoMetadataPath).Trim()
+  $readerviewValue =
+    (Get-Content -Raw -LiteralPath $readerviewMetadataPath).Trim()
+  if ($octavoValue -ne $readerviewValue) {
+    throw "8vo and Readerview0 UI0 $name metadata differ"
+  }
+}
+Write-Host "8vo/Readerview0 nested UI0 metadata: exact"
+
+if ($Target -eq "Win32Pdf") {
+  $mupdf = Resolve-DependencyPath "OCTAVO_MUPDF_DIR" "MUPDF_DIR" "mupdf"
+  $octavoMupdfMetadata = Join-Path $RepoRoot "vendor\mupdf_dependency"
+  $reader0MupdfMetadata = Join-Path $reader0 "vendor\mupdf_dependency"
+  foreach ($name in @("COMMIT", "VERSION", "SUBMODULES")) {
+    $octavoValue = (Get-Content -Raw -LiteralPath `
+      (Join-Path $octavoMupdfMetadata $name)).Trim() -replace "`r`n", "`n"
+    $reader0Value = (Get-Content -Raw -LiteralPath `
+      (Join-Path $reader0MupdfMetadata $name)).Trim() -replace "`r`n", "`n"
+    if ($octavoValue -ne $reader0Value) {
+      throw "8vo and Reader0 MuPDF $name metadata differ"
+    }
+  }
+  $env:READER0_MUPDF_DIR = $mupdf
+  $mupdfGuard = Join-Path $reader0 "scripts\require_mupdf_dependency_current.ps1"
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $mupdfGuard
+  if ($LASTEXITCODE -ne 0) { throw "MuPDF dependency guard failed" }
+} else {
+  Write-Host "MuPDF dependency: skipped for AndroidEpub target"
+}
+
 $presentationMetadata = Join-Path $RepoRoot "vendor\ground0_dependency\PRESENTATION_ENGINE_API_VERSION"
 $presentationHeader = Join-Path $ground0 "code\presentation_engine\presentation_engine.h"
 if (!(Test-Path -LiteralPath $presentationMetadata -PathType Leaf)) {
@@ -137,4 +181,4 @@ if ($currentPresentationApi -ne $requiredPresentationApi) {
   throw "ground0 Presentation Engine API mismatch"
 }
 
-Write-Host "octavo dependency status: current"
+Write-Host "octavo dependency status: current target=$Target"

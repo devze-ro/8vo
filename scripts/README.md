@@ -55,8 +55,8 @@ The script prints the exact lengths and SHA-256 values documented in
 ## Public smoke suite
 
 `run_public_smoke.ps1` is the reproducible public validation entry point. It
-builds 8vo against the exact dependency revisions and runs seven self-contained
-smoke tests. The tests generate their own EPUB, image, migration, and state
+builds 8vo against the exact dependency revisions and runs nine self-contained
+smoke tests. The tests generate their own EPUB, PDF, image, migration, and state
 fixtures under ignored `local/` directories; they do not require private books
 or machine-specific paths.
 
@@ -66,6 +66,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_public_smoke.ps1
 
 Pass `-SkipBuild` only when the current `build/win32/8vo.exe` was produced from
 the same source and exact dependency checkouts.
+
+The default Win32 build is a release-profile provenance operation and rejects
+any tracked modification or non-ignored untracked product input before
+compilation. Maintainers may set
+`OCTAVO_ALLOW_DIRTY_DEVELOPMENT_BUILD=1` only for pre-commit qualification;
+the resulting provenance is explicitly non-release. The public source-state
+smoke proves the default rejection, development evidence, and exact sentinel
+cleanup without altering its starting Git status.
 
 ## Exact-book regression scripts
 

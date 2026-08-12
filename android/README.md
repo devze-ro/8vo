@@ -1,8 +1,16 @@
 # 8vo Android
 
 This directory is the Android application root. Ports 0-7 are accepted. Port 8
-is the corrected structural-navigation foundation against Reader0 `0.7.0-dev` /
-public API 7 at `5fe949d88258cd96884c44b69e4f4ab6f27dc394`.
+is the corrected structural-navigation foundation originally validated against
+Reader0 `0.7.0-dev` / public API 7. The current tree consumes Reader0
+`0.12.0-dev` / public API 12 at the exact revision recorded under
+`vendor/reader0_dependency`; Android remains EPUB-only and uses API 12's
+backward-compatible EPUB surface. API 11's appended PDF document identity and
+API 12's appended PDF selection snapshot are not consumed by Android. Win32
+PDF support does not enter the Android
+source or binary closure. Android's exact-dependency task selects the
+`AndroidEpub` guard target, which does not resolve or require a MuPDF checkout;
+the Win32 build selects `Win32Pdf` and retains the exact MuPDF requirement.
 Port 9 is the API 36 emulator- and API 34 physical-device-validated bounded
 in-book-search candidate on the same exact dependency closure.
 Pre-correction Port 8 automation remains predecessor evidence; the corrected
@@ -417,7 +425,7 @@ contained only expected force stops.
 - `OctavoNative` is the explicit Java/JNI boundary.
 - `octavo_android_port7_build.c` source-consumes the exact Ground0, Reader0,
   UI0, and Readerview0 revisions once. The current Reader0 boundary is
-  `0.7.0-dev` / public API 7; its exact local commit is recorded under
+  `0.12.0-dev` / public API 12; its exact local commit is recorded under
   `vendor/reader0_dependency`. The historical Port 7 unity filename is retained
   because it still compiles each public package exactly once.
 - `code/octavo_reader_justification.h` provides one allocation-free publisher
@@ -440,7 +448,8 @@ contained only expected force stops.
   host's swipe/keyboard/accessibility paths, gates every page/reflow/appearance
   generation on presentation, performs bounded sparse-codepoint lookup with
   missing-glyph diagnostics, and owns its `ANativeWindow`.
-  Port 8's included structural adapter consumes Reader0 API 7 destination,
+  Port 8's included structural adapter consumes the API 10-compatible Reader0
+  EPUB destination,
   location, percentage, meaningful-page, and bounded-history operations. A jump
   or history move remains provisional until the expected target is contained in
   a successfully posted frame; only then may history or the durable reading
@@ -607,9 +616,14 @@ typography change and the tested dark-transition phases.
 
 ### Port 8 validation status
 
-The corrected source consumes Reader0 `0.7.0-dev` / public API 7 at
-`5fe949d88258cd96884c44b69e4f4ab6f27dc394`. That Reader0 revision passed its
+The historically validated corrected Port 8 source consumed Reader0
+`0.7.0-dev` / public API 7 at
+`5fe949d88258cd96884c44b69e4f4ab6f27dc394`. That historical Reader0 revision passed its
 exact dependency/API audit, MSVC `/W4 /WX` build, core smoke, and host smoke.
+The current source instead pins Reader0 `0.12.0-dev` / API 12 through
+`vendor/reader0_dependency`; its Android EPUB compile/link regression must be
+rerun for the current pin and does not retroactively replace the measurements
+below.
 Companion re10 at `b1c264f027c90bec480677bfeadfa5e0728776a8`
 passed strict product/qualification builds and `--document_engine_smoke` with
 four anchors, final spine 3, and hash `f3c13a55f0349720`.
