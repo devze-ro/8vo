@@ -1,5 +1,6 @@
 package ro.devze.octavo;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -9,8 +10,11 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.content.Context;
+import android.net.Uri;
 import android.os.SystemClock;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
@@ -40,20 +44,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Two independently invokable halves of the process-restart probe. Port 11
- * extends the retained Port 8 evidence with interrupted appearance and
- * progress-display applies whose O1SS and O1PS recovery must cross the real
- * process boundary, plus an exact O1LC/O1LS/O1BQ download stopped at
- * LOCAL_CATALOG_LINKED until the fresh process receives explicit Retry.
+ * Independently invokable halves of two process-restart probes. The retained
+ * reader cycle covers interrupted O1SS/O1PS applies and an exact O1LC/O1LS/O1BQ
+ * download stopped at LOCAL_CATALOG_LINKED. The membership cycles kill a live
+ * transient Withdraw confirmation, then a live Back-deferred staged review;
+ * each fresh process must recover byte-identical O1MS and reacquire receipts.
  *
  * The ordinary connected suite excludes this class.
  * scripts/android_port7_process_restart.ps1 remains the compatible driver and runs
- * {@link #seedDurableReaderState()}, force-stops the target application
- * outside instrumentation, confirms that its process is gone, and then runs
- * {@link #verifyDurableReaderStateAfterRestart()}. Keeping the process
- * boundary outside this class prevents a killed instrumentation process from
- * reporting an ambiguous result. The historical Port 7 wrapper remains a
- * compatible entry point for the same two-method contract.
+ * The script establishes each exact visible pre-stop UI, requires a live target
+ * process, force-stops it outside instrumentation, confirms that it is gone,
+ * and then runs the matching verification. Keeping every process boundary
+ * outside this class prevents a killed instrumentation process from reporting
+ * an ambiguous result. The historical Port 7 wrapper remains the entry point.
  */
 @RunWith(AndroidJUnit4.class)
 @ExternalProcessRestartProbe
@@ -76,6 +79,24 @@ public final class OctavoProcessRestartTest {
     private static final String TRANSFER_DIGEST =
         "dd92f87fa70ea37f761cb9348d5f7b2939afea2661f9f4fe16828ac6ca041f80";
     private static final String TRANSFER_TITLE = "Port 6 Alpha Book";
+    private static final int MEMBERSHIP_EVIDENCE_MAGIC =
+        0x4F314D52; // "O1MR"
+    private static final int MEMBERSHIP_EVIDENCE_VERSION = 1;
+    private static final int MEMBERSHIP_EVIDENCE_FILE_CAP = 64 * 1024;
+    private static final int MEMBERSHIP_EVIDENCE_PHASE_CURRENT = 1;
+    private static final int MEMBERSHIP_EVIDENCE_PHASE_STAGED = 2;
+    private static final String MEMBERSHIP_EVIDENCE_FILE =
+        "process_restart_membership_expected.v1";
+    private static final String MEMBERSHIP_EVIDENCE_TEMPORARY_FILE =
+        "process_restart_membership_expected.v1.tmp";
+    private static final String MEMBERSHIP_ROOT_ACTOR =
+        "81818181818181818181818181818181";
+    private static final String MEMBERSHIP_COMMON_ACTOR =
+        "82828282828282828282828282828282";
+    private static final String MEMBERSHIP_REMOTE_ACTOR =
+        "83838383838383838383838383838383";
+    private static final String MEMBERSHIP_LOCAL_ACTOR =
+        "84848484848484848484848484848484";
 
     private interface StateCondition {
         boolean matches(long[] state);
@@ -887,6 +908,254 @@ public final class OctavoProcessRestartTest {
                 long[] presented = view.nativeStateForTesting();
                 assertAnchorInsidePage(
                     presented, expected.spineIndex, expected.byteOffset);
+            });
+        }
+    }
+
+    @Test
+    public void seedDurableLibraryMembershipState() throws IOException {
+        Context context = ApplicationProvider.getApplicationContext();
+        OctavoLibraryStore.clearForTesting(context);
+        OctavoLibrarySyncStore.clearForTesting(context);
+        OctavoLibraryMembershipStore.clearForTesting(context);
+        OctavoBookTransferStore.clearForTesting(context);
+        OctavoReadingPositionStore.clearForTesting(context);
+        OctavoAppearanceStore.clearForTesting(context);
+        OctavoAppearanceSyncStore.clearForTesting(context);
+        OctavoProgressStore.clearForTesting(context);
+        OctavoProgressSyncStore.clearForTesting(context);
+        OctavoAnnotationStore.clearForTesting(context);
+        OctavoNoteDraftStore.clearForTesting(context);
+        clearEvidence(context);
+
+        File source = stageAsset(
+            context, TRANSFER_ASSET,
+            "process-restart-membership-alpha.epub");
+        assertEquals(TRANSFER_BYTE_COUNT, source.length());
+        assertEquals(TRANSFER_DIGEST, sha256(source));
+        OctavoLibraryStore library = new OctavoLibraryStore(context);
+        library.loadCatalog(new File(OctavoFixture.install(context)));
+        OctavoLibraryStore.Book stagedBook =
+            library.importDocument(Uri.fromFile(source));
+        assertTrue(library.verifyBookIdentity(stagedBook));
+        OctavoLibraryStore.Book managed =
+            library.publishReader0ValidatedImport(stagedBook);
+        assertTrue(library.recordOpened(managed, TRANSFER_TITLE));
+        assertTrue(library.completeImportedCatalogAssociation(managed));
+
+        OctavoLibrarySyncStore catalog =
+            new OctavoLibrarySyncStore(context);
+        assertEquals(OctavoLibrarySyncStore.LoadStatus.MISSING_EMPTY,
+                     catalog.load());
+        assertEquals(
+            OctavoLibrarySyncStore.PortableStageResult.STAGED_CURRENT,
+            catalog.stagePortableBytes(
+                portable(TRANSFER_DIGEST, TRANSFER_BYTE_COUNT)));
+        OctavoLibrarySyncStore.StagedPortable stagedCatalog =
+            catalog.stagedPortable();
+        assertNotNull(stagedCatalog);
+        assertEquals(
+            OctavoLibrarySyncStore.PortableMergeResult.MERGED,
+            catalog.approveStagedPortable(stagedCatalog.sha256));
+
+        byte[] localBytes = membershipLocalPortable();
+        OctavoLibraryMembershipStore membership =
+            new OctavoLibraryMembershipStore(context);
+        assertEquals(
+            OctavoLibraryMembershipStore.LoadStatus.MISSING_EMPTY,
+            membership.load());
+        assertEquals(
+            OctavoLibraryMembershipStore.PortableStageResult.STAGED_CURRENT,
+            membership.stagePortableBytes(localBytes).result);
+        OctavoLibraryMembershipStore.StagedPortable stagedLocal =
+            membership.stagedPortable();
+        assertNotNull(stagedLocal);
+        assertEquals(
+            OctavoLibraryMembershipStore.PortableApprovalResult.MERGED,
+            membership.approveStagedPortable(stagedLocal));
+        assertEquals(
+            OctavoLibraryMembershipPortable.Projection.MEMBER,
+            membership.projection(TRANSFER_DIGEST));
+        assertEquals(1, membership.stateGeneration());
+        assertEquals(1, membership.reviewEpoch());
+        byte[] expectedState = membership.canonicalBytesForTesting();
+        assertMembershipLocalBook(context);
+        OctavoLibraryMembershipStore reloaded =
+            new OctavoLibraryMembershipStore(context);
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     reloaded.load());
+        assertMembershipCurrentRestartCutpoint(reloaded, expectedState);
+        writeMembershipEvidence(
+            context, MEMBERSHIP_EVIDENCE_PHASE_CURRENT, expectedState);
+    }
+
+    @Test
+    public void verifyLibraryMembershipAfterConfirmationRestartAndStageReview()
+        throws IOException {
+        Context context = ApplicationProvider.getApplicationContext();
+        byte[] expectedState = readMembershipEvidence(
+            context, MEMBERSHIP_EVIDENCE_PHASE_CURRENT);
+        byte[] remoteBytes = membershipRemotePortable();
+
+        OctavoLibraryMembershipStore recovered =
+            new OctavoLibraryMembershipStore(context);
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     recovered.load());
+        assertMembershipCurrentRestartCutpoint(recovered, expectedState);
+        assertMembershipLocalBook(context);
+
+        OctavoLibrarySyncStore catalog =
+            new OctavoLibrarySyncStore(context);
+        assertEquals(OctavoLibrarySyncStore.LoadStatus.LOADED,
+                     catalog.load());
+        OctavoLibraryPortable.Descriptor catalogDescriptor =
+            catalog.snapshot().descriptor(TRANSFER_DIGEST);
+        assertNotNull(catalogDescriptor);
+        assertEquals(TRANSFER_BYTE_COUNT, catalogDescriptor.byteCount);
+
+        AtomicReference<byte[]> stagedState = new AtomicReference<>();
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertTrue(
+                    "A fresh 8vo process must remain library-first",
+                    activity.libraryVisibleForTesting());
+                assertNull(activity.activeBookKeyForTesting());
+                assertNull(activity.librarySyncPromptForTesting());
+                assertNull(
+                    "A live pre-stop Withdraw confirmation must not cross the "
+                        + "external process boundary",
+                    activity.libraryMembershipPromptForTesting());
+                Button withdraw = findButton(
+                    activity, "Withdraw from synchronized Library");
+                assertNotNull(withdraw);
+                try {
+                    assertMembershipCurrentRestartCutpoint(
+                        activity.libraryMembershipStoreForTesting(),
+                        expectedState);
+                } catch (IOException exception) {
+                    throw new AssertionError(exception);
+                }
+
+                assertEquals(
+                    OctavoLibraryMembershipStore.PortableStageResult
+                        .STAGED_CURRENT,
+                    activity.stagePortableLibraryMembershipForTesting(
+                        remoteBytes));
+                OctavoLibraryMembershipPrompt stagedPrompt =
+                    activity.libraryMembershipPromptForTesting();
+                assertNotNull(stagedPrompt);
+                assertEquals(
+                    OctavoLibraryMembershipPrompt.Mode.STAGED_APPROVAL,
+                    stagedPrompt.modeForTesting());
+                try {
+                    byte[] exact = activity.libraryMembershipStoreForTesting()
+                        .canonicalBytesForTesting();
+                    assertMembershipStagedRestartCutpoint(
+                        activity.libraryMembershipStoreForTesting(),
+                        exact, remoteBytes);
+                    stagedState.set(exact);
+                } catch (IOException exception) {
+                    throw new AssertionError(exception);
+                }
+            });
+        }
+        assertNotNull(stagedState.get());
+        OctavoLibraryMembershipStore reloaded =
+            new OctavoLibraryMembershipStore(context);
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     reloaded.load());
+        assertMembershipStagedRestartCutpoint(
+            reloaded, stagedState.get(), remoteBytes);
+        assertMembershipLocalBook(context);
+        writeMembershipEvidence(
+            context, MEMBERSHIP_EVIDENCE_PHASE_STAGED,
+            stagedState.get());
+    }
+
+    @Test
+    public void verifyDurableLibraryMembershipStateAfterRestart()
+        throws IOException {
+        Context context = ApplicationProvider.getApplicationContext();
+        byte[] expectedState = readMembershipEvidence(
+            context, MEMBERSHIP_EVIDENCE_PHASE_STAGED);
+        byte[] remoteBytes = membershipRemotePortable();
+
+        OctavoLibraryMembershipStore recovered =
+            new OctavoLibraryMembershipStore(context);
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     recovered.load());
+        assertMembershipStagedRestartCutpoint(
+            recovered, expectedState, remoteBytes);
+        assertMembershipLocalBook(context);
+
+        try (ActivityScenario<OctavoActivity> scenario =
+                 ActivityScenario.launch(OctavoActivity.class)) {
+            scenario.onActivity(activity -> {
+                assertTrue(
+                    "A fresh 8vo process must remain library-first",
+                    activity.libraryVisibleForTesting());
+                assertNull(activity.activeBookKeyForTesting());
+                assertFalse(activity
+                                .libraryMembershipAttentionDeferredForTesting());
+                OctavoLibraryMembershipPrompt prompt =
+                    activity.libraryMembershipPromptForTesting();
+                assertNotNull(prompt);
+                assertEquals(
+                    "The pre-stop deferred UI is transient; durable staged "
+                        + "attention must reopen after process restart",
+                    OctavoLibraryMembershipPrompt.Mode.STAGED_APPROVAL,
+                    prompt.modeForTesting());
+                try {
+                    assertMembershipStagedRestartCutpoint(
+                        activity.libraryMembershipStoreForTesting(),
+                        expectedState, remoteBytes);
+                } catch (IOException exception) {
+                    throw new AssertionError(exception);
+                }
+
+                activity.onBackPressed();
+                assertNull(activity.libraryMembershipPromptForTesting());
+                assertTrue(activity
+                               .libraryMembershipAttentionDeferredForTesting());
+                Button reopen = findButton(
+                    activity, "Review pending membership attention");
+                assertNotNull(reopen);
+                assertTrue(reopen.performClick());
+
+                OctavoLibraryMembershipPrompt reopened =
+                    activity.libraryMembershipPromptForTesting();
+                assertNotNull(reopened);
+                assertEquals(
+                    OctavoLibraryMembershipPrompt.Mode.STAGED_APPROVAL,
+                    reopened.modeForTesting());
+                try {
+                    assertMembershipStagedRestartCutpoint(
+                        activity.libraryMembershipStoreForTesting(),
+                        expectedState, remoteBytes);
+                } catch (IOException exception) {
+                    throw new AssertionError(exception);
+                }
+
+                assertTrue(reopened.primaryForTesting().performClick());
+                OctavoLibraryMembershipStore store =
+                    activity.libraryMembershipStoreForTesting();
+                assertNull(store.stagedPortable());
+                assertEquals(
+                    OctavoLibraryMembershipPortable.Projection.CONFLICT,
+                    store.projection(TRANSFER_DIGEST));
+                assertEquals(2, store.stateGeneration());
+                assertEquals(2, store.reviewEpoch());
+                OctavoLibraryMembershipPrompt conflict =
+                    activity.libraryMembershipPromptForTesting();
+                assertNotNull(conflict);
+                assertEquals(OctavoLibraryMembershipPrompt.Mode.CONFLICT,
+                             conflict.modeForTesting());
+                assertNotNull(activity.libraryStoreForTesting()
+                                  .findBook(TRANSFER_DIGEST));
+                assertTrue(activity.libraryStoreForTesting()
+                               .managedFile(TRANSFER_DIGEST).isFile());
+                assertNull(activity.activeBookKeyForTesting());
             });
         }
     }
@@ -1851,8 +2120,243 @@ public final class OctavoProcessRestartTest {
                     OctavoSurfaceView.STATE_PAGE_ONE_PAST_LAST_BYTE]);
     }
 
+    private static void assertMembershipCurrentRestartCutpoint(
+        OctavoLibraryMembershipStore store,
+        byte[] expectedState) throws IOException {
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     store.loadStatus());
+        assertArrayEquals(expectedState, store.canonicalBytesForTesting());
+        assertEquals(0, store.counter());
+        assertEquals(1, store.stateGeneration());
+        assertEquals(1, store.reviewEpoch());
+        assertEquals(OctavoLibraryMembershipStore.Attention.NONE,
+                     store.attention());
+        assertNull(store.stagedPortable());
+        assertEquals(
+            OctavoLibraryMembershipPortable.Projection.MEMBER,
+            store.projection(TRANSFER_DIGEST));
+        OctavoLibraryMembershipStore.PortableExport exported =
+            store.exportPortable();
+        assertEquals(
+            OctavoLibraryMembershipStore.PortableExportStatus.EXPORTED,
+            exported.status);
+        assertArrayEquals(membershipLocalPortable(), exported.bytes());
+    }
+
+    private static void assertMembershipStagedRestartCutpoint(
+        OctavoLibraryMembershipStore store,
+        byte[] expectedState,
+        byte[] expectedStagedBytes) throws IOException {
+        assertEquals(OctavoLibraryMembershipStore.LoadStatus.LOADED,
+                     store.loadStatus());
+        assertArrayEquals(expectedState, store.canonicalBytesForTesting());
+        assertEquals(0, store.counter());
+        assertEquals(1, store.stateGeneration());
+        assertEquals(2, store.reviewEpoch());
+        assertEquals(
+            OctavoLibraryMembershipStore.Attention.CURRENT_APPROVAL,
+            store.attention());
+        assertEquals(
+            OctavoLibraryMembershipPortable.Projection.MEMBER,
+            store.projection(TRANSFER_DIGEST));
+
+        OctavoLibraryMembershipStore.StagedPortable staged =
+            store.stagedPortable();
+        assertNotNull(staged);
+        assertEquals(OctavoLibraryMembershipStore.StagedKind.CURRENT,
+                     staged.kind);
+        assertEquals(
+            OctavoLibraryMembershipStore.Attention.CURRENT_APPROVAL,
+            staged.attention);
+        assertEquals(2, staged.reviewEpoch);
+        assertEquals(expectedStagedBytes.length, staged.byteCount);
+        assertEquals(sha256(expectedStagedBytes), staged.sha256);
+        assertEquals(sha256(membershipLocalPortable()), staged.baseSha256);
+        assertArrayEquals(expectedStagedBytes, staged.bytes());
+    }
+
+    private static void assertMembershipLocalBook(Context context)
+        throws IOException {
+        OctavoLibraryStore library = new OctavoLibraryStore(context);
+        library.loadCatalog(new File(OctavoFixture.install(context)));
+        OctavoLibraryStore.Book book = library.findBook(TRANSFER_DIGEST);
+        assertNotNull(book);
+        assertTrue(book.imported);
+        assertEquals(TRANSFER_BYTE_COUNT, book.byteCount);
+        assertTrue(book.file.isFile());
+        assertEquals(TRANSFER_BYTE_COUNT, book.file.length());
+        assertEquals(TRANSFER_DIGEST, sha256(book.file));
+
+        OctavoBookTransferStore transfer =
+            new OctavoBookTransferStore(context);
+        transfer.load();
+        assertNull(transfer.activeJob());
+        assertEquals(0, transfer.intentCount());
+        assertTrue(transfer.cleanupJobs().isEmpty());
+    }
+
+    private static byte[] membershipLocalPortable() throws IOException {
+        OctavoLibraryMembershipPortable.Descriptor descriptor =
+            membershipDescriptor();
+        OctavoLibraryMembershipPortable.Snapshot root =
+            requireMembershipMutation(
+                OctavoLibraryMembershipPortable.withdraw(
+                    OctavoLibraryMembershipPortable.Snapshot.empty(),
+                    descriptor, MEMBERSHIP_ROOT_ACTOR, 1));
+        OctavoLibraryMembershipPortable.Snapshot local =
+            requireMembershipMutation(
+                OctavoLibraryMembershipPortable.restore(
+                    root, descriptor, MEMBERSHIP_LOCAL_ACTOR, 1));
+        return OctavoLibraryMembershipPortable.encode(local);
+    }
+
+    private static byte[] membershipRemotePortable() throws IOException {
+        OctavoLibraryMembershipPortable.Descriptor descriptor =
+            membershipDescriptor();
+        OctavoLibraryMembershipPortable.Snapshot root =
+            requireMembershipMutation(
+                OctavoLibraryMembershipPortable.withdraw(
+                    OctavoLibraryMembershipPortable.Snapshot.empty(),
+                    descriptor, MEMBERSHIP_ROOT_ACTOR, 1));
+        OctavoLibraryMembershipPortable.Snapshot common =
+            requireMembershipMutation(
+                OctavoLibraryMembershipPortable.restore(
+                    root, descriptor, MEMBERSHIP_COMMON_ACTOR, 1));
+        OctavoLibraryMembershipPortable.Snapshot remote =
+            requireMembershipMutation(
+                OctavoLibraryMembershipPortable.withdraw(
+                    common, descriptor, MEMBERSHIP_REMOTE_ACTOR, 1));
+        return OctavoLibraryMembershipPortable.encode(remote);
+    }
+
+    private static OctavoLibraryMembershipPortable.Descriptor
+        membershipDescriptor() {
+        return new OctavoLibraryMembershipPortable.Descriptor(
+            TRANSFER_DIGEST, TRANSFER_BYTE_COUNT);
+    }
+
+    private static OctavoLibraryMembershipPortable.Snapshot
+        requireMembershipMutation(
+            OctavoLibraryMembershipPortable.MutationResult result) {
+        assertEquals(OctavoLibraryMembershipPortable.MutationStatus.MUTATED,
+                     result.status);
+        assertNotNull(result.snapshot());
+        return result.snapshot();
+    }
+
+    private static Button findButton(OctavoActivity activity, String text) {
+        View root = activity.findViewById(R.id.octavo_library);
+        return root == null ? null : findButton(root, text);
+    }
+
+    private static Button findButton(View root, String text) {
+        if (root instanceof Button
+            && text.contentEquals(((Button)root).getText())) {
+            return (Button)root;
+        }
+        if (!(root instanceof ViewGroup)) {
+            return null;
+        }
+        ViewGroup group = (ViewGroup)root;
+        for (int index = 0; index < group.getChildCount(); ++index) {
+            Button found = findButton(group.getChildAt(index), text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static void writeMembershipEvidence(Context context,
+                                                int phase,
+                                                byte[] expectedState)
+        throws IOException {
+        if ((phase != MEMBERSHIP_EVIDENCE_PHASE_CURRENT
+             && phase != MEMBERSHIP_EVIDENCE_PHASE_STAGED)
+            || expectedState == null || expectedState.length <= 0
+            || expectedState.length
+               > OctavoLibraryMembershipStore.maximumFileBytesForTesting()) {
+            throw new IOException(
+                "Invalid membership process-restart evidence");
+        }
+        File directory = evidenceDirectory(context);
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IOException("Unable to create restart evidence directory");
+        }
+        File temporary = new File(
+            directory, MEMBERSHIP_EVIDENCE_TEMPORARY_FILE);
+        File destination = new File(directory, MEMBERSHIP_EVIDENCE_FILE);
+        try (FileOutputStream fileOutput =
+                 new FileOutputStream(temporary, false);
+             DataOutputStream output = new DataOutputStream(
+                 new BufferedOutputStream(fileOutput))) {
+            output.writeInt(MEMBERSHIP_EVIDENCE_MAGIC);
+            output.writeInt(MEMBERSHIP_EVIDENCE_VERSION);
+            output.writeInt(phase);
+            output.writeInt(expectedState.length);
+            output.write(expectedState);
+            output.flush();
+            fileOutput.getFD().sync();
+        } catch (IOException | RuntimeException exception) {
+            temporary.delete();
+            throw exception;
+        }
+        if (temporary.length() <= 0
+            || temporary.length() > MEMBERSHIP_EVIDENCE_FILE_CAP) {
+            temporary.delete();
+            throw new IOException(
+                "Membership restart evidence exceeds its bound");
+        }
+        publishAtomically(temporary, destination);
+    }
+
+    private static byte[] readMembershipEvidence(Context context,
+                                                 int expectedPhase)
+        throws IOException {
+        if (expectedPhase != MEMBERSHIP_EVIDENCE_PHASE_CURRENT
+            && expectedPhase != MEMBERSHIP_EVIDENCE_PHASE_STAGED) {
+            throw new IOException(
+                "Invalid membership restart evidence phase");
+        }
+        File source = new File(
+            evidenceDirectory(context), MEMBERSHIP_EVIDENCE_FILE);
+        if (!source.isFile() || source.length() <= 0
+            || source.length() > MEMBERSHIP_EVIDENCE_FILE_CAP) {
+            throw new IOException(
+                "Run seedDurableLibraryMembershipState before restart "
+                    + "verification");
+        }
+        try (DataInputStream input = new DataInputStream(
+                 new BufferedInputStream(new FileInputStream(source)))) {
+            int magic = input.readInt();
+            int version = input.readInt();
+            int phase = input.readInt();
+            int byteCount = input.readInt();
+            if (magic != MEMBERSHIP_EVIDENCE_MAGIC
+                || version != MEMBERSHIP_EVIDENCE_VERSION
+                || phase != expectedPhase
+                || byteCount <= 0
+                || byteCount
+                   > OctavoLibraryMembershipStore
+                       .maximumFileBytesForTesting()) {
+                throw new IOException(
+                    "Invalid membership restart evidence header");
+            }
+            byte[] expectedState = new byte[byteCount];
+            input.readFully(expectedState);
+            if (input.read() != -1) {
+                throw new IOException(
+                    "Membership restart evidence has trailing data");
+            }
+            return expectedState;
+        } catch (EOFException exception) {
+            throw new IOException(
+                "Truncated membership restart evidence", exception);
+        }
+    }
+
     private static void writeEvidence(Context context,
-                                      ExpectedState expected)
+                                       ExpectedState expected)
         throws IOException {
         requireValidKey(expected.bookKey);
         if (expected.originSpineIndex < 0
@@ -2037,15 +2541,17 @@ public final class OctavoProcessRestartTest {
 
     private static void clearEvidence(Context context) {
         File directory = evidenceDirectory(context);
-        File temporary = new File(directory, EVIDENCE_TEMPORARY_FILE);
-        File destination = new File(directory, EVIDENCE_FILE);
-        if (temporary.exists() && !temporary.delete()) {
-            throw new IllegalStateException(
-                "Unable to clear temporary restart evidence");
-        }
-        if (destination.exists() && !destination.delete()) {
-            throw new IllegalStateException(
-                "Unable to clear restart evidence");
+        for (String name : new String[] {
+                 EVIDENCE_TEMPORARY_FILE,
+                 EVIDENCE_FILE,
+                 MEMBERSHIP_EVIDENCE_TEMPORARY_FILE,
+                 MEMBERSHIP_EVIDENCE_FILE
+             }) {
+            File evidence = new File(directory, name);
+            if (evidence.exists() && !evidence.delete()) {
+                throw new IllegalStateException(
+                    "Unable to clear restart evidence " + name);
+            }
         }
     }
 

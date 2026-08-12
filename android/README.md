@@ -195,6 +195,19 @@ The product APK declares zero permissions. This local gate does not treat
 missing membership bytes as remote-object evidence and adds no provider,
 account, network, transfer, cloud deletion, or Play Console behavior.
 
+The 2026-08-12 external-process follow-on adds two membership force-stop
+boundaries to the existing reader driver. Three membership halves pass 1/1
+each: the host first confirms a live Withdraw confirmation and no surviving
+process after the stop; a fresh half proves exact current `O1MS`, stages exact
+concurrent review input, and leaves the current `MEMBER` state unchanged; the
+host then confirms the exact Back-deferred reopen action in a live process and
+stops it again. The final fresh half recovers the exact staged bytes/hashes,
+generation, and review epoch, automatically reopens durable attention, and
+produces the deterministic conflict only after fresh approval. The local row and
+managed EPUB stay present and are never opened by the membership flow. The
+preserved reader seed and verification still pass 1/1 each across their
+confirmed force-stop boundary.
+
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
 annotation/draft/note tests in 19.071 seconds and all 119 ordinary tests in
@@ -557,10 +570,11 @@ With an API 26 or newer emulator/device connected:
 ```
 
 The ordinary connected suite excludes the externally orchestrated process-
-restart probe and may uninstall its APKs when the Gradle task completes. From
-the repository root, explicitly install both generated APKs before running the
-probe; override the serial when the selected target is not the default
-emulator:
+restart probe class and may uninstall its APKs when the Gradle task completes.
+The script now runs the retained reader seed/force-stop/verify cycle followed by
+the two membership force-stop boundaries and their three exact halves. From the
+repository root, explicitly install both generated APKs before running it;
+override the serial when the selected target is not the default emulator:
 
 ```powershell
 adb -s emulator-5554 install -r android\app\build\outputs\apk\debug\app-debug.apk

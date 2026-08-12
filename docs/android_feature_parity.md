@@ -179,6 +179,14 @@ product APK declares zero permissions. No physical device, provider/account/
 network path, transfer, cloud deletion, or security decision was part of the
 gate.
 
+The 2026-08-12 external follow-on passes three membership halves at 1/1 each
+across two verified-live-process force-stops. Fresh processes recover exact
+current/staged `O1MS`, hashes, generations, and review epochs; transient
+confirmation/defer UI is not persisted; Back/reopen is byte-exact; and fresh
+staged approval alone creates the deterministic conflict. The local EPUB stays
+present and is not opened by the membership flow. Hands-on iQOO membership
+review remains pending.
+
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
 | Offline-first operation | Improve | Port 11 keeps every mutation local-first. Annotation `O1AP`/`O1AS`, position `O1RP`/`O1RS`, appearance `O1PF`/`O1SS`, progress choice `O1PC`/`O1PS`, local `O8PG`, catalog/transfer `O1LC`/`O1LS`/`O1BM`/`O1BQ`, and membership `O1LM`/`O1MS` remain separate. Reading/import remains available through discovery, transfer, and membership failures. Offer Back durably records **Not now**; retained work/retry Back only defers the modal and exposes a nonmodal exact reopen action. | Preserve these independent offline contracts while adding an explicitly authorized provider; do not let authorization or network state block reading or local mutations. |

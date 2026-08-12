@@ -124,6 +124,25 @@ APK is 1,850,204 bytes with SHA-256
 `F1D9199EDD826A81964D0A46EA9FC1AC1A6EA3BE6A8F54D59B3AE8DC6564889B`;
 only that test package has its generated `REORDER_TASKS` permission.
 
+Post-landing external-process qualification on 2026-08-12 extends the existing
+host-driven restart probe with three independently invoked membership halves and
+two real process boundaries. The first seed passes 1/1, the host launches 8vo,
+opens the exact **Withdraw from synchronized Library?** confirmation, confirms a
+live target process, force-stops it, and confirms that no process survives. The
+fresh verification/staging half passes 1/1: current `O1MS` remains byte-exact at
+generation 1 and review epoch 1, the transient confirmation is absent, the exact
+local row and managed EPUB remain present, and deterministic concurrent input is
+staged at review epoch 2 without changing the current `MEMBER` projection. The
+host then launches that retained review, uses Back until the exact **Review
+pending membership attention** action is visible, confirms another live target
+process, force-stops it, and again confirms no survivor. The final fresh-process
+half passes 1/1: the deferred flag is transient, exact `O1MS` plus staged bytes,
+staged hash, base hash, generation, and review epoch recover, Back/reopen remains
+byte-exact, and approval through a freshly acquired receipt produces the
+deterministic `CONFLICT` without opening, removing, or transferring the EPUB.
+The same expanded driver also preserves the reader seed and fresh verification
+at 1/1 each across their original confirmed force-stop boundary.
+
 ## Membership versus discovery and availability
 
 `O1LC` remains the add-only lifetime discovery set. `O1LM` is a causal overlay
@@ -513,9 +532,11 @@ The backend gate must cover:
   fixture, network, provider, account, worker, clock winner, or secret.
 
 Prompt accessibility, 200%-text layout, 48dp actions, Activity recreation,
-Back/focus restoration, stale callbacks, and future-state preservation are
-covered by the accepted emulator gate. Physical-device, external-process UI,
-provider binding, and launch-security gates remain later work.
+Back/focus restoration, stale callbacks, future-state preservation, and the
+bounded external-process confirmation/retained-review path above are covered by
+the emulator gates. Hands-on physical Withdraw/Restore/conflict, Back, exact
+focus restoration, and large-text review remain pending, as do provider binding
+and launch-security gates.
 
 ## Security boundary
 

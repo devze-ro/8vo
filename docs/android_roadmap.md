@@ -538,6 +538,12 @@ are still pending.
   Back defers retained attention without mutating it. Focused coverage passes
   31/31 in 42 seconds; the complete ordinary matrix passes 344/344 in 9m12s;
   crash/fatal buffers are empty; and the product APK declares zero permissions.
+  The 2026-08-12 external follow-on passes three membership halves at 1/1 each
+  across two force-stops of verified live processes: exact current and staged
+  `O1MS` recover, transient confirmation/defer UI does not, Back/reopen remains
+  byte-exact, and fresh approval produces the deterministic conflict without
+  opening, removing, or transferring the local EPUB. The preserved reader
+  seed/verify pair also remains 1/1 each across its original process boundary.
   Missing membership bytes are not remote-object evidence. No physical device,
   provider/account/network path, transfer, cloud deletion, security decision,
   or Play Console operation was part of this gate; and

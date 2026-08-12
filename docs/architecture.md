@@ -688,6 +688,17 @@ O1LM absence is not remote-object evidence, and physical-device, provider/
 object-presence coordinator, Drive/account, network/permission, encryption/
 anti-rollback, cloud-deletion, and Play Console work remain deferred.
 
+The 2026-08-12 external-process follow-on passes three membership halves at 1/1
+each across two host-confirmed force-stops of live 8vo processes. One boundary
+kills an exact Withdraw confirmation; the other kills the exact Back-deferred
+retained-review action. Fresh processes recover byte-identical current/staged
+`O1MS`, hashes, generations, and review epochs, discard only transient UI, and
+create the deterministic conflict only after a freshly receipted approval. The
+local row and managed EPUB remain present and are not opened by the membership
+flow. The expanded driver also preserves the reader seed and verify halves at
+1/1 each across their original force-stop boundary. No physical device or
+provider boundary was exercised.
+
 The current Port 8 Reader0 boundary is `0.7.0-dev` / public API 7. Its exact
 local commit `5fe949d88258cd96884c44b69e4f4ab6f27dc394` is pinned in
 `vendor/reader0_dependency`. Reader0, strict Windows 8vo, and re10 consumer

@@ -233,6 +233,13 @@ without mutation. Focused coverage passes 31/31 in 42 seconds, the complete
 ordinary matrix passes 344/344 in 9m12s with zero failures/errors/skips, and
 crash/fatal buffers are empty. The product APK declares zero permissions.
 
+The 2026-08-12 external-process follow-on passes three membership halves at 1/1
+each across two force-stops of verified live processes. Exact current/staged
+`O1MS`, hashes, generations, and review epochs recover in fresh processes;
+transient Withdraw-confirmation and Back-deferred UI does not persist; and fresh
+review approval produces the deterministic conflict while the local EPUB remains
+present and is not opened by the membership flow.
+
 This gate does not connect a provider or treat absent membership state as proof
 of remote-object absence. Physical-device review, provider/object-presence
 binding, authorization, account/network/permission work, encryption and anti-
@@ -452,7 +459,9 @@ Qualification is ordered and stops on the first failed gate:
     family must retain the accepted API 36
     `android_port11_catalog_transfer.md` gate; `O1LC`, `O1LS`, `O1BM`, and
     `O1BQ` likewise remain separate, and no local simulated result may be called
-    provider success.
+    provider success. The membership family must retain the accepted
+    `android_port11_library_membership.md` gate; `O1LM` and private `O1MS` remain
+    separate and do not provide object-presence authority.
 3. Qualify Google Drive against test accounts and at least two devices: explicit
    authorization, least-privilege scopes, first sync, offline convergence,
    conflicts, interruption/retry, quota, revocation, account switching,

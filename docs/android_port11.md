@@ -566,6 +566,19 @@ security/encryption decision, or Play Console operation was part of this gate.
 A separately reviewed provider/object-presence binding coordinator remains
 required before inherited membership can authorize remote behavior.
 
+On 2026-08-12, the external-process follow-on passed three independently
+invoked membership halves at 1/1 each across two host-confirmed force-stops with
+no surviving process. The host killed one live exact Withdraw confirmation and
+one live Back-deferred retained-review action. Fresh processes recovered the
+byte-identical current/staged `O1MS`, hashes, generations, and review epochs;
+discarded only transient confirmation/defer UI; reacquired exact receipts; and
+created the deterministic conflict only after explicit staged approval. The
+local row and managed EPUB remained present and were not opened by the
+membership flow. The same expanded driver preserved the reader seed/verify pair
+at 1/1 each across its existing force-stop boundary. This remained
+emulator-only; hands-on iQOO Withdraw, Restore, conflict, Back, exact focus, and
+large-text review is still pending.
+
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader
 did not show the note's attachment point. The revised candidate uses UI0's
