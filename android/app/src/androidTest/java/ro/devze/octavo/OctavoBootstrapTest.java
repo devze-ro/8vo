@@ -245,8 +245,8 @@ public final class OctavoBootstrapTest {
         throws InterruptedException, IOException, NoSuchAlgorithmException {
         assertEquals("0.8.0-dev", OctavoNative.version());
         assertEquals("android", OctavoNative.platform());
-        assertEquals("0.4.3-dev", OctavoNative.groundVersion());
-        assertEquals("0.7.0-dev", OctavoNative.readerVersion());
+        assertEquals("0.4.6-dev", OctavoNative.groundVersion());
+        assertEquals("0.12.0-dev", OctavoNative.readerVersion());
         assertEquals("0.1.0-dev", OctavoNative.uiVersion());
         assertEquals("0.4.0-dev", OctavoNative.readerViewVersion());
 
