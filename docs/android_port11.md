@@ -575,9 +575,20 @@ discarded only transient confirmation/defer UI; reacquired exact receipts; and
 created the deterministic conflict only after explicit staged approval. The
 local row and managed EPUB remained present and were not opened by the
 membership flow. The same expanded driver preserved the reader seed/verify pair
-at 1/1 each across its existing force-stop boundary. This remained
-emulator-only; hands-on iQOO Withdraw, Restore, conflict, Back, exact focus, and
-large-text review is still pending.
+at 1/1 each across its existing force-stop boundary.
+
+On 2026-08-13, coordinated review on the API 34 ARM64 vivo I2019/iQOO 9 SE
+passes the four membership suites 31/31 in 9.639 seconds (10.287 seconds wall).
+The physical UI passes Withdraw, Restore, both conflict resolutions,
+confirmation and retained Back, exact invoking/preferred focus, and the
+nonmodal reopen path without opening or removing the managed EPUB. At 200%
+system text, D-pad traversal scrolls complete headings and every action into
+view without overlap. Cleanup restores font `1.0`, the absent global font key,
+unchanged `1.0` animation scales, and all 26 original private files/4,751,505
+bytes byte-exact. Review-window 8vo crash/fatal/ANR evidence is empty and no
+8vo product process survives cleanup. Provider/object-presence, authorization,
+account/network/permission, encryption/anti-rollback, cloud deletion, and Play
+Console work remain deferred.
 
 On 2026-08-08, hands-on review of the initial third-slice candidate found two
 presentation omissions: the note field lacked internal padding and the reader

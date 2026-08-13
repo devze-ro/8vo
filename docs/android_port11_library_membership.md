@@ -143,6 +143,39 @@ deterministic `CONFLICT` without opening, removing, or transferring the EPUB.
 The same expanded driver also preserves the reader seed and fresh verification
 at 1/1 each across their original confirmed force-stop boundary.
 
+Coordinated physical qualification on 2026-08-13 passes on the vivo
+I2019/iQOO 9 SE, Android 14/API 34 ARM64, at 1080 x 2400 and 440 dpi. The four
+membership suites pass 31/31 in 9.639 seconds of instrumentation time and
+10.287 seconds wall. Host-guided physical review exercises Withdraw and Restore
+confirmation plus Back, both explicit conflict resolutions, staged/conflict
+defer and reopen, and exact input-focus return. Confirmation Back leaves the
+projection unchanged and returns focus to the invoking Withdraw or Restore row
+action; retained Back focuses **Review pending membership attention**; reopening
+restores the preferred Approve or **Keep in Library** focus. **Keep in Library**
+and **Keep withdrawn** each resolve explicitly while the local row and managed
+EPUB remain present and the reader never opens.
+
+The only device-wide setting changed by the review is system `font_scale`, from
+its captured `1.0` to `2.0` and back to `1.0`; the absent global font key stays
+absent and all three animation scales remain `1.0`. At 200% text, row and action
+labels wrap without overlap, the prompt scroll reaches complete headings and
+every action, and D-pad focus exposes the initially below-fold Discard and
+**Keep withdrawn** actions. Back still returns exact focus. The exercised
+product APK is 4,209,694 bytes with SHA-256
+`520EF1389C0B38C9D482386641FA56FF3183D72522D4F69CD688710202F01C63`;
+the 1,864,579-byte test APK has SHA-256
+`34CCFFBDCCA7353052FB6C943E82CEE4685AFDDAC392F55FB978175FC6957229`.
+Cleanup restores all 26 original private files and 4,751,505 payload bytes
+byte-exact. The 4,792,832-byte `pretest-files.tar` and post-cleanup
+`restored-files.tar` archives are identical and have SHA-256
+`9118B960B212FC67EDC70152314341D8EDEDE0851045335D4B11CF23D79D3699`;
+the identical path/length/hash manifest has SHA-256
+`A27440EDABE69EBB70C70A8CBB76DD5AC1AA1FF62D359D8AB8A0031021550339`.
+No review-window crash, fatal, or ANR signatures and no 8vo crash-buffer entries
+exist; one older unrelated `dmesg` seccomp line predates the review. Exit
+history contains only expected instrumentation force-stops, settings are exact,
+and no 8vo product process survives cleanup.
+
 ## Membership versus discovery and availability
 
 `O1LC` remains the add-only lifetime discovery set. `O1LM` is a causal overlay
@@ -534,9 +567,9 @@ The backend gate must cover:
 Prompt accessibility, 200%-text layout, 48dp actions, Activity recreation,
 Back/focus restoration, stale callbacks, future-state preservation, and the
 bounded external-process confirmation/retained-review path above are covered by
-the emulator gates. Hands-on physical Withdraw/Restore/conflict, Back, exact
-focus restoration, and large-text review remain pending, as do provider binding
-and launch-security gates.
+the emulator gates. The API 34 physical gate above additionally closes local
+Withdraw/Restore/conflict, Back, exact focus restoration, and 200%-text review.
+Provider/object-presence binding and launch-security gates remain pending.
 
 ## Security boundary
 

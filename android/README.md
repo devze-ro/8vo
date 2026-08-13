@@ -208,6 +208,17 @@ managed EPUB stay present and are never opened by the membership flow. The
 preserved reader seed and verification still pass 1/1 each across their
 confirmed force-stop boundary.
 
+The coordinated 2026-08-13 API 34 physical follow-on passes the focused
+membership matrix 31/31 in 9.639 seconds (10.287 seconds wall) on the vivo
+I2019/iQOO 9 SE. Withdraw, Restore, both conflict resolutions, confirmation
+Back, retained Back/reopen, and exact preferred/return focus pass while the
+local row and EPUB remain present and unopened. At actual 200% system text,
+focus navigation scrolls every heading and action into view without overlap;
+the temporary system font scale restores from `2.0` to the captured `1.0`, the
+global font key remains absent, and all animation scales remain `1.0`. All 26
+original private files and 4,751,505 bytes restore byte-exact; review-window 8vo
+crash/fatal/ANR evidence is empty, and no 8vo product process survives cleanup.
+
 For notes, the exact dependency and architecture guards plus the dual-ABI build
 pass. The marker-tap follow-up passes the revised API 36 13/13 focused
 annotation/draft/note tests in 19.071 seconds and all 119 ordinary tests in
@@ -878,8 +889,8 @@ empty crash/fatal buffers. The physical gate also closed touch-mode action
 focus and restored the accepted APK/private-data baseline exactly. Durable
 Unicode-aware indexing, annotation search/export, concrete provider transport,
 provider/account/network/permission integration, launch security/encryption
-decisions, and catalog/transfer/membership physical-device qualification remain
-deferred.
+decisions, catalog/transfer physical-device qualification, and provider-enabled
+membership qualification remain deferred.
 The separate catalog and transfer portable families themselves are now accepted
 locally on API 36. The
 seventh appearance-only local slice adds canonical `O1PF`

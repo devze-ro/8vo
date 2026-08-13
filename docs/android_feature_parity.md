@@ -1,6 +1,6 @@
 # Android feature-parity contract
 
-Last reviewed: 2026-08-10. Baseline implementation: accepted Android Ports 0-7
+Last reviewed: 2026-08-13. Baseline implementation: accepted Android Ports 0-7
 plus the corrected Android Port 8 structural-navigation candidate against
 Reader0 `0.7.0-dev` / API 7 at
 `5fe949d88258cd96884c44b69e4f4ab6f27dc394`. Earlier Port 8 API 36/iQOO
@@ -184,14 +184,17 @@ across two verified-live-process force-stops. Fresh processes recover exact
 current/staged `O1MS`, hashes, generations, and review epochs; transient
 confirmation/defer UI is not persisted; Back/reopen is byte-exact; and fresh
 staged approval alone creates the deterministic conflict. The local EPUB stays
-present and is not opened by the membership flow. Hands-on iQOO membership
-review remains pending.
+present and is not opened by the membership flow. The 2026-08-13 API 34 iQOO
+follow-on passes membership 31/31 plus coordinated Withdraw/Restore, both
+conflict resolutions, Back/reopen, exact focus return, and 200%-text scrolling.
+Font and all 26 private files restore exact; review-window 8vo crash/fatal/ANR
+evidence is empty, and no 8vo product process survives cleanup.
 
 | Capability | Target | Current Android baseline | Completion requirement |
 | --- | --- | --- | --- |
 | Offline-first operation | Improve | Port 11 keeps every mutation local-first. Annotation `O1AP`/`O1AS`, position `O1RP`/`O1RS`, appearance `O1PF`/`O1SS`, progress choice `O1PC`/`O1PS`, local `O8PG`, catalog/transfer `O1LC`/`O1LS`/`O1BM`/`O1BQ`, and membership `O1LM`/`O1MS` remain separate. Reading/import remains available through discovery, transfer, and membership failures. Offer Back durably records **Not now**; retained work/retry Back only defers the modal and exposes a nonmodal exact reopen action. | Preserve these independent offline contracts while adding an explicitly authorized provider; do not let authorization or network state block reading or local mutations. |
 | Google Drive synchronization | Improve | Missing | Least-privilege authorization, explicit enable/disable, progress, retry, metered-network policy, and no hidden 8vo account. |
-| Books sync | Improve | The accepted local-only [`O1LC`/`O1LS`/`O1BM`/`O1BQ` contract](android_port11_catalog_transfer.md) provides digest identity, reviewed discovery, sequential resumable simulated transfer, atomic managed publication, durable cleanup/repair, and explicit retained retry. The separate accepted [`O1LM`/`O1MS` membership contract](android_port11_library_membership.md) adds explicit Withdraw, Restore, and conflict review without deleting local bytes or treating missing membership state as remote-object evidence. Neither slice performs an upload or provider operation. | Add a reviewed provider/object-presence binding coordinator, explicit provider authorization, remote ownership/readback proof, metered/quota policy, account switching, separate cloud deletion, and physical-device qualification without weakening local recovery or creating duplicate copies. |
+| Books sync | Improve | The accepted local-only [`O1LC`/`O1LS`/`O1BM`/`O1BQ` contract](android_port11_catalog_transfer.md) provides digest identity, reviewed discovery, sequential resumable simulated transfer, atomic managed publication, durable cleanup/repair, and explicit retained retry. The separate accepted [`O1LM`/`O1MS` membership contract](android_port11_library_membership.md) adds explicit Withdraw, Restore, and conflict review without deleting local bytes or treating missing membership state as remote-object evidence. Neither slice performs an upload or provider operation. | Complete local catalog/transfer physical-device qualification; add a reviewed provider/object-presence binding coordinator, explicit provider authorization, remote ownership/readback proof, metered/quota policy, account switching, separate cloud deletion, and provider-enabled physical-device qualification without weakening local recovery or creating duplicate copies. |
 | Position/settings/annotations sync | Improve | Annotation sync has a qualified provider-neutral boundary with stable identities, frozen `O1AP` bytes/goldens, clock-independent join, conditional-revision commands, and durable `O1AS` retry/review. Independently, positions now have exact EPUB SHA-256 identity, bounded per-device `O1RP` Reader0 anchors, deterministic offline merge, private atomic `O1RS` decisions, strict presentation gating, and an accessible Kindle-style Another device/Go there/Stay here/Retry flow. The accepted appearance-only [`O1PF`/`O1SS` contract](android_port11_preference_sync.md) has canonical whole-profile lanes, a distinct stable device identity, bounded private decisions/recovery, successful-presentation staging, external force-stop recovery, and empty final crash/fatal buffers. The separately accepted [`O1PC`/`O1PS` progress-choice contract](android_port11_progress_sync.md) carries only Chapter/Page/Location/Percentage choice lanes and durable review transactions; `O8PG` remains the independent product-local record. No concrete transport executes any family. | Complete remaining hands-on accessibility review, then explicitly authorize and implement Google Drive transport/migration while keeping every family separate. |
 | Encryption | Improve | App-private local storage only | Specify threat model; offer user-controlled end-to-end protection before claiming private cloud sync. |
 | Backup/export/restore | Improve | Missing | Human-triggerable complete backup, documented validation, partial recovery, and forward-compatible restore. |

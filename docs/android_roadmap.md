@@ -1,6 +1,6 @@
 # Android roadmap to the premium reader
 
-Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-10. Android
+Status: directional roadmap adopted 2026-08-01 and reviewed 2026-08-13. Android
 Ports 0-7 are accepted; Port 7 was pushed and merged after its Reader0, re10,
 exact 8vo guard/build, 36/36 emulator and iQOO, ProcessRestart, 130%
 accessibility, crash, byte-exact backup/restore, and hands-on reader-quality
@@ -544,9 +544,14 @@ are still pending.
   byte-exact, and fresh approval produces the deterministic conflict without
   opening, removing, or transferring the local EPUB. The preserved reader
   seed/verify pair also remains 1/1 each across its original process boundary.
-  Missing membership bytes are not remote-object evidence. No physical device,
-  provider/account/network path, transfer, cloud deletion, security decision,
-  or Play Console operation was part of this gate; and
+  The 2026-08-13 API 34 iQOO follow-on passes membership 31/31 in 9.639 seconds
+  plus coordinated Withdraw/Restore/both conflict resolutions, Back, exact focus,
+  and 200%-text review. Font and the 26-file private baseline restore exact;
+  review-window 8vo crash/fatal/ANR evidence is empty, and no 8vo product
+  process survives cleanup. Missing membership bytes are not remote-object
+  evidence. No provider/account/network
+  path, transfer, cloud deletion, security decision, or Play Console operation
+  was part of these follow-ons; and
 - Google Drive remains disconnected. The annotation-specific offline gate is
   closed through deterministic coordination and the independent position gate
   is closed through local confirmation. The accepted appearance-only local gate

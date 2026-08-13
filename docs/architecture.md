@@ -699,6 +699,17 @@ flow. The expanded driver also preserves the reader seed and verify halves at
 1/1 each across their original force-stop boundary. No physical device or
 provider boundary was exercised.
 
+The 2026-08-13 API 34 ARM64 iQOO follow-on passes the focused membership matrix
+31/31 in 9.639 seconds and coordinated physical Withdraw, Restore, both conflict
+resolutions, transient confirmation Back, retained Back/reopen, and exact focus
+return. At 200% system text, focus navigation scrolls complete headings and all
+actions into view; font restores to `1.0` while the absent global key and all
+`1.0` animation scales remain unchanged. The original 26 private files and
+4,751,505 payload bytes restore byte-exact, no review-window 8vo crash/fatal/ANR
+signature exists, and no 8vo product process survives cleanup. This closes the
+local membership physical gate only; it grants no provider/object-presence
+authority.
+
 The current Port 8 Reader0 boundary is `0.7.0-dev` / public API 7. Its exact
 local commit `5fe949d88258cd96884c44b69e4f4ab6f27dc394` is pinned in
 `vendor/reader0_dependency`. Reader0, strict Windows 8vo, and re10 consumer

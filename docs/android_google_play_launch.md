@@ -1,6 +1,6 @@
 # Android Google Play launch contract
 
-Status: launch-gap audit and revised first-release scope as of 2026-08-10. The
+Status: launch-gap audit and revised first-release scope as of 2026-08-13. The
 merged API 36/API 34 Port 10 selection baseline is accepted. Port 11's local
 bookmarks, multi-color highlights, and note/draft/conflict workflow are accepted
 through API 36/API 34 automation, physical touch, and bounded TalkBack review.
@@ -240,11 +240,17 @@ transient Withdraw-confirmation and Back-deferred UI does not persist; and fresh
 review approval produces the deterministic conflict while the local EPUB remains
 present and is not opened by the membership flow.
 
+The 2026-08-13 API 34 vivo I2019/iQOO follow-on passes the membership matrix
+31/31 in 9.639 seconds and the coordinated physical Withdraw, Restore, both
+conflict resolutions, Back/reopen, exact focus, and 200%-text checks. The system
+font setting and all 26 private files restore exact; review-window 8vo crash,
+fatal, and ANR evidence is empty and no 8vo product process survives cleanup.
+
 This gate does not connect a provider or treat absent membership state as proof
-of remote-object absence. Physical-device review, provider/object-presence
-binding, authorization, account/network/permission work, encryption and anti-
-rollback policy, transfer execution, separate cloud deletion, and Play Console
-work remain explicitly deferred.
+of remote-object absence. Provider/object-presence binding, authorization,
+account/network/permission work, encryption and anti-rollback policy, transfer
+execution, separate cloud deletion, provider-enabled physical review, and Play
+Console work remain explicitly deferred.
 
 ### Bounded UI polish
 
